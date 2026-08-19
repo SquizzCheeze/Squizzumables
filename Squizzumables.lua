@@ -2592,6 +2592,72 @@ end
 -- Text Reminders Settings Tab
 -- ============================================================================
 
+-- Build one reminder's block of options from its BH.REMINDERS entry: section
+-- header, enable toggle, any reminder-specific rows, scale, lock, divider.
+-- Returns the vertical space used.
+--
+-- The scale and lock rows grey out when the reminder is disabled -- something
+-- the hand-written version had no mechanism for.
+function BH:AddReminderSection(content, y, key, skipDivider)
+    local def = BH.REMINDERS_BY_KEY[key]
+    if not def then return 0 end
+
+    local Rows       = ns.Rows
+    local enabledKey = def.enabledKey or (key .. "ReminderEnabled")
+    local scaleKey   = key .. "ReminderScale"
+    local lockedKey  = key .. "ReminderLocked"
+    local frameKey   = key .. "ReminderFrame"
+    local updateFn   = "Update" .. BH.ReminderBaseName(key) .. "Reminder"
+
+    local function isOff() return BH.settings and BH.settings[enabledKey] == false end
+    local function runUpdate() if BH[updateFn] then BH[updateFn](BH) end end
+
+    local rows = {
+        { type = "header", label = def.sectionHeader, tooltip = def.tooltip },
+        { type = "check",  label = def.enableLabel,   tooltip = def.tooltip,
+          get = function() return BH.settings and BH.settings[enabledKey] ~= false end,
+          set = function(v) BH.settings[enabledKey] = v; BH:SaveSettings() end,
+          after = runUpdate },
+    }
+
+    -- Reminder-specific rows sit between the enable toggle and the scale.
+    if def.extraRows then
+        for _, extra in ipairs(def.extraRows) do rows[#rows + 1] = extra end
+    end
+
+    rows[#rows + 1] = {
+        type = "slider", label = def.scaleLabel, width = 300, min = 50, max = 200, step = 5,
+        tooltip = "Size of the on-screen reminder, as a percentage.",
+        disabled = isOff,
+        get = function() return (BH.settings and BH.settings[scaleKey] or 1.0) * 100 end,
+        set = function(v, userInput)
+            BH.settings[scaleKey] = v / 100
+            BH:SaveSettings()
+            local f = BH[frameKey]
+            if userInput and f then f:SetScale(v / 100) end
+        end,
+    }
+    rows[#rows + 1] = {
+        type = "check", label = def.lockLabel,
+        tooltip = "Stops the reminder being dragged. Use Preview on the Settings tab to reposition it.",
+        disabled = isOff,
+        get = function() return BH.settings and BH.settings[lockedKey] or false end,
+        set = function(v)
+            BH.settings[lockedKey] = v
+            BH:SaveSettings()
+            local f = BH[frameKey]
+            if f then f:SetMovable(not v); f:EnableMouse(not v) end
+        end,
+    }
+    -- The section that ends a group omits its trailing divider, because the
+    -- next block (Instance Sounds, Feast Announce) opens with its own.
+    if not skipDivider then
+        rows[#rows + 1] = { type = "divider" }
+    end
+
+    return Rows.AddAll(content, y, rows)
+end
+
 function BH:BuildTextRemindersTab(parent)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
@@ -2604,187 +2670,14 @@ function BH:BuildTextRemindersTab(parent)
     local yOffset = -14
     local leftPad = 14
 
-    -- === Beacon Reminder (Holy Paladin) ===
-    local beaconLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    beaconLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    beaconLabel:SetText("BEACON REMINDER (HOLY PALADIN)")
-    beaconLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
-    yOffset = yOffset - 22
-
-    local enableBeaconCheckbox = CreateSQCheckbox(content, "Enable Beacon Reminder", function(checked)
-        BH.settings.beaconReminderEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateBeaconReminder()
-    end)
-    enableBeaconCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trEnableBeaconCheckbox = enableBeaconCheckbox
-    yOffset = yOffset - 34
-
-    local beaconScaleSlider = CreateSQSlider(content, "Beacon Reminder Scale", 300, 50, 200, 5)
-    beaconScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    beaconScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.beaconReminderScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.beaconReminderFrame then
-            BH.beaconReminderFrame:SetScale(value / 100)
-        end
-    end)
-    self.trBeaconScaleSlider = beaconScaleSlider
-    yOffset = yOffset - 50
-
-    local lockBeaconCheckbox = CreateSQCheckbox(content, "Lock Beacon Reminder", function(checked)
-        BH.settings.beaconReminderLocked = checked
-        BH:SaveSettings()
-        if BH.beaconReminderFrame then
-            BH.beaconReminderFrame:SetMovable(not checked)
-            BH.beaconReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    lockBeaconCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trLockBeaconCheckbox = lockBeaconCheckbox
-    yOffset = yOffset - 34
-
-    -- === Earth Shield Reminder (Shaman) ===
-    local esDivider = CreateSQDivider(content, yOffset)
-    esDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    yOffset = yOffset - 18
-
-    local esLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    esLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    esLabel:SetText("EARTH SHIELD REMINDER (SHAMAN)")
-    esLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
-    yOffset = yOffset - 22
-
-    local enableESCheckbox = CreateSQCheckbox(content, "Enable Earth Shield Reminder", function(checked)
-        BH.settings.earthShieldReminderEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateEarthShieldReminder()
-    end)
-    enableESCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trEnableESCheckbox = enableESCheckbox
-    yOffset = yOffset - 34
-
-    local esScaleSlider = CreateSQSlider(content, "Earth Shield Reminder Scale", 300, 50, 200, 5)
-    esScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    esScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.earthShieldReminderScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.earthShieldReminderFrame then
-            BH.earthShieldReminderFrame:SetScale(value / 100)
-        end
-    end)
-    self.trESScaleSlider = esScaleSlider
-    yOffset = yOffset - 50
-
-    local lockESCheckbox = CreateSQCheckbox(content, "Lock Earth Shield Reminder", function(checked)
-        BH.settings.earthShieldReminderLocked = checked
-        BH:SaveSettings()
-        if BH.earthShieldReminderFrame then
-            BH.earthShieldReminderFrame:SetMovable(not checked)
-            BH.earthShieldReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    lockESCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trLockESCheckbox = lockESCheckbox
-    yOffset = yOffset - 34
-
-    -- === Symbiotic Relationship Reminder (Druid) ===
-    local symDivider = CreateSQDivider(content, yOffset)
-    symDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    yOffset = yOffset - 18
-
-    local symLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    symLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    symLabel:SetText("SYMBIOTIC RELATIONSHIP REMINDER (DRUID)")
-    symLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
-    yOffset = yOffset - 22
-
-    local enableSymCheckbox = CreateSQCheckbox(content, "Enable Symbiotic Relationship Reminder", function(checked)
-        BH.settings.symbioticReminderEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateSymbioticReminder()
-    end)
-    enableSymCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trEnableSymCheckbox = enableSymCheckbox
-    yOffset = yOffset - 34
-
-    local symScaleSlider = CreateSQSlider(content, "Symbiotic Reminder Scale", 300, 50, 200, 5)
-    symScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    symScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.symbioticReminderScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.symbioticReminderFrame then
-            BH.symbioticReminderFrame:SetScale(value / 100)
-        end
-    end)
-    self.trSymScaleSlider = symScaleSlider
-    yOffset = yOffset - 50
-
-    local lockSymCheckbox = CreateSQCheckbox(content, "Lock Symbiotic Relationship Reminder", function(checked)
-        BH.settings.symbioticReminderLocked = checked
-        BH:SaveSettings()
-        if BH.symbioticReminderFrame then
-            BH.symbioticReminderFrame:SetMovable(not checked)
-            BH.symbioticReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    lockSymCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trLockSymCheckbox = lockSymCheckbox
-    yOffset = yOffset - 34
-
-    -- === Repair Reminder ===
-    local repairDivider = CreateSQDivider(content, yOffset)
-    repairDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    yOffset = yOffset - 18
-
-    local repairLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    repairLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    repairLabel:SetText("REPAIR REMINDER")
-    repairLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
-    yOffset = yOffset - 22
-
-    local repairCheckbox = CreateSQCheckbox(content, "Enable Repair Reminder", function(checked)
-        BH.settings.repairReminderEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateRepairReminder()
-    end)
-    repairCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trRepairCheckbox = repairCheckbox
-    yOffset = yOffset - 34
-
-    local repairThresholdSlider = CreateSQSlider(content, "Durability Threshold (%)", 300, 0, 100, 1)
-    repairThresholdSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    repairThresholdSlider:SetAfterValueChanged(function(value)
-        BH.settings.repairReminderThreshold = value
-        BH:SaveSettings()
-        BH:UpdateRepairReminder()
-    end)
-    self.trRepairThresholdSlider = repairThresholdSlider
-    yOffset = yOffset - 50
-
-    local repairScaleSlider = CreateSQSlider(content, "Repair Reminder Scale", 300, 50, 200, 5)
-    repairScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    repairScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.repairReminderScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.repairReminderFrame then
-            BH.repairReminderFrame:SetScale(value / 100)
-        end
-    end)
-    self.trRepairScaleSlider = repairScaleSlider
-    yOffset = yOffset - 50
-
-    local lockRepairCheckbox = CreateSQCheckbox(content, "Lock Repair Reminder", function(checked)
-        BH.settings.repairReminderLocked = checked
-        BH:SaveSettings()
-        if BH.repairReminderFrame then
-            BH.repairReminderFrame:SetMovable(not checked)
-            BH.repairReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    lockRepairCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trLockRepairCheckbox = lockRepairCheckbox
-    yOffset = yOffset - 34
+    -- The per-reminder sections are generated from BH.REMINDERS. Each was ~45
+    -- lines of hand-positioned widgets plus a matching branch in
+    -- BH:RefreshTextRemindersTab; the rows now carry their own get/set and
+    -- refresh themselves, so both disappear.
+    local classReminders = { "beacon", "earthShield", "symbiotic", "repair" }
+    for i, key in ipairs(classReminders) do
+        yOffset = yOffset - self:AddReminderSection(content, yOffset, key, i == #classReminders)
+    end
 
     -- === Instance Sound ===
     local instDivider = CreateSQDivider(content, yOffset)
@@ -2824,120 +2717,10 @@ function BH:BuildTextRemindersTab(parent)
     consumNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 28
 
-    -- Food reminder
-    local foodLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    foodLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    foodLabel:SetText("FOOD REMINDER")
-    foodLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 18
-
-    local enableFoodCheckbox = CreateSQCheckbox(content, "Enable Food Reminder", function(checked)
-        BH.settings.foodReminderEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateFoodReminder()
-    end)
-    enableFoodCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trEnableFoodCheckbox = enableFoodCheckbox
-    yOffset = yOffset - 34
-
-    local foodScaleSlider = CreateSQSlider(content, "Food Reminder Scale", 300, 50, 200, 5)
-    foodScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    foodScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.foodReminderScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.foodReminderFrame then BH.foodReminderFrame:SetScale(value / 100) end
-    end)
-    self.trFoodScaleSlider = foodScaleSlider
-    yOffset = yOffset - 50
-
-    local lockFoodCheckbox = CreateSQCheckbox(content, "Lock Food Reminder", function(checked)
-        BH.settings.foodReminderLocked = checked
-        BH:SaveSettings()
-        if BH.foodReminderFrame then
-            BH.foodReminderFrame:SetMovable(not checked)
-            BH.foodReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    lockFoodCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trLockFoodCheckbox = lockFoodCheckbox
-    yOffset = yOffset - 34
-
-    -- Flask reminder
-    local flaskRLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    flaskRLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    flaskRLabel:SetText("FLASK REMINDER")
-    flaskRLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 18
-
-    local enableFlaskCheckbox = CreateSQCheckbox(content, "Enable Flask Reminder", function(checked)
-        BH.settings.flaskReminderEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateFlaskReminder()
-    end)
-    enableFlaskCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trEnableFlaskCheckbox = enableFlaskCheckbox
-    yOffset = yOffset - 34
-
-    local flaskScaleSlider = CreateSQSlider(content, "Flask Reminder Scale", 300, 50, 200, 5)
-    flaskScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    flaskScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.flaskReminderScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.flaskReminderFrame then BH.flaskReminderFrame:SetScale(value / 100) end
-    end)
-    self.trFlaskScaleSlider = flaskScaleSlider
-    yOffset = yOffset - 50
-
-    local lockFlaskCheckbox = CreateSQCheckbox(content, "Lock Flask Reminder", function(checked)
-        BH.settings.flaskReminderLocked = checked
-        BH:SaveSettings()
-        if BH.flaskReminderFrame then
-            BH.flaskReminderFrame:SetMovable(not checked)
-            BH.flaskReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    lockFlaskCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trLockFlaskCheckbox = lockFlaskCheckbox
-    yOffset = yOffset - 34
-
-    -- Oil reminder
-    local oilRLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    oilRLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    oilRLabel:SetText("WEAPON OIL REMINDER")
-    oilRLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 18
-
-    local enableOilCheckbox = CreateSQCheckbox(content, "Enable Oil Reminder", function(checked)
-        BH.settings.oilReminderEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateOilReminder()
-    end)
-    enableOilCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trEnableOilCheckbox = enableOilCheckbox
-    yOffset = yOffset - 34
-
-    local oilScaleSlider = CreateSQSlider(content, "Oil Reminder Scale", 300, 50, 200, 5)
-    oilScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    oilScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.oilReminderScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.oilReminderFrame then BH.oilReminderFrame:SetScale(value / 100) end
-    end)
-    self.trOilScaleSlider = oilScaleSlider
-    yOffset = yOffset - 50
-
-    local lockOilCheckbox = CreateSQCheckbox(content, "Lock Oil Reminder", function(checked)
-        BH.settings.oilReminderLocked = checked
-        BH:SaveSettings()
-        if BH.oilReminderFrame then
-            BH.oilReminderFrame:SetMovable(not checked)
-            BH.oilReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    lockOilCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trLockOilCheckbox = lockOilCheckbox
-    yOffset = yOffset - 34
-
+    local bagReminders = { "food", "flask", "oil" }
+    for i, key in ipairs(bagReminders) do
+        yOffset = yOffset - self:AddReminderSection(content, yOffset, key, i == #bagReminders)
+    end
     -- === Feast Announce ===
     local feastDivider = CreateSQDivider(content, yOffset)
     feastDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -3594,74 +3377,10 @@ end
 
 function BH:RefreshTextRemindersTab()
     if not self.settings then return end
-    if self.trBeaconScaleSlider then
-        self.trBeaconScaleSlider:SetValue((self.settings.beaconReminderScale or 1.0) * 100)
-    end
-    if self.trEnableBeaconCheckbox then
-        self.trEnableBeaconCheckbox:SetChecked(self.settings.beaconReminderEnabled ~= false)
-    end
-    if self.trLockBeaconCheckbox then
-        self.trLockBeaconCheckbox:SetChecked(self.settings.beaconReminderLocked or false)
-    end
-    if self.trESScaleSlider then
-        self.trESScaleSlider:SetValue((self.settings.earthShieldReminderScale or 1.0) * 100)
-    end
-    if self.trEnableESCheckbox then
-        self.trEnableESCheckbox:SetChecked(self.settings.earthShieldReminderEnabled ~= false)
-    end
-    if self.trLockESCheckbox then
-        self.trLockESCheckbox:SetChecked(self.settings.earthShieldReminderLocked or false)
-    end
+    -- Migrated sections refresh themselves; this covers the rest.
+    ns.Rows.RefreshAll()
     if self.trSkyreachSoundCheckbox then
         self.trSkyreachSoundCheckbox:SetChecked(self.settings.skyreachSoundEnabled ~= false)
-    end
-    if self.trRepairCheckbox then
-        self.trRepairCheckbox:SetChecked(self.settings.repairReminderEnabled ~= false)
-    end
-    if self.trRepairThresholdSlider then
-        self.trRepairThresholdSlider:SetValue(self.settings.repairReminderThreshold or 20)
-    end
-    if self.trRepairScaleSlider then
-        self.trRepairScaleSlider:SetValue((self.settings.repairReminderScale or 1.0) * 100)
-    end
-    if self.trLockRepairCheckbox then
-        self.trLockRepairCheckbox:SetChecked(self.settings.repairReminderLocked or false)
-    end
-    if self.trEnableSymCheckbox then
-        self.trEnableSymCheckbox:SetChecked(self.settings.symbioticReminderEnabled ~= false)
-    end
-    if self.trSymScaleSlider then
-        self.trSymScaleSlider:SetValue((self.settings.symbioticReminderScale or 1.0) * 100)
-    end
-    if self.trLockSymCheckbox then
-        self.trLockSymCheckbox:SetChecked(self.settings.symbioticReminderLocked or false)
-    end
-    if self.trEnableFoodCheckbox then
-        self.trEnableFoodCheckbox:SetChecked(self.settings.foodReminderEnabled ~= false)
-    end
-    if self.trFoodScaleSlider then
-        self.trFoodScaleSlider:SetValue((self.settings.foodReminderScale or 1.0) * 100)
-    end
-    if self.trLockFoodCheckbox then
-        self.trLockFoodCheckbox:SetChecked(self.settings.foodReminderLocked or false)
-    end
-    if self.trEnableFlaskCheckbox then
-        self.trEnableFlaskCheckbox:SetChecked(self.settings.flaskReminderEnabled ~= false)
-    end
-    if self.trFlaskScaleSlider then
-        self.trFlaskScaleSlider:SetValue((self.settings.flaskReminderScale or 1.0) * 100)
-    end
-    if self.trLockFlaskCheckbox then
-        self.trLockFlaskCheckbox:SetChecked(self.settings.flaskReminderLocked or false)
-    end
-    if self.trEnableOilCheckbox then
-        self.trEnableOilCheckbox:SetChecked(self.settings.oilReminderEnabled ~= false)
-    end
-    if self.trOilScaleSlider then
-        self.trOilScaleSlider:SetValue((self.settings.oilReminderScale or 1.0) * 100)
-    end
-    if self.trLockOilCheckbox then
-        self.trLockOilCheckbox:SetChecked(self.settings.oilReminderLocked or false)
     end
     if self.trFeastAnnounceCheckbox then
         self.trFeastAnnounceCheckbox:SetChecked(self.settings.feastAnnounceEnabled ~= false)
@@ -5693,18 +5412,48 @@ BH.REMINDERS = {
     {
         key = "beacon", globalName = "SQUIZZUMABLESBeaconReminder",
         label = "Beacon Reminder (Holy Paladin)",
+        sectionHeader = "BEACON REMINDER (HOLY PALADIN)",
+        enableLabel = "Enable Beacon Reminder",
+        scaleLabel = "Beacon Reminder Scale",
+        lockLabel = "Lock Beacon Reminder",
+        tooltip = "Shows a large reminder when you are missing one of your beacons. Holy Paladins only; hidden if you are talented into Beacon of Virtue.",
         text = "REMEMBER YOUR BEACON", color = { 1, 0.82, 0 },
         size = { 280, 50 }, defaultY = 200,
     },
     {
         key = "earthShield", globalName = "SQUIZZUMABLESEarthShieldReminder",
         label = "Earth Shield Reminder (Shaman)",
+        sectionHeader = "EARTH SHIELD REMINDER (SHAMAN)",
+        enableLabel = "Enable Earth Shield Reminder",
+        scaleLabel = "Earth Shield Reminder Scale",
+        lockLabel = "Lock Earth Shield Reminder",
+        tooltip = "Shows a large reminder when Earth Shield is missing from its expected target. Shamans who know Earth Shield only.",
         text = "REMEMBER EARTH SHIELD", color = { 0.00, 0.44, 0.87 },
         size = { 320, 50 }, defaultY = 160,
     },
     {
         key = "repair", globalName = "SquizzumablesRepairReminderFrame",
         label = "Repair Reminder",
+        sectionHeader = "REPAIR REMINDER",
+        enableLabel = "Enable Repair Reminder",
+        scaleLabel = "Repair Reminder Scale",
+        lockLabel = "Lock Repair Reminder",
+        tooltip = "Shows a reminder when your most damaged equipped item drops below the durability threshold. Hidden during combat.",
+        -- Sits between the enable toggle and the scale slider, as it did before.
+        extraRows = {
+            {
+                type = "slider", label = "Durability Threshold (%)",
+                width = 300, min = 0, max = 100, step = 1,
+                tooltip = "Show the reminder once your most damaged equipped item falls below this percentage.",
+                disabled = function() return BH.settings and BH.settings.repairReminderEnabled == false end,
+                get = function() return BH.settings and BH.settings.repairReminderThreshold or 20 end,
+                set = function(v)
+                    BH.settings.repairReminderThreshold = v
+                    BH:SaveSettings()
+                    BH:UpdateRepairReminder()
+                end,
+            },
+        },
         text = "REPAIR", color = { 0.9, 0.2, 0.2 },
         size = { 300, 40 }, defaultY = 120,
         -- The only reminder that was never given the HIGH strata. Kept as-is
@@ -5714,6 +5463,11 @@ BH.REMINDERS = {
     {
         key = "symbiotic", globalName = "SQUIZZUMABLESSymbioticReminder",
         label = "Symbiotic Relationship Reminder (Druid)",
+        sectionHeader = "SYMBIOTIC RELATIONSHIP REMINDER (DRUID)",
+        enableLabel = "Enable Symbiotic Relationship Reminder",
+        scaleLabel = "Symbiotic Reminder Scale",
+        lockLabel = "Lock Symbiotic Relationship Reminder",
+        tooltip = "Shows a reminder when a party or raid member is missing Symbiotic Relationship. Druids who have the talent only.",
         text = "SYMBIOTIC RELATIONSHIP", color = { 0.2, 0.9, 0.2 },
         size = { 340, 50 }, defaultY = 80,
     },
@@ -5732,18 +5486,33 @@ BH.REMINDERS = {
     {
         key = "food", globalName = "SQUIZZUMABLESFoodReminder",
         label = "No Food In Bags Reminder",
+        sectionHeader = "FOOD REMINDER",
+        enableLabel = "Enable Food Reminder",
+        scaleLabel = "Food Reminder Scale",
+        lockLabel = "Lock Food Reminder",
+        tooltip = "Shows a reminder when you have no tracked food in your bags while in a dungeon or raid.",
         text = "NO FOOD IN BAGS", color = { 1, 0.55, 0.0 },
         size = { 280, 50 }, defaultY = 240,
     },
     {
         key = "flask", globalName = "SQUIZZUMABLESFlaskReminder",
         label = "No Flask In Bags Reminder",
+        sectionHeader = "FLASK REMINDER",
+        enableLabel = "Enable Flask Reminder",
+        scaleLabel = "Flask Reminder Scale",
+        lockLabel = "Lock Flask Reminder",
+        tooltip = "Shows a reminder when you have no tracked flask in your bags while in a dungeon or raid.",
         text = "NO FLASK IN BAGS", color = { 0.4, 0.8, 1.0 },
         size = { 300, 50 }, defaultY = 280,
     },
     {
         key = "oil", globalName = "SQUIZZUMABLESOilReminder",
         label = "No Weapon Oil In Bags Reminder",
+        sectionHeader = "WEAPON OIL REMINDER",
+        enableLabel = "Enable Oil Reminder",
+        scaleLabel = "Oil Reminder Scale",
+        lockLabel = "Lock Oil Reminder",
+        tooltip = "Shows a reminder when you have no tracked weapon oil in your bags while in a dungeon or raid.",
         text = "NO WEAPON OIL IN BAGS", color = { 0.5, 1.0, 0.5 },
         size = { 300, 50 }, defaultY = 320,
     },
@@ -8636,17 +8405,15 @@ function BH:CreateRaidToolsFrame()
         if BH.rtLockMarkersCheckbox then BH.rtLockMarkersCheckbox:SetChecked(true) end
         if BH.rtLockPRCheckbox then BH.rtLockPRCheckbox:SetChecked(true) end
         if BH.rtLockBeaconCheckbox then BH.rtLockBeaconCheckbox:SetChecked(true) end
-        if BH.trLockBeaconCheckbox then BH.trLockBeaconCheckbox:SetChecked(true) end
-        if BH.trLockESCheckbox then BH.trLockESCheckbox:SetChecked(true) end
-        if BH.trLockRepairCheckbox then BH.trLockRepairCheckbox:SetChecked(true) end
-        if BH.trLockSymCheckbox then BH.trLockSymCheckbox:SetChecked(true) end
         if BH.rtLockBresCheckbox then BH.rtLockBresCheckbox:SetChecked(true) end
         if BH.kelLockDeathTallyCheckbox then BH.kelLockDeathTallyCheckbox:SetChecked(true) end
         if BH.itLockCheckbox then BH.itLockCheckbox:SetChecked(true) end
         if BH.lockCheckbox then BH.lockCheckbox:SetChecked(true) end
-        if BH.trLockFoodCheckbox then BH.trLockFoodCheckbox:SetChecked(true) end
-        if BH.trLockFlaskCheckbox then BH.trLockFlaskCheckbox:SetChecked(true) end
-        if BH.trLockOilCheckbox then BH.trLockOilCheckbox:SetChecked(true) end
+        -- The seven per-reminder lock checkboxes used to be pushed individually
+        -- here. They are declarative rows now and read their own value back
+        -- from settings, so one refresh covers all of them -- and covers any
+        -- reminder added later without this list having to be updated.
+        ns.Rows.RefreshAll()
         print("Squizzumables: All frames locked")
     end)
 
