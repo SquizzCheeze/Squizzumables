@@ -9,6 +9,7 @@ Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 Squizzumables_Config.lua
 Squizzumables_Secrets.lua
 UI\Widgets.lua
+UI\Rows.lua
 Squizzumables.lua
 Squizzumables_CDM.lua
 Squizzumables_SpellAlerts.lua

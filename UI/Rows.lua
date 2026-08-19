@@ -1,0 +1,276 @@
+-- UI/Rows.lua
+-- Declarative option rows.
+--
+-- The options panel used to be built imperatively: create a widget, position it
+-- with hand-tracked yOffset arithmetic, stash it on BH under a unique name, and
+-- then remember to add a matching line to that tab's Refresh function to push
+-- the current value back into it. Ten tabs of that produced ~700 lines of
+-- boilerplate, 34 stored widget handles, and three Refresh functions that had
+-- to be kept in sync by hand -- a setting whose Refresh line was forgotten
+-- simply showed a stale value after a profile switch, silently.
+--
+-- Here a row is data instead. It declares how to read and write its value, so:
+--
+--   * it positions itself and reports the height it used, so callers never do
+--     yOffset arithmetic
+--   * it can refresh itself, so the per-tab Refresh functions and the stored
+--     widget handles both disappear
+--   * it can grey itself out when a `disabled` predicate says so, which the old
+--     code had no mechanism for at all
+--   * it registers itself for search, so every option is findable by name
+--
+-- Usage:
+--     local y = 0
+--     y = y - Rows.Add(content, y, {
+--         type = "check",
+--         label = "Enable Beacon Reminder",
+--         tooltip = "Shows a reminder when your beacon is missing.",
+--         get = function() return BH.settings.beaconReminderEnabled ~= false end,
+--         set = function(v) BH.settings.beaconReminderEnabled = v end,
+--     })
+
+local addonName, ns = ...
+
+local Rows = {}
+ns.Rows = Rows
+
+local SQ_COLORS        = ns.SQ_COLORS
+local CreateSQCheckbox = ns.CreateSQCheckbox
+local CreateSQSlider   = ns.CreateSQSlider
+local CreateSQDropdown = ns.CreateSQDropdown
+local CreateSQButton   = ns.CreateSQButton
+local CreateSQDivider  = ns.CreateSQDivider
+
+-- Layout constants. Every row reports its own height from here, so changing a
+-- spacing value re-flows the whole panel instead of requiring 200 edits.
+local ROW_H = {
+    check   = 34,
+    slider  = 50,
+    dropdown= 34,
+    button  = 36,
+    header  = 22,
+    divider = 18,
+    spacer  = 14,
+    text    = 28,
+}
+Rows.HEIGHTS = ROW_H
+
+local LEFT_PAD = 14
+
+-- ============================================================================
+-- Refresh registry
+--
+-- Each row registers a closure that pushes the current stored value back into
+-- the widget. Rows.RefreshAll() runs them all, which is what a profile switch
+-- needs. This replaces BH:RefreshSettingsTab, BH:RefreshRaidToolsTab and
+-- BH:RefreshTextRemindersTab, each of which was a hand-maintained if-chain.
+-- ============================================================================
+
+local refreshers = {}
+
+function Rows.RegisterRefresh(fn)
+    if type(fn) == "function" then
+        refreshers[#refreshers + 1] = fn
+    end
+end
+
+function Rows.RefreshAll()
+    for i = 1, #refreshers do
+        local ok, err = pcall(refreshers[i])
+        -- A single broken row must not stop the rest of the panel refreshing.
+        if not ok then
+            geterrorhandler()(err)
+        end
+    end
+end
+
+-- ============================================================================
+-- Search index
+--
+-- Rows register their label and tooltip as they are built. The search UI reads
+-- this to offer jump-to-setting. Kept deliberately dumb -- just a flat list --
+-- because the whole panel is only ~100 rows.
+-- ============================================================================
+
+local searchIndex = {}
+Rows.searchIndex = searchIndex
+
+-- Set by the panel while it builds a page, so rows know where they live
+-- without every call site having to pass it.
+Rows.currentPage    = nil
+Rows.currentSection = nil
+
+function Rows.RegisterSearchEntry(label, tooltip, frame)
+    if not label or label == "" or not Rows.currentPage then return end
+    searchIndex[#searchIndex + 1] = {
+        label   = label,
+        tooltip = tooltip,
+        page    = Rows.currentPage,
+        section = Rows.currentSection,
+        frame   = frame,
+    }
+end
+
+function Rows.ClearSearchIndex()
+    wipe(searchIndex)
+end
+
+-- ============================================================================
+-- Shared behaviour
+-- ============================================================================
+
+-- The checkbox, slider and dropdown constructors return a container Frame whose
+-- interactive part is a child (container.checkbox / .slider / .btn). The
+-- container itself has no mouse enabled, so tooltips and disabling have to be
+-- applied to that child or they do nothing at all. Buttons are their own
+-- interactive widget, so they are returned as-is.
+local function InteractiveOf(widget)
+    return widget.checkbox or widget.slider or widget.btn or widget
+end
+
+local function AttachTooltip(widget, label, tooltip)
+    if not tooltip then return end
+    local target = InteractiveOf(widget)
+    if not target.HookScript then return end
+    -- HookScript rather than SetScript: the widget constructors already install
+    -- their own OnEnter for hover highlighting, and replacing it would break it.
+    target:HookScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(label or "")
+        GameTooltip:AddLine(tooltip, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    target:HookScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+-- Grey out and stop interaction when spec.disabled() is true. Re-evaluated on
+-- every refresh, so a row can depend on another row's value.
+local function ApplyDisabled(widget, spec)
+    if not spec.disabled then return end
+    local isDisabled = spec.disabled() and true or false
+    -- Alpha on the container so the label dims with the control.
+    if widget.SetAlpha then widget:SetAlpha(isDisabled and 0.35 or 1) end
+    local target = InteractiveOf(widget)
+    if target.EnableMouse then target:EnableMouse(not isDisabled) end
+    if target.SetEnabled then target:SetEnabled(not isDisabled) end
+end
+
+-- Wire a row: position it, attach the tooltip, index it for search, and
+-- register the closure that syncs widget <- stored value.
+local function Finish(widget, parent, y, spec, sync)
+    widget:SetPoint("TOPLEFT", parent, "TOPLEFT", spec.indent or LEFT_PAD, y)
+    AttachTooltip(widget, spec.label, spec.tooltip)
+    Rows.RegisterSearchEntry(spec.label, spec.tooltip, widget)
+    local function refresh()
+        if sync then sync() end
+        ApplyDisabled(widget, spec)
+    end
+    Rows.RegisterRefresh(refresh)
+    refresh()
+    widget.sqRefresh = refresh
+    return widget
+end
+
+-- ============================================================================
+-- Row types
+-- ============================================================================
+
+local builders = {}
+
+builders.check = function(parent, y, spec)
+    local cb = CreateSQCheckbox(parent, spec.label, function(checked)
+        if spec.set then spec.set(checked and true or false) end
+        if spec.after then spec.after() end
+        -- Other rows may depend on this one.
+        Rows.RefreshAll()
+    end)
+    return Finish(cb, parent, y, spec, function()
+        if spec.get then cb:SetChecked(spec.get() and true or false) end
+    end)
+end
+
+builders.slider = function(parent, y, spec)
+    local s = CreateSQSlider(parent, spec.label, spec.width or 300,
+                             spec.min or 0, spec.max or 100, spec.step or 1)
+    s:SetAfterValueChanged(function(value, userInput)
+        if spec.set then spec.set(value, userInput) end
+        if spec.after then spec.after(value, userInput) end
+    end)
+    return Finish(s, parent, y, spec, function()
+        if spec.get then s:SetValue(spec.get()) end
+    end)
+end
+
+builders.dropdown = function(parent, y, spec)
+    local items = spec.items
+    if type(items) == "function" then items = items() end
+    local dd = CreateSQDropdown(parent, spec.label or "", spec.width or 220, items or {}, function(value)
+        if spec.set then spec.set(value) end
+        if spec.after then spec.after(value) end
+        Rows.RefreshAll()
+    end)
+    return Finish(dd, parent, y, spec, function()
+        if spec.get then dd:SetSelectedValue(spec.get()) end
+    end)
+end
+
+builders.button = function(parent, y, spec)
+    local b = CreateSQButton(parent, spec.label, spec.width or 140, spec.height or 26, spec.color)
+    b:SetScript("OnClick", function()
+        if spec.onClick then spec.onClick() end
+    end)
+    return Finish(b, parent, y, spec, nil)
+end
+
+-- A section title. Indexed for search too, so "reminders" finds the section.
+builders.header = function(parent, y, spec)
+    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs:SetPoint("TOPLEFT", parent, "TOPLEFT", spec.indent or LEFT_PAD, y)
+    fs:SetText(spec.label)
+    fs:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    Rows.RegisterSearchEntry(spec.label, spec.tooltip, fs)
+    return fs
+end
+
+-- Explanatory paragraph under a header.
+builders.text = function(parent, y, spec)
+    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    fs:SetPoint("TOPLEFT", parent, "TOPLEFT", spec.indent or LEFT_PAD, y)
+    fs:SetWidth(spec.width or 380)
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(true)
+    fs:SetText(spec.label)
+    fs:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+    return fs
+end
+
+builders.divider = function(parent, y, spec)
+    return CreateSQDivider(parent, y)
+end
+
+builders.spacer = function() return nil end
+
+-- Add one row. Returns the height it consumed, so callers advance by that
+-- rather than tracking magic numbers:  y = y - Rows.Add(content, y, spec)
+function Rows.Add(parent, y, spec)
+    local build = builders[spec.type]
+    if not build then
+        geterrorhandler()("Squizzumables: unknown option row type '" .. tostring(spec.type) .. "'")
+        return 0
+    end
+    build(parent, y, spec)
+    return spec.height and (spec.height + 8) or (ROW_H[spec.type] or 30)
+end
+
+-- Add a list of rows in order, returning the total height consumed.
+function Rows.AddAll(parent, y, specs)
+    local used = 0
+    for i = 1, #specs do
+        local spec = specs[i]
+        -- A spec may be conditional: skip it entirely when `shown` says no.
+        if not spec.shown or spec.shown() then
+            used = used + Rows.Add(parent, y - used, spec)
+        end
+    end
+    return used
+end
