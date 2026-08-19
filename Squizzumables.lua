@@ -5584,274 +5584,151 @@ end
 BH.challengeModeActive = false
 BH.previewMode = false
 
--- Beacon reminder frame (movable frame for Holy Paladins)
-BH.beaconReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESBeaconReminder", UIParent)
-BH.beaconReminderFrame:SetSize(280, 50)
-BH.beaconReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
-BH.beaconReminderFrame:SetFrameStrata("HIGH")
-BH.beaconReminderFrame:SetMovable(true)
-BH.beaconReminderFrame:SetClampedToScreen(true)
-BH.beaconReminderFrame:EnableMouse(true)
-BH.beaconReminderFrame:RegisterForDrag("LeftButton")
-BH.beaconReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.beaconReminderLocked) or BH.previewMode then
-        BH.beaconReminderFrame:StartMoving()
-        BH.beaconReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.beaconReminderFrame:SetScript("OnDragStop", function()
-    BH.beaconReminderFrame:StopMovingOrSizing()
-    BH:SaveBeaconReminderPosition()
-end)
-BH.beaconReminderFrame:Hide()
+-- ============================================================================
+-- Text reminder registry
+--
+-- Every one of these is the same frame: a movable, lockable, scalable label
+-- pinned to UIParent that shows when some condition holds. They used to be ten
+-- near-identical ~27-line blocks of construction, ten Update<Name>Reminder
+-- functions, ten blocks in the options tab and ten branches in the tab's
+-- refresh -- around 1,470 lines in which the only thing that actually differed
+-- per reminder was the label and one predicate.
+--
+-- Each entry below drives all of that. Conventions derived from `key`:
+--   BH[key.."ReminderFrame"]  / BH[key.."ReminderText"]   the widgets
+--   settings[key.."ReminderEnabled" / "Scale" / "Locked"] the settings keys
+--   SquizzumablesDB[key.."ReminderPosition"]              the saved anchor
+--   BH:Save/Load<Key>ReminderPosition()                   generated already
+--     from POSITION_PAIRS, which uses the same naming
+--
+-- Adding a reminder means adding an entry here and a shouldShow predicate --
+-- no new frame code, no new options-tab block, no new settings keys.
+-- ============================================================================
 
-BH.beaconReminderText = BH.beaconReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.beaconReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.beaconReminderText:SetPoint("CENTER", BH.beaconReminderFrame, "CENTER", 0, 0)
-BH.beaconReminderText:SetText("REMEMBER YOUR BEACON")
-BH.beaconReminderText:SetTextColor(1, 0.82, 0, 1)  -- Gold
+BH.REMINDERS = {
+    {
+        key = "beacon", globalName = "SQUIZZUMABLESBeaconReminder",
+        label = "Beacon Reminder (Holy Paladin)",
+        text = "REMEMBER YOUR BEACON", color = { 1, 0.82, 0 },
+        size = { 280, 50 }, defaultY = 200,
+    },
+    {
+        key = "earthShield", globalName = "SQUIZZUMABLESEarthShieldReminder",
+        label = "Earth Shield Reminder (Shaman)",
+        text = "REMEMBER EARTH SHIELD", color = { 0.00, 0.44, 0.87 },
+        size = { 320, 50 }, defaultY = 160,
+    },
+    {
+        key = "repair", globalName = "SquizzumablesRepairReminderFrame",
+        label = "Repair Reminder",
+        text = "REPAIR", color = { 0.9, 0.2, 0.2 },
+        size = { 300, 40 }, defaultY = 120,
+        -- The only reminder that was never given the HIGH strata. Kept as-is
+        -- so its stacking order relative to other frames does not change.
+        strata = false,
+    },
+    {
+        key = "symbiotic", globalName = "SQUIZZUMABLESSymbioticReminder",
+        label = "Symbiotic Relationship Reminder (Druid)",
+        text = "SYMBIOTIC RELATIONSHIP", color = { 0.2, 0.9, 0.2 },
+        size = { 340, 50 }, defaultY = 80,
+    },
+    {
+        key = "coachWhistle", globalName = "SQUIZZUMABLESCoachWhistleReminder",
+        label = "Emerald Coach's Whistle Reminder",
+        text = "USE COACH'S WHISTLE", color = { 0.2, 0.9, 0.6 },
+        size = { 340, 50 }, defaultY = 40,
+    },
+    {
+        key = "pet", globalName = "SQUIZZUMABLESPetReminder",
+        label = "No Pet Reminder (Hunter)",
+        text = "NO PET", color = { 0.00, 0.78, 1.0 },
+        size = { 240, 50 }, defaultY = 0,
+    },
+    {
+        key = "food", globalName = "SQUIZZUMABLESFoodReminder",
+        label = "No Food In Bags Reminder",
+        text = "NO FOOD IN BAGS", color = { 1, 0.55, 0.0 },
+        size = { 280, 50 }, defaultY = 240,
+    },
+    {
+        key = "flask", globalName = "SQUIZZUMABLESFlaskReminder",
+        label = "No Flask In Bags Reminder",
+        text = "NO FLASK IN BAGS", color = { 0.4, 0.8, 1.0 },
+        size = { 300, 50 }, defaultY = 280,
+    },
+    {
+        key = "oil", globalName = "SQUIZZUMABLESOilReminder",
+        label = "No Weapon Oil In Bags Reminder",
+        text = "NO WEAPON OIL IN BAGS", color = { 0.5, 1.0, 0.5 },
+        size = { 300, 50 }, defaultY = 320,
+    },
+    {
+        key = "healerCC", globalName = "SQUIZZUMABLESHealerCCReminder",
+        label = "Healer CC Alert",
+        text = "HEALER IN CC", color = { 1.0, 0.2, 0.2 },
+        size = { 280, 50 }, defaultY = 360,
+        -- Visibility is driven by BH:CheckHealerCC off UNIT_AURA rather than by
+        -- the shared update pass, so this one has no shouldShow predicate.
+        eventDriven = true,
+    },
+}
 
--- Earth Shield reminder frame (movable frame for Restoration Shamans)
-BH.earthShieldReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESEarthShieldReminder", UIParent)
-BH.earthShieldReminderFrame:SetSize(320, 50)
-BH.earthShieldReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
-BH.earthShieldReminderFrame:SetFrameStrata("HIGH")
-BH.earthShieldReminderFrame:SetMovable(true)
-BH.earthShieldReminderFrame:SetClampedToScreen(true)
-BH.earthShieldReminderFrame:EnableMouse(true)
-BH.earthShieldReminderFrame:RegisterForDrag("LeftButton")
-BH.earthShieldReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.earthShieldReminderLocked) or BH.previewMode then
-        BH.earthShieldReminderFrame:StartMoving()
-        BH.earthShieldReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.earthShieldReminderFrame:SetScript("OnDragStop", function()
-    BH.earthShieldReminderFrame:StopMovingOrSizing()
-    BH:SaveEarthShieldReminderPosition()
-end)
-BH.earthShieldReminderFrame:Hide()
+-- Look up a reminder definition by key.
+BH.REMINDERS_BY_KEY = {}
+for _, def in ipairs(BH.REMINDERS) do
+    BH.REMINDERS_BY_KEY[def.key] = def
+end
 
-BH.earthShieldReminderText = BH.earthShieldReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.earthShieldReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.earthShieldReminderText:SetPoint("CENTER", BH.earthShieldReminderFrame, "CENTER", 0, 0)
-BH.earthShieldReminderText:SetText("REMEMBER EARTH SHIELD")
-BH.earthShieldReminderText:SetTextColor(0.00, 0.44, 0.87, 1)  -- Shaman blue
+-- "beacon" -> "Beacon", "healerCC" -> "HealerCC". Matches the naming that
+-- POSITION_PAIRS already uses to generate Save/Load<Name>Position.
+local function ReminderBaseName(key)
+    return (key:gsub("^%l", string.upper))
+end
+BH.ReminderBaseName = ReminderBaseName
 
--- === Repair Reminder Frame ===
-BH.repairReminderFrame = CreateFrame("Frame", "SquizzumablesRepairReminderFrame", UIParent)
-BH.repairReminderFrame:SetSize(300, 40)
-BH.repairReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
-BH.repairReminderFrame:SetMovable(true)
-BH.repairReminderFrame:SetClampedToScreen(true)
-BH.repairReminderFrame:EnableMouse(true)
-BH.repairReminderFrame:RegisterForDrag("LeftButton")
-BH.repairReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.repairReminderLocked) or BH.previewMode then
-        BH.repairReminderFrame:StartMoving()
-        BH.repairReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.repairReminderFrame:SetScript("OnDragStop", function()
-    BH.repairReminderFrame:StopMovingOrSizing()
-    BH:SaveRepairReminderPosition()
-end)
-BH.repairReminderFrame:Hide()
+-- Build one reminder frame from its definition. Replaces ten copies of this.
+local function CreateReminderFrame(def)
+    local key       = def.key
+    local lockedKey = key .. "ReminderLocked"
+    local saveFn    = "Save" .. ReminderBaseName(key) .. "ReminderPosition"
 
-BH.repairReminderText = BH.repairReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.repairReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.repairReminderText:SetPoint("CENTER", BH.repairReminderFrame, "CENTER", 0, 0)
-BH.repairReminderText:SetText("REPAIR")
-BH.repairReminderText:SetTextColor(0.9, 0.2, 0.2, 1)  -- Red for urgency
+    local frame = CreateFrame("Frame", def.globalName, UIParent)
+    frame:SetSize(def.size[1], def.size[2])
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, def.defaultY)
+    if def.strata ~= false then frame:SetFrameStrata("HIGH") end
+    frame:SetMovable(true)
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        if not (BH.settings and BH.settings[lockedKey]) or BH.previewMode then
+            self:StartMoving()
+            self:SetUserPlaced(false)
+        end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        if BH[saveFn] then BH[saveFn](BH) end
+    end)
+    frame:Hide()
 
--- === Symbiotic Relationship Reminder (Druid) ===
-BH.symbioticReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESSymbioticReminder", UIParent)
-BH.symbioticReminderFrame:SetSize(340, 50)
-BH.symbioticReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
-BH.symbioticReminderFrame:SetFrameStrata("HIGH")
-BH.symbioticReminderFrame:SetMovable(true)
-BH.symbioticReminderFrame:SetClampedToScreen(true)
-BH.symbioticReminderFrame:EnableMouse(true)
-BH.symbioticReminderFrame:RegisterForDrag("LeftButton")
-BH.symbioticReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.symbioticReminderLocked) or BH.previewMode then
-        BH.symbioticReminderFrame:StartMoving()
-        BH.symbioticReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.symbioticReminderFrame:SetScript("OnDragStop", function()
-    BH.symbioticReminderFrame:StopMovingOrSizing()
-    BH:SaveSymbioticReminderPosition()
-end)
-BH.symbioticReminderFrame:Hide()
+    local text = frame:CreateFontString(nil, "OVERLAY")
+    text:SetFont("Fonts\FRIZQT__.TTF", 24, "OUTLINE")
+    text:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    text:SetText(def.text)
+    text:SetTextColor(def.color[1], def.color[2], def.color[3], 1)
 
-BH.symbioticReminderText = BH.symbioticReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.symbioticReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.symbioticReminderText:SetPoint("CENTER", BH.symbioticReminderFrame, "CENTER", 0, 0)
-BH.symbioticReminderText:SetText("SYMBIOTIC RELATIONSHIP")
-BH.symbioticReminderText:SetTextColor(0.2, 0.9, 0.2, 1)  -- Green
+    -- Keep the historical field names: BH.beaconReminderFrame and friends are
+    -- referenced throughout the addon and in POSITION_PAIRS / SCALED_FRAMES.
+    BH[key .. "ReminderFrame"] = frame
+    BH[key .. "ReminderText"]  = text
+    return frame
+end
 
--- === Emerald Coach's Whistle Reminder ===
-BH.coachWhistleReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESCoachWhistleReminder", UIParent)
-BH.coachWhistleReminderFrame:SetSize(340, 50)
-BH.coachWhistleReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
-BH.coachWhistleReminderFrame:SetFrameStrata("HIGH")
-BH.coachWhistleReminderFrame:SetMovable(true)
-BH.coachWhistleReminderFrame:SetClampedToScreen(true)
-BH.coachWhistleReminderFrame:EnableMouse(true)
-BH.coachWhistleReminderFrame:RegisterForDrag("LeftButton")
-BH.coachWhistleReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.coachWhistleReminderLocked) or BH.previewMode then
-        BH.coachWhistleReminderFrame:StartMoving()
-        BH.coachWhistleReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.coachWhistleReminderFrame:SetScript("OnDragStop", function()
-    BH.coachWhistleReminderFrame:StopMovingOrSizing()
-    BH:SaveCoachWhistleReminderPosition()
-end)
-BH.coachWhistleReminderFrame:Hide()
-
-BH.coachWhistleReminderText = BH.coachWhistleReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.coachWhistleReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.coachWhistleReminderText:SetPoint("CENTER", BH.coachWhistleReminderFrame, "CENTER", 0, 0)
-BH.coachWhistleReminderText:SetText("USE COACH'S WHISTLE")
-BH.coachWhistleReminderText:SetTextColor(0.2, 0.9, 0.6, 1)  -- Teal/Emerald
-
--- === Hunter: No Pet Reminder ===
-BH.petReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESPetReminder", UIParent)
-BH.petReminderFrame:SetSize(240, 50)
-BH.petReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-BH.petReminderFrame:SetFrameStrata("HIGH")
-BH.petReminderFrame:SetMovable(true)
-BH.petReminderFrame:SetClampedToScreen(true)
-BH.petReminderFrame:EnableMouse(true)
-BH.petReminderFrame:RegisterForDrag("LeftButton")
-BH.petReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.petReminderLocked) or BH.previewMode then
-        BH.petReminderFrame:StartMoving()
-        BH.petReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.petReminderFrame:SetScript("OnDragStop", function()
-    BH.petReminderFrame:StopMovingOrSizing()
-    BH:SavePetReminderPosition()
-end)
-BH.petReminderFrame:Hide()
-
-BH.petReminderText = BH.petReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.petReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.petReminderText:SetPoint("CENTER", BH.petReminderFrame, "CENTER", 0, 0)
-BH.petReminderText:SetText("NO PET")
-BH.petReminderText:SetTextColor(0.00, 0.78, 1.0, 1)  -- Hunter blue
-
--- === Food "No Items in Bag" Reminder ===
-BH.foodReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESFoodReminder", UIParent)
-BH.foodReminderFrame:SetSize(280, 50)
-BH.foodReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 240)
-BH.foodReminderFrame:SetFrameStrata("HIGH")
-BH.foodReminderFrame:SetMovable(true)
-BH.foodReminderFrame:SetClampedToScreen(true)
-BH.foodReminderFrame:EnableMouse(true)
-BH.foodReminderFrame:RegisterForDrag("LeftButton")
-BH.foodReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.foodReminderLocked) or BH.previewMode then
-        BH.foodReminderFrame:StartMoving()
-        BH.foodReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.foodReminderFrame:SetScript("OnDragStop", function()
-    BH.foodReminderFrame:StopMovingOrSizing()
-    BH:SaveFoodReminderPosition()
-end)
-BH.foodReminderFrame:Hide()
-
-BH.foodReminderText = BH.foodReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.foodReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.foodReminderText:SetPoint("CENTER", BH.foodReminderFrame, "CENTER", 0, 0)
-BH.foodReminderText:SetText("NO FOOD IN BAGS")
-BH.foodReminderText:SetTextColor(1, 0.55, 0.0, 1)  -- Orange
-
--- === Flask "No Items in Bag" Reminder ===
-BH.flaskReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESFlaskReminder", UIParent)
-BH.flaskReminderFrame:SetSize(300, 50)
-BH.flaskReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 280)
-BH.flaskReminderFrame:SetFrameStrata("HIGH")
-BH.flaskReminderFrame:SetMovable(true)
-BH.flaskReminderFrame:SetClampedToScreen(true)
-BH.flaskReminderFrame:EnableMouse(true)
-BH.flaskReminderFrame:RegisterForDrag("LeftButton")
-BH.flaskReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.flaskReminderLocked) or BH.previewMode then
-        BH.flaskReminderFrame:StartMoving()
-        BH.flaskReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.flaskReminderFrame:SetScript("OnDragStop", function()
-    BH.flaskReminderFrame:StopMovingOrSizing()
-    BH:SaveFlaskReminderPosition()
-end)
-BH.flaskReminderFrame:Hide()
-
-BH.flaskReminderText = BH.flaskReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.flaskReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.flaskReminderText:SetPoint("CENTER", BH.flaskReminderFrame, "CENTER", 0, 0)
-BH.flaskReminderText:SetText("NO FLASK IN BAGS")
-BH.flaskReminderText:SetTextColor(0.4, 0.8, 1.0, 1)  -- Light blue
-
--- === Oil "No Items in Bag" Reminder ===
-BH.oilReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESOilReminder", UIParent)
-BH.oilReminderFrame:SetSize(300, 50)
-BH.oilReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 320)
-BH.oilReminderFrame:SetFrameStrata("HIGH")
-BH.oilReminderFrame:SetMovable(true)
-BH.oilReminderFrame:SetClampedToScreen(true)
-BH.oilReminderFrame:EnableMouse(true)
-BH.oilReminderFrame:RegisterForDrag("LeftButton")
-BH.oilReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.oilReminderLocked) or BH.previewMode then
-        BH.oilReminderFrame:StartMoving()
-        BH.oilReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.oilReminderFrame:SetScript("OnDragStop", function()
-    BH.oilReminderFrame:StopMovingOrSizing()
-    BH:SaveOilReminderPosition()
-end)
-BH.oilReminderFrame:Hide()
-
-BH.oilReminderText = BH.oilReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.oilReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.oilReminderText:SetPoint("CENTER", BH.oilReminderFrame, "CENTER", 0, 0)
-BH.oilReminderText:SetText("NO WEAPON OIL IN BAGS")
-BH.oilReminderText:SetTextColor(0.5, 1.0, 0.5, 1)  -- Light green
-
--- === Healer CC Reminder ===
-BH.healerCCReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESHealerCCReminder", UIParent)
-BH.healerCCReminderFrame:SetSize(280, 50)
-BH.healerCCReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 360)
-BH.healerCCReminderFrame:SetFrameStrata("HIGH")
-BH.healerCCReminderFrame:SetMovable(true)
-BH.healerCCReminderFrame:SetClampedToScreen(true)
-BH.healerCCReminderFrame:EnableMouse(true)
-BH.healerCCReminderFrame:RegisterForDrag("LeftButton")
-BH.healerCCReminderFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.healerCCReminderLocked) or BH.previewMode then
-        BH.healerCCReminderFrame:StartMoving()
-        BH.healerCCReminderFrame:SetUserPlaced(false)
-    end
-end)
-BH.healerCCReminderFrame:SetScript("OnDragStop", function()
-    BH.healerCCReminderFrame:StopMovingOrSizing()
-    BH:SaveHealerCCReminderPosition()
-end)
-BH.healerCCReminderFrame:Hide()
-
-BH.healerCCReminderText = BH.healerCCReminderFrame:CreateFontString(nil, "OVERLAY")
-BH.healerCCReminderText:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-BH.healerCCReminderText:SetPoint("CENTER", BH.healerCCReminderFrame, "CENTER", 0, 0)
-BH.healerCCReminderText:SetText("HEALER IN CC")
-BH.healerCCReminderText:SetTextColor(1.0, 0.2, 0.2, 1)  -- Red
+for _, def in ipairs(BH.REMINDERS) do
+    CreateReminderFrame(def)
+end
 
 -- === Battle Res Counter (Inspired by BigWigs BattleRes) ===
 -- Difficulty IDs that have battle res charges (BigWigs approach)
