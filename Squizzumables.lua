@@ -4121,8 +4121,13 @@ function BH:UpdateCalloutsButtonFrame()
         lbl:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
         local sndName = callout.sound or "None"
         local calloutChannel = callout.channel or "INSTANCE"
-        btn:HookScript("OnClick", function(_, _, down)
-            if down then return end  -- only fire on button-up (macro fires on down)
+        -- The button registers a single click edge (see SQ_GetClickEdge), so
+        -- OnClick fires exactly once per click and this hook runs once with it.
+        -- It used to guard with `if down then return end`, which was correct
+        -- only while both edges were registered: the macro fired on down and
+        -- this ran on up. With one edge that guard would silently drop the
+        -- sound entirely for anyone whose client casts on key-down.
+        btn:HookScript("OnClick", function()
             if sndName ~= "None" then
                 PlaySQSound(sndName)
                 -- Broadcast sound to other addon users in the group
