@@ -6350,9 +6350,11 @@ end
 
 -- Debounce handle for UpdateButtons -- collapses rapid-fire UNIT_AURA group events into one call
 local _updateButtonsPending = false
--- Set while a rebuild is being held off because the cursor is over a button
--- (see the hover guard in BH:UpdateButtons).
+-- Set while a rebuild is being held off mid-click (see the guard in
+-- BH:UpdateButtons). _updateButtonsDeferrals caps how many times in a row a
+-- rebuild may be postponed, so updates can never stall indefinitely.
 local _updateButtonsHoverRetry = false
+local _updateButtonsDeferrals = 0
 
 function BH:ScheduleUpdateButtons()
     if _updateButtonsPending then return end
@@ -6372,7 +6374,7 @@ function BH:UpdateButtons()
     self:UpdateFlaskReminder()
     self:UpdateOilReminder()
 
-    -- Never tear the buttons down while the cursor is on one.
+    -- Don't tear the buttons down in the middle of a click.
     --
     -- This function is driven by UNIT_AURA, which fires for every unit in the
     -- group on every aura change, so in a group it runs more or less constantly
@@ -6382,15 +6384,21 @@ function BH:UpdateButtons()
     -- recycled from a pool in order, so the frame under the cursor can come
     -- back as a different action entirely.
     --
-    -- Deferring while hovering is safe: the player is about to click, and the
-    -- rebuild happens within 0.5s of the cursor leaving. Preview mode is exempt
-    -- because its dummy buttons are meant to be hovered and dragged.
-    if not self.previewMode then
+    -- The window that matters is only while a mouse button is actually held.
+    -- Deferring on hover alone is wrong: after clicking a button the cursor
+    -- naturally stays on it, so the rebuild never ran and the button the player
+    -- just used sat there stale until they moved the mouse away.
+    --
+    -- The retry count is capped as a backstop, so a stuck mouse button or an
+    -- input state we did not anticipate can never stall updates indefinitely.
+    if not self.previewMode and IsMouseButtonDown and IsMouseButtonDown()
+        and _updateButtonsDeferrals < 6 then
         for _, btn in ipairs(self.buttons) do
             if btn:IsShown() and btn:IsMouseOver() then
                 if not _updateButtonsHoverRetry then
                     _updateButtonsHoverRetry = true
-                    C_Timer.After(0.5, function()
+                    _updateButtonsDeferrals = _updateButtonsDeferrals + 1
+                    C_Timer.After(0.1, function()
                         _updateButtonsHoverRetry = false
                         BH:UpdateButtons()
                     end)
@@ -6399,6 +6407,7 @@ function BH:UpdateButtons()
             end
         end
     end
+    _updateButtonsDeferrals = 0
 
     -- clear existing buttons - return to pool so frames are reused next UpdateButtons call
     for i,btn in ipairs(self.buttons) do
