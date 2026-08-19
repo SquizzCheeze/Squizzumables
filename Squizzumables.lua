@@ -141,22 +141,47 @@ BH.defaultSettings = {
 -- Profile System
 -- ============================================================================
 
--- All position keys stored in profiles
+-- Every draggable frame that persists its own anchor, as
+-- { <key on BH holding the frame>, <SquizzumablesDB key holding the position> }.
+-- This table is the single source of truth for three things:
+--   1. PROFILE_POSITION_KEYS below (what moves between profiles)
+--   2. the generated BH:Save<Name>Position / BH:Load<Name>Position wrappers (see
+--      the loop after BH:LoadFramePos)
+--   3. BH:LoadAllFramePositions (re-anchors everything after a profile switch)
+-- Add a new draggable frame here and all three follow automatically.
+local POSITION_PAIRS = {
+    { "markersFrame",             "markersPosition" },
+    { "pullReadyFrame",           "pullReadyPosition" },
+    { "beaconReminderFrame",      "beaconReminderPosition" },
+    { "earthShieldReminderFrame", "earthShieldReminderPosition" },
+    { "repairReminderFrame",      "repairReminderPosition" },
+    { "symbioticReminderFrame",   "symbioticReminderPosition" },
+    { "coachWhistleReminderFrame","coachWhistleReminderPosition" },
+    { "petReminderFrame",         "petReminderPosition" },
+    { "bresCounterFrame",         "bresCounterPosition" },
+    { "foodReminderFrame",        "foodReminderPosition" },
+    { "flaskReminderFrame",       "flaskReminderPosition" },
+    { "oilReminderFrame",         "oilReminderPosition" },
+    { "healerCCReminderFrame",    "healerCCReminderPosition" },
+    { "deathTallyFrame",          "deathTallyPosition" },
+}
+
+-- All position keys stored in profiles.
+-- Derived from POSITION_PAIRS plus the frames whose Save/Load wrappers are
+-- hand-written rather than generated:
+--   framePosition         — the main button frame (BH:SaveFramePosition)
+--   calloutsFramePosition — the dungeon callouts button frame
+--   kelAlertPosition      — the Just For Kel alert (Squizzumables_SpellAlerts.lua)
+-- Deliberately NOT included: raidToolsPosition, a pre-1.x key that
+-- BH:LoadMarkersPosition migrates into markersPosition and then clears.
 local PROFILE_POSITION_KEYS = {
     "framePosition",
-    "markersPosition",
-    "pullReadyPosition",
-    "beaconReminderPosition",
-    "earthShieldReminderPosition",
-    "repairReminderPosition",
-    "symbioticReminderPosition",
-    "coachWhistleReminderPosition",
-    "petReminderPosition",
-    "bresCounterPosition",
-    "foodReminderPosition",
+    "calloutsFramePosition",
     "kelAlertPosition",
-    "deathTallyPosition",
 }
+for _, pair in ipairs(POSITION_PAIRS) do
+    PROFILE_POSITION_KEYS[#PROFILE_POSITION_KEYS + 1] = pair[2]
+end
 
 -- Get character-realm key for the current character
 function BH:GetCharKey()
@@ -465,16 +490,8 @@ function BH:OnSpecChanged()
     self.disabled  = SquizzumablesDB.disabled
     self.minDuration = SquizzumablesDB.minDuration
     self.customItems = SquizzumablesDB.customItems
-    self:LoadFramePosition()
-    self:LoadMarkersPosition()
-    self:LoadPullReadyPosition()
-    self:LoadBeaconReminderPosition()
-    self:LoadEarthShieldReminderPosition()
-    self:LoadRepairReminderPosition()
-    self:LoadSymbioticReminderPosition()
-    self:LoadCoachWhistleReminderPosition()
-    self:LoadBresCounterPosition()
-    self:LoadDeathTallyPosition()
+    self:LoadAllFramePositions()
+    self:ApplyAllFrameScales()
     self:UpdateFrameLock()
     self:UpdateButtons()
     if self.optionsPanel and self.optionsPanel:IsShown() then
@@ -658,23 +675,9 @@ function BH:ResetFramePosition()
     self:SavePositionToProfile("framePosition")
 end
 
--- Save/Load reminder frame positions — thin wrappers around generic helpers
-local POSITION_PAIRS = {
-    { "markersFrame",            "markersPosition" },
-    { "pullReadyFrame",          "pullReadyPosition" },
-    { "beaconReminderFrame",     "beaconReminderPosition" },
-    { "earthShieldReminderFrame","earthShieldReminderPosition" },
-    { "repairReminderFrame",     "repairReminderPosition" },
-    { "symbioticReminderFrame",  "symbioticReminderPosition" },
-    { "coachWhistleReminderFrame","coachWhistleReminderPosition" },
-    { "petReminderFrame",        "petReminderPosition" },
-    { "bresCounterFrame",        "bresCounterPosition" },
-    { "foodReminderFrame",       "foodReminderPosition" },
-    { "flaskReminderFrame",      "flaskReminderPosition" },
-    { "oilReminderFrame",        "oilReminderPosition" },
-    { "healerCCReminderFrame",   "healerCCReminderPosition" },
-    { "deathTallyFrame",         "deathTallyPosition" },
-}
+-- Save/Load reminder frame positions — thin wrappers around the generic helpers.
+-- POSITION_PAIRS is declared up in the Profile System section, since
+-- PROFILE_POSITION_KEYS is derived from it.
 for _, pair in ipairs(POSITION_PAIRS) do
     local frameRef, posKey = pair[1], pair[2]
     -- Derive the function base name by stripping a trailing "Frame" and capitalizing.
@@ -698,6 +701,55 @@ function BH:LoadMarkersPosition()
             self.markersFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
         end
         SquizzumablesDB.raidToolsPosition = nil
+    end
+end
+
+-- Re-anchor every draggable frame from the current SquizzumablesDB positions.
+-- Call this after anything that swaps the underlying position data wholesale —
+-- profile switch, profile create, profile delete, and login.
+--
+-- Previously each of those sites hand-listed the loaders to call and every list
+-- was missing a different subset (coach whistle, pet, flask, oil, healer CC,
+-- Kel alert and callouts were never re-anchored on a profile switch).
+function BH:LoadAllFramePositions()
+    self:LoadFramePosition()        -- main button frame
+    self:LoadMarkersPosition()      -- has its own legacy raidToolsPosition migration
+    for _, pair in ipairs(POSITION_PAIRS) do
+        if pair[2] ~= "markersPosition" then   -- already done above, with migration
+            self:LoadFramePos(pair[1], pair[2])
+        end
+    end
+    self:LoadCalloutsFramePosition()
+    if self.LoadKelAlertPosition then self:LoadKelAlertPosition() end
+end
+
+-- Apply each frame's saved scale setting. Frames whose scale is configurable use
+-- the settings key "<key>Scale"; the value is stored as a 0-2 multiplier.
+local SCALED_FRAMES = {
+    { "beaconReminderFrame",      "beaconReminderScale" },
+    { "earthShieldReminderFrame", "earthShieldReminderScale" },
+    { "repairReminderFrame",      "repairReminderScale" },
+    { "symbioticReminderFrame",   "symbioticReminderScale" },
+    { "coachWhistleReminderFrame","coachWhistleReminderScale" },
+    { "petReminderFrame",         "petReminderScale" },
+    { "bresCounterFrame",         "bresCounterScale" },
+    { "foodReminderFrame",        "foodReminderScale" },
+    { "flaskReminderFrame",       "flaskReminderScale" },
+    { "oilReminderFrame",         "oilReminderScale" },
+    { "healerCCReminderFrame",    "healerCCReminderScale" },
+    { "kelAlertFrame",            "kelAlertScale" },
+    -- deathTallyScale was settable in the Kelerts tab but never re-applied on
+    -- login, so the M+ Death Tally always came back at 1.0 after a reload.
+    { "deathTallyFrame",          "deathTallyScale" },
+}
+-- Not listed here: raidToolsMarkersScale / raidToolsPullReadyScale, which
+-- BH:CreateRaidToolsFrame applies itself when it builds those frames.
+function BH:ApplyAllFrameScales()
+    for _, pair in ipairs(SCALED_FRAMES) do
+        local frame = self[pair[1]]
+        if frame then
+            frame:SetScale((self.settings and self.settings[pair[2]]) or 1.0)
+        end
     end
 end
 
@@ -1636,15 +1688,8 @@ StaticPopupDialogs["SQUIZZUMABLES_NEW_PROFILE"] = {
             BH:SaveToProfile()
             if BH:CreateProfile(name, copyFrom) then
                 BH:SwitchToProfile(name)
-                BH:LoadFramePosition()
-                BH:LoadMarkersPosition()
-                BH:LoadPullReadyPosition()
-                BH:LoadBeaconReminderPosition()
-                BH:LoadEarthShieldReminderPosition()
-                BH:LoadRepairReminderPosition()
-                BH:LoadSymbioticReminderPosition()
-                BH:LoadBresCounterPosition()
-                BH:LoadDeathTallyPosition()
+                BH:LoadAllFramePositions()
+                BH:ApplyAllFrameScales()
                 BH:UpdateFrameLock()
                 BH:UpdateButtons()
                 BH:RefreshSettingsTab()
@@ -1681,15 +1726,8 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             BH.disabled = SquizzumablesDB.disabled
             BH.minDuration = SquizzumablesDB.minDuration
             BH.customItems = SquizzumablesDB.customItems
-            BH:LoadFramePosition()
-            BH:LoadMarkersPosition()
-            BH:LoadPullReadyPosition()
-            BH:LoadBeaconReminderPosition()
-            BH:LoadEarthShieldReminderPosition()
-            BH:LoadRepairReminderPosition()
-            BH:LoadSymbioticReminderPosition()
-            BH:LoadBresCounterPosition()
-            BH:LoadDeathTallyPosition()
+            BH:LoadAllFramePositions()
+            BH:ApplyAllFrameScales()
             BH:UpdateFrameLock()
             BH:UpdateButtons()
             BH:RefreshSettingsTab()
@@ -1741,15 +1779,8 @@ function BH:BuildSettingsTab(parent)
     local profileDropdown = CreateSQDropdown(content, "Active Profile", 200, GetProfileDropdownItems(), function(value)
         if value == BH:GetActiveProfileName() then return end
         BH:SwitchToProfile(value)
-        BH:LoadFramePosition()
-        BH:LoadMarkersPosition()
-        BH:LoadPullReadyPosition()
-        BH:LoadBeaconReminderPosition()
-        BH:LoadEarthShieldReminderPosition()
-        BH:LoadRepairReminderPosition()
-        BH:LoadSymbioticReminderPosition()
-        BH:LoadBresCounterPosition()
-        BH:LoadDeathTallyPosition()
+        BH:LoadAllFramePositions()
+        BH:ApplyAllFrameScales()
         BH:UpdateFrameLock()
         BH:UpdateButtons()
         BH:RefreshSettingsTab()
@@ -1827,15 +1858,8 @@ function BH:BuildSettingsTab(parent)
         BH.disabled = SquizzumablesDB.disabled
         BH.minDuration = SquizzumablesDB.minDuration
         BH.customItems = SquizzumablesDB.customItems
-        BH:LoadFramePosition()
-        BH:LoadMarkersPosition()
-        BH:LoadPullReadyPosition()
-        BH:LoadBeaconReminderPosition()
-        BH:LoadEarthShieldReminderPosition()
-        BH:LoadRepairReminderPosition()
-        BH:LoadSymbioticReminderPosition()
-        BH:LoadBresCounterPosition()
-        BH:LoadDeathTallyPosition()
+        BH:LoadAllFramePositions()
+        BH:ApplyAllFrameScales()
         BH:UpdateFrameLock()
         BH:UpdateButtons()
         BH:RefreshSettingsTab()
@@ -8897,46 +8921,8 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         -- Register user custom sounds into LSM before any UI is built
         RegisterCustomSoundsWithLSM()
         BH:CreateRaidToolsFrame()
-        BH:LoadFramePosition()
-        BH:LoadMarkersPosition()
-        BH:LoadPullReadyPosition()
-        BH:LoadBeaconReminderPosition()
-        local bScale = (BH.settings and BH.settings.beaconReminderScale) or 1.0
-        if BH.beaconReminderFrame then BH.beaconReminderFrame:SetScale(bScale) end
-        BH:LoadEarthShieldReminderPosition()
-        local esScale = (BH.settings and BH.settings.earthShieldReminderScale) or 1.0
-        if BH.earthShieldReminderFrame then BH.earthShieldReminderFrame:SetScale(esScale) end
-        BH:LoadRepairReminderPosition()
-        local repScale = (BH.settings and BH.settings.repairReminderScale) or 1.0
-        if BH.repairReminderFrame then BH.repairReminderFrame:SetScale(repScale) end
-        BH:LoadSymbioticReminderPosition()
-        local symScale = (BH.settings and BH.settings.symbioticReminderScale) or 1.0
-        if BH.symbioticReminderFrame then BH.symbioticReminderFrame:SetScale(symScale) end
-        BH:LoadCoachWhistleReminderPosition()
-        local coachScale = (BH.settings and BH.settings.coachWhistleReminderScale) or 1.0
-        if BH.coachWhistleReminderFrame then BH.coachWhistleReminderFrame:SetScale(coachScale) end
-        BH:LoadBresCounterPosition()
-        BH:LoadDeathTallyPosition()
-        local bresScale = (BH.settings and BH.settings.bresCounterScale) or 1.0
-        if BH.bresCounterFrame then BH.bresCounterFrame:SetScale(bresScale) end
-        BH:LoadFoodReminderPosition()
-        local foodScale = (BH.settings and BH.settings.foodReminderScale) or 1.0
-        if BH.foodReminderFrame then BH.foodReminderFrame:SetScale(foodScale) end
-        BH:LoadFlaskReminderPosition()
-        local flaskScale = (BH.settings and BH.settings.flaskReminderScale) or 1.0
-        if BH.flaskReminderFrame then BH.flaskReminderFrame:SetScale(flaskScale) end
-        BH:LoadOilReminderPosition()
-        local oilScale = (BH.settings and BH.settings.oilReminderScale) or 1.0
-        if BH.oilReminderFrame then BH.oilReminderFrame:SetScale(oilScale) end
-        BH:LoadHealerCCReminderPosition()
-        local hccScale = (BH.settings and BH.settings.healerCCReminderScale) or 1.0
-        if BH.healerCCReminderFrame then BH.healerCCReminderFrame:SetScale(hccScale) end
-        BH:LoadPetReminderPosition()
-        local petScale = (BH.settings and BH.settings.petReminderScale) or 1.0
-        if BH.petReminderFrame then BH.petReminderFrame:SetScale(petScale) end
-        if BH.LoadKelAlertPosition then BH:LoadKelAlertPosition() end
-        local kelScale = (BH.settings and BH.settings.kelAlertScale) or 1.0
-        if BH.kelAlertFrame then BH.kelAlertFrame:SetScale(kelScale) end
+        BH:LoadAllFramePositions()
+        BH:ApplyAllFrameScales()
         -- Build feast spell lookup; retry after 2s in case item cache isn't ready yet
         BuildFeastSpellLookup()
         C_Timer.After(2, BuildFeastSpellLookup)
@@ -9105,10 +9091,9 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
     end
 end)
 
--- onupdate to update any countdowns
-BH.frame:SetScript("OnUpdate", function(self, elapsed)
-    -- update tooltips or text if needed later
-end)
+-- No OnUpdate on BH.frame: button countdowns are driven by each button's own
+-- throttled OnUpdate in CreateButton. An empty handler here still costs a Lua
+-- call every rendered frame for the whole session.
 
 -- slash command to move/reset
 SLASH_SQUIZZUMABLES1 = '/sq'
