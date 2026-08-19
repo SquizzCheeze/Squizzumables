@@ -5714,7 +5714,7 @@ local function CreateReminderFrame(def)
     frame:Hide()
 
     local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetFont("Fonts\FRIZQT__.TTF", 24, "OUTLINE")
+    text:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
     text:SetText(def.text)
     text:SetTextColor(def.color[1], def.color[2], def.color[3], 1)
