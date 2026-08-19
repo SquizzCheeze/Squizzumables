@@ -4,8 +4,20 @@
 -- movable frame. Designed for Dragonflight/Midnight (12.0.1) but should work
 -- with other retail versions.
 
-local addonName = "Squizzumables"
-if not BH then BH = {} end  -- Don't overwrite if config already set it up
+-- Every file in this addon receives (addonName, ns) as varargs. `ns` is a table
+-- private to this addon, so nothing here touches the global namespace — `BH`
+-- used to be a global, and a two-letter name in _G is asking for a collision
+-- with another addon.
+local addonName, ns = ...
+ns.BH = ns.BH or {}
+local BH = ns.BH
+
+-- Shared UI constructors, forward-declared so the definitions further down
+-- assign these locals rather than creating globals, and so code above the
+-- definitions can still refer to them. Exported onto `ns` after they are
+-- defined, for Squizzumables_CDM.lua and Squizzumables_SpellAlerts.lua.
+local CreateSQButton, CreateSQSlider, CreateSQCheckbox, CreateSQColorPicker
+local CreateSQDropdown, CreateSQDivider, SQ_GetClickEdge
 
 -- Default settings for appearance
 BH.defaultSettings = {
@@ -1055,7 +1067,8 @@ local SQ_COLORS = {
     tabInactive = { 0.08, 0.08, 0.10, 1 },
 }
 -- Expose for module files
-_G.SQ_COLORS = SQ_COLORS
+-- Exported for Squizzumables_CDM.lua and Squizzumables_SpellAlerts.lua.
+ns.SQ_COLORS = SQ_COLORS
 
 -- Helper: create a thin-bordered backdrop on a frame
 local function ApplySQBackdrop(frame, bgColor, borderColor)
@@ -1429,6 +1442,15 @@ function CreateSQDivider(parent, yOffset)
     line:SetColorTexture(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.3)
     return line
 end
+
+-- Export the shared UI constructors for the module files that load after this one.
+ns.CreateSQButton      = CreateSQButton
+ns.CreateSQSlider      = CreateSQSlider
+ns.CreateSQCheckbox    = CreateSQCheckbox
+ns.CreateSQColorPicker = CreateSQColorPicker
+ns.CreateSQDropdown    = CreateSQDropdown
+ns.CreateSQDivider     = CreateSQDivider
+ns.SQ_GetClickEdge     = SQ_GetClickEdge
 
 -- ============================================================================
 -- Main Options Panel

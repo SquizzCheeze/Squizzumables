@@ -2,7 +2,9 @@
 -- Default configuration for Squizzumables addon.
 -- These are loaded if no user settings exist.
 
-if not BH then BH = {} end
+local addonName, ns = ...
+ns.BH = ns.BH or {}
+local BH = ns.BH
 
 -- Default consumables and buffs (Midnight 12.0)
 BH.defaults = {

@@ -2,6 +2,18 @@
 -- "Just For Kel" tab: shows a texture (or animated frame sequence) and plays
 -- a sound when a configured spell aura is applied to the player.
 
+local addonName, ns = ...
+local BH = ns.BH
+
+-- Shared theme and UI constructors, defined in Squizzumables.lua which loads
+-- before this file.
+local SQ_COLORS        = ns.SQ_COLORS
+local CreateSQButton   = ns.CreateSQButton
+local CreateSQSlider   = ns.CreateSQSlider
+local CreateSQCheckbox = ns.CreateSQCheckbox
+local CreateSQDropdown = ns.CreateSQDropdown
+local CreateSQDivider  = ns.CreateSQDivider
+
 -- ============================================================================
 -- Alert display frame
 -- ============================================================================

@@ -29,7 +29,9 @@
 -- Use the SafeAura* accessors below when reading aura fields. They return nil
 -- rather than throwing, so callers just do a nil check.
 
-if not BH then BH = {} end
+local addonName, ns = ...
+ns.BH = ns.BH or {}
+local BH = ns.BH
 
 local Secrets = {}
 BH.Secrets = Secrets

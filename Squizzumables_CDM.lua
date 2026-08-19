@@ -14,7 +14,15 @@
 ]]
 ---@diagnostic disable: undefined-global
 
-local BH = BH
+local addonName, ns = ...
+local BH = ns.BH
+
+-- Shared UI constructors, defined in Squizzumables.lua which loads before this.
+local CreateSQButton   = ns.CreateSQButton
+local CreateSQSlider   = ns.CreateSQSlider
+local CreateSQCheckbox = ns.CreateSQCheckbox
+local CreateSQDropdown = ns.CreateSQDropdown
+local CreateSQDivider  = ns.CreateSQDivider
 
 -- ============================================================================
 -- Constants
