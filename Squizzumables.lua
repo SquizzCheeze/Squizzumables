@@ -1145,6 +1145,118 @@ function BH:CreateOptionsPanel()
     -- Also close on Escape
     table.insert(UISpecialFrames, "SQUIZZUMABLESOptions")
 
+    -- ------------------------------------------------------------------------
+    -- Settings search
+    --
+    -- Every option widget indexes itself as it is built, so this is only the
+    -- box, the results list and the jump. Sits in the title bar, left of the
+    -- close button.
+    -- ------------------------------------------------------------------------
+    local searchBox = CreateFrame("EditBox", nil, titleBar, "InputBoxTemplate")
+    searchBox:SetSize(180, 20)
+    searchBox:SetPoint("RIGHT", closeBtn, "LEFT", -8, 0)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetMaxLetters(40)
+    searchBox:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
+
+    local searchHint = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    searchHint:SetPoint("LEFT", searchBox, "LEFT", 4, 0)
+    searchHint:SetText("Search settings...")
+    searchHint:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+    -- Results drop below the box, over the content area.
+    local resultsFrame = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+    resultsFrame:SetPoint("TOPRIGHT", searchBox, "BOTTOMRIGHT", 4, -4)
+    resultsFrame:SetWidth(300)
+    resultsFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+    ApplySQBackdrop(resultsFrame, SQ_COLORS.bg, SQ_COLORS.border)
+    resultsFrame:Hide()
+    self.searchResultsFrame = resultsFrame
+
+    local MAX_RESULTS  = 8
+    local RESULT_H     = 30
+    local resultButtons = {}
+
+    local function HideResults()
+        resultsFrame:Hide()
+    end
+
+    local function ShowResults(query)
+        local results = ns.Rows.Search(query, MAX_RESULTS)
+        if #results == 0 then
+            HideResults()
+            return
+        end
+        for i, res in ipairs(results) do
+            local btn = resultButtons[i]
+            if not btn then
+                btn = CreateFrame("Button", nil, resultsFrame)
+                btn:SetHeight(RESULT_H)
+                btn:SetPoint("TOPLEFT", resultsFrame, "TOPLEFT", 4, -4 - (i - 1) * RESULT_H)
+                btn:SetPoint("TOPRIGHT", resultsFrame, "TOPRIGHT", -4, -4 - (i - 1) * RESULT_H)
+
+                local hl = btn:CreateTexture(nil, "BACKGROUND")
+                hl:SetAllPoints()
+                hl:SetColorTexture(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 0.6)
+                hl:Hide()
+                btn:SetScript("OnEnter", function() hl:Show() end)
+                btn:SetScript("OnLeave", function() hl:Hide() end)
+
+                btn.title = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                btn.title:SetPoint("TOPLEFT", btn, "TOPLEFT", 6, -3)
+                btn.title:SetJustifyH("LEFT")
+                btn.title:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
+
+                -- Which category the option lives in, so a result is
+                -- identifiable when two tabs use a similar label ("Scale"
+                -- appears on several).
+                btn.where = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                btn.where:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 6, 3)
+                btn.where:SetJustifyH("LEFT")
+                ns.ApplyAccent(btn.where, "text")
+
+                resultButtons[i] = btn
+            end
+            btn.title:SetText(res.entry.label)
+            btn.where:SetText(res.entry.page and res.entry.page.label or "")
+            btn:SetScript("OnClick", function()
+                ns.Rows.JumpTo(res.entry)
+                searchBox:SetText("")
+                searchBox:ClearFocus()
+                searchHint:Show()
+                HideResults()
+            end)
+            btn:Show()
+        end
+        for i = #results + 1, #resultButtons do resultButtons[i]:Hide() end
+        resultsFrame:SetHeight(#results * RESULT_H + 8)
+        resultsFrame:Show()
+    end
+
+    searchBox:SetScript("OnTextChanged", function(box)
+        local text = box:GetText()
+        searchHint:SetShown(text == "")
+        ShowResults(text)
+    end)
+    searchBox:SetScript("OnEditFocusGained", function() searchHint:Hide() end)
+    searchBox:SetScript("OnEditFocusLost", function(box)
+        searchHint:SetShown(box:GetText() == "")
+    end)
+    searchBox:SetScript("OnEscapePressed", function(box)
+        box:SetText("")
+        box:ClearFocus()
+        HideResults()
+    end)
+    -- Enter takes the top result, so a query can be completed without the mouse.
+    searchBox:SetScript("OnEnterPressed", function(box)
+        local results = ns.Rows.Search(box:GetText(), 1)
+        if results[1] then ns.Rows.JumpTo(results[1].entry) end
+        box:SetText("")
+        box:ClearFocus()
+        HideResults()
+    end)
+    panel:HookScript("OnHide", HideResults)
+
     -- Accent line under title
     local accentLine = titleBar:CreateTexture(nil, "OVERLAY")
     accentLine:SetHeight(1)

@@ -48,6 +48,10 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Added a settings search box to the panel title bar. Type any part of an option name and it
+  lists matching settings with the category each lives in; picking one switches to that
+  category, scrolls the option into view and flashes it. Enter jumps straight to the top
+  match. Also matches tooltip text, so "durability" finds the repair threshold
 - Every option in the settings panel now has a tooltip explaining what it does and when it
   applies. There were none before
 - The settings panel is now a resizable 820x620 window with a left sidebar instead of 460x600

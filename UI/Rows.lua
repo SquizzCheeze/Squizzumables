@@ -308,3 +308,143 @@ function Rows.AddAll(parent, y, specs)
     end
     return used
 end
+
+-- ============================================================================
+-- Settings search
+--
+-- With ~100 options spread over ten categories, finding one by memory is the
+-- slowest part of using the panel. Every option widget registers its label as
+-- it is built (see IndexForSearch in UI/Widgets.lua), so all this needs is
+-- scoring and a way to jump to the result.
+-- ============================================================================
+
+-- Subsequence match with a substring boost. Cheap enough to run over the whole
+-- index on every keystroke -- no need for anything cleverer at this size.
+--
+-- Returns a score (higher is better) or nil for no match.
+function Rows.FuzzyScore(haystack, needle)
+    if not haystack or not needle or needle == "" then return nil end
+    haystack, needle = haystack:lower(), needle:lower()
+
+    -- An exact substring always beats a scattered subsequence, and an earlier
+    -- one beats a later one.
+    local at = haystack:find(needle, 1, true)
+    if at then return 10000 - at end
+
+    local hLen, nLen = #haystack, #needle
+    local hi, ni = 1, 1
+    local firstMatch, lastMatch, run, score = nil, nil, 0, 0
+    while hi <= hLen and ni <= nLen do
+        if haystack:byte(hi) == needle:byte(ni) then
+            firstMatch = firstMatch or hi
+            lastMatch = hi
+            run = run + 1
+            score = score + run     -- reward tight clusters: a run of k scores 1+2+..+k
+            ni = ni + 1
+        else
+            run = 0
+        end
+        hi = hi + 1
+    end
+    if ni <= nLen then return nil end       -- not every character found, in order
+
+    -- Reject matches so scattered they are noise. Without this, a long enough
+    -- label makes almost any short query findable somewhere inside it. The
+    -- slack keeps genuine abbreviations alive.
+    if (lastMatch - firstMatch + 1) > nLen + 8 then return nil end
+    return score
+end
+
+-- Best matches for a query, ordered. Searches the option label first and falls
+-- back to the tooltip text, so "durability" finds the repair threshold even
+-- though the word is not in its label.
+function Rows.Search(query, maxResults)
+    local results = {}
+    if not query or query:match("^%s*$") then return results end
+    query = query:match("^%s*(.-)%s*$")
+
+    for i = 1, #searchIndex do
+        local entry = searchIndex[i]
+        local score = Rows.FuzzyScore(entry.label, query)
+        if not score and entry.tooltip then
+            local tipScore = Rows.FuzzyScore(entry.tooltip, query)
+            -- A tooltip hit is a weaker signal than a label hit, so it always
+            -- sorts below one.
+            if tipScore then score = tipScore - 20000 end
+        end
+        if score then
+            results[#results + 1] = { entry = entry, score = score }
+        end
+    end
+
+    table.sort(results, function(a, b)
+        if a.score ~= b.score then return a.score > b.score end
+        return (a.entry.label or "") < (b.entry.label or "")
+    end)
+
+    if maxResults and #results > maxResults then
+        for i = #results, maxResults + 1, -1 do results[i] = nil end
+    end
+    return results
+end
+
+-- Scroll a row into view inside whatever scroll frame contains it.
+local function ScrollIntoView(frame)
+    if not frame or not frame.GetParent then return end
+    -- Walk up until the parent is a ScrollFrame; the frame we are holding at
+    -- that point is the scroll child, which is what offsets are measured from.
+    local child, parent = frame, frame:GetParent()
+    while parent do
+        if parent.GetObjectType and parent:GetObjectType() == "ScrollFrame" then
+            local childTop, frameTop = child:GetTop(), frame:GetTop()
+            if childTop and frameTop then
+                local range = parent:GetVerticalScrollRange() or 0
+                -- Leave a little headroom so the row is not flush to the edge.
+                local target = math.max(0, math.min(childTop - frameTop - 40, range))
+                parent:SetVerticalScroll(target)
+            end
+            return
+        end
+        child, parent = parent, parent:GetParent()
+    end
+end
+
+-- Briefly highlight a row so the eye can find it after a jump.
+local function FlashRow(frame)
+    if not frame or not frame.CreateTexture then return end
+    local glow = frame.sqSearchGlow
+    if not glow then
+        glow = frame:CreateTexture(nil, "BACKGROUND")
+        glow:SetPoint("TOPLEFT", frame, "TOPLEFT", -4, 2)
+        glow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 4, -2)
+        frame.sqSearchGlow = glow
+
+        local anim = glow:CreateAnimationGroup()
+        local fade = anim:CreateAnimation("Alpha")
+        fade:SetFromAlpha(0.55)
+        fade:SetToAlpha(0)
+        fade:SetDuration(1.6)
+        anim:SetScript("OnFinished", function() glow:Hide() end)
+        glow.anim = anim
+    end
+    local r, g, b = ns.GetAccentColor()
+    glow:SetColorTexture(r, g, b, 0.55)
+    glow:Show()
+    glow.anim:Stop()
+    glow.anim:Play()
+end
+
+-- Switch to a result's category, scroll to it and flash it.
+function Rows.JumpTo(entry)
+    if not entry then return end
+    local BH = ns.BH
+    if entry.page and entry.page.key and BH and BH.switchTab then
+        BH.switchTab(entry.page.key)
+    end
+    -- One frame later: the page has to be shown before its scroll geometry and
+    -- the row's position are meaningful.
+    C_Timer.After(0, function()
+        ScrollIntoView(entry.frame)
+        FlashRow(entry.frame)
+    end)
+end
