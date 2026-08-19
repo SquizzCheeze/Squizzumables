@@ -111,8 +111,12 @@ BH.defaultSettings = {
     -- Class buff sound alert (per-spellID, indexed by spellID)
     classBuffSounds = {},
 
-    -- Healer CC sound alert
+    -- Role CC sound alert. healerCCAlertEnabled is the long-standing key for
+    -- healer tracking and is kept as-is so existing profiles are unaffected;
+    -- roleCCAlertTank was added in 1.60 and defaults off, so nobody gets a new
+    -- alert they did not ask for.
     healerCCAlertEnabled = false,
+    roleCCAlertTank = false,
     healerCCAlertSound = "None",
     healerCCReminderLocked = false,
     healerCCReminderScale = 1.0,
@@ -2420,17 +2424,34 @@ local function RegisterCustomSoundsWithLSM()
 end
 
 -- ============================================================================
--- Healer CC Alert
+-- Role CC Alert
 -- ============================================================================
-local healerWatchUnits = {}  -- unit token → true for healers in the group
-local healerCCActive   = {}  -- unit token → true when that healer has an active CC debuff
+-- Role CC alert.
+--
+-- Tracks group members in the watched roles and raises one alert when any of
+-- them is crowd-controlled. Healer tracking has always been here; tank tracking
+-- was added in 1.60 by requests.
+--
+-- Deliberately one frame with per-role toggles rather than one frame per role:
+-- a second frame would mean another scale slider, another lock checkbox and
+-- another saved position in the addon's most crowded settings tab, for an alert
+-- you will almost never see both halves of at once. The label names whichever
+-- role is actually CC'd instead.
+--
+-- Settings keys are unchanged so existing profiles keep working:
+--   healerCCAlertEnabled    healer tracking (long-standing key, kept as-is)
+--   roleCCAlertTank         tank tracking (new, defaults off)
+--   healerCCAlertSound      shared alert sound
+--   healerCCReminder*       the shared frame's lock / scale / position
+local roleWatchUnits = {}  -- unit token → "HEALER" or "TANK"
+local roleCCActive   = {}  -- unit token → true while that unit has a CC debuff
 
 local function UnitHasCCDebuff(unit)
     -- Guard: unit must exist, be connected, and still be a valid group member.
-    -- When a healer zones into an instance or goes out of range, UNIT_AURA
+    -- When a member zones into an instance or goes out of range, UNIT_AURA
     -- fires during the transition but the unit is no longer reachable —
     -- reading auras in that window returns stale or garbage data and can
-    -- trigger a false "HEALER IN CC" alert.
+    -- trigger a false alert.
     if not unit or not UnitExists(unit) then return false end
     if not UnitIsConnected(unit) then return false end
     -- As of 12.1.0, GetAuraDataByIndex throws a taint error when auras are
@@ -2446,77 +2467,105 @@ local function UnitHasCCDebuff(unit)
     return hasCC
 end
 
-function BH:RefreshHealerWatchList()
-    wipe(healerWatchUnits)
-    wipe(healerCCActive)
+-- Which roles are currently being watched, per the settings.
+local function WatchedRoles()
+    local s = BH.settings
+    return (s and s.healerCCAlertEnabled) and true or false,
+           (s and s.roleCCAlertTank) and true or false
+end
+
+function BH:RefreshRoleCCWatchList()
+    wipe(roleWatchUnits)
+    wipe(roleCCActive)
+    local watchHealer, watchTank = WatchedRoles()
+    if not (watchHealer or watchTank) then return end
     if not IsInGroup() then return end
     local isRaid = IsInRaid()
     local count  = GetNumGroupMembers()
     for i = 1, count do
         local unit = (isRaid and "raid" or "party") .. i
-        -- Only track healers who exist AND are connected (not phased out,
-        -- not in a different instance/zone).  This prevents the alert from
-        -- firing on stale aura data during zone transitions.
+        -- Only track members who exist AND are connected (not phased out, not
+        -- in a different instance/zone). This prevents the alert from firing on
+        -- stale aura data during zone transitions.
         if UnitExists(unit) and not UnitIsUnit(unit, "player")
             and UnitIsConnected(unit)
         then
-            if UnitGroupRolesAssigned(unit) == "HEALER" then
-                healerWatchUnits[unit] = true
+            local role = UnitGroupRolesAssigned(unit)
+            if (role == "HEALER" and watchHealer) or (role == "TANK" and watchTank) then
+                roleWatchUnits[unit] = role
             end
         end
     end
 end
 
-function BH:CheckHealerCC(unit)
-    if not self.settings or not self.settings.healerCCAlertEnabled then
+-- Which watched roles currently have at least one CC'd member.
+local function ActiveCCRoles()
+    local healer, tank = false, false
+    for u, role in pairs(roleWatchUnits) do
+        if roleCCActive[u] then
+            if role == "HEALER" then healer = true
+            elseif role == "TANK" then tank = true end
+        end
+    end
+    return healer, tank
+end
+
+-- Show or hide the shared frame, labelling whichever roles are CC'd.
+function BH:UpdateRoleCCFrame()
+    local frame = self.healerCCReminderFrame
+    if not frame then return end
+    local healer, tank = ActiveCCRoles()
+    if not (healer or tank) then
+        frame:Hide()
+        return
+    end
+    local label
+    if healer and tank then label = "HEALER + TANK IN CC"
+    elseif healer        then label = "HEALER IN CC"
+    else                      label = "TANK IN CC" end
+    if self.healerCCReminderText then self.healerCCReminderText:SetText(label) end
+    local locked = self.settings and self.settings.healerCCReminderLocked
+    frame:EnableMouse(self.previewMode or not locked)
+    frame:Show()
+end
+
+function BH:CheckRoleCC(unit)
+    local watchHealer, watchTank = WatchedRoles()
+    if not (watchHealer or watchTank) then
         if self.healerCCReminderFrame then self.healerCCReminderFrame:Hide() end
         return
     end
-    if not unit or not healerWatchUnits[unit] then return end
+    if not unit or not roleWatchUnits[unit] then return end
 
     -- Skip units that are offline, out of range, or in a different zone/
-    -- instance.  UnitIsConnected returns false when the player has
-    -- disconnected or phased out; UnitExists returns false when the unit
-    -- token is no longer valid.  Checking both prevents false positives
-    -- during zone transitions where UNIT_AURA fires with stale data.
+    -- instance. UnitIsConnected returns false when the player has disconnected
+    -- or phased out; UnitExists returns false when the unit token is no longer
+    -- valid. Checking both prevents false positives during zone transitions
+    -- where UNIT_AURA fires with stale data.
     if not UnitExists(unit) or not UnitIsConnected(unit) then
-        -- Clear any lingering CC state for this unit so the alert frame
-        -- doesn't stay visible from a previous real CC that was never
-        -- cleared (the healer zoned out before the CC wore off).
-        if healerCCActive[unit] then
-            healerCCActive[unit] = nil
-            if self.healerCCReminderFrame then
-                -- Re-evaluate: hide if no other healer is CC'd
-                local anyCC = false
-                for u in pairs(healerWatchUnits) do
-                    if healerCCActive[u] then anyCC = true; break end
-                end
-                if not anyCC then self.healerCCReminderFrame:Hide() end
-            end
+        -- Clear any lingering CC state for this unit so the alert frame doesn't
+        -- stay visible from a previous real CC that was never cleared (the
+        -- member zoned out before the CC wore off).
+        if roleCCActive[unit] then
+            roleCCActive[unit] = nil
+            self:UpdateRoleCCFrame()
         end
         return
     end
 
     local hasCC = UnitHasCCDebuff(unit)
-    local hadCC = healerCCActive[unit]
-    healerCCActive[unit] = hasCC or nil
+    local hadCC = roleCCActive[unit]
+    roleCCActive[unit] = hasCC or nil
     if hasCC and not hadCC then
         PlaySQSound(self.settings.healerCCAlertSound or "None")
     end
-    -- Update the visual reminder: show if ANY watched healer is CC'd
-    if self.healerCCReminderFrame then
-        local anyCC = false
-        for u in pairs(healerWatchUnits) do
-            if healerCCActive[u] then anyCC = true; break end
-        end
-        if anyCC then
-            local locked = self.settings and self.settings.healerCCReminderLocked
-            self.healerCCReminderFrame:EnableMouse(self.previewMode or not locked)
-            self.healerCCReminderFrame:Show()
-        else
-            self.healerCCReminderFrame:Hide()
-        end
-    end
+    self:UpdateRoleCCFrame()
+end
+
+-- Any watched member currently CC'd? Used by the preview/refresh path.
+function BH:AnyRoleCCActive()
+    local healer, tank = ActiveCCRoles()
+    return healer or tank
 end
 
 -- ============================================================================
@@ -3022,7 +3071,7 @@ function BH:BuildTextRemindersTab(parent)
 
     local healerCCTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     healerCCTitle:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    healerCCTitle:SetText("HEALER CC ALERT")
+    healerCCTitle:SetText("ROLE CC ALERT")
     healerCCTitle:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
     yOffset = yOffset - 18
 
@@ -3031,16 +3080,28 @@ function BH:BuildTextRemindersTab(parent)
     healerCCNote:SetWidth(380)
     healerCCNote:SetJustifyH("LEFT")
     healerCCNote:SetWordWrap(true)
-    healerCCNote:SetText("Plays a sound when a party or raid healer is crowd controlled.")
+    healerCCNote:SetText("Plays a sound and shows an alert when a watched party or raid member is crowd controlled. Pick which roles to watch.")
     healerCCNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 28
 
     local healerCCCheckbox = CreateSQCheckbox(content, "Alert when healer is CC'd", function(checked)
         BH.settings.healerCCAlertEnabled = (checked == true)
         BH:SaveSettings()
+        BH:RefreshRoleCCWatchList()
+        BH:UpdateRoleCCFrame()
     end)
     healerCCCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.trHealerCCCheckbox = healerCCCheckbox
+    yOffset = yOffset - 30
+
+    local tankCCCheckbox = CreateSQCheckbox(content, "Alert when tank is CC'd", function(checked)
+        BH.settings.roleCCAlertTank = (checked == true)
+        BH:SaveSettings()
+        BH:RefreshRoleCCWatchList()
+        BH:UpdateRoleCCFrame()
+    end)
+    tankCCCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    self.trTankCCCheckbox = tankCCCheckbox
     yOffset = yOffset - 30
 
     local healerCCLockCheckbox = CreateSQCheckbox(content, "Lock Position", function(checked)
@@ -3603,6 +3664,9 @@ function BH:RefreshTextRemindersTab()
     end
     if self.trHealerCCCheckbox then
         self.trHealerCCCheckbox:SetChecked(self.settings.healerCCAlertEnabled == true)
+    end
+    if self.trTankCCCheckbox then
+        self.trTankCCCheckbox:SetChecked(self.settings.roleCCAlertTank == true)
     end
     if self.trHealerCCLockCheckbox then
         self.trHealerCCLockCheckbox:SetChecked(self.settings.healerCCReminderLocked == true)
@@ -5665,10 +5729,12 @@ BH.REMINDERS = {
     },
     {
         key = "healerCC", globalName = "SQUIZZUMABLESHealerCCReminder",
-        label = "Healer CC Alert",
+        label = "Role CC Alert",
+        -- Initial text only; BH:UpdateRoleCCFrame rewrites it at runtime to name
+        -- whichever watched roles are actually crowd controlled.
         text = "HEALER IN CC", color = { 1.0, 0.2, 0.2 },
         size = { 280, 50 }, defaultY = 360,
-        -- Visibility is driven by BH:CheckHealerCC off UNIT_AURA rather than by
+        -- Visibility is driven by BH:CheckRoleCC off UNIT_AURA rather than by
         -- the shared update pass, so this one has no shouldShow predicate.
         eventDriven = true,
     },
@@ -7726,7 +7792,19 @@ function BH:RefreshAllReminderFrames()
         showIf(self.foodReminderFrame,       "foodReminderEnabled",      "foodReminderLocked")
         showIf(self.flaskReminderFrame,      "flaskReminderEnabled",     "flaskReminderLocked")
         showIf(self.oilReminderFrame,        "oilReminderEnabled",       "oilReminderLocked")
-        showIf(self.healerCCReminderFrame,   "healerCCAlertEnabled",     "healerCCReminderLocked")
+        -- Role CC has two toggles rather than one enabled key, so it cannot go
+        -- through showIf: preview must offer the frame for positioning if
+        -- *either* role is being watched, not just healers.
+        if self.healerCCReminderFrame then
+            if (self.settings and self.settings.healerCCAlertEnabled)
+                or (self.settings and self.settings.roleCCAlertTank) then
+                local locked = self.settings and self.settings.healerCCReminderLocked
+                self.healerCCReminderFrame:EnableMouse(not locked)
+                self.healerCCReminderFrame:Show()
+            else
+                self.healerCCReminderFrame:Hide()
+            end
+        end
         -- Repair text preview
         if self.repairReminderFrame and self.repairReminderFrame:IsShown() and self.repairReminderText then
             self.repairReminderText:SetText("REPAIR (15%)")
@@ -7741,19 +7819,9 @@ function BH:RefreshAllReminderFrames()
         self:UpdateFoodReminder()
         self:UpdateFlaskReminder()
         self:UpdateOilReminder()
-        -- Healer CC: hide unless a healer actually has CC right now
-        if self.healerCCReminderFrame then
-            self.healerCCReminderFrame:Hide()
-            local anyCC = false
-            for u in pairs(healerWatchUnits) do
-                if healerCCActive[u] then anyCC = true; break end
-            end
-            if anyCC then
-                local locked = self.settings and self.settings.healerCCReminderLocked
-                self.healerCCReminderFrame:EnableMouse(not locked)
-                self.healerCCReminderFrame:Show()
-            end
-        end
+        -- Role CC: shows only while a watched healer or tank actually has CC,
+        -- and labels itself with whichever roles those are.
+        self:UpdateRoleCCFrame()
     end
 end
 
@@ -8812,7 +8880,7 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         BH:UpdateButtons()
         BH:UpdateRaidToolsVisibility()
         BH:UpdateCalloutsButtonFrame()
-        BH:RefreshHealerWatchList()
+        BH:RefreshRoleCCWatchList()
     elseif event == "GET_ITEM_INFO_RECEIVED" then
         -- Rebuild feast lookup if this is a feast item whose data just arrived
         for _, feastItemID in ipairs(SQ_FEAST_ITEM_IDS) do
@@ -8828,7 +8896,7 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         BH:UpdateButtons()
         if event == "GROUP_ROSTER_UPDATE" then
             BH:UpdateRaidToolsVisibility()
-            BH:RefreshHealerWatchList()
+            BH:RefreshRoleCCWatchList()
             -- Pick up members who joined after tracking started (e.g. replaced a
             -- dropped player) so their combat-log deaths can be attributed —
             -- combat log gives destGUID only, so a never-seen GUID can't be
@@ -8842,7 +8910,7 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         -- Fires for every unit in the group; debounce to avoid rebuilding buttons on every party member aura change
         BH:ScheduleUpdateButtons()
         local ccUnit = arg1
-        BH:CheckHealerCC(ccUnit)
+        BH:CheckRoleCC(ccUnit)
         if BH.CheckKelAlerts then BH:CheckKelAlerts(ccUnit) end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         BH:OnSpecChanged()

@@ -48,6 +48,12 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Role CC Alert: the Healer CC Alert is now a Role CC Alert with a per-role toggle, adding
+  the requested "Alert when tank is CC'd". One frame rather than one per role: the label
+  names whichever roles are actually crowd controlled ("HEALER IN CC", "TANK IN CC" or
+  "HEALER + TANK IN CC"), so it does not add another scale slider, lock checkbox and saved
+  position to the most crowded settings tab. Existing settings are untouched and tank
+  tracking defaults off, so nobody gets an alert they did not ask for
 - Added /sq auras — reports whether each configured aura is actually detectable on you, to
   tell a mis-configured spell ID apart from a show/hide bug
 
