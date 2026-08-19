@@ -143,7 +143,7 @@ BH.defaultSettings = {
 
 -- Does the player know this spell?
 --
--- Plain BH.PlayerKnowsSpell() returns false for spells granted by a talent, and for a
+-- Plain IsSpellKnown() returns false for spells granted by a talent, and for a
 -- base spell that a talent has overridden — so using it alone means a reminder
 -- can silently never fire for a given talent build. Check the modern API first
 -- and fall back through the older ones, which cover different cases:
@@ -213,12 +213,12 @@ end
 function BH.PlayerKnowsSpell(spellID)
     if not spellID then return false end
     if C_SpellBook and C_SpellBook.IsSpellKnown then
-        local known = C_SpellBook.BH.PlayerKnowsSpell(spellID)
+        local known = C_SpellBook.IsSpellKnown(spellID)
         if known ~= nil then return known end
     end
     if IsPlayerSpell and IsPlayerSpell(spellID) then return true end
     if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(spellID) then return true end
-    if IsSpellKnown and BH.PlayerKnowsSpell(spellID, false) then return true end
+    if IsSpellKnown and IsSpellKnown(spellID, false) then return true end
     return false
 end
 
