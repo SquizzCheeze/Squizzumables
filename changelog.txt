@@ -48,6 +48,14 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Preview mode: the beacon, earth shield, symbiotic relationship and consumable bag
+  reminders flashed up and vanished immediately when Preview was switched on. Preview showed
+  them, then the next UpdateButtons pass -- which runs off UNIT_AURA, so within a fraction of
+  a second -- re-evaluated them against real conditions and hid them again. Every reminder
+  update now leaves the frame alone while previewing. The Coach's Whistle reminder was the
+  only one that already did this, which is why it was the only one that did not flash
+- Preview mode: the No Pet reminder was missing from the preview list entirely, so it was the
+  one reminder that could never be positioned from preview
 - Role CC Alert: the Healer CC Alert is now a Role CC Alert with a per-role toggle, adding
   the requested "Alert when tank is CC'd". One frame rather than one per role: the label
   names whichever roles are actually crowd controlled ("HEALER IN CC", "TANK IN CC" or

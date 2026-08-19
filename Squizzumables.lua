@@ -7268,6 +7268,11 @@ end
 -- Shows big centered text when beacons are missing
 function BH:UpdateBeaconReminder()
     if not self.beaconReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.beaconReminderEnabled ~= false) then
         self.beaconReminderFrame:Hide()
@@ -7353,6 +7358,11 @@ end
 -- Uses the same multi-shaman slot logic as the old button system
 function BH:UpdateEarthShieldReminder()
     if not self.earthShieldReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.earthShieldReminderEnabled ~= false) then
         self.earthShieldReminderFrame:Hide()
@@ -7440,6 +7450,11 @@ end
 -- Shows big centered text when any equipped item's durability is below threshold
 function BH:UpdateRepairReminder()
     if not self.repairReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not self.settings or not self.settings.repairReminderEnabled then
         self.repairReminderFrame:Hide()
@@ -7480,6 +7495,11 @@ end
 -- Shows big centered text when any party/raid member is missing the buff
 function BH:UpdateSymbioticReminder()
     if not self.symbioticReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.symbioticReminderEnabled ~= false) then
         self.symbioticReminderFrame:Hide()
@@ -7526,17 +7546,14 @@ end
 -- Update Emerald Coach's Whistle reminder visibility
 function BH:UpdateCoachWhistleReminder()
     if not self.coachWhistleReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.coachWhistleReminderEnabled ~= false) then
         self.coachWhistleReminderFrame:Hide()
-        return
-    end
-
-    -- In preview mode, show regardless of group/buff state
-    if self.previewMode then
-        local locked = self.settings and self.settings.coachWhistleReminderLocked
-        self.coachWhistleReminderFrame:Show()
-        self.coachWhistleReminderFrame:EnableMouse(not locked)
         return
     end
 
@@ -7573,6 +7590,11 @@ end
 -- Hunter: No Pet reminder
 function BH:UpdatePetReminder()
     if not self.petReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.petReminderEnabled ~= false) then
         self.petReminderFrame:Hide()
@@ -7619,6 +7641,11 @@ end
 -- Update food "no items in bag" reminder
 function BH:UpdateFoodReminder()
     if not self.foodReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.foodReminderEnabled ~= false) then
         self.foodReminderFrame:Hide()
@@ -7672,6 +7699,11 @@ end
 -- Update flask "no items in bag" reminder
 function BH:UpdateFlaskReminder()
     if not self.flaskReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.flaskReminderEnabled ~= false) then
         self.flaskReminderFrame:Hide()
@@ -7724,6 +7756,11 @@ end
 -- Update oil "no items in bag" reminder
 function BH:UpdateOilReminder()
     if not self.oilReminderFrame then return end
+    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
+    -- this frame so it can be positioned, and this pass must not undo that.
+    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
+    -- reminder within a fraction of a second of the preview being turned on.
+    if self.previewMode then return end
 
     if not (self.settings and self.settings.oilReminderEnabled ~= false) then
         self.oilReminderFrame:Hide()
@@ -7812,6 +7849,9 @@ function BH:RefreshAllReminderFrames()
         showIf(self.foodReminderFrame,       "foodReminderEnabled",      "foodReminderLocked")
         showIf(self.flaskReminderFrame,      "flaskReminderEnabled",     "flaskReminderLocked")
         showIf(self.oilReminderFrame,        "oilReminderEnabled",       "oilReminderLocked")
+        -- The pet reminder was previously missing from this list, so it was the
+        -- one reminder that could not be positioned from preview.
+        showIf(self.petReminderFrame,        "petReminderEnabled",       "petReminderLocked")
         -- Role CC has two toggles rather than one enabled key, so it cannot go
         -- through showIf. UpdateRoleCCFrame handles preview itself, since it
         -- also runs whenever a role toggle changes.
