@@ -6807,10 +6807,13 @@ function BH:UpdateButtons()
             -- the full buff list on the unit (same API used for other paladins below).
             local myActiveCount = 0
             local myHasDevotion = false
+            local myActiveAuras = {}   -- spellID -> true for auras I have up right now
             for _, auraInfo in ipairs(info.auras) do
-                local auraData = C_UnitAuras.GetUnitAuraBySpellID("player", auraInfo.spellID)
-                if auraData and (not auraData.sourceUnit or UnitIsUnit(auraData.sourceUnit, "player")) then
+                local auraData = BH.Secrets.GetAuraBySpellID("player", auraInfo.spellID)
+                local source = BH.Secrets.SafeAuraSourceUnit(auraData)
+                if auraData and (not source or UnitIsUnit(source, "player")) then
                     myActiveCount = myActiveCount + 1
+                    myActiveAuras[auraInfo.spellID] = true
                     if auraInfo.spellID == 465 then
                         myHasDevotion = true
                     end
@@ -6836,8 +6839,9 @@ function BH:UpdateButtons()
                             local _, unitClass = UnitClass(unit)
                             if unitClass == "PALADIN" then
                                 for _, auraInfo in ipairs(info.auras) do
-                                    local auraData = C_UnitAuras.GetUnitAuraBySpellID(unit, auraInfo.spellID)
-                                    if auraData and auraData.sourceUnit and UnitIsUnit(auraData.sourceUnit, unit) then
+                                    local auraData = BH.Secrets.GetAuraBySpellID(unit, auraInfo.spellID)
+                                    local source = BH.Secrets.SafeAuraSourceUnit(auraData)
+                                    if source and UnitIsUnit(source, unit) then
                                         coveredByOthers[auraInfo.spellID] = true
                                     end
                                 end
@@ -6846,12 +6850,16 @@ function BH:UpdateButtons()
                     end
                 end
 
+                -- Never offer an aura the player already has up. shouldHide above is
+                -- an all-or-nothing gate and for Holy it only trips on Devotion, so
+                -- without this a Holy Paladin running Concentration Aura was still
+                -- shown a button for the Concentration Aura they already had active.
                 local showAuras = {}
                 if paladinCount >= 2 then
                     -- 2+ paladins: show uncovered auras; for Holy Paladins also always
                     -- include Devotion Aura so it's available for Aura Mastery
                     for _, auraInfo in ipairs(info.auras) do
-                        if self:IsEnabled(auraInfo.spellID) then
+                        if self:IsEnabled(auraInfo.spellID) and not myActiveAuras[auraInfo.spellID] then
                             local forceForHoly = isHolyPaladin and (auraInfo.spellID == 465)
                             if forceForHoly or not coveredByOthers[auraInfo.spellID] then
                                 table.insert(showAuras, auraInfo)
@@ -6861,7 +6869,7 @@ function BH:UpdateButtons()
                 else
                     -- Solo paladin: show all enabled auras so player can pick
                     for _, auraInfo in ipairs(info.auras) do
-                        if self:IsEnabled(auraInfo.spellID) then
+                        if self:IsEnabled(auraInfo.spellID) and not myActiveAuras[auraInfo.spellID] then
                             table.insert(showAuras, auraInfo)
                         end
                     end
@@ -9362,6 +9370,29 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             print(string.format("    itemID %d: name=%s, spellName=%s, hasSpellID=%s",
                 itemID, tostring(itemName), safeName, tostring(hasSpell)))
         end
+    elseif msg == 'auras' then
+        -- Paladin aura diagnostics: which auras the addon can actually see on you.
+        -- If an aura you have active reads "detected: NO" here, the problem is the
+        -- spell ID in Squizzumables_Config.lua, not the show/hide logic.
+        local _, class = UnitClass("player")
+        print(addonName .. " Paladin Aura Debug:")
+        print("  class:", class, " specID:",
+            tostring(PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()))
+        print("  auras are secret right now:", tostring(BH.Secrets.AurasAreSecret()))
+        local info = BH.classBuffs and BH.classBuffs[class]
+        if not (info and info.auras) then
+            print("  no aura list configured for this class")
+        else
+            for _, auraInfo in ipairs(info.auras) do
+                local aura = BH.Secrets.GetAuraBySpellID("player", auraInfo.spellID)
+                local name = C_Spell.GetSpellName(auraInfo.spellID)
+                print(string.format("    %s (%d): detected: %s, source: %s, enabled: %s",
+                    tostring(name), auraInfo.spellID,
+                    aura and "YES" or "NO",
+                    tostring(BH.Secrets.SafeAuraSourceUnit(aura)),
+                    tostring(BH:IsEnabled(auraInfo.spellID))))
+            end
+        end
     elseif msg == 'debug' then
         -- Debug: show quality info for all consumable items in bags
         print(addonName.." Quality Debug:")
@@ -9405,6 +9436,7 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print("  /sq raidtools - toggle raid tools frame")
         print("  /sq reload - update buttons")
         print("  /sq feast - feast announce diagnostics")
+        print("  /sq auras - paladin aura detection diagnostics")
         print("  /sq debug - show quality info")
         print("  /ginvite <name> - guild invite a player")
     end
