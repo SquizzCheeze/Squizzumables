@@ -162,6 +162,53 @@ local FIRST_BAG = BACKPACK_CONTAINER or 0
 local LAST_BAG  = (NUM_BAG_SLOTS or 4) + (NUM_REAGENTBAG_SLOTS or 1)
 BH.FIRST_BAG, BH.LAST_BAG = FIRST_BAG, LAST_BAG
 
+-- ----------------------------------------------------------------------------
+-- Options-panel widget cache
+--
+-- WoW frames are never garbage collected: SetParent(nil) orphans a frame but
+-- does not free it. The options lists used to destroy and rebuild their rows on
+-- every refresh, so each /sq config leaked a full set of frames for the rest of
+-- the session.
+--
+-- These lists are rebuilt from the same stable data every time, so instead of
+-- pooling anonymous frames we cache each widget under a key describing what it
+-- represents. A refresh hides everything in the cache, then re-acquires and
+-- re-anchors the widgets it still needs; only genuinely new keys allocate.
+--
+-- Usage:
+--     self:ResetWidgetCache("itemRowCache")
+--     local row, isNew = self:AcquireWidget("itemRowCache", key, factory)
+--     if isNew then ... end   -- one-time setup
+--     row:Show()
+-- ----------------------------------------------------------------------------
+
+-- Hide and unanchor every widget in a cache, ready for a refresh pass.
+function BH:ResetWidgetCache(cacheName)
+    local cache = self[cacheName]
+    if not cache then return end
+    for _, widget in pairs(cache) do
+        if widget.Hide then widget:Hide() end
+        if widget.ClearAllPoints then widget:ClearAllPoints() end
+    end
+end
+
+-- Fetch the cached widget for `key`, creating it via `factory()` on a miss.
+-- Returns the widget and whether it was created on this call.
+function BH:AcquireWidget(cacheName, key, factory)
+    local cache = self[cacheName]
+    if not cache then
+        cache = {}
+        self[cacheName] = cache
+    end
+    local widget = cache[key]
+    if widget then
+        return widget, false
+    end
+    widget = factory()
+    cache[key] = widget
+    return widget, true
+end
+
 -- Use this instead of IsSpellKnown anywhere in the addon.
 function BH.PlayerKnowsSpell(spellID)
     if not spellID then return false end
@@ -1679,7 +1726,6 @@ function BH:CreateOptionsPanel()
     scrollChild:SetSize(390, 1)
     scrollFrame:SetScrollChild(scrollChild)
     self.scrollChild = scrollChild
-    self.itemRows = {}
 
     -- Bottom bar with close button
     local bottomBar = CreateFrame("Frame", nil, panel)
@@ -3436,36 +3482,44 @@ end
 
 function BH:RefreshCustomSoundsList()
     if not self.customSoundsListFrame then return end
-    -- Clear old rows
-    for _, child in pairs({ self.customSoundsListFrame:GetChildren() }) do
-        child:Hide()
-        child:SetParent(nil)
-    end
+
+    -- Rows are cached by list position and refilled; removing an entry shifts
+    -- everything up by one, so the labels and the remove handler are re-set on
+    -- every pass. Only a longer list than we have ever shown allocates.
+    self:ResetWidgetCache("customSoundRowCache")
+
     local sounds = self.settings and self.settings.customSounds or {}
     local rowY = 0
     for i, entry in ipairs(sounds) do
-        local rowFrame = CreateFrame("Frame", nil, self.customSoundsListFrame)
-        rowFrame:SetSize(380, 22)
+        local rowFrame, isNew = self:AcquireWidget("customSoundRowCache", i, function()
+            local f = CreateFrame("Frame", nil, self.customSoundsListFrame)
+            f:SetSize(380, 22)
+
+            f.nameLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            f.nameLabel:SetPoint("LEFT", f, "LEFT", 0, 0)
+            f.nameLabel:SetWidth(140)
+            f.nameLabel:SetJustifyH("LEFT")
+            f.nameLabel:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
+
+            f.fileLabel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            f.fileLabel:SetPoint("LEFT", f, "LEFT", 148, 0)
+            f.fileLabel:SetWidth(180)
+            f.fileLabel:SetJustifyH("LEFT")
+            f.fileLabel:SetTextColor(0.5, 0.5, 0.5)
+
+            f.removeBtn = CreateSQButton(f, "X", 22, 18, SQ_COLORS.danger)
+            f.removeBtn:SetPoint("LEFT", f, "LEFT", 334, 0)
+            return f
+        end)
+        local _ = isNew
+
+        rowFrame:Show()
         rowFrame:SetPoint("TOPLEFT", self.customSoundsListFrame, "TOPLEFT", 0, rowY)
+        rowFrame.nameLabel:SetText(entry.name or "")
+        rowFrame.fileLabel:SetText(entry.file or "")
 
-        local nameLabel = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        nameLabel:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
-        nameLabel:SetWidth(140)
-        nameLabel:SetJustifyH("LEFT")
-        nameLabel:SetText(entry.name or "")
-        nameLabel:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
-
-        local fileLabel = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        fileLabel:SetPoint("LEFT", rowFrame, "LEFT", 148, 0)
-        fileLabel:SetWidth(180)
-        fileLabel:SetJustifyH("LEFT")
-        fileLabel:SetText(entry.file or "")
-        fileLabel:SetTextColor(0.5, 0.5, 0.5)
-
-        local removeBtn = CreateSQButton(rowFrame, "X", 22, 18, SQ_COLORS.danger)
-        removeBtn:SetPoint("LEFT", rowFrame, "LEFT", 334, 0)
         local idx = i
-        removeBtn:SetScript("OnClick", function()
+        rowFrame.removeBtn:SetScript("OnClick", function()
             table.remove(self.settings.customSounds, idx)
             self:SaveSettings()
             self:RefreshCustomSoundsList()
@@ -3670,33 +3724,43 @@ function BH:BuildClassBuffsTab(parent)
     scrollChild:SetSize(390, 1)
     scrollFrame:SetScrollChild(scrollChild)
     self.classBuffScrollChild = scrollChild
-    self.classBuffRows = {}
 end
 
 function BH:RefreshClassBuffList()
     if not self.classBuffScrollChild then return end
 
-    -- Clear old rows
-    self.classBuffRows = self.classBuffRows or {}
-    for _, row in ipairs(self.classBuffRows) do
-        if row.Hide then row:Hide() end
-        if row.SetParent then row:SetParent(nil) end
-    end
-    self.classBuffRows = {}
+    -- Hide the previous pass; rows we still need are re-acquired below rather
+    -- than rebuilt (see BH:AcquireWidget).
+    self:ResetWidgetCache("classBuffRowCache")
 
     local sc = self.classBuffScrollChild
     local yOffset = 0
-    local rowHeight = 32
 
     local function AddHeader(text)
-        local headerFrame = CreateFrame("Frame", nil, sc)
-        headerFrame:SetSize(380, 20)
+        local headerFrame, isNew = self:AcquireWidget("classBuffRowCache", "header:" .. text, function()
+            local f = CreateFrame("Frame", nil, sc)
+            f:SetSize(380, 20)
+            local header = f:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+            header:SetPoint("LEFT", f, "LEFT", 5, 0)
+            header:SetText(text)
+            return f
+        end)
+        local _ = isNew
+        headerFrame:Show()
         headerFrame:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
-        local header = headerFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-        header:SetPoint("LEFT", headerFrame, "LEFT", 5, 0)
-        header:SetText(text)
-        table.insert(self.classBuffRows, headerFrame)
         yOffset = yOffset - 25
+    end
+
+    -- Acquire (or build) the row for one class-buff spell. Keyed by spell ID:
+    -- the arguments below are fixed for a given spell, so a cached row stays valid.
+    local function AddSpellRow(spellID, showMinDuration, className)
+        local row, isNew = self:AcquireWidget("classBuffRowCache", "spell:" .. spellID, function()
+            return self:CreateItemRow(sc, yOffset, spellID, "spell", className, nil, showMinDuration, spellID)
+        end)
+        row:Show()
+        row:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
+        if not isNew and row.Sync then row.Sync() end
+        yOffset = yOffset - 58
     end
 
     local _, playerClass = UnitClass("player")
@@ -3711,9 +3775,7 @@ function BH:RefreshClassBuffList()
                             AddHeader("Class Buff")
                             headerAdded = true
                         end
-                        local row = self:CreateItemRow(sc, yOffset, auraInfo.spellID, "spell", CLASS_NAMES[playerClass] or playerClass, nil, false, auraInfo.spellID)
-                        table.insert(self.classBuffRows, row)
-                        yOffset = yOffset - 58
+                        AddSpellRow(auraInfo.spellID, false, CLASS_NAMES[playerClass] or playerClass)
                     end
                 end
                 -- Weapon imbues (e.g. Holy Paladin Rites from Lightsmith hero talents)
@@ -3724,9 +3786,7 @@ function BH:RefreshClassBuffList()
                                 AddHeader("Class Buff")
                                 headerAdded = true
                             end
-                            local row = self:CreateItemRow(sc, yOffset, imbueInfo.spellID, "spell", CLASS_NAMES[playerClass] or playerClass, nil, true, imbueInfo.spellID)
-                            table.insert(self.classBuffRows, row)
-                            yOffset = yOffset - 58
+                            AddSpellRow(imbueInfo.spellID, true, CLASS_NAMES[playerClass] or playerClass)
                         end
                     end
                 end
@@ -3740,9 +3800,7 @@ function BH:RefreshClassBuffList()
                             AddHeader("Class Buff")
                             headerAdded = true
                         end
-                        local row = self:CreateItemRow(sc, yOffset, buffInfo.spellID, "spell", CLASS_NAMES[playerClass] or playerClass, nil, buffInfo.selfBuff or buffInfo.tankBuff or buffInfo.weaponImbue, buffInfo.spellID)
-                        table.insert(self.classBuffRows, row)
-                        yOffset = yOffset - 58
+                        AddSpellRow(buffInfo.spellID, buffInfo.selfBuff or buffInfo.tankBuff or buffInfo.weaponImbue, CLASS_NAMES[playerClass] or playerClass)
                     end
                 end
             end
@@ -3752,27 +3810,53 @@ function BH:RefreshClassBuffList()
     sc:SetHeight(math.abs(yOffset) + 20)
 
     -- Hunter: add No Pet reminder toggle below the class buff rows
-    if self.petReminderRow then
-        self.petReminderRow:Hide()
-        self.petReminderRow:SetParent(nil)
-        self.petReminderRow = nil
-    end
     if playerClass == "HUNTER" then
-        yOffset = yOffset - 8
-        CreateSQDivider(sc, yOffset)
-        yOffset = yOffset - 18
+      yOffset = yOffset - 8
 
-        local petHdr = sc:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        petHdr:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
-        petHdr:SetText("NO PET REMINDER")
-        petHdr:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
-        yOffset = yOffset - 22
+      -- Built once, then re-anchored and re-synced. The divider in particular
+      -- used to be created fresh on every refresh and never tracked or hidden,
+      -- so it leaked a frame per refresh on top of the row itself.
+      local petDivider = self:AcquireWidget("classBuffRowCache", "petDivider", function()
+          return CreateSQDivider(sc, yOffset)
+      end)
+      petDivider:Show()
+      petDivider:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
+      yOffset = yOffset - 18
 
-        local petRow = CreateFrame("Frame", nil, sc)
-        petRow:SetSize(380, 80)
-        petRow:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
-        self.petReminderRow = petRow
-        table.insert(self.classBuffRows, petRow)
+      local petHdr = self:AcquireWidget("classBuffRowCache", "petHeader", function()
+          local fs = sc:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+          fs:SetText("NO PET REMINDER")
+          fs:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+          return fs
+      end)
+      petHdr:Show()
+      petHdr:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
+      yOffset = yOffset - 22
+
+      local petRow, petRowIsNew = self:AcquireWidget("classBuffRowCache", "petRow", function()
+          local f = CreateFrame("Frame", nil, sc)
+          f:SetSize(380, 80)
+          return f
+      end)
+      petRow:Show()
+      petRow:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
+      self.petReminderRow = petRow
+
+      if not petRowIsNew then
+          -- Re-sync only; a profile switch rewrites both settings.
+          if self.trPetEnableCheckbox then
+              self.trPetEnableCheckbox:SetChecked(BH.settings and BH.settings.petReminderEnabled ~= false)
+          end
+          if self.trPetScaleSlider then
+              self.trPetScaleSlider:SetValue((BH.settings and BH.settings.petReminderScale or 1.0) * 100)
+          end
+          if self.trPetLockCheckbox then
+              self.trPetLockCheckbox:SetChecked(BH.settings and BH.settings.petReminderLocked or false)
+          end
+          yOffset = yOffset - 84
+          sc:SetHeight(math.abs(yOffset) + 20)
+          return
+      end
 
         local petEnableCb = CreateSQCheckbox(petRow, "Show \"NO PET\" text when pet is missing", function(val)
             BH.settings.petReminderEnabled = val
@@ -4612,6 +4696,46 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
         end
     end
 
+    -- Re-apply the parts of this row that can change between refreshes, so
+    -- BH:RefreshItemList can reuse a cached row instead of building a new one.
+    -- (WoW frames are never garbage collected, so rebuilding the list leaked a
+    -- full set of frames on every /sq config.)
+    --
+    -- Everything not touched here is fixed for the row's identity: the row is
+    -- cached under itemID + itemType + category, so the spell name/icon, the
+    -- label text and the widget layout can never change for a given cached row.
+    row.Sync = function()
+        checkbox:SetChecked(BH:IsEnabled(itemID))
+        if not minEdit:HasFocus() then
+            minEdit:SetText(tostring(BH:GetMinDuration(itemID)))
+        end
+        if itemType == "item" then
+            -- Crafted quality comes from the stack currently in bags, so it can
+            -- differ from one refresh to the next (e.g. R2 flasks replacing R1).
+            qualityPip:Hide()
+            local link, quality = FindItemInBags(itemID)
+            if link or quality then
+                local q = GetConfigItemQuality(link, quality)
+                if q and q > 0 and CONFIG_QUALITY_ATLAS[q] then
+                    qualityPip:SetAtlas(CONFIG_QUALITY_ATLAS[q])
+                    qualityPip:Show()
+                end
+            end
+            -- If the item name was still uncached when this row was built, the
+            -- label is a placeholder; retry now that it may have arrived.
+            local shown = nameText:GetText()
+            if shown and shown:find("^Item ID: ") then
+                local itemName = C_Item.GetItemNameByID(itemID)
+                if itemName then
+                    local suffix = CONSUMABLE_STAT_LABELS and CONSUMABLE_STAT_LABELS[itemID]
+                    nameText:SetText(suffix and (itemName .. " (" .. suffix .. ")") or itemName)
+                    local ic = C_Item.GetItemIconByID(itemID)
+                    if ic then icon:SetTexture(ic) end
+                end
+            end
+        end
+    end
+
     -- Sound dropdown for class buff rows (second line)
     -- x=28 aligns "Sound:" with the left edge of the icon above (checkContainer=4+16, icon offset=+8)
     if soundSpellID then
@@ -4656,36 +4780,47 @@ end
 
 -- Refresh the item list in the scroll frame
 function BH:RefreshItemList()
-    -- Clear existing rows
-    self.itemRows = self.itemRows or {}
-    for _, row in ipairs(self.itemRows) do
-        if row.Hide then row:Hide() end
-        if row.SetParent then row:SetParent(nil) end
-        if row.SetText then row:SetText("") end  -- Clear font strings
-    end
-    self.itemRows = {}
-    
+    -- Hide everything from the previous pass; widgets we still need get
+    -- re-acquired and re-anchored below. See BH:AcquireWidget — rebuilding
+    -- these rows used to leak a full set of frames on every refresh.
+    self:ResetWidgetCache("itemRowCache")
+
     local yOffset = 0
     local rowHeight = 32
-    
+
     -- Helper to add category header
     local function AddHeader(text)
-        local headerFrame = CreateFrame("Frame", nil, self.scrollChild)
-        headerFrame:SetSize(380, 20)
+        local headerFrame, isNew = self:AcquireWidget("itemRowCache", "header:" .. text, function()
+            local f = CreateFrame("Frame", nil, self.scrollChild)
+            f:SetSize(380, 20)
+            return f
+        end)
+        headerFrame:Show()
         headerFrame:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 0, yOffset)
+        if not isNew then
+            yOffset = yOffset - 25
+            return
+        end
         local header = headerFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
         header:SetPoint("LEFT", headerFrame, "LEFT", 5, 0)
         header:SetText(text)
-        table.insert(self.itemRows, headerFrame)
         yOffset = yOffset - 25
     end
-    
+
     -- Helper to create drop zone for adding items
     local function AddDropZone(category, categoryName)
-        local dropFrame = CreateFrame("Button", nil, self.scrollChild)
-        dropFrame:SetSize(370, 28)
+        local dropFrame, isNew = self:AcquireWidget("itemRowCache", "drop:" .. category, function()
+            local f = CreateFrame("Button", nil, self.scrollChild)
+            f:SetSize(370, 28)
+            return f
+        end)
+        dropFrame:Show()
         dropFrame:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 5, yOffset)
-        
+        if not isNew then
+            yOffset = yOffset - 32
+            return
+        end
+
         -- Background
         local bg = dropFrame:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
@@ -4768,8 +4903,20 @@ function BH:RefreshItemList()
             GameTooltip:Hide()
         end)
         
-        table.insert(self.itemRows, dropFrame)
         yOffset = yOffset - 32
+    end
+
+    -- Acquire (or build) the row for one consumable, re-anchoring and re-syncing
+    -- it rather than rebuilding. Keyed by category + itemID: within a category an
+    -- item is always rendered the same way, so a cached row is always valid.
+    local function AddItemRow(itemID, category)
+        local row, isNew = self:AcquireWidget("itemRowCache", category .. ":" .. itemID, function()
+            return self:CreateItemRow(self.scrollChild, yOffset, itemID, "item", nil, category)
+        end)
+        row:Show()
+        row:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 0, yOffset)
+        if not isNew and row.Sync then row.Sync() end
+        yOffset = yOffset - rowHeight
     end
     
     -- Food section - only show items in bags that meet level requirement
@@ -4777,9 +4924,7 @@ function BH:RefreshItemList()
     if self.consumables and self.consumables.food then
         for _, itemID in ipairs(self.consumables.food) do
             if FindItemInBags(itemID) and ConfigMeetsLevelRequirement(itemID) then
-                local row = self:CreateItemRow(self.scrollChild, yOffset, itemID, "item", nil, "food")
-                table.insert(self.itemRows, row)
-                yOffset = yOffset - rowHeight
+                AddItemRow(itemID, "food")
             end
         end
     end
@@ -4791,9 +4936,7 @@ function BH:RefreshItemList()
     if self.consumables and self.consumables.flask then
         for _, itemID in ipairs(self.consumables.flask) do
             if FindItemInBags(itemID) and ConfigMeetsLevelRequirement(itemID) then
-                local row = self:CreateItemRow(self.scrollChild, yOffset, itemID, "item", nil, "flask")
-                table.insert(self.itemRows, row)
-                yOffset = yOffset - rowHeight
+                AddItemRow(itemID, "flask")
             end
         end
     end
@@ -4805,30 +4948,58 @@ function BH:RefreshItemList()
     if self.consumables and self.consumables.oil then
         for _, itemID in ipairs(self.consumables.oil) do
             if FindItemInBags(itemID) and ConfigMeetsLevelRequirement(itemID) then
-                local row = self:CreateItemRow(self.scrollChild, yOffset, itemID, "item", nil, "oil")
-                table.insert(self.itemRows, row)
-                yOffset = yOffset - rowHeight
+                AddItemRow(itemID, "oil")
             end
         end
     end
     AddDropZone("oil", "Weapon Oil")
     yOffset = yOffset - 5
 
-    -- Emerald Coach's Whistle section
+    -- Emerald Coach's Whistle section.
+    -- Only rendered while the whistle is equipped, and its contents never vary,
+    -- so it is built once and thereafter only re-anchored and re-synced. The
+    -- five top-level widgets are kept in self.coachSectionWidgets in layout
+    -- order, each with the vertical space it consumes.
     if (GetInventoryItemID("player", 13) == COACH_WHISTLE_ITEM_ID
         or GetInventoryItemID("player", 14) == COACH_WHISTLE_ITEM_ID) then
+
+      if self.coachSectionWidgets then
+        -- Already built: re-anchor in order and re-sync the values that can
+        -- have changed (a profile switch rewrites all four settings).
+        for _, entry in ipairs(self.coachSectionWidgets) do
+            local widget, height, indent = entry[1], entry[2], entry[3]
+            widget:Show()
+            widget:ClearAllPoints()
+            widget:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", indent, yOffset)
+            yOffset = yOffset - height
+        end
+        if self.itemsCoachEnableCb then
+            self.itemsCoachEnableCb:SetChecked(BH.settings and BH.settings.coachWhistleReminderEnabled ~= false)
+        end
+        if self.itemsCoachMinEdit and not self.itemsCoachMinEdit:HasFocus() then
+            self.itemsCoachMinEdit:SetText(tostring(BH:GetMinDuration(COACH_WHISTLE_ITEM_ID)))
+        end
+        if self.itemsCoachScaleSlider then
+            self.itemsCoachScaleSlider:SetValue((BH.settings and BH.settings.coachWhistleReminderScale or 1.0) * 100)
+        end
+        if self.itemsCoachLockCb then
+            self.itemsCoachLockCb:SetChecked(BH.settings and BH.settings.coachWhistleReminderLocked or false)
+        end
+      else
+        self.coachSectionWidgets = {}
+        local coachWidgets = self.coachSectionWidgets
 
         local hdr = self.scrollChild:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
         hdr:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 5, yOffset)
         hdr:SetText("Emerald Coach's Whistle")
-        table.insert(self.itemRows, hdr)
+        coachWidgets[#coachWidgets + 1] = { hdr, 25, 5 }
         yOffset = yOffset - 25
 
         -- Enable reminder checkbox
         local coachEnableRow = CreateFrame("Frame", nil, self.scrollChild)
         coachEnableRow:SetSize(380, 24)
         coachEnableRow:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 0, yOffset)
-        table.insert(self.itemRows, coachEnableRow)
+        coachWidgets[#coachWidgets + 1] = { coachEnableRow, 30, 0 }
 
         local coachEnableCb = CreateFrame("CheckButton", nil, coachEnableRow)
         coachEnableCb:SetSize(16, 16)
@@ -4860,7 +5031,7 @@ function BH:RefreshItemList()
         local coachMinRow = CreateFrame("Frame", nil, self.scrollChild)
         coachMinRow:SetSize(380, 24)
         coachMinRow:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 0, yOffset)
-        table.insert(self.itemRows, coachMinRow)
+        coachWidgets[#coachWidgets + 1] = { coachMinRow, 30, 0 }
 
         local coachMinLbl = coachMinRow:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
         coachMinLbl:SetPoint("LEFT", coachMinRow, "LEFT", 28, 0)
@@ -4911,7 +5082,7 @@ function BH:RefreshItemList()
             BH:SaveSettings()
             if BH.coachWhistleReminderFrame then BH.coachWhistleReminderFrame:SetScale(value / 100) end
         end)
-        table.insert(self.itemRows, coachScaleSlider)
+        coachWidgets[#coachWidgets + 1] = { coachScaleSlider, 50, 4 }
         self.itemsCoachScaleSlider = coachScaleSlider
         yOffset = yOffset - 50
 
@@ -4919,7 +5090,7 @@ function BH:RefreshItemList()
         local coachLockRow = CreateFrame("Frame", nil, self.scrollChild)
         coachLockRow:SetSize(380, 24)
         coachLockRow:SetPoint("TOPLEFT", self.scrollChild, "TOPLEFT", 0, yOffset)
-        table.insert(self.itemRows, coachLockRow)
+        coachWidgets[#coachWidgets + 1] = { coachLockRow, 30, 0 }
 
         local coachLockCb = CreateFrame("CheckButton", nil, coachLockRow)
         coachLockCb:SetSize(16, 16)
@@ -4949,6 +5120,7 @@ function BH:RefreshItemList()
         coachLockLbl:SetPoint("LEFT", coachLockCb, "RIGHT", 8, 0)
         coachLockLbl:SetText("Lock Position")
         yOffset = yOffset - 30
+      end
     end
 
     -- Update scroll child height
