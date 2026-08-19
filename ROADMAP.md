@@ -632,6 +632,9 @@ of the remaining per-reminder bespoke code.
 - [ ] §2.3 Cached bag snapshot
 - [ ] §1.8 Let plain reminder frames live through combat
 - [ ] §2.6 Recursive defaults merge + `dbVersion` migrations
+- [ ] Tank in CC alert — generalise the Healer CC alert into a role CC alert with
+      per-role toggles (see "Role CC alert" below). Sequenced here because §2.1 turns it
+      into a data entry instead of a fresh copy-paste of the whole reminder block.
 
 ### v1.62 — the UI
 
@@ -714,3 +717,40 @@ Files worth reading directly, with what to take from each.
 | `EllesmereUI_Visibility.lua` | 624 | centralised visibility conditions |
 | `EllesmereUIOptions/EllesmereUI_Widgets.lua:357` | 8,724 | `TagOptionRow`, search registration |
 | `EllesmereUIOptions/EUI_QoL_BattleRes_Options.lua` | ~250 | **the clearest example of the declarative row style** |
+
+---
+
+## Role CC alert (requested)
+
+Requests have come in for a "Tank in CC" alert alongside the existing "Healer in CC" one.
+
+The existing feature is already almost role-agnostic. The only role-specific pieces are:
+
+- `BH:RefreshHealerWatchList` (`Squizzumables.lua`) filters on
+  `UnitGroupRolesAssigned(unit) == "HEALER"` — one line
+- the frame's hardcoded `"HEALER IN CC"` text
+- the settings key prefix `healerCC*`
+
+Everything else — `healerWatchUnits`, `healerCCActive`, `BH:CheckHealerCC`, the
+`UnitHasCCDebuff` scan, the frame, the sound dispatch — works for any role unchanged.
+
+**Recommended shape: one alert, per-role toggles.** Rather than a second parallel frame with
+its own enable/scale/lock/position settings, make it a single "Role CC Alert" with two
+checkboxes (Healer, Tank) and text that reflects what is actually CC'd:
+
+- Healer only CC'd → `HEALER IN CC`
+- Tank only CC'd → `TANK IN CC`
+- both → `HEALER + TANK IN CC`
+
+Rationale: two frames means two more scale sliders, two more lock checkboxes and two more
+saved positions in a settings tab that is already the most crowded one — for an alert the
+player will almost never see both halves of at once. One frame that names the role is less
+code and less UI.
+
+**Migration:** keep the existing `healerCC*` settings keys and add `roleCCAlertTank`
+(default off) so existing users are unaffected and see no behaviour change until they opt in.
+Rename the visible label from "Healer CC Alert" to "Role CC Alert".
+
+**Sequencing:** do this immediately after §2.1. Built today it is another ~200-line
+copy-paste of the reminder block that §2.1 then has to migrate; built after §2.1 it is a
+`gates`/`shouldShow` entry plus a role filter.
