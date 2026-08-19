@@ -1,6 +1,56 @@
 Squizzumables Changelog
 =======================
 
+V1.60
+
+- Profiles: frame positions for the flask, oil, healer CC and dungeon callout frames were
+  never carried between profiles — PROFILE_POSITION_KEYS was a hand-maintained list that had
+  drifted out of sync with the frames that actually exist, so those four were neither saved to
+  nor restored from a profile and silently kept the previous profile's anchor on a switch.
+  The list is now derived from POSITION_PAIRS so it cannot drift again
+- Profiles: five separate places each hand-listed which frame positions to reload after a
+  profile change and every list was missing a different subset; all now call one
+  BH:LoadAllFramePositions()
+- Profiles: frame scales are per-profile settings but were only ever applied at login, never on
+  a profile switch, so switching profiles kept the old profile's scales until the next reload
+- M+ Death Tally: the scale setting was saved correctly but never applied at login, so the
+  tally always came back at 100% after a reload
+- Paladin auras: picking Concentration Aura left both aura buttons on screen, including one for
+  the aura you had just activated. The show/hide decision was a single all-or-nothing gate that
+  for Holy only tripped on Devotion — the Devotion exception is deliberate (you want it
+  available for Aura Mastery even when another paladin has it covered) but it also kept
+  offering every other aura. An aura you currently have active is now never offered
+- Clicks on the reminder buttons were sometimes swallowed, needing three or four attempts.
+  Two causes: (1) UpdateButtons unconditionally tears down every button and is driven by
+  UNIT_AURA, which fires for every group member on every aura change, so a rebuild landing
+  between mouse-down and mouse-up ate the click — rebuilds are now deferred while the cursor is
+  over a button; (2) the buttons registered both "AnyDown" and "AnyUp", firing the secure
+  action twice per click with the second attempt landing inside the GCD of the first — all
+  secure buttons now use a single click edge chosen from the client's ActionButtonUseKeyDown
+  setting, matching Blizzard's own action buttons
+- The same double-fire affected the dungeon callout buttons, which were sending their chat
+  message twice, and the raid target markers, whose "toggle" action was set and then
+  immediately cleared by the second fire
+- Talent-granted and talent-overridden spells were not detected: plain IsSpellKnown() returns
+  false for both, so a reminder could silently never fire for a given build. All 16 call sites
+  now go through a helper that falls through C_SpellBook.IsSpellKnown, IsPlayerSpell,
+  IsSpellKnownOrOverridesKnown and IsSpellKnown
+- The reagent bag was never scanned, so consumables kept there were invisible to the addon
+- Opening the options panel leaked frames: the item, class buff and custom sound lists
+  destroyed and rebuilt their rows every refresh, and WoW frames are never garbage collected.
+  Rows are now cached and reused, so after the first build a refresh allocates nothing
+- Secret value handling is now centralised in Squizzumables_Secrets.lua, built on the client's
+  real predicates (issecretvalue, issecrettable, hasanysecretvalues, C_Secrets). The main file
+  previously used pcall for this while the Cooldown Manager module used inline issecretvalue
+  checks; pcall works but allocates a closure at every call site and has to be repeated at
+  every downstream comparison, which is how the v1.58 aura crash got through. Checking once,
+  where the value is read, means the result is safe to use freely afterwards
+- The per-button buff countdown was rebuilding a closure on every button on every rendered
+  frame to display a value that changes once a second; it is now throttled and allocation-free
+- Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Added /sq auras — reports whether each configured aura is actually detectable on you, to
+  tell a mis-configured spell ID apart from a show/hide bug
+
 V1.59
 
 - Guild Invite right-click: fixed the "Guild Invite" entry never appearing on unit frame menus
