@@ -198,14 +198,19 @@ local LUST_DEBUFF_IDS = {
 local function HasLustDebuff()
     if C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID then
         for spellID in pairs(LUST_DEBUFF_IDS) do
-            if C_UnitAuras.GetUnitAuraBySpellID("player", spellID) then
+            -- Presence check only — nothing is read off the returned table, so
+            -- there is no secret field to trip over.
+            if BH.Secrets.GetAuraBySpellID("player", spellID, "HARMFUL") then
                 return true
             end
         end
     else
-        -- Legacy fallback
+        -- Legacy fallback for clients without C_UnitAuras. UnitDebuff was
+        -- removed in 12.x, so this branch is unreachable on any client that can
+        -- run this addon; kept only so the function degrades rather than errors.
         for i = 1, 40 do
             local _, _, _, _, _, _, _, _, _, spellId = UnitDebuff("player", i)
+            spellId = BH.Secrets.SafeNumber(spellId, nil)
             if not spellId then break end
             if LUST_DEBUFF_IDS[spellId] then return true end
         end

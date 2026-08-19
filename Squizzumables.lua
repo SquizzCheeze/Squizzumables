@@ -916,17 +916,17 @@ function BH:NeedsRefresh(id, expirationTime)
 
     -- expirationTime can be a secret number (client 12.1.0+, in combat/M+/PvP);
     -- both the == 0 check and the subtraction below throw on a secret value
-    -- rather than just misbehaving, so guard the lot. A failed read is treated
-    -- as "don't nag" (false) rather than risk a false-positive refresh prompt.
-    local ok, result = pcall(function()
-        -- expirationTime of 0 means permanent/charge-based buff (no duration)
-        if expirationTime == 0 then
-            return false
-        end
-        local remainingMinutes = (expirationTime - GetTime()) / 60
-        return remainingMinutes < minMinutes
-    end)
-    return ok and result or false
+    -- rather than just misbehaving. Resolve it once through BH.Secrets; an
+    -- unreadable value is treated as "don't nag" rather than risking a
+    -- false-positive refresh prompt.
+    local expiration = BH.Secrets.SafeNumber(expirationTime, nil)
+    if expiration == nil then return false end
+
+    -- expirationTime of 0 means permanent/charge-based buff (no duration)
+    if expiration == 0 then return false end
+
+    local remainingMinutes = (expiration - GetTime()) / 60
+    return remainingMinutes < minMinutes
 end
 
 -- ============================================================================
@@ -2732,10 +2732,15 @@ local function UnitHasCCDebuff(unit)
     if not UnitIsConnected(unit) then return false end
     -- As of 12.1.0, GetAuraDataByIndex throws a taint error when auras are
     -- secret (in combat, encounters, M+, PvP) instead of returning nil — the
-    -- exact scenario this alert needs to work in. pcall keeps that from
-    -- taking down the event handler; a failed read is treated as "no CC".
-    local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, unit, 1, "HARMFUL|CROWD_CONTROL")
-    return ok and aura ~= nil
+    -- exact scenario this alert needs to work in. BH.Secrets.ForEachAura absorbs
+    -- that; a failed read is treated as "no CC". We only need to know whether
+    -- *any* crowd-control debuff is present, so the scan stops at the first one.
+    local hasCC = false
+    BH.Secrets.ForEachAura(unit, "HARMFUL|CROWD_CONTROL", function()
+        hasCC = true
+        return true
+    end)
+    return hasCC
 end
 
 function BH:RefreshHealerWatchList()
@@ -5168,31 +5173,37 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         btn.heartyBadge:Hide()
     end
 
-    -- Timer text on icon (shows remaining buff time)
+    -- Timer text on icon (shows remaining buff time).
+    --
     -- expirationTime can be a secret number (client 12.1.0+, in combat/M+/PvP):
     -- assigning/passing it around is fine, but comparing or doing arithmetic on
     -- it throws ("attempt to compare ... a secret number value") — confirmed via
-    -- a live user crash report. Every comparison/subtraction below is pcall-guarded;
-    -- a failed read just means no timer text this tick rather than an error.
-    btn.expirationTime = expirationTime
+    -- a live user crash report.
+    --
+    -- BH.Secrets.SafeNumber checks that once, here, and stores either a usable
+    -- number or nil. The OnUpdate below can then do plain arithmetic: it never
+    -- sees a secret value, so it needs no pcall and allocates no closure. (The
+    -- previous version built a fresh closure for pcall on every button on every
+    -- rendered frame.)
+    btn.expirationTime = BH.Secrets.SafeNumber(expirationTime, nil)
     btn.timer:ClearAllPoints()
     btn.timer:SetPoint("CENTER", btn.icon, "CENTER", 0, 0)
     btn.timer:SetText("")
-    local hasTimer = false
-    if expirationTime ~= nil then
-        local ok, isPositive = pcall(function() return expirationTime > 0 end)
-        hasTimer = ok and isPositive
-    end
-    if hasTimer then
+    btn.timerElapsed = 0
+    if btn.expirationTime and btn.expirationTime > 0 then
         btn:SetScript("OnUpdate", function(self, elapsed)
-            local ok, remaining = pcall(function()
-                if not self.expirationTime or self.expirationTime == 0 then return nil end
-                return self.expirationTime - GetTime()
-            end)
-            if not ok or not remaining then
+            -- The readout is whole seconds; refreshing it every frame is wasted
+            -- work. Accumulate and update ~10x/sec instead.
+            self.timerElapsed = self.timerElapsed + elapsed
+            if self.timerElapsed < 0.1 then return end
+            self.timerElapsed = 0
+
+            local expiration = self.expirationTime
+            if not expiration or expiration == 0 then
                 self.timer:SetText("")
                 return
             end
+            local remaining = expiration - GetTime()
             if remaining <= 0 then
                 self.timer:SetText("")
                 self.expirationTime = nil
@@ -5314,39 +5325,39 @@ end
 local function UnitHasBuff(unit, spellIDs)
     local idList = type(spellIDs) == "table" and spellIDs or { spellIDs }
 
-    -- Primary: direct spellID lookup via GetUnitAuraBySpellID
+    -- Primary: direct spellID lookup. This one does not throw on secret auras,
+    -- so it is always preferred when the spell ID is known.
     for _, id in ipairs(idList) do
-        local auraData = C_UnitAuras.GetUnitAuraBySpellID(unit, id)
+        local auraData = BH.Secrets.GetAuraBySpellID(unit, id)
         if auraData then
-            local ok, expTime = pcall(function() return auraData.expirationTime end)
-            return true, (ok and expTime or nil)
+            return true, BH.Secrets.SafeAuraExpiration(auraData)
         end
     end
 
-    -- Fallback: scan all HELPFUL auras with GetAuraDataByIndex and compare spellId.
-    -- Needed because GetUnitAuraBySpellID returns nil for some protected/stance
-    -- auras (e.g. Lightning Shield, Water Shield) in M+ instances.
-    -- As of 12.1.0, GetAuraDataByIndex throws a taint error when auras are
-    -- secret (in combat, encounters, M+, PvP) instead of returning nil, so the
-    -- call itself is pcall-guarded. That's not enough on its own though: fields
-    -- on the returned table (spellId, expirationTime, ...) can themselves be
-    -- secret values, and even *comparing* one with `==` throws ("attempt to
-    -- compare field 'spellId' (a secret number value...)") — confirmed via a
-    -- live user crash report on retail. Every field read/compare needs its own
-    -- pcall too, not just the outer GetAuraDataByIndex call.
-    if unit == "player" and C_UnitAuras.GetAuraDataByIndex then
-        local i = 1
-        while true do
-            local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-            if not ok or not auraData then break end
+    -- Fallback: scan all HELPFUL auras and compare spellId. Needed because
+    -- GetUnitAuraBySpellID returns nil for some protected/stance auras (e.g.
+    -- Lightning Shield, Water Shield) in M+ instances.
+    --
+    -- Both the scan and the field reads go through BH.Secrets: as of 12.1.0
+    -- GetAuraDataByIndex throws when auras are secret, and the fields on the
+    -- table it returns can be secret independently of that — comparing one with
+    -- `==` throws ("attempt to compare field 'spellId' (a secret number
+    -- value...)"), which is the v1.58 crash. SafeAuraSpellID returns nil for an
+    -- unreadable field, so the comparison below is always safe.
+    if unit == "player" then
+        local foundExpiration
+        BH.Secrets.ForEachAura("player", "HELPFUL", function(auraData)
+            local spellID = BH.Secrets.SafeAuraSpellID(auraData)
+            if not spellID then return end
             for _, id in ipairs(idList) do
-                local matchOk, matches = pcall(function() return auraData.spellId == id end)
-                if matchOk and matches then
-                    local expOk, expTime = pcall(function() return auraData.expirationTime end)
-                    return true, (expOk and expTime or nil)
+                if spellID == id then
+                    foundExpiration = BH.Secrets.SafeAuraExpiration(auraData) or false
+                    return true  -- stop scanning
                 end
             end
-            i = i + 1
+        end)
+        if foundExpiration ~= nil then
+            return true, foundExpiration or nil
         end
     end
 
@@ -5641,21 +5652,14 @@ local function BuildConsumableBuffCache()
     end
 end
 
--- Scan all HELPFUL auras on the player, calling func(auraData) for each.
--- Uses C_UnitAuras.GetAuraDataByIndex directly (avoids AuraUtil wrapper version
--- quirks); falls back to AuraUtil.ForEachAura if the direct API is unavailable.
--- As of 12.1.0, GetAuraDataByIndex throws a taint error when auras are secret
--- (in combat, encounters, M+, PvP) instead of returning nil, so each call is
--- pcall-guarded; a failed read ends the scan cleanly instead of erroring.
+-- Scan all HELPFUL auras on the player, calling func(auraData) for each; return
+-- true from func to stop. Uses C_UnitAuras.GetAuraDataByIndex directly (avoids
+-- AuraUtil wrapper version quirks), via BH.Secrets.ForEachAura which handles the
+-- 12.1.0 throw-on-secret behaviour. Falls back to AuraUtil.ForEachAura if the
+-- direct API is unavailable.
 local function ForEachPlayerBuff(func)
     if C_UnitAuras.GetAuraDataByIndex then
-        local i = 1
-        while true do
-            local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
-            if not ok or not auraData then break end
-            if func(auraData) then return end
-            i = i + 1
-        end
+        BH.Secrets.ForEachAura("player", "HELPFUL", func)
     elseif AuraUtil and AuraUtil.ForEachAura then
         AuraUtil.ForEachAura("player", "HELPFUL", nil, func)
     end
@@ -5669,29 +5673,27 @@ local function HasFoodBuff()
     -- GetUnitAuraBySpellID("player") checks all auras; GetPlayerAuraBySpellID is
     -- filtered and misses some buff types (same issue as Devotion Aura on paladins).
     for spellID in pairs(_consumableBuffCache.food) do
-        local auraData = C_UnitAuras.GetUnitAuraBySpellID("player", spellID)
+        local auraData = BH.Secrets.GetAuraBySpellID("player", spellID)
         if auraData then
-            return true, auraData.expirationTime
+            return true, BH.Secrets.SafeAuraExpiration(auraData)
         end
     end
     -- Fallback: scan all HELPFUL auras by name.
     -- "Well Fed" = regular Midnight food; "Hearty Well Fed" = hearty food (both
     -- contain "Well Fed"). Also checks cached item/spell names for custom food.
-    -- IMPORTANT: In Midnight 12.0, protected auras return secret string values for
-    -- name/expirationTime. Calling :find() on a secret string causes a taint error.
-    -- Wrap the whole body in pcall so secret auras are silently skipped.
+    -- Protected auras return secret string values for name, and calling :find()
+    -- on a secret string throws — SafeAuraName returns nil for those, so the
+    -- aura is simply skipped.
     local found, expTime = false, nil
     ForEachPlayerBuff(function(auraData)
-        pcall(function()
-            local name = auraData.name
-            if not name then return end
-            if name:find("Well Fed") or name:find("Hearty")
-                or _consumableBuffNames.food[name] then
-                found = true
-                expTime = auraData.expirationTime  -- also secret-safe inside pcall
-            end
-        end)
-        return found  -- stop iterating once a match is found
+        local name = BH.Secrets.SafeAuraName(auraData)
+        if not name then return end
+        if name:find("Well Fed") or name:find("Hearty")
+            or _consumableBuffNames.food[name] then
+            found = true
+            expTime = BH.Secrets.SafeAuraExpiration(auraData)
+            return true  -- stop iterating once a match is found
+        end
     end)
     return found, expTime
 end
@@ -5702,26 +5704,23 @@ local function HasFlaskBuff()
     -- Primary: direct spellID lookup (flask items directly apply the buff spell,
     -- so GetItemSpell gives the correct buff spell ID for flasks).
     for spellID in pairs(_consumableBuffCache.flask) do
-        local auraData = C_UnitAuras.GetUnitAuraBySpellID("player", spellID)
+        local auraData = BH.Secrets.GetAuraBySpellID("player", spellID)
         if auraData then
-            return true, auraData.expirationTime
+            return true, BH.Secrets.SafeAuraExpiration(auraData)
         end
     end
     -- Fallback: scan by name. Midnight flask buffs contain "Flask" in the name.
-    -- Also checks cached item/spell names for custom flasks.
-    -- Same pcall guard as HasFoodBuff: secret string values from protected auras
-    -- cause a taint error if string methods are called on them.
+    -- Also checks cached item/spell names for custom flasks. Same secret-string
+    -- handling as HasFoodBuff.
     local found, expTime = false, nil
     ForEachPlayerBuff(function(auraData)
-        pcall(function()
-            local name = auraData.name
-            if not name then return end
-            if name:find("Flask") or _consumableBuffNames.flask[name] then
-                found = true
-                expTime = auraData.expirationTime
-            end
-        end)
-        return found
+        local name = BH.Secrets.SafeAuraName(auraData)
+        if not name then return end
+        if name:find("Flask") or _consumableBuffNames.flask[name] then
+            found = true
+            expTime = BH.Secrets.SafeAuraExpiration(auraData)
+            return true
+        end
     end)
     return found, expTime
 end

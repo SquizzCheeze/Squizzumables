@@ -93,27 +93,41 @@ model forbids addons from mutating protected/secure frames during combat:
 **Secret aura values (client 12.1.0+)**: as of 12.1.0, `C_UnitAuras.GetAuraDataByIndex` **throws**
 a taint error ("Auras cannot be accessed when secret") instead of returning `nil` when auras are
 secret — which happens in combat, encounters, M+, and PvP, i.e. exactly when these reminders most
-need to work. The fix applied throughout `Squizzumables.lua` and `Squizzumables_SpellAlerts.lua`:
-  - Prefer `C_UnitAuras.GetUnitAuraBySpellID(unit, spellID)` (direct lookup, does not throw) when
-    checking for a fixed/known spell ID — see `HasLustDebuff`, the Coach's Whistle party-buff scan.
-  - Where an arbitrary/unknown aura must be found by scanning (`ForEachPlayerBuff`, the class-buff
-    fallback scan for protected/stance auras like Lightning Shield), wrap each
-    `GetAuraDataByIndex` call in `pcall` and treat a failed call the same as a `nil` result —
-    `local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, filter); if not ok or not auraData then break end`.
-  - Follow this same pattern for any new aura-scanning code — don't assume `GetAuraDataByIndex`
-    can only return `nil`.
-  - **The returned table's fields can themselves be secret values, independent of the call
-    succeeding.** Assigning/storing/passing a secret field is fine; *comparing* it (`==`, `<`,
-    `>`) or doing arithmetic on it (`-`, `+`) throws — `attempt to compare field 'spellId' (a
-    secret number value, while execution tainted by 'Squizzumables')` — confirmed via a live
-    user crash report on retail (`UnitHasBuff`'s `auraData.spellId == id` fallback scan). Guarding
-    the `GetAuraDataByIndex`/`GetUnitAuraBySpellID` call with `pcall` is **not sufficient** —
-    every comparison or arithmetic op on a field pulled from aura data (`spellId`,
-    `expirationTime`, etc.) needs its own `pcall`, including ones several calls downstream (e.g.
-    `BH:NeedsRefresh`'s `expirationTime - GetTime()`, and the per-frame button timer `OnUpdate`
-    that does `self.expirationTime - GetTime()` every tick — both hardened this way now). When
-    touching any code that reads a comparison/arithmetic result derived from aura data, assume it
-    could be secret and wrap the operation, not just the fetch.
+need to work. Worse, the fields on a successfully-returned aura table can *themselves* be secret:
+assigning/storing/passing one is fine, but *comparing* it (`==`, `<`, `>`) or doing arithmetic on
+it (`-`, `+`) throws — `attempt to compare field 'spellId' (a secret number value, while execution
+tainted by 'Squizzumables')`. That was a live user crash on retail (v1.58, `UnitHasBuff`'s
+`auraData.spellId == id` fallback scan).
+
+**Always go through `BH.Secrets` (`Squizzumables_Secrets.lua`). Never read an aura field directly,
+and do not reach for `pcall`.**
+  - `BH.Secrets.GetAuraBySpellID(unit, spellID, filter)` — direct lookup, preferred whenever the
+    spell ID is known up front (this API does not throw the way the index scan does).
+  - `BH.Secrets.ForEachAura(unit, filter, func)` — index scan, for when an arbitrary/unknown aura
+    must be found (`ForEachPlayerBuff`, the class-buff fallback scan for protected/stance auras
+    like Lightning Shield). Return `true` from `func` to stop. A failed read ends the scan.
+  - `BH.Secrets.SafeAuraSpellID` / `SafeAuraName` / `SafeAuraExpiration` / `SafeAuraDuration` /
+    `SafeAuraSourceUnit` / `SafeAuraStacks` — read one field. **Each returns `nil` when the value
+    is unreadable, so the result is always safe to compare and do arithmetic on.** Treat `nil` as
+    "not present"; that is the safe direction for a reminder addon.
+  - `BH.Secrets.IsSecret(v)` / `HasAnySecret(...)` / `SafeNumber(v, fallback)` /
+    `SafeString(v, fallback)` for non-aura values (the CDM module's cooldown start/duration,
+    spell names and icons).
+  - `BH.Secrets.AurasAreSecret()` wraps `C_Secrets.ShouldAurasBeSecret()` if you want to skip work
+    entirely rather than scan and discard.
+
+These are built on the client's real predicates — `issecretvalue`, `issecrettable`,
+`hasanysecretvalues`, `C_Secrets.ShouldAurasBeSecret` — which is why the check happens **once**,
+where the value is read, instead of at every downstream comparison. The addon previously wrapped
+each comparison in `pcall`; that worked but allocated a closure at every call site (including
+per-button per-frame in the countdown timer) and had to be repeated at every downstream operation,
+which is how the v1.58 crash got through. If you find yourself adding a `pcall` around a
+comparison, use a `Safe*` accessor instead.
+
+`SafeAuraExpiration` deliberately passes `0` through unchanged rather than normalising it to
+`math.huge`. `0` is the client's "permanent / no duration" marker and this addon's call sites test
+for it explicitly (`BH:NeedsRefresh` treats `0` as "never needs refreshing"; `CreateButton` treats
+`> 0` as "this button gets a countdown").
 
 **Death/combat-log event lockdown (client 12.1.0+)**: `COMBAT_LOG_EVENT_UNFILTERED` has been
 removed from the addon API entirely, and the plain `UNIT_DIED` game event does not reliably fire

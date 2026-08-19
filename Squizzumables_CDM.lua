@@ -204,7 +204,7 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize)
     local iconTex = proxy:CreateTexture(nil, "ARTWORK")
     iconTex:SetAllPoints()
     local texture = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
-    if texture and not (issecretvalue and issecretvalue(texture)) then
+    if texture and not BH.Secrets.IsSecret(texture) then
         iconTex:SetTexture(texture)
     end
     iconTex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
@@ -314,8 +314,8 @@ local function ApplyProxyVisuals(proxy, groupData)
             local start = cdInfo.startTime
             local dur = cdInfo.duration
             if start and dur then
-                local startOK = not (issecretvalue and issecretvalue(start))
-                local durOK = not (issecretvalue and issecretvalue(dur))
+                local startOK = not BH.Secrets.IsSecret(start)
+                local durOK = not BH.Secrets.IsSecret(dur)
                 if startOK and durOK and dur > 1.5 then
                     onCD = true
                 end
@@ -425,7 +425,7 @@ local function FireCDSounds()
             if cdInfo then
                 local start, dur = cdInfo.startTime, cdInfo.duration
                 if start and dur then
-                    local ok = not (issecretvalue and (issecretvalue(start) or issecretvalue(dur)))
+                    local ok = not (BH.Secrets.HasAnySecret(start, dur))
                     if ok and dur > 1.5 then onCD = true end
                 end
             end
@@ -563,7 +563,7 @@ function cdmModule:LayoutGroup(groupName)
         table.sort(members, function(a, b)
             local nameA = C_Spell.GetSpellName and C_Spell.GetSpellName(a.proxy.spellID) or ""
             local nameB = C_Spell.GetSpellName and C_Spell.GetSpellName(b.proxy.spellID) or ""
-            if issecretvalue and (issecretvalue(nameA) or issecretvalue(nameB)) then
+            if BH.Secrets.HasAnySecret(nameA, nameB) then
                 return a.cdID < b.cdID
             end
             return nameA < nameB
@@ -574,13 +574,13 @@ function cdmModule:LayoutGroup(groupName)
             local cdB = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(b.proxy.spellID)
             local remA, remB = 0, 0
             if cdA and cdA.startTime and cdA.duration then
-                local sOk = not (issecretvalue and issecretvalue(cdA.startTime))
-                local dOk = not (issecretvalue and issecretvalue(cdA.duration))
+                local sOk = not BH.Secrets.IsSecret(cdA.startTime)
+                local dOk = not BH.Secrets.IsSecret(cdA.duration)
                 if sOk and dOk then remA = math.max(0, (cdA.startTime + cdA.duration) - GetTime()) end
             end
             if cdB and cdB.startTime and cdB.duration then
-                local sOk = not (issecretvalue and issecretvalue(cdB.startTime))
-                local dOk = not (issecretvalue and issecretvalue(cdB.duration))
+                local sOk = not BH.Secrets.IsSecret(cdB.startTime)
+                local dOk = not BH.Secrets.IsSecret(cdB.duration)
                 if sOk and dOk then remB = math.max(0, (cdB.startTime + cdB.duration) - GetTime()) end
             end
             return remA > remB  -- Longest CD first
@@ -1097,10 +1097,10 @@ function cdmModule:GetAvailableCooldowns()
                         local spellName = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
                         local spellIcon = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(info.spellID)
                         -- Guard against secrets
-                        if spellName and issecretvalue and issecretvalue(spellName) then
+                        if spellName and BH.Secrets.IsSecret(spellName) then
                             spellName = "Spell " .. cdID
                         end
-                        if spellIcon and issecretvalue and issecretvalue(spellIcon) then
+                        if spellIcon and BH.Secrets.IsSecret(spellIcon) then
                             spellIcon = nil
                         end
                         cooldowns[cdID] = {
@@ -1142,8 +1142,8 @@ function cdmModule:GetAvailableBuffCooldowns()
                     seenSpells[info.spellID] = true
                     if spellName then seenNames[spellName] = true end
                     local spellIcon = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(info.spellID)
-                    if spellName and issecretvalue and issecretvalue(spellName) then spellName = "Buff " .. cdID end
-                    if spellIcon and issecretvalue and issecretvalue(spellIcon) then spellIcon = nil end
+                    if spellName and BH.Secrets.IsSecret(spellName) then spellName = "Buff " .. cdID end
+                    if spellIcon and BH.Secrets.IsSecret(spellIcon) then spellIcon = nil end
                     buffs[cdID] = {
                         cooldownID = cdID,
                         spellID    = info.spellID,
@@ -1177,8 +1177,8 @@ function cdmModule:GetAvailableBuffCooldowns()
                             seenSpells[info.spellID] = true
                             local spellName = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
                             local spellIcon = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(info.spellID)
-                            if spellName and issecretvalue and issecretvalue(spellName) then spellName = "Buff " .. cdID end
-                            if spellIcon and issecretvalue and issecretvalue(spellIcon) then spellIcon = nil end
+                            if spellName and BH.Secrets.IsSecret(spellName) then spellName = "Buff " .. cdID end
+                            if spellIcon and BH.Secrets.IsSecret(spellIcon) then spellIcon = nil end
                             buffs[cdID] = {
                                 cooldownID = cdID,
                                 spellID    = info.spellID,
