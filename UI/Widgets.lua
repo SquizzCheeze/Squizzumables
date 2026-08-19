@@ -44,6 +44,78 @@ local SQ_COLORS = {
     tabActive   = { 0.14, 0.14, 0.17, 1 },
     tabInactive = { 0.08, 0.08, 0.10, 1 },
 }
+-- ============================================================================
+-- Accent colour
+--
+-- The accent is the warm gold above by default, or the player's class colour
+-- when useClassColorAccent is on. Every heading, checkbox tick, slider thumb
+-- and selection marker in the addon is drawn with it.
+--
+-- Two ways to use it, and picking the wrong one matters:
+--
+--   ApplyAccent(region, how, alpha)
+--       For a region that keeps its colour. Applies it now AND remembers the
+--       region, so flipping the toggle recolours it live rather than needing a
+--       reload. Use this for anything created once.
+--
+--   GetAccentColor()
+--       For code that sets the colour each time it runs -- hover handlers, and
+--       dropdown entries that are rebuilt when the item list changes.
+--       Registering those would grow the region list without bound.
+-- ============================================================================
+
+local DEFAULT_ACCENT = { SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3] }
+
+-- r, g, b of the current accent. Pass "dim" for the muted variant used for
+-- secondary marks, which tracks the accent rather than being a fixed colour.
+function ns.GetAccentColor(variant)
+    local r, g, b = DEFAULT_ACCENT[1], DEFAULT_ACCENT[2], DEFAULT_ACCENT[3]
+    local BH = ns.BH
+    if BH and BH.settings and BH.settings.useClassColorAccent then
+        local _, class = UnitClass("player")
+        local c = class and C_ClassColor and C_ClassColor.GetClassColor
+                  and C_ClassColor.GetClassColor(class)
+        if c then r, g, b = c.r, c.g, c.b end
+    end
+    if variant == "dim" then
+        return r * 0.7, g * 0.7, b * 0.7
+    end
+    return r, g, b
+end
+
+local accentRegions = {}
+
+local function PaintAccentRegion(entry)
+    local r, g, b = ns.GetAccentColor(entry.variant)
+    local a = entry.alpha or 1
+    if entry.how == "text" then
+        entry.region:SetTextColor(r, g, b, a)
+    elseif entry.how == "texture" then
+        entry.region:SetColorTexture(r, g, b, a)
+    elseif entry.how == "border" then
+        entry.region:SetBackdropBorderColor(r, g, b, a)
+    end
+end
+
+-- Colour a long-lived region with the accent and remember it for live updates.
+function ns.ApplyAccent(region, how, alpha, variant)
+    if not region then return region end
+    local entry = { region = region, how = how or "text", alpha = alpha, variant = variant }
+    accentRegions[#accentRegions + 1] = entry
+    PaintAccentRegion(entry)
+    return region
+end
+
+-- Repaint everything registered. Called when the class-colour toggle changes.
+function ns.RefreshAccentColors()
+    for i = 1, #accentRegions do
+        -- A region whose frame has been discarded would otherwise take the
+        -- whole repaint down with it.
+        local ok, err = pcall(PaintAccentRegion, accentRegions[i])
+        if not ok then geterrorhandler()(err) end
+    end
+end
+
 -- Helper: create a thin-bordered backdrop on a frame
 local function ApplySQBackdrop(frame, bgColor, borderColor)
     if not frame.SetBackdrop then
@@ -60,8 +132,25 @@ end
 
 -- Helper: styled button
 local function CreateSQButton(parent, text, width, height, color)
+    -- A button with no explicit colour is an accent button, so it has to follow
+    -- the class-colour toggle. One with an explicit colour (the red "danger"
+    -- buttons) keeps it.
+    local usesAccent = (color == nil)
     color = color or SQ_COLORS.accent
     local dimColor = (color == SQ_COLORS.danger) and SQ_COLORS.dangerDim or SQ_COLORS.accentDim
+
+    -- Current border/label colours, read live for accent buttons so hover and
+    -- unhover both track the toggle.
+    local function mainColor()
+        if usesAccent then return ns.GetAccentColor() end
+        return color[1], color[2], color[3]
+    end
+    local function edgeColor()
+        if usesAccent then return ns.GetAccentColor("dim") end
+        return dimColor[1], dimColor[2], dimColor[3]
+    end
+    local edgeAlpha = usesAccent and 0.6 or dimColor[4]
+
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(width or 100, height or 26)
     btn:SetBackdrop({
@@ -70,19 +159,25 @@ local function CreateSQButton(parent, text, width, height, color)
         edgeSize = 1,
     })
     btn:SetBackdropColor(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
-    btn:SetBackdropBorderColor(dimColor[1], dimColor[2], dimColor[3], dimColor[4])
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("CENTER")
     label:SetText(text)
-    label:SetTextColor(color[1], color[2], color[3])
     btn.label = label
+    if usesAccent then
+        ns.ApplyAccent(label, "text")
+        ns.ApplyAccent(btn, "border", edgeAlpha, "dim")
+    else
+        label:SetTextColor(color[1], color[2], color[3])
+        btn:SetBackdropBorderColor(dimColor[1], dimColor[2], dimColor[3], dimColor[4])
+    end
     btn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 1)
-        self:SetBackdropBorderColor(color[1], color[2], color[3], 1)
+        self:SetBackdropBorderColor(mainColor())
     end)
     btn:SetScript("OnLeave", function(self)
         self:SetBackdropColor(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
-        self:SetBackdropBorderColor(dimColor[1], dimColor[2], dimColor[3], dimColor[4])
+        local r, g, b = edgeColor()
+        self:SetBackdropBorderColor(r, g, b, edgeAlpha)
     end)
     btn.SetText = function(self, t) self.label:SetText(t) end
     btn.GetText = function(self) return self.label:GetText() end
@@ -101,7 +196,7 @@ local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
 
     local valueText = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     valueText:SetPoint("TOPRIGHT", 0, 0)
-    valueText:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(valueText, "text")
 
     -- Track background
     local track = CreateFrame("Frame", nil, container, "BackdropTemplate")
@@ -126,14 +221,14 @@ local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
     -- Thumb
     local thumb = slider:CreateTexture(nil, "OVERLAY")
     thumb:SetSize(12, 14)
-    thumb:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.9)
+    ns.ApplyAccent(thumb, "texture", 0.9)
     slider:SetThumbTexture(thumb)
 
     -- Fill bar
     local fill = slider:CreateTexture(nil, "ARTWORK")
     fill:SetHeight(4)
     fill:SetPoint("LEFT", track, "LEFT", 1, 0)
-    fill:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.35)
+    ns.ApplyAccent(fill, "texture", 0.35)
 
     slider:SetScript("OnValueChanged", function(self, value, userInput)
         value = math.floor(value / step + 0.5) * step
@@ -187,7 +282,7 @@ local function CreateSQCheckbox(parent, labelText, onChange)
     local check = box:CreateTexture(nil, "OVERLAY")
     check:SetSize(12, 12)
     check:SetPoint("CENTER")
-    check:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.9)
+    ns.ApplyAccent(check, "texture", 0.9)
     box:SetCheckedTexture(check)
 
     local label = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -200,7 +295,7 @@ local function CreateSQCheckbox(parent, labelText, onChange)
     end)
 
     box:SetScript("OnEnter", function(self)
-        boxBorder:SetBackdropBorderColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.6)
+        do local ar, ag, ab = ns.GetAccentColor(); boxBorder:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     end)
     box:SetScript("OnLeave", function(self)
         boxBorder:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)
@@ -255,7 +350,7 @@ local function CreateSQColorPicker(parent, labelText, r, g, b, a, onChange)
     end)
 
     swatch:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.6)
+        do local ar, ag, ab = ns.GetAccentColor(); self:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     end)
     swatch:SetScript("OnLeave", function(self)
         self:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)
@@ -346,7 +441,7 @@ local function CreateSQDropdown(parent, labelText, width, items, onSelect)
             optText:SetPoint("LEFT", 6, 0)
             optText:SetText(item.text)
             if item.value == selectedValue then
-                optText:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+                ns.ApplyAccent(optText, "text")
             else
                 optText:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
             end
@@ -373,7 +468,7 @@ local function CreateSQDropdown(parent, labelText, width, items, onSelect)
         end
     end)
     btn:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.6)
+        do local ar, ag, ab = ns.GetAccentColor(); self:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     end)
     btn:SetScript("OnLeave", function(self)
         self:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)

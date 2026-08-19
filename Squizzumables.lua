@@ -32,6 +32,10 @@ BH.defaultSettings = {
     growDirection = "RIGHT",
     layoutDirection = "HORIZONTAL", -- HORIZONTAL or VERTICAL
     showLabelText = true,
+
+    -- Draw headings, tab highlights, checkboxes, slider fills and button
+    -- accents in the player's class colour instead of the default warm gold.
+    useClassColorAccent = true,
     raidToolsEnabled = true,
     raidToolsPullTimer = 10,
     raidToolsShowMarkers = true,
@@ -1146,7 +1150,7 @@ function BH:CreateOptionsPanel()
     accentLine:SetHeight(1)
     accentLine:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
     accentLine:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-    accentLine:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.4)
+    ns.ApplyAccent(accentLine, "texture", 0.4)
 
     -- Left navigation sidebar.
     --
@@ -1196,7 +1200,7 @@ function BH:CreateOptionsPanel()
         marker:SetWidth(3)
         marker:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 0)
         marker:SetPoint("BOTTOMLEFT", item, "BOTTOMLEFT", 0, 0)
-        marker:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 1)
+        ns.ApplyAccent(marker, "texture", 1)
         marker:Hide()
         item.marker = marker
 
@@ -1498,7 +1502,7 @@ function BH:BuildSettingsTab(parent)
     local profileSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     profileSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     profileSection:SetText("PROFILES")
-    profileSection:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(profileSection, "text")
     yOffset = yOffset - 18
 
     local profileNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1619,7 +1623,7 @@ function BH:BuildSettingsTab(parent)
     local sectionLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     sectionLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     sectionLabel:SetText("APPEARANCE")
-    sectionLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(sectionLabel, "text")
     yOffset = yOffset - 22
 
     -- Button Size
@@ -1654,6 +1658,23 @@ function BH:BuildSettingsTab(parent)
     self.labelCheckbox = labelCheckbox
     yOffset = yOffset - 30
 
+    -- Class-coloured accents. Recolours live rather than needing a reload:
+    -- every long-lived accent region is registered with ns.ApplyAccent, and
+    -- the handful of hover handlers read ns.GetAccentColor() as they run.
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Use class colour for headings and accents",
+        tooltip = "Draws section headings, the selected sidebar entry, checkbox ticks, "
+               .. "slider fills and button accents in your class colour. "
+               .. "Turn this off for the default warm gold.",
+        get = function() return BH.settings and BH.settings.useClassColorAccent ~= false end,
+        set = function(v)
+            BH.settings.useClassColorAccent = v
+            BH:SaveSettings()
+        end,
+        after = function() ns.RefreshAccentColors() end,
+    })
+
     CreateSQDivider(content, yOffset)
     yOffset = yOffset - 14
 
@@ -1661,7 +1682,7 @@ function BH:BuildSettingsTab(parent)
     local layoutSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     layoutSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     layoutSection:SetText("LAYOUT")
-    layoutSection:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(layoutSection, "text")
     yOffset = yOffset - 22
 
     -- Layout Direction
@@ -1730,7 +1751,7 @@ function BH:BuildSettingsTab(parent)
     local btnTextSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     btnTextSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     btnTextSection:SetText("BUTTON TEXT")
-    btnTextSection:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(btnTextSection, "text")
     yOffset = yOffset - 22
 
     -- Label font size
@@ -1806,7 +1827,7 @@ function BH:BuildSettingsTab(parent)
     local toolsSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     toolsSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     toolsSection:SetText("TOOLS")
-    toolsSection:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(toolsSection, "text")
     yOffset = yOffset - 24
 
     -- Preview button
@@ -1855,7 +1876,7 @@ function BH:BuildSettingsTab(parent)
     local miscLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     miscLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     miscLabel:SetText("MISC")
-    miscLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(miscLabel, "text")
     yOffset = yOffset - 22
 
     local guildInviteCB = CreateSQCheckbox(content, "Guild Invite on Right-Click", function(checked)
@@ -2003,7 +2024,7 @@ function BH:BuildRaidToolsTab(parent)
     local sectionLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     sectionLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     sectionLabel:SetText("MODULE")
-    sectionLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(sectionLabel, "text")
     yOffset = yOffset - 22
 
     local enableCheckbox = CreateSQCheckbox(content, "Enable Raid Tools", function(checked)
@@ -2030,7 +2051,7 @@ function BH:BuildRaidToolsTab(parent)
     local framesLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     framesLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     framesLabel:SetText("FRAMES")
-    framesLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(framesLabel, "text")
     yOffset = yOffset - 22
 
     local markersCheckbox = CreateSQCheckbox(content, "Show Markers Frame", function(checked)
@@ -2058,7 +2079,7 @@ function BH:BuildRaidToolsTab(parent)
     local layoutLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     layoutLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     layoutLabel:SetText("MARKERS LAYOUT")
-    layoutLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(layoutLabel, "text")
     yOffset = yOffset - 22
 
     local function GetMarkersGrowItems(layout)
@@ -2112,7 +2133,7 @@ function BH:BuildRaidToolsTab(parent)
     local pullLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     pullLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     pullLabel:SetText("PULL TIMER")
-    pullLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(pullLabel, "text")
     yOffset = yOffset - 22
 
     local pullSlider = CreateSQSlider(content, "Countdown Duration (seconds)", 300, 3, 30, 1)
@@ -2134,7 +2155,7 @@ function BH:BuildRaidToolsTab(parent)
     local scaleLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     scaleLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     scaleLabel:SetText("SCALE")
-    scaleLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(scaleLabel, "text")
     yOffset = yOffset - 22
 
     local markersScaleSlider = CreateSQSlider(content, "Markers Frame Scale", 300, 50, 200, 5)
@@ -2168,7 +2189,7 @@ function BH:BuildRaidToolsTab(parent)
     local bresLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     bresLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     bresLabel:SetText("BATTLE RES COUNTER")
-    bresLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(bresLabel, "text")
     yOffset = yOffset - 22
 
     local bresCheckbox = CreateSQCheckbox(content, "Enable Battle Res Counter", function(checked)
@@ -2213,7 +2234,7 @@ function BH:BuildRaidToolsTab(parent)
     local lockLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lockLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     lockLabel:SetText("POSITION")
-    lockLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(lockLabel, "text")
     yOffset = yOffset - 22
 
     local lockMarkersCheckbox = CreateSQCheckbox(content, "Lock Markers Frame", function(checked)
@@ -2722,7 +2743,7 @@ function BH:BuildTextRemindersTab(parent)
     local instLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     instLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     instLabel:SetText("INSTANCE SOUND ALERTS")
-    instLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(instLabel, "text")
     yOffset = yOffset - 22
 
     local skyreachCheckbox = CreateSQCheckbox(content, "Play Sound on Skyreach (Mythic)", function(checked)
@@ -2741,7 +2762,7 @@ function BH:BuildTextRemindersTab(parent)
     local consumLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     consumLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     consumLabel:SetText("CONSUMABLE BAG REMINDERS")
-    consumLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(consumLabel, "text")
     yOffset = yOffset - 16
 
     local consumNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -2764,7 +2785,7 @@ function BH:BuildTextRemindersTab(parent)
     local feastLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     feastLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     feastLabel:SetText("FEAST ANNOUNCE")
-    feastLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(feastLabel, "text")
     yOffset = yOffset - 16
 
     local feastNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -2910,7 +2931,7 @@ function BH:BuildTextRemindersTab(parent)
     local healerCCTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     healerCCTitle:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     healerCCTitle:SetText("ROLE CC ALERT")
-    healerCCTitle:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(healerCCTitle, "text")
     yOffset = yOffset - 18
 
     local healerCCNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -3071,7 +3092,7 @@ function BH:BuildSoundsTab(parent)
     local bundledTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     bundledTitle:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     bundledTitle:SetText("BUNDLED SOUNDS")
-    bundledTitle:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(bundledTitle, "text")
     yOffset = yOffset - 18
 
     for _, entry in ipairs(SQ_BUNDLED_SOUNDS) do
@@ -3115,7 +3136,7 @@ function BH:BuildSoundsTab(parent)
     local csTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     csTitle:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     csTitle:SetText("CUSTOM SOUNDS")
-    csTitle:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(csTitle, "text")
     yOffset = yOffset - 18
 
     local csHint = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -3344,7 +3365,7 @@ function BH:RefreshClassBuffList()
       local petHdr = self:AcquireWidget("classBuffRowCache", "petHeader", function()
           local fs = sc:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
           fs:SetText("NO PET REMINDER")
-          fs:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+          ns.ApplyAccent(fs, "text")
           return fs
       end)
       petHdr:Show()
@@ -3557,7 +3578,7 @@ function BH:UpdateCalloutsButtonFrame()
         local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         lbl:SetAllPoints()
         lbl:SetText(callout.label or "Callout")
-        lbl:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+        ns.ApplyAccent(lbl, "text")
         local sndName = callout.sound or "None"
         local calloutChannel = callout.channel or "INSTANCE"
         -- The button registers a single click edge (see SQ_GetClickEdge), so
@@ -3598,7 +3619,7 @@ function BH:BuildCalloutsTab(parent)
     local hdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     hdr:SetText("DUNGEON CALLOUTS")
-    hdr:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(hdr, "text")
     yOffset = yOffset - 16
 
     local note = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -3979,7 +4000,7 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
     local check = checkbox:CreateTexture(nil, "OVERLAY")
     check:SetSize(12, 12)
     check:SetPoint("CENTER")
-    check:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.9)
+    ns.ApplyAccent(check, "texture", 0.9)
     checkbox:SetCheckedTexture(check)
 
     checkbox:SetChecked(self:IsEnabled(itemID))
@@ -3989,7 +4010,7 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
         BH:UpdateButtons()
     end)
     checkbox:SetScript("OnEnter", function()
-        boxBorder:SetBackdropBorderColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.6)
+        do local ar, ag, ab = ns.GetAccentColor(); boxBorder:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     end)
     checkbox:SetScript("OnLeave", function()
         boxBorder:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)
@@ -4474,7 +4495,7 @@ function BH:RefreshItemList()
         cbBorder:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)
         local cbCheck = coachEnableCb:CreateTexture(nil, "OVERLAY")
         cbCheck:SetSize(12, 12); cbCheck:SetPoint("CENTER")
-        cbCheck:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.9)
+        ns.ApplyAccent(cbCheck, "texture", 0.9)
         coachEnableCb:SetCheckedTexture(cbCheck)
         coachEnableCb:SetChecked(BH.settings and BH.settings.coachWhistleReminderEnabled ~= false)
         coachEnableCb:SetScript("OnClick", function(self)
@@ -4565,7 +4586,7 @@ function BH:RefreshItemList()
         clBorder:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)
         local clCheck = coachLockCb:CreateTexture(nil, "OVERLAY")
         clCheck:SetSize(12, 12); clCheck:SetPoint("CENTER")
-        clCheck:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.9)
+        ns.ApplyAccent(clCheck, "texture", 0.9)
         coachLockCb:SetCheckedTexture(clCheck)
         coachLockCb:SetChecked(BH.settings and BH.settings.coachWhistleReminderLocked or false)
         coachLockCb:SetScript("OnClick", function(self)
@@ -8307,18 +8328,18 @@ function BH:CreateRaidToolsFrame()
         edgeSize = 1,
     })
     readyBtn:SetBackdropColor(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
-    readyBtn:SetBackdropBorderColor(SQ_COLORS.accentDim[1], SQ_COLORS.accentDim[2], SQ_COLORS.accentDim[3], SQ_COLORS.accentDim[4])
+    do local ar, ag, ab = ns.GetAccentColor("dim"); readyBtn:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     local readyLabel = readyBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     readyLabel:SetPoint("CENTER")
     readyLabel:SetText("Ready Check")
-    readyLabel:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(readyLabel, "text")
     readyBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 1)
-        self:SetBackdropBorderColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 1)
+        do local ar, ag, ab = ns.GetAccentColor(); self:SetBackdropBorderColor(ar, ag, ab, 1) end
     end)
     readyBtn:SetScript("OnLeave", function(self)
         self:SetBackdropColor(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
-        self:SetBackdropBorderColor(SQ_COLORS.accentDim[1], SQ_COLORS.accentDim[2], SQ_COLORS.accentDim[3], SQ_COLORS.accentDim[4])
+        do local ar, ag, ab = ns.GetAccentColor("dim"); self:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     end)
     readyBtn:SetPoint("TOPLEFT", prf, "TOPLEFT", prPad, -prPad)
     self.rtReadyBtn = readyBtn
@@ -8332,19 +8353,19 @@ function BH:CreateRaidToolsFrame()
         edgeSize = 1,
     })
     pullBtn:SetBackdropColor(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
-    pullBtn:SetBackdropBorderColor(SQ_COLORS.accentDim[1], SQ_COLORS.accentDim[2], SQ_COLORS.accentDim[3], SQ_COLORS.accentDim[4])
+    do local ar, ag, ab = ns.GetAccentColor("dim"); pullBtn:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     pullBtn.label = pullBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     pullBtn.label:SetPoint("CENTER")
     local pullDuration = (self.settings and self.settings.raidToolsPullTimer) or 10
     pullBtn.label:SetText("Pull " .. pullDuration .. "s")
-    pullBtn.label:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(pullBtn.label, "text")
     pullBtn:SetScript("OnEnter", function(self)
         self:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 1)
-        self:SetBackdropBorderColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 1)
+        do local ar, ag, ab = ns.GetAccentColor(); self:SetBackdropBorderColor(ar, ag, ab, 1) end
     end)
     pullBtn:SetScript("OnLeave", function(self)
         self:SetBackdropColor(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
-        self:SetBackdropBorderColor(SQ_COLORS.accentDim[1], SQ_COLORS.accentDim[2], SQ_COLORS.accentDim[3], SQ_COLORS.accentDim[4])
+        do local ar, ag, ab = ns.GetAccentColor("dim"); self:SetBackdropBorderColor(ar, ag, ab, 0.6) end
     end)
     self.rtPullActive = false
     pullBtn:SetScript("OnClick", function()

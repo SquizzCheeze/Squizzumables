@@ -289,7 +289,7 @@ function BH:BuildJustForKelTab(parent)
     local hdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     hdr:SetText("LUST ALERT")
-    hdr:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(hdr, "text")
     yOffset = yOffset - 20
 
     local lustNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -496,7 +496,7 @@ function BH:BuildJustForKelTab(parent)
     local rsHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     rsHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     rsHdr:SetText("RANDOMIZE SOUND")
-    rsHdr:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(rsHdr, "text")
     yOffset = yOffset - 20
 
     local rsNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -561,7 +561,7 @@ function BH:BuildJustForKelTab(parent)
     local afHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     afHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     afHdr:SetText("ALERT FRAME")
-    afHdr:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(afHdr, "text")
     yOffset = yOffset - 20
 
     local scaleSlider = CreateSQSlider(content, "Alert Image Scale %", 220, 50, 300, 1)
@@ -605,7 +605,7 @@ function BH:BuildJustForKelTab(parent)
     local dtHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     dtHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     dtHdr:SetText("M+ DEATH TALLY")
-    dtHdr:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(dtHdr, "text")
     yOffset = yOffset - 22
 
     local dtEnableCb = CreateSQCheckbox(content, "Enable M+ Death Tally", function(checked)

@@ -48,6 +48,10 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Headings, sidebar highlights, checkbox ticks, slider fills and button accents can now be
+  drawn in your class colour instead of the default warm gold. On by default; toggle it with
+  "Use class colour for headings and accents" on the Settings tab. Changes apply immediately
+  rather than needing a reload
 - Preview mode: the beacon, earth shield, symbiotic relationship and consumable bag
   reminders flashed up and vanished immediately when Preview was switched on. Preview showed
   them, then the next UpdateButtons pass -- which runs off UNIT_AURA, so within a fraction of

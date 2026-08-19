@@ -227,7 +227,7 @@ builders.header = function(parent, y, spec)
     local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("TOPLEFT", parent, "TOPLEFT", spec.indent or LEFT_PAD, y)
     fs:SetText(spec.label)
-    fs:SetTextColor(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3])
+    ns.ApplyAccent(fs, "text")
     Rows.RegisterSearchEntry(spec.label, spec.tooltip, fs)
     return fs
 end
