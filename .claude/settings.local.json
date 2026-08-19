@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find '/c/World of Warcraft/_retail_/Interface/AddOns/Squizzumables' -maxdepth 2 -iname .claude* -o -iname settings.local.json)",
+      "Bash([ -d \"$RETAIL/.claude\" ])",
+      "WebFetch(domain:warcraft.wiki.gg)"
+    ]
+  }
+}
