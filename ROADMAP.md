@@ -612,16 +612,16 @@ of the remaining per-reminder bespoke code.
 
 ## Part 6 — Release plan
 
-### v1.60 — bugs and safety (no architecture change)
+### v1.60 — bugs and safety (no architecture change)  ✅ DONE (untested in-game)
 
-- [ ] §1.1 Derive `PROFILE_POSITION_KEYS` from `POSITION_PAIRS`
-- [ ] §1.2 `BH:LoadAllFramePositions()`, called from both profile popups and `PLAYER_LOGIN`
-- [ ] §1.5 Delete the empty `OnUpdate` at `:9109`
-- [ ] §1.7 Add `BH.PlayerKnowsSpell`, replace 16 `IsSpellKnown` call sites
-- [ ] §4 Add `Core/Secrets.lua`; convert `Squizzumables.lua` off `pcall`; update `CLAUDE.md`
-- [ ] §1.4 Throttle the button timer `OnUpdate`, drop the per-frame closure
-- [ ] §1.3 Pool the three config-panel list refreshers
-- [ ] §1.6 Include the reagent bag in all bag scans
+- [x] §1.1 Derive `PROFILE_POSITION_KEYS` from `POSITION_PAIRS`
+- [x] §1.2 `BH:LoadAllFramePositions()`, called from both profile popups and `PLAYER_LOGIN`
+- [x] §1.5 Delete the empty `OnUpdate` at `:9109`
+- [x] §1.7 Add `BH.PlayerKnowsSpell`, replace 16 `IsSpellKnown` call sites
+- [x] §4 Add `Squizzumables_Secrets.lua`; convert `Squizzumables.lua` off `pcall`; update `CLAUDE.md`
+- [x] §1.4 Throttle the button timer `OnUpdate`, drop the per-frame closure
+- [x] §1.3 Pool the three config-panel list refreshers
+- [x] §1.6 Include the reagent bag in all bag scans
 
 ### v1.61 — the refactor that unlocks everything else
 
