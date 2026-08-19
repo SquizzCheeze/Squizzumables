@@ -209,6 +209,24 @@ function BH:AcquireWidget(cacheName, key, factory)
     return widget, true
 end
 
+-- Which mouse edge our secure action buttons should fire on.
+--
+-- Registering both "AnyDown" and "AnyUp" makes a secure button fire its action
+-- twice per physical click; the second attempt lands inside the GCD of the
+-- first, which at best wastes a call and at worst eats the click. Blizzard's
+-- action buttons pick one edge from the ActionButtonUseKeyDown CVar, so match
+-- that and our buttons behave like the player's normal bars.
+--
+-- Falls back to the "Up" edge, which works regardless of the setting.
+-- Pass "Left" for buttons that should only respond to the left mouse button.
+function SQ_GetClickEdge(whichButton)
+    local prefix = whichButton == "Left" and "LeftButton" or "Any"
+    if GetCVarBool and GetCVarBool("ActionButtonUseKeyDown") then
+        return prefix .. "Down"
+    end
+    return prefix .. "Up"
+end
+
 -- Use this instead of IsSpellKnown anywhere in the addon.
 function BH.PlayerKnowsSpell(spellID)
     if not spellID then return false end
@@ -4088,7 +4106,7 @@ function BH:UpdateCalloutsButtonFrame()
         local btn = CreateFrame("Button", nil, f, "SecureActionButtonTemplate")
         btn:SetSize(BTN_W - 4, BTN_H)
         btn:SetPoint("TOPLEFT", f, "TOPLEFT", 2, yOfs)
-        btn:RegisterForClicks("AnyDown", "AnyUp")
+        btn:RegisterForClicks(SQ_GetClickEdge())
         local bg = btn:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
         bg:SetColorTexture(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
@@ -5524,7 +5542,13 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    btn:RegisterForClicks("AnyDown", "AnyUp")
+    -- Fire the secure action once per click, on the edge the client is
+    -- configured for. Registering both "AnyDown" and "AnyUp" (as this did) makes
+    -- every physical click attempt the cast twice, with the second attempt
+    -- landing inside the GCD of the first. Matching ActionButtonUseKeyDown is
+    -- what Blizzard's own action buttons do, so these behave like the rest of
+    -- the player's bars.
+    btn:RegisterForClicks(SQ_GetClickEdge())
     btn:SetFrameStrata("MEDIUM")  -- Below the options panel (DIALOG)
     btn:Enable()
     return btn
@@ -6720,6 +6744,9 @@ end
 
 -- Debounce handle for UpdateButtons -- collapses rapid-fire UNIT_AURA group events into one call
 local _updateButtonsPending = false
+-- Set while a rebuild is being held off because the cursor is over a button
+-- (see the hover guard in BH:UpdateButtons).
+local _updateButtonsHoverRetry = false
 
 function BH:ScheduleUpdateButtons()
     if _updateButtonsPending then return end
@@ -6738,6 +6765,34 @@ function BH:UpdateButtons()
     self:UpdateFoodReminder()
     self:UpdateFlaskReminder()
     self:UpdateOilReminder()
+
+    -- Never tear the buttons down while the cursor is on one.
+    --
+    -- This function is driven by UNIT_AURA, which fires for every unit in the
+    -- group on every aura change, so in a group it runs more or less constantly
+    -- on its 0.2s debounce. The teardown below hides, unanchors and reparents
+    -- every button; if that lands between the player's mouse-down and mouse-up
+    -- the click is swallowed and the spell never goes off. Worse, buttons are
+    -- recycled from a pool in order, so the frame under the cursor can come
+    -- back as a different action entirely.
+    --
+    -- Deferring while hovering is safe: the player is about to click, and the
+    -- rebuild happens within 0.5s of the cursor leaving. Preview mode is exempt
+    -- because its dummy buttons are meant to be hovered and dragged.
+    if not self.previewMode then
+        for _, btn in ipairs(self.buttons) do
+            if btn:IsShown() and btn:IsMouseOver() then
+                if not _updateButtonsHoverRetry then
+                    _updateButtonsHoverRetry = true
+                    C_Timer.After(0.5, function()
+                        _updateButtonsHoverRetry = false
+                        BH:UpdateButtons()
+                    end)
+                end
+                return
+            end
+        end
+    end
 
     -- clear existing buttons - return to pool so frames are reused next UpdateButtons call
     for i,btn in ipairs(self.buttons) do
@@ -8643,7 +8698,7 @@ function BH:CreateRaidToolsFrame()
         local c = WORLD_MARKER_COLORS[i]
         btn:SetAttribute("type", "worldmarker")
         btn:SetAttribute("marker", worldMarkerIndices[i])
-        btn:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
+        btn:RegisterForClicks(SQ_GetClickEdge("Left"))
         btn:SetBackdrop({
             bgFile = "Interface\\BUTTONS\\WHITE8X8",
             edgeFile = "Interface\\BUTTONS\\WHITE8X8",
@@ -8667,7 +8722,7 @@ function BH:CreateRaidToolsFrame()
     clearWM:SetSize(markerSize, markerSize)
     clearWM:SetAttribute("type", "worldmarker")
     clearWM:SetAttribute("action", "clear")
-    clearWM:RegisterForClicks("LeftButtonUp", "LeftButtonDown")
+    clearWM:RegisterForClicks(SQ_GetClickEdge("Left"))
     clearWM:SetBackdrop({
         bgFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
@@ -8693,7 +8748,7 @@ function BH:CreateRaidToolsFrame()
         btn:SetAttribute("type1", "raidtarget")
         btn:SetAttribute("action1", "toggle")
         btn:SetAttribute("marker", i)
-        btn:RegisterForClicks("AnyDown", "AnyUp")
+        btn:RegisterForClicks(SQ_GetClickEdge())
         btn:SetBackdrop({
             bgFile = "Interface\\BUTTONS\\WHITE8X8",
             edgeFile = "Interface\\BUTTONS\\WHITE8X8",
@@ -8716,7 +8771,7 @@ function BH:CreateRaidToolsFrame()
     clearTM:SetSize(markerSize, markerSize)
     clearTM:SetAttribute("type", "raidtarget")
     clearTM:SetAttribute("action", "clear-all")
-    clearTM:RegisterForClicks("AnyDown", "AnyUp")
+    clearTM:RegisterForClicks(SQ_GetClickEdge())
     clearTM:SetBackdrop({
         bgFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
