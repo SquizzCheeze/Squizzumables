@@ -2771,6 +2771,7 @@ function BH:BuildTextRemindersTab(parent)
     end)
     skyreachCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.trSkyreachSoundCheckbox = skyreachCheckbox
+    ns.Rows.AddTooltip(skyreachCheckbox, "Play Sound on Skyreach (Mythic)", "Plays a sound when you enter The Everbloom on Mythic difficulty, as a reminder about the Skyreach affix pull.")
     yOffset = yOffset - 34
 
     -- === Food/Flask/Oil Bag Reminders ===
@@ -2821,6 +2822,7 @@ function BH:BuildTextRemindersTab(parent)
     end)
     feastCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.trFeastAnnounceCheckbox = feastCheckbox
+    ns.Rows.AddTooltip(feastCheckbox, "Enable Feast Announce", "Announces to chat when you drop a feast, and alerts other Squizzumables users in your group with a sound.")
     yOffset = yOffset - 30
 
     -- Per-context channel grid (Solo / In Party / In Instance / In Raid)
@@ -2870,6 +2872,7 @@ function BH:BuildTextRemindersTab(parent)
         dd:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + ctx.col * colW, yOffset + 2)
         dd:SetSelectedValue(chanDB[ctx.key] or "NONE")
         self.trFeastChannelDDs[ctx.key] = dd
+        ns.Rows.AddTooltip(dd, "Feast channel: " .. ctx.label, "Which chat channel the feast announcement goes to when you are " .. ctx.label:lower() .. ". Set to None to stay silent in that situation.")
     end
     yOffset = yOffset - 30
 
@@ -2924,6 +2927,7 @@ function BH:BuildTextRemindersTab(parent)
     local curFeastSnd = BH.settings and BH.settings.feastAlertSound or "None"
     feastSoundDD:SetSelectedValue(curFeastSnd)
     self.trFeastAlertSoundDD = feastSoundDD
+    ns.Rows.AddTooltip(feastSoundDD, "Feast alert sound", "Sound played to you and to other Squizzumables users in the group when a feast is dropped.")
 
     local feastSoundPreviewBtn = CreateFrame("Button", nil, content)
     feastSoundPreviewBtn:SetSize(22, 22)
@@ -2970,6 +2974,7 @@ function BH:BuildTextRemindersTab(parent)
     end)
     healerCCCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.trHealerCCCheckbox = healerCCCheckbox
+    ns.Rows.AddTooltip(healerCCCheckbox, "Alert when healer is CC'd", "Watch group healers and raise the alert when one is crowd controlled.")
     yOffset = yOffset - 30
 
     local tankCCCheckbox = CreateSQCheckbox(content, "Alert when tank is CC'd", function(checked)
@@ -2980,6 +2985,7 @@ function BH:BuildTextRemindersTab(parent)
     end)
     tankCCCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.trTankCCCheckbox = tankCCCheckbox
+    ns.Rows.AddTooltip(tankCCCheckbox, "Alert when tank is CC'd", "Watch group tanks and raise the alert when one is crowd controlled. Shares the frame and sound with the healer alert; the label names whichever role is affected.")
     yOffset = yOffset - 30
 
     local healerCCLockCheckbox = CreateSQCheckbox(content, "Lock Position", function(checked)
@@ -2992,6 +2998,7 @@ function BH:BuildTextRemindersTab(parent)
     end)
     healerCCLockCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.trHealerCCLockCheckbox = healerCCLockCheckbox
+    ns.Rows.AddTooltip(healerCCLockCheckbox, "Lock Position", "Stops the role CC alert being dragged.")
     yOffset = yOffset - 30
 
     local healerCCScaleSlider = CreateSQSlider(content, "Scale", 200, 50, 200, 5)
@@ -3002,6 +3009,7 @@ function BH:BuildTextRemindersTab(parent)
         if BH.healerCCReminderFrame then BH.healerCCReminderFrame:SetScale(val / 100) end
     end)
     self.trHealerCCScaleSlider = healerCCScaleSlider
+    ns.Rows.AddTooltip(healerCCScaleSlider, "Scale", "Size of the role CC alert, as a percentage.")
     yOffset = yOffset - 50
 
     local healerCCSndLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -3017,6 +3025,7 @@ function BH:BuildTextRemindersTab(parent)
     healerCCSoundDD:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     healerCCSoundDD:SetSelectedValue(BH.settings and BH.settings.healerCCAlertSound or "None")
     self.trHealerCCSoundDD = healerCCSoundDD
+    ns.Rows.AddTooltip(healerCCSoundDD, "Alert sound", "Sound played when a watched healer or tank is crowd controlled.")
 
     local hccPreviewBtn = CreateFrame("Button", nil, content)
     hccPreviewBtn:SetSize(22, 22)

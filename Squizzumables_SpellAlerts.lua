@@ -309,6 +309,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     lustEnableCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelLustEnableCb = lustEnableCb
+    ns.Rows.AddTooltip(lustEnableCb, "Enable lust alert", "Shows an image and plays a sound when a Bloodlust-type effect is used on you. Triggers on the Sated/Exhaustion debuff, so it fires for Heroism, Time Warp, Primal Rage and the rest.")
     yOffset = yOffset - 26
 
     -- Lust row 1: Texture · Frames · FPS
@@ -330,6 +331,7 @@ function BH:BuildJustForKelTab(parent)
     lTexEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustTex(self) end)
     lTexEdit:SetScript("OnEditFocusLost", SaveLustTex)
     self.kelLustTexEdit = lTexEdit
+    ns.Rows.AddTooltip(lTexEdit, "Alert image", "Base file name of the image in the addon Media folder, without the extension. For an animated sequence use the base name shared by the numbered frames.")
 
     local lFramesLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lFramesLbl:SetPoint("LEFT", lTexEdit, "RIGHT", 8, 0)
@@ -349,6 +351,7 @@ function BH:BuildJustForKelTab(parent)
     lFramesEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustFrames(self) end)
     lFramesEdit:SetScript("OnEditFocusLost", SaveLustFrames)
     self.kelLustFramesEdit = lFramesEdit
+    ns.Rows.AddTooltip(lFramesEdit, "Frame count", "How many numbered image files make up the animation. Leave at 1 for a still image.")
 
     local lFpsLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lFpsLbl:SetPoint("LEFT", lFramesEdit, "RIGHT", 8, 0)
@@ -368,6 +371,7 @@ function BH:BuildJustForKelTab(parent)
     lFpsEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustFPS(self) end)
     lFpsEdit:SetScript("OnEditFocusLost", SaveLustFPS)
     self.kelLustFpsEdit = lFpsEdit
+    ns.Rows.AddTooltip(lFpsEdit, "Frames per second", "Playback speed of the animation.")
     yOffset = yOffset - 28
 
     -- Lust row 2: Duration · Loop
@@ -389,6 +393,7 @@ function BH:BuildJustForKelTab(parent)
     lDurEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustDur(self) end)
     lDurEdit:SetScript("OnEditFocusLost", SaveLustDur)
     self.kelLustDurEdit = lDurEdit
+    ns.Rows.AddTooltip(lDurEdit, "Duration", "How many seconds the alert stays on screen.")
 
     local lLoopCb = CreateSQCheckbox(content, "Loop", function(val)
         BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
@@ -397,6 +402,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     lLoopCb:SetPoint("LEFT", lDurEdit, "RIGHT", 14, 0)
     self.kelLustLoopCb = lLoopCb
+    ns.Rows.AddTooltip(lLoopCb, "Loop", "Repeat the animation for the whole duration instead of playing through once and holding on the last frame.")
     yOffset = yOffset - 28
 
     -- Lust row 2b: Sound loop
@@ -407,6 +413,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     lSndLoopCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelLustSndLoopCb = lSndLoopCb
+    ns.Rows.AddTooltip(lSndLoopCb, "Loop sound", "Repeat the alert sound while the alert is on screen.")
 
     local lSndLoopIntervalLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lSndLoopIntervalLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 95, yOffset + 3)
@@ -425,6 +432,7 @@ function BH:BuildJustForKelTab(parent)
     lSndLoopIntervalEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustSndInterval(self) end)
     lSndLoopIntervalEdit:SetScript("OnEditFocusLost", SaveLustSndInterval)
     self.kelLustSndLoopIntervalEdit = lSndLoopIntervalEdit
+    ns.Rows.AddTooltip(lSndLoopIntervalEdit, "Sound loop interval", "Seconds between repeats of the looped sound.")
 
     local lSndLoopSecLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lSndLoopSecLbl:SetPoint("LEFT", lSndLoopIntervalEdit, "RIGHT", 4, 0)
@@ -445,6 +453,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     lSndDrop:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 62, yOffset - 4)
     self.kelLustSndDrop = lSndDrop
+    ns.Rows.AddTooltip(lSndDrop, "Alert sound", "Sound played when the alert fires. Includes the bundled sounds and any you have registered on the Sounds tab.")
     yOffset = yOffset - 30
 
     -- Lust row 3b: Channel selector + Test button
@@ -484,6 +493,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     lChanDrop:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 62, yOffset - 4)
     self.kelLustSndChannelDrop = lChanDrop
+    ns.Rows.AddTooltip(lChanDrop, "Sound channel", "Which audio channel the alert plays on. Master ignores your in-game sound sliders.")
     yOffset = yOffset - 36
 
     -- ── RANDOMIZE SOUND ────────────────────────────────────────────────────
@@ -573,6 +583,7 @@ function BH:BuildJustForKelTab(parent)
     scaleSlider:SetValue((BH.settings and BH.settings.kelAlertScale or 1.0) * 100)
     scaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelScaleSlider = scaleSlider
+    ns.Rows.AddTooltip(scaleSlider, "Alert Image Scale %", "Size of the alert image, as a percentage.")
     yOffset = yOffset - 50
 
     local opacitySlider = CreateSQSlider(content, "Alert Opacity %", 220, 0, 100, 1)
@@ -584,6 +595,7 @@ function BH:BuildJustForKelTab(parent)
     opacitySlider:SetValue(math.floor(((BH.settings and BH.settings.kelLustAlert and BH.settings.kelLustAlert.opacity) or 1.0) * 100 + 0.5))
     opacitySlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelOpacitySlider = opacitySlider
+    ns.Rows.AddTooltip(opacitySlider, "Alert Opacity %", "Transparency of the alert image.")
     yOffset = yOffset - 50
 
     local lockCb = CreateSQCheckbox(content, "Lock alert image position", function(val)
@@ -593,6 +605,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     lockCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelLockCb = lockCb
+    ns.Rows.AddTooltip(lockCb, "Lock alert image position", "Stops the alert image being dragged.")
     yOffset = yOffset - 28
 
     -- ── M+ DEATH TALLY ────────────────────────────────────────────────────
@@ -615,6 +628,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     dtEnableCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelDeathTallyEnableCb = dtEnableCb
+    ns.Rows.AddTooltip(dtEnableCb, "Enable M+ Death Tally", "Counts deaths per player for the current Mythic+ key. Starts and resets when a key begins, and can be dismissed with its close button.")
     yOffset = yOffset - 34
 
     local dtScaleSlider = CreateSQSlider(content, "M+ Death Tally Scale", 300, 50, 200, 5)
@@ -627,6 +641,7 @@ function BH:BuildJustForKelTab(parent)
         end
     end)
     self.kelDeathTallyScaleSlider = dtScaleSlider
+    ns.Rows.AddTooltip(dtScaleSlider, "M+ Death Tally Scale", "Size of the death tally frame, as a percentage.")
     yOffset = yOffset - 50
 
     local dtTitleFontSlider = CreateSQSlider(content, "Title Font Size", 300, 8, 24, 1)
@@ -637,6 +652,7 @@ function BH:BuildJustForKelTab(parent)
         if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
     end)
     self.kelDeathTallyTitleFontSlider = dtTitleFontSlider
+    ns.Rows.AddTooltip(dtTitleFontSlider, "Title Font Size", "Size of the death tally heading text.")
     yOffset = yOffset - 50
 
     local dtRowFontSlider = CreateSQSlider(content, "Row Font Size", 300, 8, 20, 1)
@@ -647,6 +663,7 @@ function BH:BuildJustForKelTab(parent)
         if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
     end)
     self.kelDeathTallyRowFontSlider = dtRowFontSlider
+    ns.Rows.AddTooltip(dtRowFontSlider, "Row Font Size", "Size of the per-player rows in the death tally.")
     yOffset = yOffset - 50
 
     local dtClassColorCb = CreateSQCheckbox(content, "Class color names", function(checked)
@@ -656,6 +673,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     dtClassColorCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelDeathTallyClassColorCb = dtClassColorCb
+    ns.Rows.AddTooltip(dtClassColorCb, "Class color names", "Colour each name in the death tally by that player class.")
     yOffset = yOffset - 26
 
     local dtHideRealmCb = CreateSQCheckbox(content, "Hide realm names", function(checked)
@@ -665,6 +683,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     dtHideRealmCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelDeathTallyHideRealmCb = dtHideRealmCb
+    ns.Rows.AddTooltip(dtHideRealmCb, "Hide realm names", "Strip the -Realm suffix from names in the death tally, for cross-realm groups.")
     yOffset = yOffset - 34
 
     local dtLockCb = CreateSQCheckbox(content, "Lock M+ Death Tally", function(checked)
@@ -677,6 +696,7 @@ function BH:BuildJustForKelTab(parent)
     end)
     dtLockCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelLockDeathTallyCheckbox = dtLockCb
+    ns.Rows.AddTooltip(dtLockCb, "Lock M+ Death Tally", "Stops the death tally frame being dragged.")
     yOffset = yOffset - 28
 
     self.kelTabContent = content

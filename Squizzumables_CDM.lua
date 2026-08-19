@@ -1452,6 +1452,7 @@ function BH:RebuildCDMTabContent()
         C_Timer.After(0.1, function() BH:RebuildCDMTabContent() end)
     end)
     enableCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    ns.Rows.AddTooltip(enableCB, "Enable Cooldown Manager", "Master switch for the Cooldown Manager proxy. It mirrors Blizzard's Cooldown Viewer into its own icons without touching Blizzard's frames, so it stays taint-free.")
     enableCB:SetChecked(BH.settings and BH.settings.cdmEnabled)
     yOffset = yOffset - 28
 
@@ -1711,6 +1712,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     -- ===== ROW 1: Icon Size + Spacing =====
     local sizeSlider = CreateSQSlider(content, "Icon Size", 170, 20, 80, 2)
     sizeSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(sizeSlider, "Icon Size", "Width and height of each cooldown icon in this group, in pixels.")
     sizeSlider:SetValue(groupData.iconSize or DEFAULT_ICON_SIZE)
     sizeSlider:SetAfterValueChanged(function(value)
         groupData.iconSize = value
@@ -1719,6 +1721,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
 
     local spacingSlider = CreateSQSlider(content, "Spacing", 170, 0, 20, 1)
     spacingSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(spacingSlider, "Spacing", "Gap between icons in this group, in pixels.")
     spacingSlider:SetValue(groupData.spacing or DEFAULT_SPACING)
     spacingSlider:SetAfterValueChanged(function(value)
         groupData.spacing = value
@@ -1729,6 +1732,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     -- ===== ROW 2: Per Row + Alpha =====
     local rowSlider = CreateSQSlider(content, "Per Row", 170, 1, 20, 1)
     rowSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(rowSlider, "Per Row", "How many icons before wrapping to the next row or column.")
     rowSlider:SetValue(groupData.perRow or DEFAULT_PER_ROW)
     rowSlider:SetAfterValueChanged(function(value)
         groupData.perRow = value
@@ -1737,6 +1741,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
 
     local alphaSlider = CreateSQSlider(content, "Opacity", 170, 10, 100, 5)
     alphaSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(alphaSlider, "Opacity", "Transparency of this group of icons.")
     alphaSlider:SetValue(math.floor((groupData.alpha or DEFAULT_ALPHA) * 100))
     alphaSlider:SetAfterValueChanged(function(value)
         groupData.alpha = value / 100
@@ -1754,6 +1759,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     orientDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(orientDD, "Orientation", "Whether this group lays out horizontally or vertically.")
     orientDD:SetSelectedValue(groupData.orientation or DEFAULT_ORIENTATION)
 
     local growItems = {
@@ -1769,6 +1775,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     growDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(growDD, "Growth", "Which way the group extends from its anchor as icons are added.")
     growDD:SetSelectedValue(groupData.growDirection or DEFAULT_GROW_DIRECTION)
     yOffset = yOffset - 50
 
@@ -1783,6 +1790,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     sortDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(sortDD, "Sort By", "Order the icons within this group.")
     sortDD:SetSelectedValue(groupData.sortBy or DEFAULT_SORT)
     yOffset = yOffset - 50
 
@@ -1804,6 +1812,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         end
     end)
     lockCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(lockCB, "Lock (click-through)", "Stops the group being dragged and lets mouse clicks pass through to whatever is behind it. Tooltips still work.")
     lockCB:SetChecked(groupData.locked)
 
     local tooltipCB = CreateSQCheckbox(content, "Show Tooltip", function(checked)
@@ -1811,6 +1820,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     tooltipCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(tooltipCB, "Show Tooltip", "Show the spell tooltip when hovering an icon in this group.")
     tooltipCB:SetChecked(groupData.showTooltip ~= false)
     yOffset = yOffset - 24
 
@@ -1819,6 +1829,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     borderCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(borderCB, "Show Border", "Draw a border around each icon in this group.")
     borderCB:SetChecked(groupData.showBorder ~= false)
 
     local cdTextCB = CreateSQCheckbox(content, "Cooldown Text", function(checked)
@@ -1826,6 +1837,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     cdTextCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(cdTextCB, "Cooldown Text", "Show the remaining cooldown as a number on the icon.")
     cdTextCB:SetChecked(groupData.showCooldownText ~= false)
     yOffset = yOffset - 24
 
@@ -1834,6 +1846,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     desatCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(desatCB, "Desaturate When Ready", "Grey the icon out when the ability is ready, rather than when it is on cooldown.")
     desatCB:SetChecked(groupData.desaturateReady)
 
     local glowCB = CreateSQCheckbox(content, "Glow On Ready", function(checked)
@@ -1841,6 +1854,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
     glowCB:SetChecked(groupData.glowOnReady)
     yOffset = yOffset - 24
 
@@ -1849,6 +1863,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     combatCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(combatCB, "Hide Out of Combat", "Only show this group while you are in combat.")
     combatCB:SetChecked(groupData.hideOutOfCombat)
 
     local activeOnlyCB = CreateSQCheckbox(content, "Hide Until Active", function(checked)
@@ -1856,6 +1871,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         BH.cdm:ScheduleReconcile()
     end)
     activeOnlyCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(activeOnlyCB, "Hide Until Active", "Only show an icon once its ability is on cooldown or its buff is active.")
     activeOnlyCB:SetChecked(groupData.hideUntilActive)
     yOffset = yOffset - 28
 
@@ -2151,6 +2167,7 @@ function BH:RebuildCDMSoundsRight()
         cdmSoundsState.newAlertType = val
     end)
     typeDD:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff - 4)
+    ns.Rows.AddTooltip(typeDD, "Alert type", "What kind of cooldown event this alert listens for.")
     typeDD:SetSelectedValue(cdmSoundsState.newAlertType or "Sound")
     yOff = yOff - 34
 
@@ -2187,6 +2204,7 @@ function BH:RebuildCDMSoundsRight()
         cdmSoundsState.newAlertWhen = val
     end)
     whenDD:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff - 4)
+    ns.Rows.AddTooltip(whenDD, "Alert when", "Which transition fires the sound -- the ability becoming ready, going on cooldown, or its buff being applied or removed.")
     whenDD:SetSelectedValue(defaultWhen)
     cdmSoundsState.newAlertWhen = defaultWhen
     yOff = yOff - 34
@@ -2202,6 +2220,7 @@ function BH:RebuildCDMSoundsRight()
         cdmSoundsState.newAlertSound = val
     end)
     soundDD:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff - 4)
+    ns.Rows.AddTooltip(soundDD, "Alert sound", "Sound played when this alert fires. Includes the bundled sounds and any registered on the Sounds tab.")
     soundDD:SetSelectedValue(cdmSoundsState.newAlertSound or "None")
     yOff = yOff - 34
 

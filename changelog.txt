@@ -48,6 +48,10 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Every option in the settings panel now has a tooltip explaining what it does and when it
+  applies. There were none before
+- The settings panel is now a resizable 820x620 window with a left sidebar instead of 460x600
+  with a tab strip that wrapped onto two rows
 - Headings, sidebar highlights, checkbox ticks, slider fills and button accents can now be
   drawn in your class colour instead of the default warm gold. On by default; toggle it with
   "Use class colour for headings and accents" on the Settings tab. Changes apply immediately
