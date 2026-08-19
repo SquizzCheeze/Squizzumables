@@ -1056,13 +1056,33 @@ function BH:CreateOptionsPanel()
 
     -- Main frame
     local panel = CreateFrame("Frame", "SQUIZZUMABLESOptions", UIParent, "BackdropTemplate")
-    panel:SetSize(460, 600)
+    -- Wider than the old 460x600: ten categories no longer have to be crammed
+    -- into a tab strip that wrapped onto two rows, and the extra width gives
+    -- the option rows somewhere to breathe.
+    panel:SetSize(820, 620)
     panel:SetPoint("CENTER")
     panel:SetFrameStrata("DIALOG")
     panel:SetMovable(true)
+    panel:SetResizable(true)
+    if panel.SetResizeBounds then
+        panel:SetResizeBounds(700, 520)
+    elseif panel.SetMinResize then
+        panel:SetMinResize(700, 520)
+    end
     panel:EnableMouse(true)
     ApplySQBackdrop(panel, SQ_COLORS.bg, SQ_COLORS.border)
     self.optionsPanel = panel
+
+    -- Resize grip, bottom-right.
+    local resizeGrip = CreateFrame("Button", nil, panel)
+    resizeGrip:SetSize(16, 16)
+    resizeGrip:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 2)
+    local gripTex = resizeGrip:CreateTexture(nil, "OVERLAY")
+    gripTex:SetAllPoints()
+    gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    gripTex:SetVertexColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+    resizeGrip:SetScript("OnMouseDown", function() panel:StartSizing("BOTTOMRIGHT") end)
+    resizeGrip:SetScript("OnMouseUp", function() panel:StopMovingOrSizing() end)
 
     -- Combat protection: hide in combat, show after
     panel:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -1128,62 +1148,80 @@ function BH:CreateOptionsPanel()
     accentLine:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
     accentLine:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 0.4)
 
-    -- Tab bar
-    local tabBar = CreateFrame("Frame", nil, panel)
-    tabBar:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 0, 0)
-    tabBar:SetPoint("TOPRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
+    -- Left navigation sidebar.
+    --
+    -- Replaces a horizontal tab strip that had to wrap onto two rows to fit ten
+    -- categories. A vertical list scales to any number of entries, keeps every
+    -- category visible at once, and leaves the full width of the panel for the
+    -- options themselves.
+    local NAV_WIDTH  = 180
+    local NAV_ITEM_H = 26
 
-    local TAB_WIDTH = 110
-    local TAB_HEIGHT = 28
-    local TAB_PAD_LEFT = 12
-    local TAB_GAP = 2
-    local TAB_MAX_WIDTH = 460 - TAB_PAD_LEFT -- panel width minus left padding
+    local navBar = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+    navBar:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 0, 0)
+    navBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 1, 40)
+    navBar:SetWidth(NAV_WIDTH)
+    navBar:SetBackdrop({ bgFile = "Interface\BUTTONS\WHITE8X8" })
+    navBar:SetBackdropColor(SQ_COLORS.tabInactive[1], SQ_COLORS.tabInactive[2], SQ_COLORS.tabInactive[3], 1)
 
-    local tabCursorX = TAB_PAD_LEFT
-    local tabCursorRow = 0
+    -- Divider between the sidebar and the content area.
+    local navEdge = navBar:CreateTexture(nil, "OVERLAY")
+    navEdge:SetWidth(1)
+    navEdge:SetPoint("TOPRIGHT", navBar, "TOPRIGHT", 0, 0)
+    navEdge:SetPoint("BOTTOMRIGHT", navBar, "BOTTOMRIGHT", 0, 0)
+    navEdge:SetColorTexture(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.5)
+
+    local navCursorY = -6
 
     local function CreateTab(text)
-        -- Wrap to next row if this tab won't fit
-        if tabCursorX + TAB_WIDTH > TAB_MAX_WIDTH + TAB_PAD_LEFT then
-            tabCursorRow = tabCursorRow + 1
-            tabCursorX = TAB_PAD_LEFT
-        end
+        local item = CreateFrame("Button", nil, navBar, "BackdropTemplate")
+        item:SetHeight(NAV_ITEM_H)
+        item:SetPoint("TOPLEFT", navBar, "TOPLEFT", 0, navCursorY)
+        item:SetPoint("TOPRIGHT", navBar, "TOPRIGHT", -1, navCursorY)
+        navCursorY = navCursorY - NAV_ITEM_H
 
-        local tab = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
-        tab:SetSize(TAB_WIDTH, TAB_HEIGHT)
-        tab:SetPoint("TOPLEFT", tabBar, "TOPLEFT", tabCursorX, -(tabCursorRow * TAB_HEIGHT))
-        tabCursorX = tabCursorX + TAB_WIDTH + TAB_GAP
+        item:SetBackdrop({ bgFile = "Interface\BUTTONS\WHITE8X8" })
+        item:SetBackdropColor(0, 0, 0, 0)
 
-        tab:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
-        tab:SetBackdropColor(SQ_COLORS.tabInactive[1], SQ_COLORS.tabInactive[2], SQ_COLORS.tabInactive[3], 1)
+        local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        itemLabel:SetPoint("LEFT", item, "LEFT", 16, 0)
+        itemLabel:SetJustifyH("LEFT")
+        itemLabel:SetText(text)
+        itemLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        item.label = itemLabel
 
-        local tabLabel = tab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        tabLabel:SetPoint("CENTER")
-        tabLabel:SetText(text)
-        tabLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-        tab.label = tabLabel
+        -- Accent bar down the left edge of the selected entry, replacing the
+        -- underline the horizontal tabs used.
+        local marker = item:CreateTexture(nil, "OVERLAY")
+        marker:SetWidth(3)
+        marker:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 0)
+        marker:SetPoint("BOTTOMLEFT", item, "BOTTOMLEFT", 0, 0)
+        marker:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 1)
+        marker:Hide()
+        item.marker = marker
 
-        -- Active underline
-        local underline = tab:CreateTexture(nil, "OVERLAY")
-        underline:SetHeight(2)
-        underline:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
-        underline:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
-        underline:SetColorTexture(SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3], 1)
-        underline:Hide()
-        tab.underline = underline
+        item:SetScript("OnEnter", function(self)
+            if not self.isActive then
+                self:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 0.5)
+            end
+        end)
+        item:SetScript("OnLeave", function(self)
+            if not self.isActive then self:SetBackdropColor(0, 0, 0, 0) end
+        end)
 
-        tab.SetActive = function(self, active)
+        item.SetActive = function(self, active)
+            self.isActive = active
             if active then
                 self:SetBackdropColor(SQ_COLORS.tabActive[1], SQ_COLORS.tabActive[2], SQ_COLORS.tabActive[3], 1)
                 self.label:SetTextColor(SQ_COLORS.textBright[1], SQ_COLORS.textBright[2], SQ_COLORS.textBright[3])
-                self.underline:Show()
+                self.marker:Show()
             else
-                self:SetBackdropColor(SQ_COLORS.tabInactive[1], SQ_COLORS.tabInactive[2], SQ_COLORS.tabInactive[3], 1)
+                self:SetBackdropColor(0, 0, 0, 0)
                 self.label:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-                self.underline:Hide()
+                self.marker:Hide()
             end
         end
-        return tab
+        return item
     end
 
     local settingsTabBtn = CreateTab("Settings")
@@ -1198,12 +1236,9 @@ function BH:CreateOptionsPanel()
     local cdmSoundsTabBtn = CreateTab("CDM Sounds")
     cdmSoundsTabBtn:Hide()  -- hidden until /squizz CDMS
 
-    -- Set tab bar height based on actual rows used
-    tabBar:SetHeight((tabCursorRow + 1) * TAB_HEIGHT)
-
-    -- Content area
+    -- Content area: everything right of the sidebar.
     local contentArea = CreateFrame("Frame", nil, panel)
-    contentArea:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, -1)
+    contentArea:SetPoint("TOPLEFT", navBar, "TOPRIGHT", 1, 0)
     contentArea:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 40)
 
     -- Settings tab content
