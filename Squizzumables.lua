@@ -2511,14 +2511,34 @@ local function ActiveCCRoles()
 end
 
 -- Show or hide the shared frame, labelling whichever roles are CC'd.
+--
+-- Preview mode has to be handled here rather than only by the caller: this runs
+-- whenever a role toggle changes, so without the preview branch, ticking a role
+-- box while previewing would immediately hide the frame the player is trying to
+-- position.
 function BH:UpdateRoleCCFrame()
     local frame = self.healerCCReminderFrame
     if not frame then return end
-    local healer, tank = ActiveCCRoles()
-    if not (healer or tank) then
-        frame:Hide()
-        return
+
+    local watchHealer, watchTank = WatchedRoles()
+    local healer, tank
+
+    if self.previewMode then
+        -- Show the frame for positioning if either role is watched, labelled
+        -- with the roles being watched rather than the (empty) live CC state.
+        if not (watchHealer or watchTank) then
+            frame:Hide()
+            return
+        end
+        healer, tank = watchHealer, watchTank
+    else
+        healer, tank = ActiveCCRoles()
+        if not (healer or tank) then
+            frame:Hide()
+            return
+        end
     end
+
     local label
     if healer and tank then label = "HEALER + TANK IN CC"
     elseif healer        then label = "HEALER IN CC"
@@ -7793,18 +7813,9 @@ function BH:RefreshAllReminderFrames()
         showIf(self.flaskReminderFrame,      "flaskReminderEnabled",     "flaskReminderLocked")
         showIf(self.oilReminderFrame,        "oilReminderEnabled",       "oilReminderLocked")
         -- Role CC has two toggles rather than one enabled key, so it cannot go
-        -- through showIf: preview must offer the frame for positioning if
-        -- *either* role is being watched, not just healers.
-        if self.healerCCReminderFrame then
-            if (self.settings and self.settings.healerCCAlertEnabled)
-                or (self.settings and self.settings.roleCCAlertTank) then
-                local locked = self.settings and self.settings.healerCCReminderLocked
-                self.healerCCReminderFrame:EnableMouse(not locked)
-                self.healerCCReminderFrame:Show()
-            else
-                self.healerCCReminderFrame:Hide()
-            end
-        end
+        -- through showIf. UpdateRoleCCFrame handles preview itself, since it
+        -- also runs whenever a role toggle changes.
+        self:UpdateRoleCCFrame()
         -- Repair text preview
         if self.repairReminderFrame and self.repairReminderFrame:IsShown() and self.repairReminderText then
             self.repairReminderText:SetText("REPAIR (15%)")
