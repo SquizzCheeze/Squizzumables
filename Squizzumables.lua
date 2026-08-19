@@ -4892,6 +4892,31 @@ end
 -- Pool of reusable secure buttons (avoids creating named frames on every UpdateButtons call)
 local SQ_BUTTON_POOL = {}
 
+-- Write the remaining-time readout onto a button.
+--
+-- btn.expirationTime has already been resolved through BH.Secrets.SafeNumber by
+-- the time this runs, so it is either a usable number or nil and the arithmetic
+-- here is always safe. Shared by the initial paint in CreateButton and the
+-- throttled OnUpdate, so a rebuild never leaves the text blank.
+local function PaintButtonTimer(btn)
+    local expiration = btn.expirationTime
+    if not expiration or expiration == 0 then
+        btn.timer:SetText("")
+        return
+    end
+    local remaining = expiration - GetTime()
+    if remaining <= 0 then
+        btn.timer:SetText("")
+        btn.expirationTime = nil
+    elseif remaining < 60 then
+        btn.timer:SetText(string.format("%d", math.floor(remaining)))
+    else
+        local mins = math.floor(remaining / 60)
+        local secs = math.floor(remaining % 60)
+        btn.timer:SetText(string.format("%d:%02d", mins, secs))
+    end
+end
+
 local function CreateButton(id, texture, tooltip, actionType, actionValue, labelText, headerText, expirationTime, itemLink, craftingQuality, bagCount)
     -- Try to reuse a pooled button; only allocate a new frame when the pool is empty
     local btn = table.remove(SQ_BUTTON_POOL)
@@ -5022,34 +5047,23 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     btn.expirationTime = BH.Secrets.SafeNumber(expirationTime, nil)
     btn.timer:ClearAllPoints()
     btn.timer:SetPoint("CENTER", btn.icon, "CENTER", 0, 0)
-    btn.timer:SetText("")
     btn.timerElapsed = 0
     if btn.expirationTime and btn.expirationTime > 0 then
+        -- Paint once immediately. UpdateButtons rebuilds the whole button list
+        -- often (see the note there), and every rebuild lands here; if the text
+        -- were left blank until the first throttled tick the countdown would
+        -- visibly flicker on every rebuild.
+        PaintButtonTimer(btn)
         btn:SetScript("OnUpdate", function(self, elapsed)
             -- The readout is whole seconds; refreshing it every frame is wasted
-            -- work. Accumulate and update ~10x/sec instead.
+            -- work. Accumulate and repaint ~10x/sec instead.
             self.timerElapsed = self.timerElapsed + elapsed
             if self.timerElapsed < 0.1 then return end
             self.timerElapsed = 0
-
-            local expiration = self.expirationTime
-            if not expiration or expiration == 0 then
-                self.timer:SetText("")
-                return
-            end
-            local remaining = expiration - GetTime()
-            if remaining <= 0 then
-                self.timer:SetText("")
-                self.expirationTime = nil
-            elseif remaining < 60 then
-                self.timer:SetText(string.format("%d", math.floor(remaining)))
-            else
-                local mins = math.floor(remaining / 60)
-                local secs = math.floor(remaining % 60)
-                self.timer:SetText(string.format("%d:%02d", mins, secs))
-            end
+            PaintButtonTimer(self)
         end)
     else
+        btn.timer:SetText("")
         btn:SetScript("OnUpdate", nil)
     end
 
