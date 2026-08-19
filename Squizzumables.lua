@@ -1340,38 +1340,28 @@ function BH:CreateOptionsPanel()
     self.switchTab = SwitchTab
     SwitchTab("settings")
 
-    -- Build settings tab
-    self:BuildSettingsTab(settingsTab)
-
-    -- Build raid tools tab
-    self:BuildRaidToolsTab(raidToolsTab)
-
-    -- Build text reminders tab
-    self:BuildTextRemindersTab(textRemindersTab)
-
-    -- Build cooldown manager tab
-    if self.BuildCDMTab then
-        self:BuildCDMTab(cdmTab)
+    -- Build each page with ns.Rows.currentPage set, so every option widget the
+    -- page creates is indexed against the right sidebar category. That is what
+    -- lets the settings search say where a result lives and jump to it.
+    local pages = {
+        { key = "settings",   label = "Settings",    frame = settingsTab,      build = "BuildSettingsTab" },
+        { key = "raidtools",  label = "Raid Tools",  frame = raidToolsTab,     build = "BuildRaidToolsTab" },
+        { key = "reminders",  label = "Reminders",   frame = textRemindersTab, build = "BuildTextRemindersTab" },
+        { key = "cdm",        label = "Cooldowns",   frame = cdmTab,           build = "BuildCDMTab" },
+        { key = "sounds",     label = "Sounds",      frame = soundsTab,        build = "BuildSoundsTab" },
+        { key = "classbuffs", label = "Class Buffs", frame = classBuffsTab,    build = "BuildClassBuffsTab" },
+        { key = "callouts",   label = "Callouts",    frame = calloutsTab,      build = "BuildCalloutsTab" },
+        { key = "kel",        label = "Kelerts",     frame = kelTab,           build = "BuildJustForKelTab" },
+        { key = "cdmsounds",  label = "CDM Sounds",  frame = cdmSoundsTab,     build = "BuildCDMSoundsTab" },
+    }
+    for _, page in ipairs(pages) do
+        local builder = self[page.build]
+        if builder then
+            ns.Rows.currentPage = page
+            builder(self, page.frame)
+        end
     end
-
-    -- Build sounds tab
-    self:BuildSoundsTab(soundsTab)
-
-    -- Build class buffs tab
-    self:BuildClassBuffsTab(classBuffsTab)
-
-    -- Build callouts tab
-    self:BuildCalloutsTab(calloutsTab)
-
-    -- Build Just For Kel tab
-    if self.BuildJustForKelTab then
-        self:BuildJustForKelTab(kelTab)
-    end
-
-    -- Build CDM Sounds tab
-    if self.BuildCDMSoundsTab then
-        self:BuildCDMSoundsTab(cdmSoundsTab)
-    end
+    ns.Rows.currentPage = nil
 
     -- Build items tab
     local desc = itemsTab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1536,6 +1526,7 @@ function BH:BuildSettingsTab(parent)
     end)
     profileDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.profileDropdown = profileDropdown
+    ns.Rows.AddTooltip(profileDropdown, "Active Profile", "Which settings profile this character uses. Profiles hold every setting and every frame position, so you can keep one layout for raiding and another for M+.")
     yOffset = yOffset - 50
 
     -- Spec-specific profile dropdown
@@ -1562,6 +1553,7 @@ function BH:BuildSettingsTab(parent)
     specProfileDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     specProfileDropdown:SetSelectedValue(BH:GetSpecProfile() or "")
     self.specProfileDropdown = specProfileDropdown
+    ns.Rows.AddTooltip(specProfileDropdown, "Spec Profile", "Override the character profile for this specialisation only. Leave unset to always use the character profile.")
     yOffset = yOffset - 50
 
     -- Profile action buttons (row)
@@ -1635,6 +1627,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.sizeSlider = sizeSlider
+    ns.Rows.AddTooltip(sizeSlider, "Button Size", "Width and height of each reminder button, in pixels.")
     yOffset = yOffset - 50
 
     -- Button Spacing
@@ -1646,6 +1639,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.spacingSlider = spacingSlider
+    ns.Rows.AddTooltip(spacingSlider, "Button Spacing", "Gap between reminder buttons, in pixels.")
     yOffset = yOffset - 50
 
     -- Show Label Text
@@ -1656,6 +1650,7 @@ function BH:BuildSettingsTab(parent)
     end)
     labelCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.labelCheckbox = labelCheckbox
+    ns.Rows.AddTooltip(labelCheckbox, "Show Label Text", "Show the name under each reminder button. Turn off for a more compact row of icons.")
     yOffset = yOffset - 30
 
     -- Class-coloured accents. Recolours live rather than needing a reload:
@@ -1702,6 +1697,7 @@ function BH:BuildSettingsTab(parent)
     end)
     layoutDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.layoutDropdown = layoutDropdown
+    ns.Rows.AddTooltip(layoutDropdown, "Layout Direction", "Whether the reminder buttons lay out in a row or a column.")
     yOffset = yOffset - 56
 
     -- Grow Direction
@@ -1715,6 +1711,7 @@ function BH:BuildSettingsTab(parent)
         end)
     growDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.growDropdown = growDropdown
+    ns.Rows.AddTooltip(growDropdown, "Grow Direction", "Which way new buttons are added from the anchor as the number of reminders changes.")
     yOffset = yOffset - 56
 
     -- Anchor Point
@@ -1732,6 +1729,7 @@ function BH:BuildSettingsTab(parent)
     end)
     anchorDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.anchorDropdown = anchorDropdown
+    ns.Rows.AddTooltip(anchorDropdown, "Anchor Point", "Which edge of the button block stays put as buttons are added or removed.")
     yOffset = yOffset - 56
 
     -- Lock Frame
@@ -1742,6 +1740,7 @@ function BH:BuildSettingsTab(parent)
     end)
     lockCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.lockCheckbox = lockCheckbox
+    ns.Rows.AddTooltip(lockCheckbox, "Lock Frame Position", "Stops the reminder buttons being dragged, and hides the drag handle above them.")
     yOffset = yOffset - 34
 
     CreateSQDivider(content, yOffset)
@@ -1763,6 +1762,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.labelFontSlider = labelFontSlider
+    ns.Rows.AddTooltip(labelFontSlider, "Label Font Size", "Size of the name text under each button.")
     yOffset = yOffset - 50
 
     -- Timer font size
@@ -1774,6 +1774,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.timerFontSlider = timerFontSlider
+    ns.Rows.AddTooltip(timerFontSlider, "Timer Font Size", "Size of the remaining-time countdown drawn on each button.")
     yOffset = yOffset - 50
 
     -- Count font size
@@ -1785,6 +1786,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.countFontSlider = countFontSlider
+    ns.Rows.AddTooltip(countFontSlider, "Count Font Size", "Size of the bag-quantity number in the corner of each button.")
     yOffset = yOffset - 50
 
     -- Header font size
@@ -1796,6 +1798,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.headerFontSlider = headerFontSlider
+    ns.Rows.AddTooltip(headerFontSlider, "Header Font Size (MH/OH)", "Size of the small header above a button, such as the MH and OH markers on weapon oils.")
     yOffset = yOffset - 50
 
     -- Label X offset
@@ -1807,6 +1810,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.labelOffXSlider = labelOffXSlider
+    ns.Rows.AddTooltip(labelOffXSlider, "Label X Offset", "Nudge the label text horizontally relative to its button.")
     yOffset = yOffset - 50
 
     -- Label Y offset
@@ -1818,6 +1822,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateButtons()
     end)
     self.labelOffYSlider = labelOffYSlider
+    ns.Rows.AddTooltip(labelOffYSlider, "Label Y Offset", "Nudge the label text vertically relative to its button.")
     yOffset = yOffset - 50
 
     CreateSQDivider(content, yOffset)
@@ -1885,6 +1890,7 @@ function BH:BuildSettingsTab(parent)
     end)
     guildInviteCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.guildInviteCB = guildInviteCB
+    ns.Rows.AddTooltip(guildInviteCB, "Guild Invite on Right-Click", "Adds a Guild Invite entry to the right-click menu on player names and unit frames.")
     yOffset = yOffset - 28
 
     -- Set scroll child height
@@ -2034,6 +2040,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     enableCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtEnableCheckbox = enableCheckbox
+    ns.Rows.AddTooltip(enableCheckbox, "Enable Raid Tools", "Master switch for the raid marker and pull timer frames. Turning this off hides both regardless of their own settings.")
     yOffset = yOffset - 28
 
     local desc = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -2061,6 +2068,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     markersCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtMarkersCheckbox = markersCheckbox
+    ns.Rows.AddTooltip(markersCheckbox, "Show Markers Frame", "Shows the world marker and target marker buttons. Only usable while you are group leader or an assistant.")
     yOffset = yOffset - 28
 
     local pullReadyCheckbox = CreateSQCheckbox(content, "Show Pull/Ready Frame", function(checked)
@@ -2070,6 +2078,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     pullReadyCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtPullReadyCheckbox = pullReadyCheckbox
+    ns.Rows.AddTooltip(pullReadyCheckbox, "Show Pull/Ready Frame", "Shows the pull timer and ready check buttons. Only usable while you are group leader or an assistant.")
     yOffset = yOffset - 34
 
     CreateSQDivider(content, yOffset)
@@ -2113,6 +2122,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     markersLayoutDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtMarkersLayoutDropdown = markersLayoutDropdown
+    ns.Rows.AddTooltip(markersLayoutDropdown, "Layout Direction", "Whether the marker buttons lay out in a row or a column.")
     yOffset = yOffset - 52
 
     local markersGrowDropdown = CreateSQDropdown(content, "Grow Direction", 200,
@@ -2124,6 +2134,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     markersGrowDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtMarkersGrowDropdown = markersGrowDropdown
+    ns.Rows.AddTooltip(markersGrowDropdown, "Grow Direction", "Which way the marker buttons extend from their anchor.")
     yOffset = yOffset - 52
 
     CreateSQDivider(content, yOffset)
@@ -2146,6 +2157,7 @@ function BH:BuildRaidToolsTab(parent)
         end
     end)
     self.rtPullSlider = pullSlider
+    ns.Rows.AddTooltip(pullSlider, "Countdown Duration (seconds)", "How long the pull timer counts down for when you start one.")
     yOffset = yOffset - 50
 
     CreateSQDivider(content, yOffset)
@@ -2168,6 +2180,7 @@ function BH:BuildRaidToolsTab(parent)
         end
     end)
     self.rtMarkersScaleSlider = markersScaleSlider
+    ns.Rows.AddTooltip(markersScaleSlider, "Markers Frame Scale", "Size of the marker button frame, as a percentage.")
     yOffset = yOffset - 50
 
     local prScaleSlider = CreateSQSlider(content, "Pull/Ready Frame Scale", 300, 50, 200, 5)
@@ -2180,6 +2193,7 @@ function BH:BuildRaidToolsTab(parent)
         end
     end)
     self.rtPRScaleSlider = prScaleSlider
+    ns.Rows.AddTooltip(prScaleSlider, "Pull/Ready Frame Scale", "Size of the pull timer and ready check frame, as a percentage.")
     yOffset = yOffset - 50
 
     CreateSQDivider(content, yOffset)
@@ -2201,6 +2215,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     bresCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtBresCheckbox = bresCheckbox
+    ns.Rows.AddTooltip(bresCheckbox, "Enable Battle Res Counter", "Shows how many battle resurrection charges the group has left. Only appears in content that grants charges.")
     yOffset = yOffset - 34
 
     local bresScaleSlider = CreateSQSlider(content, "Battle Res Counter Scale", 300, 50, 200, 5)
@@ -2213,6 +2228,7 @@ function BH:BuildRaidToolsTab(parent)
         end
     end)
     self.rtBresScaleSlider = bresScaleSlider
+    ns.Rows.AddTooltip(bresScaleSlider, "Battle Res Counter Scale", "Size of the battle res counter, as a percentage.")
     yOffset = yOffset - 50
 
     local lockBresCheckbox = CreateSQCheckbox(content, "Lock Battle Res Counter", function(checked)
@@ -2225,6 +2241,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     lockBresCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtLockBresCheckbox = lockBresCheckbox
+    ns.Rows.AddTooltip(lockBresCheckbox, "Lock Battle Res Counter", "Stops the battle res counter being dragged.")
     yOffset = yOffset - 34
 
     CreateSQDivider(content, yOffset)
@@ -2249,6 +2266,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     lockMarkersCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtLockMarkersCheckbox = lockMarkersCheckbox
+    ns.Rows.AddTooltip(lockMarkersCheckbox, "Lock Markers Frame", "Stops the marker frame being dragged.")
     yOffset = yOffset - 28
 
     local lockPRCheckbox = CreateSQCheckbox(content, "Lock Pull/Ready Frame", function(checked)
@@ -2263,6 +2281,7 @@ function BH:BuildRaidToolsTab(parent)
     end)
     lockPRCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.rtLockPRCheckbox = lockPRCheckbox
+    ns.Rows.AddTooltip(lockPRCheckbox, "Lock Pull/Ready Frame", "Stops the pull timer frame being dragged.")
     yOffset = yOffset - 34
 
     local resetBtn = CreateSQButton(content, "Reset Positions", 140, 26)

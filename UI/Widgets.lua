@@ -184,6 +184,21 @@ local function CreateSQButton(parent, text, width, height, color)
     return btn
 end
 
+-- Register a labelled option widget in the settings search index.
+--
+-- Done in the constructors so coverage is automatic and complete: every tab
+-- gets indexed whether or not it has been migrated to declarative rows, and no
+-- call site has to be touched. Rows.lua loads after this file, so the lookup is
+-- deferred to call time rather than captured as an upvalue.
+local function IndexForSearch(widget, labelText)
+    if not labelText or labelText == "" then return widget end
+    local Rows = ns.Rows
+    if Rows and Rows.RegisterSearchEntry then
+        Rows.RegisterSearchEntry(labelText, nil, widget)
+    end
+    return widget
+end
+
 -- Helper: styled slider
 local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
     local container = CreateFrame("Frame", nil, parent)
@@ -252,7 +267,7 @@ local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
     container.SetAfterValueChanged = function(self, fn)
         self.slider.onValueChanged = fn
     end
-    return container
+    return IndexForSearch(container, labelText)
 end
 
 -- Helper: styled checkbox
@@ -304,7 +319,7 @@ local function CreateSQCheckbox(parent, labelText, onChange)
     container.checkbox = box
     container.SetChecked = function(self, v) self.checkbox:SetChecked(v) end
     container.GetChecked = function(self) return self.checkbox:GetChecked() end
-    return container
+    return IndexForSearch(container, labelText)
 end
 
 -- Helper: styled color swatch (opens Blizzard ColorPickerFrame)
@@ -361,7 +376,7 @@ local function CreateSQColorPicker(parent, labelText, r, g, b, a, onChange)
         r, g, b, a = nr, ng, nb, na
         self.swatch:SetBackdropColor(nr, ng, nb, 1)
     end
-    return container
+    return IndexForSearch(container, labelText)
 end
 
 -- Helper: styled dropdown
@@ -499,7 +514,7 @@ local function CreateSQDropdown(parent, labelText, width, items, onSelect)
     container.SetItems = function(self, newItems)
         items = newItems
     end
-    return container
+    return IndexForSearch(container, labelText)
 end
 
 -- Helper: section divider line

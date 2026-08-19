@@ -95,8 +95,11 @@ end
 local searchIndex = {}
 Rows.searchIndex = searchIndex
 
--- Set by the panel while it builds a page, so rows know where they live
--- without every call site having to pass it.
+-- Set by the panel while it builds a page, so rows know where they live without
+-- every call site having to pass it. Holds the page descriptor
+-- { key, label, frame, build } -- key to switch to it, label to name it in
+-- results. nil outside a build pass, which is what stops stray widgets built
+-- later from being indexed against the wrong category.
 Rows.currentPage    = nil
 Rows.currentSection = nil
 
@@ -141,6 +144,37 @@ local function AttachTooltip(widget, label, tooltip)
         GameTooltip:Show()
     end)
     target:HookScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+-- ----------------------------------------------------------------------------
+-- Bridge for tabs not yet migrated to declarative rows.
+--
+-- Those tabs build their widgets imperatively, so they get none of a row's
+-- behaviour for free. Two pieces of it are worth having without a full
+-- migration, because they are what the settings search and the tooltips need:
+--
+--   * search indexing, which the CreateSQ* constructors now do automatically
+--     using the label they are already given -- no call site has to change
+--   * a tooltip, which needs text that only exists where the option is written,
+--     so it is added explicitly with Rows.AddTooltip
+--
+-- A tab that is later migrated to Rows.Add gets both from the row spec and
+-- these calls come out again.
+-- ----------------------------------------------------------------------------
+
+-- Attach a tooltip to an already-built widget.
+function Rows.AddTooltip(widget, label, tooltip)
+    if widget and tooltip then
+        AttachTooltip(widget, label, tooltip)
+        -- Re-index with the tooltip text so search can match on it too.
+        for i = 1, #searchIndex do
+            if searchIndex[i].frame == widget then
+                searchIndex[i].tooltip = tooltip
+                return widget
+            end
+        end
+    end
+    return widget
 end
 
 -- Grey out and stop interaction when spec.disabled() is true. Re-evaluated on
