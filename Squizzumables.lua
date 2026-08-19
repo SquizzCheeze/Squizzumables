@@ -138,6 +138,44 @@ BH.defaultSettings = {
 }
 
 -- ============================================================================
+-- Shared helpers
+-- ============================================================================
+
+-- Does the player know this spell?
+--
+-- Plain BH.PlayerKnowsSpell() returns false for spells granted by a talent, and for a
+-- base spell that a talent has overridden — so using it alone means a reminder
+-- can silently never fire for a given talent build. Check the modern API first
+-- and fall back through the older ones, which cover different cases:
+--   C_SpellBook.IsSpellKnown      — current API, authoritative when it answers
+--   IsPlayerSpell                 — includes talent-granted spells
+--   IsSpellKnownOrOverridesKnown  — includes spells replaced by an override
+--   IsSpellKnown                  — base spellbook only
+--
+-- Inclusive bag range to scan for consumables.
+--
+-- This used to be hardcoded as 0..4, which skipped the reagent bag entirely —
+-- anything the player kept there was invisible to the addon. NUM_BAG_SLOTS is
+-- the four normal bags and NUM_REAGENTBAG_SLOTS is the reagent bag; both are
+-- Blizzard constants, with literal fallbacks in case they are ever unset.
+local FIRST_BAG = BACKPACK_CONTAINER or 0
+local LAST_BAG  = (NUM_BAG_SLOTS or 4) + (NUM_REAGENTBAG_SLOTS or 1)
+BH.FIRST_BAG, BH.LAST_BAG = FIRST_BAG, LAST_BAG
+
+-- Use this instead of IsSpellKnown anywhere in the addon.
+function BH.PlayerKnowsSpell(spellID)
+    if not spellID then return false end
+    if C_SpellBook and C_SpellBook.IsSpellKnown then
+        local known = C_SpellBook.BH.PlayerKnowsSpell(spellID)
+        if known ~= nil then return known end
+    end
+    if IsPlayerSpell and IsPlayerSpell(spellID) then return true end
+    if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(spellID) then return true end
+    if IsSpellKnown and BH.PlayerKnowsSpell(spellID, false) then return true end
+    return false
+end
+
+-- ============================================================================
 -- Profile System
 -- ============================================================================
 
@@ -4217,7 +4255,7 @@ local CONFIG_QUALITY_ATLAS = {
 
 -- Find an item in bags and return its link and crafting quality (for quality detection)
 local function FindItemInBags(itemID)
-    for bag = 0, 4 do
+    for bag = FIRST_BAG, LAST_BAG do
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
             local bagItemID = C_Container.GetContainerItemID(bag, slot)
             if bagItemID == itemID then
@@ -4927,7 +4965,7 @@ end
 -- Count total stack quantity of an itemID across all bags
 local function CountItemInBags(itemID)
     local total = 0
-    for bag = 0, 4 do
+    for bag = FIRST_BAG, LAST_BAG do
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
             if C_Container.GetContainerItemID(bag, slot) == itemID then
                 local info = C_Container.GetContainerItemInfo(bag, slot)
@@ -6676,7 +6714,7 @@ function BH:UpdateButtons()
                 if riteSpecID == 65 then  -- Holy Paladin
                     local paladinRites = info.weaponImbues or {}
                     for _, rite in ipairs(paladinRites) do
-                        if rite.spellID and IsSpellKnown(rite.spellID) and self:IsEnabled(rite.spellID) then
+                        if rite.spellID and BH.PlayerKnowsSpell(rite.spellID) and self:IsEnabled(rite.spellID) then
                             local hasMH, mhExpiration = GetMainHandEnchantInfo()
                             local needsRefresh = self:NeedsRefresh(rite.spellID, hasMH and mhExpiration or nil)
                             if needsRefresh then
@@ -6704,9 +6742,9 @@ function BH:UpdateButtons()
                         local specIndex = GetSpecialization()
                         local currentSpecID = specIndex and select(1, GetSpecializationInfo(specIndex))
                         local isMMHunter = (class == "HUNTER") and (currentSpecID == 254)
-                        local hasUnbreakableBond = IsPlayerSpell(1223323) or IsSpellKnown(1223323)
+                        local hasUnbreakableBond = BH.PlayerKnowsSpell(1223323)
                         local skipForMM = isMMHunter and not hasUnbreakableBond
-                        if not skipForMM and IsSpellKnown(buffInfo.spellID) and not UnitExists("pet") then
+                        if not skipForMM and BH.PlayerKnowsSpell(buffInfo.spellID) and not UnitExists("pet") then
                             local icon = GetSpellIcon(buffInfo.spellID)
                             if icon and (not buffInfo.callPetCheck or icon ~= 132161) then
                                 local label = buffInfo.label
@@ -6744,7 +6782,7 @@ function BH:UpdateButtons()
             --                 never targets the player themselves, so self needs its own button).
             -- Mark as handled so the tankBuff/selfBuff entries are skipped below.
             local earthShieldHandled = false
-            if class == "SHAMAN" and IsSpellKnown(974) and self:IsEnabled(974) then
+            if class == "SHAMAN" and BH.PlayerKnowsSpell(974) and self:IsEnabled(974) then
                 earthShieldHandled = true
                 local esIcon = GetSpellIcon(974)
                 local esSpellName = C_Spell.GetSpellName(974)
@@ -6753,9 +6791,9 @@ function BH:UpdateButtons()
                 local groupSize = GetNumGroupMembers()
                 local playerRole = UnitGroupRolesAssigned("player")
                 local playerIsHealer = (playerRole == "HEALER")
-                local hasElementalOrbit = IsSpellKnown(ELEMENTAL_ORBIT_SPELL_ID)
+                local hasElementalOrbit = BH.PlayerKnowsSpell(ELEMENTAL_ORBIT_SPELL_ID)
                 -- Therazane's Resilience: ES has no charges and lasts 60 min → duration-based refresh applies
-                local hasTherazanesResilience = IsSpellKnown(THERAZANES_RESILIENCE_SPELL_ID)
+                local hasTherazanesResilience = BH.PlayerKnowsSpell(THERAZANES_RESILIENCE_SPELL_ID)
 
                 -- ── Group button ──────────────────────────────────────────────
                 -- Without EO (1 ES max): suppress if the player's one ES is already
@@ -6827,7 +6865,7 @@ function BH:UpdateButtons()
                         -- Already handled in multi-shaman Earth Shield batch above
                     elseif buffInfo.weaponImbue then
                         -- Weapon imbue check (Shaman): show if spell is known but MH enchant is missing or expiring
-                        if IsSpellKnown(buffInfo.spellID) then
+                        if BH.PlayerKnowsSpell(buffInfo.spellID) then
                             local hasMH, mhExpiration = GetMainHandEnchantInfo()
                             local needsRefresh = self:NeedsRefresh(buffInfo.spellID, hasMH and mhExpiration or nil)
                             if needsRefresh then
@@ -6841,7 +6879,7 @@ function BH:UpdateButtons()
                         end
                     elseif buffInfo.tankBuff then
                         -- Tank-targeted buff (e.g. Earth Shield): show if spell is known and a tank needs it
-                        if IsSpellKnown(buffInfo.spellID) then
+                        if BH.PlayerKnowsSpell(buffInfo.spellID) then
                             local checkIDs = buffInfo.buffVariants or { buffInfo.spellID }
                             local tankName, allBuffed, lowestExpires = FindUnbuffedTank(checkIDs)
                             if not allBuffed and tankName then
@@ -6874,7 +6912,7 @@ function BH:UpdateButtons()
                         -- Use UnitHasBuff("player") rather than PlayerHasBuff: the latter uses
                         -- GetPlayerAuraBySpellID which doesn't detect toggle/stance auras like
                         -- Lightning Shield or Water Shield (same issue as Devotion Aura on paladins).
-                        if IsSpellKnown(buffInfo.spellID) then
+                        if BH.PlayerKnowsSpell(buffInfo.spellID) then
                             local checkIDs = buffInfo.buffVariants or { buffInfo.spellID }
                             local hasBuff, buffExpiration = UnitHasBuff("player", checkIDs)
                             -- When buff is active: use expiration time, or 0 if nil (permanent/charge-based
@@ -6979,7 +7017,7 @@ function BH:UpdateButtons()
 
     -- Symbiotic Relationship button for Druids with the talent
     -- Guardian Druid: cast on healer | Restoration Druid: cast on tank
-    if class == "DRUID" and IsSpellKnown(SYMBIOTIC_CAST_SPELL_ID) then
+    if class == "DRUID" and BH.PlayerKnowsSpell(SYMBIOTIC_CAST_SPELL_ID) then
         -- Check if player already has the buff
         local hasBuff = C_UnitAuras.GetPlayerAuraBySpellID(SYMBIOTIC_AURA_SPELL_ID)
         if not hasBuff then
@@ -7058,7 +7096,7 @@ function BH:UpdateButtons()
     -- Show if no food buff OR if buff time is below item's min duration
     local hasFoodBuff, foodExpiration = HasFoodBuff()
     if BH.consumables and BH.consumables.food then
-        for bag = 0,4 do
+        for bag = FIRST_BAG, LAST_BAG do
             for slot = 1, C_Container.GetContainerNumSlots(bag) do
                 local itemID = C_Container.GetContainerItemID(bag, slot)
                 if itemID and HasItemInList(itemID, BH.consumables.food) and not addedItems[itemID] and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
@@ -7087,7 +7125,7 @@ function BH:UpdateButtons()
     -- Show if no flask buff OR if buff time is below item's min duration
     local hasFlaskBuff, flaskExpiration = HasFlaskBuff()
     if BH.consumables and BH.consumables.flask then
-        for bag = 0,4 do
+        for bag = FIRST_BAG, LAST_BAG do
             for slot = 1, C_Container.GetContainerNumSlots(bag) do
                 local itemID = C_Container.GetContainerItemID(bag, slot)
                 if itemID and HasItemInList(itemID, BH.consumables.flask) and not addedItems[itemID] and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
@@ -7115,7 +7153,7 @@ function BH:UpdateButtons()
     if class == "PALADIN" then
         local oilSpecID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
         if oilSpecID == 65 then  -- Holy Paladin
-            holyPaladinHasRite = IsSpellKnown(433568) or IsSpellKnown(433583)
+            holyPaladinHasRite = BH.PlayerKnowsSpell(433568) or BH.PlayerKnowsSpell(433583)
         end
     end
     if not holyPaladinHasRite and BH.consumables and BH.consumables.oil then
@@ -7123,7 +7161,7 @@ function BH:UpdateButtons()
         local hasOH, ohExpiration = GetOffHandEnchantInfo()
         local hasOHWeapon = HasOffHandWeapon()
         
-        for bag = 0,4 do
+        for bag = FIRST_BAG, LAST_BAG do
             for slot = 1, C_Container.GetContainerNumSlots(bag) do
                 local itemID = C_Container.GetContainerItemID(bag, slot)
                 if itemID and HasItemInList(itemID, BH.consumables.oil) and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
@@ -7432,12 +7470,12 @@ function BH:UpdateBeaconReminder()
     -- Determine how many beacons needed based on talents
     -- Beacon of Faith = 2 beacons, Beacon of Light = 1 beacon
     -- Beacon of Virtue is a short CD active ability, no persistent beacon needed
-    if IsSpellKnown(BEACON_OF_VIRTUE) or IsPlayerSpell(BEACON_OF_VIRTUE) then
+    if BH.PlayerKnowsSpell(BEACON_OF_VIRTUE) then
         self.beaconReminderFrame:Hide()
         return
     end
     local beaconsNeeded = 1
-    if IsSpellKnown(BEACON_OF_FAITH) then
+    if BH.PlayerKnowsSpell(BEACON_OF_FAITH) then
         beaconsNeeded = 2
     end
 
@@ -7502,7 +7540,7 @@ function BH:UpdateEarthShieldReminder()
     end
 
     -- Earth Shield must be known
-    if not IsSpellKnown(974) then
+    if not BH.PlayerKnowsSpell(974) then
         self.earthShieldReminderFrame:Hide()
         return
     end
@@ -7629,7 +7667,7 @@ function BH:UpdateSymbioticReminder()
     end
 
     -- Symbiotic Relationship must be known (talent)
-    if not IsSpellKnown(SYMBIOTIC_CAST_SPELL_ID) then
+    if not BH.PlayerKnowsSpell(SYMBIOTIC_CAST_SPELL_ID) then
         self.symbioticReminderFrame:Hide()
         return
     end
@@ -7777,7 +7815,7 @@ function BH:UpdateFoodReminder()
     for _, itemID in ipairs(self.consumables.food) do
         if self:IsEnabled(itemID) then
             hasAnyEnabled = true
-            for bag = 0, 4 do
+            for bag = FIRST_BAG, LAST_BAG do
                 for slot = 1, C_Container.GetContainerNumSlots(bag) do
                     if C_Container.GetContainerItemID(bag, slot) == itemID then
                         hasAnyInBags = true
@@ -7829,7 +7867,7 @@ function BH:UpdateFlaskReminder()
     for _, itemID in ipairs(self.consumables.flask) do
         if self:IsEnabled(itemID) then
             hasAnyEnabled = true
-            for bag = 0, 4 do
+            for bag = FIRST_BAG, LAST_BAG do
                 for slot = 1, C_Container.GetContainerNumSlots(bag) do
                     if C_Container.GetContainerItemID(bag, slot) == itemID then
                         hasAnyInBags = true
@@ -7887,7 +7925,7 @@ function BH:UpdateOilReminder()
     local _, oilReminderClass = UnitClass("player")
     if oilReminderClass == "PALADIN" then
         local oilReminderSpecID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
-        if oilReminderSpecID == 65 and (IsSpellKnown(433568) or IsSpellKnown(433583)) then
+        if oilReminderSpecID == 65 and (BH.PlayerKnowsSpell(433568) or BH.PlayerKnowsSpell(433583)) then
             self.oilReminderFrame:Hide()
             return
         end
@@ -7898,7 +7936,7 @@ function BH:UpdateOilReminder()
     for _, itemID in ipairs(self.consumables.oil) do
         if self:IsEnabled(itemID) then
             hasAnyEnabled = true
-            for bag = 0, 4 do
+            for bag = FIRST_BAG, LAST_BAG do
                 for slot = 1, C_Container.GetContainerNumSlots(bag) do
                     if C_Container.GetContainerItemID(bag, slot) == itemID then
                         hasAnyInBags = true
@@ -9155,7 +9193,7 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
     elseif msg == 'debug' then
         -- Debug: show quality info for all consumable items in bags
         print(addonName.." Quality Debug:")
-        for bag = 0, 4 do
+        for bag = FIRST_BAG, LAST_BAG do
             for slot = 1, C_Container.GetContainerNumSlots(bag) do
                 local itemID = C_Container.GetContainerItemID(bag, slot)
                 if itemID then
