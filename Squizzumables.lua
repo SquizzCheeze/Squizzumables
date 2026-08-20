@@ -894,7 +894,7 @@ end
 
 -- Update frame lock state
 function BH:UpdateFrameLock()
-    if self.previewMode then
+    if self.unlockMode then
         self.frame:SetMovable(true)
         if self.dragHandle then self.dragHandle:Show() end
         return
@@ -1947,23 +1947,28 @@ function BH:BuildSettingsTab(parent)
     ns.ApplyAccent(toolsSection, "text")
     yOffset = yOffset - 24
 
-    -- Preview button
-    local previewBtn = CreateSQButton(content, "Preview", 140, 26)
-    previewBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    previewBtn:SetScript("OnClick", function()
-        BH.previewMode = not BH.previewMode
-        if BH.previewMode then
-            previewBtn:SetText("Hide Preview")
-            print("Squizzumables: Preview mode ON - all frames visible")
+    -- Unlock Frames: one toggle that makes every draggable frame in the addon
+    -- visible and movable at once, whatever its individual lock setting says.
+    -- Replaces hunting for the right "Lock X" checkbox to reposition one thing.
+    local unlockBtn = CreateSQButton(content, "Unlock Frames", 150, 26)
+    unlockBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    unlockBtn:SetScript("OnClick", function()
+        BH.unlockMode = not BH.unlockMode
+        if BH.unlockMode then
+            unlockBtn:SetText("Lock Frames")
+            print("Squizzumables: frames unlocked - drag any of them into place, then click Lock Frames.")
         else
-            previewBtn:SetText("Preview")
-            print("Squizzumables: Preview mode OFF")
+            unlockBtn:SetText("Unlock Frames")
+            print("Squizzumables: frames locked.")
         end
         BH:UpdateButtons()
         BH:UpdateRaidToolsVisibility()
         BH:RefreshAllReminderFrames()
+        BH:UpdateCalloutsButtonFrame()
+        BH:UpdateFrameLock()
+        BH:UpdateKelAlertUnlockState()
     end)
-    self.previewBtn = previewBtn
+    self.unlockBtn = unlockBtn
     yOffset = yOffset - 36
 
     -- Reset button
@@ -2085,8 +2090,8 @@ function BH:RefreshSettingsTab()
     if self.labelCheckbox then
         self.labelCheckbox:SetChecked(self.settings.showLabelText ~= false)
     end
-    if self.previewBtn then
-        self.previewBtn:SetText(self.previewMode and "Hide Preview" or "Preview")
+    if self.unlockBtn then
+        self.unlockBtn:SetText(self.unlockMode and "Lock Frames" or "Unlock Frames")
     end
     if self.anchorDropdown then
         self.anchorDropdown:SetSelectedValue(self.settings.anchorPoint or "LEFT")
@@ -2699,7 +2704,7 @@ end
 
 -- Show or hide the shared frame, labelling whichever roles are CC'd.
 --
--- Preview mode has to be handled here rather than only by the caller: this runs
+-- Unlock mode has to be handled here rather than only by the caller: this runs
 -- whenever a role toggle changes, so without the preview branch, ticking a role
 -- box while previewing would immediately hide the frame the player is trying to
 -- position.
@@ -2710,7 +2715,7 @@ function BH:UpdateRoleCCFrame()
     local watchHealer, watchTank = WatchedRoles()
     local healer, tank
 
-    if self.previewMode then
+    if self.unlockMode then
         -- Show the frame for positioning if either role is watched, labelled
         -- with the roles being watched rather than the (empty) live CC state.
         if not (watchHealer or watchTank) then
@@ -2732,7 +2737,7 @@ function BH:UpdateRoleCCFrame()
     else                      label = "TANK IN CC" end
     if self.healerCCReminderText then self.healerCCReminderText:SetText(label) end
     local locked = self.settings and self.settings.healerCCReminderLocked
-    frame:EnableMouse(self.previewMode or not locked)
+    frame:EnableMouse(self.unlockMode or not locked)
     frame:Show()
 end
 
@@ -2767,6 +2772,27 @@ function BH:CheckRoleCC(unit)
         PlaySQSound(self.settings.healerCCAlertSound or "None")
     end
     self:UpdateRoleCCFrame()
+end
+
+-- Show or hide the Just For Kel alert image for positioning while frames are
+-- unlocked. It is normally only visible for a few seconds when an alert fires,
+-- so without this it is the one frame Unlock Frames could not reach.
+function BH:UpdateKelAlertUnlockState()
+    local f = self.kelAlertFrame
+    if not f and self.LoadKelAlertPosition then
+        -- Creates the frame on demand; it is built lazily on first alert.
+        self:LoadKelAlertPosition()
+        f = self.kelAlertFrame
+    end
+    if not f then return end
+    if self.unlockMode then
+        f:EnableMouse(true)
+        if f.tex then f.tex:Show() end
+        f:Show()
+    else
+        f:EnableMouse(not (self.settings and self.settings.kelAlertLocked))
+        f:Hide()
+    end
 end
 
 -- Any watched member currently CC'd? Used by the preview/refresh path.
@@ -3247,20 +3273,20 @@ function BH:BuildSoundsTab(parent)
         nameLabel:SetText(entry.name)
         nameLabel:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
 
-        local previewBtn = CreateFrame("Button", nil, rowFrame)
-        previewBtn:SetSize(22, 22)
-        previewBtn:SetPoint("LEFT", rowFrame, "LEFT", 286, 0)
-        local pNorm = previewBtn:CreateTexture(nil, "BACKGROUND")
+        local unlockBtn = CreateFrame("Button", nil, rowFrame)
+        unlockBtn:SetSize(22, 22)
+        unlockBtn:SetPoint("LEFT", rowFrame, "LEFT", 286, 0)
+        local pNorm = unlockBtn:CreateTexture(nil, "BACKGROUND")
         pNorm:SetAllPoints()
         pNorm:SetTexture("Interface\\Common\\VoiceChat-Speaker")
-        local pHi = previewBtn:CreateTexture(nil, "HIGHLIGHT")
+        local pHi = unlockBtn:CreateTexture(nil, "HIGHLIGHT")
         pHi:SetAllPoints()
         pHi:SetTexture("Interface\\Common\\VoiceChat-Speaker")
         pHi:SetAlpha(0.6)
-        previewBtn:SetScript("OnEnter", function() pNorm:SetAlpha(0.7) end)
-        previewBtn:SetScript("OnLeave", function() pNorm:SetAlpha(1.0) end)
+        unlockBtn:SetScript("OnEnter", function() pNorm:SetAlpha(0.7) end)
+        unlockBtn:SetScript("OnLeave", function() pNorm:SetAlpha(1.0) end)
         local soundFile = entry.file
-        previewBtn:SetScript("OnClick", function()
+        unlockBtn:SetScript("OnClick", function()
             PlaySoundFile(CUSTOM_SOUNDS_PATH .. soundFile, "Master")
         end)
 
@@ -3686,15 +3712,26 @@ function BH:UpdateCalloutsButtonFrame()
     end
     self.calloutsButtonFrameBtns = {}
     local f = self.calloutsButtonFrame
+    -- While frames are unlocked, show this even with no callouts configured for
+    -- the current instance, so it can be positioned from anywhere. It is just
+    -- its title bar in that state, which is enough to drag.
+    local function ShowEmptyIfUnlocked()
+        if BH.unlockMode then
+            f:SetSize(144, 40)
+            f:Show()
+        else
+            f:Hide()
+        end
+    end
     local callouts = self.settings and self.settings.dungeonCallouts
-    if not callouts then f:Hide(); return end
+    if not callouts then ShowEmptyIfUnlocked(); return end
     local _, _, _, _, _, _, _, instanceID = GetInstanceInfo()
     local matchedGroup = nil
     for _, group in ipairs(callouts) do
         if group.instanceID == instanceID then matchedGroup = group; break end
     end
     if not matchedGroup or not matchedGroup.buttons or #matchedGroup.buttons == 0 then
-        f:Hide(); return
+        ShowEmptyIfUnlocked(); return
     end
     local BTN_H, BTN_W, GAP, TITLE_H = 24, 144, 2, 14
     local yOfs = -(TITLE_H + GAP)
@@ -5581,7 +5618,7 @@ end
 -- build button list
 -- M+ active state
 BH.challengeModeActive = false
-BH.previewMode = false
+BH.unlockMode = false
 
 -- ============================================================================
 -- Text reminder registry
@@ -5753,7 +5790,7 @@ local function CreateReminderFrame(def)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
-        if not (BH.settings and BH.settings[lockedKey]) or BH.previewMode then
+        if not (BH.settings and BH.settings[lockedKey]) or BH.unlockMode then
             self:StartMoving()
             self:SetUserPlaced(false)
         end
@@ -5816,7 +5853,7 @@ BH.bresCounterFrame:SetFrameStrata("MEDIUM")
 BH.bresCounterFrame:SetFixedFrameStrata(true)
 BH.bresCounterFrame:RegisterForDrag("LeftButton")
 BH.bresCounterFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.bresCounterLocked) or BH.previewMode then
+    if not (BH.settings and BH.settings.bresCounterLocked) or BH.unlockMode then
         BH.bresCounterFrame:StartMoving()
         BH.bresCounterFrame:SetUserPlaced(false)
     end
@@ -5843,7 +5880,7 @@ do
     local floor = math.floor
 
     updater:SetScript("OnLoop", function()
-        if BH.previewMode then return end -- preview uses UpdateBresCounter() directly
+        if BH.unlockMode then return end -- preview uses UpdateBresCounter() directly
 
         if not BH.settings or not BH.settings.bresCounterEnabled then
             BH.bresCounterFrame:Hide()
@@ -5918,7 +5955,7 @@ end
 -- Update brez counter for preview mode
 function BH:UpdateBresCounter()
     if not self.bresCounterFrame then return end
-    if self.previewMode then
+    if self.unlockMode then
         self.bresCounterText:SetText("BREZ: 3 (2:45)")
         self.bresCounterText:SetTextColor(0.2, 0.9, 0.2, 1)
         self.bresCounterFrame:Show()
@@ -5959,7 +5996,7 @@ BH.deathTallyFrame:SetFrameStrata("MEDIUM")
 BH.deathTallyFrame:SetFixedFrameStrata(true)
 BH.deathTallyFrame:RegisterForDrag("LeftButton")
 BH.deathTallyFrame:SetScript("OnDragStart", function()
-    if not (BH.settings and BH.settings.deathTallyLocked) or BH.previewMode then
+    if not (BH.settings and BH.settings.deathTallyLocked) or BH.unlockMode then
         BH.deathTallyFrame:StartMoving()
         BH.deathTallyFrame:SetUserPlaced(false)
     end
@@ -6068,7 +6105,7 @@ function BH:UpdateDeathTallyDisplay()
     self.deathTallyTitle:SetFont("Fonts\\FRIZQT__.TTF", titleFontSize, "OUTLINE")
     local classColorEnabled = not self.settings or self.settings.deathTallyClassColorNames ~= false
 
-    if self.previewMode then
+    if self.unlockMode then
         local previewEntries = {
             { displayName = "Tankname", classFile = "WARRIOR", count = 0 },
             { displayName = "Healyou",  classFile = "PRIEST",  count = 1 },
@@ -6251,8 +6288,8 @@ end
 local classBuffWasNeeded = {}
 
 local function ShouldShowButtons()
-    -- Preview mode bypasses instance check
-    if BH.previewMode then
+    -- Unlock mode bypasses instance check
+    if BH.unlockMode then
         -- Still hide in combat even in preview
         if InCombatLockdown() then
             return false
@@ -6333,7 +6370,7 @@ function BH:UpdateButtons()
     --
     -- The retry count is capped as a backstop, so a stuck mouse button or an
     -- input state we did not anticipate can never stall updates indefinitely.
-    if not self.previewMode and IsMouseButtonDown and IsMouseButtonDown()
+    if not self.unlockMode and IsMouseButtonDown and IsMouseButtonDown()
         and _updateButtonsDeferrals < 6 then
         for _, btn in ipairs(self.buttons) do
             if btn:IsShown() and btn:IsMouseOver() then
@@ -6364,9 +6401,9 @@ function BH:UpdateButtons()
     end
     self.buttons = {}
     -- Clean up dummy preview buttons
-    if self.previewDummyBtns then
-        for _, db in ipairs(self.previewDummyBtns) do db:Hide(); db:SetParent(nil) end
-        self.previewDummyBtns = nil
+    if self.unlockDummyBtns then
+        for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
+        self.unlockDummyBtns = nil
     end
 
     local id = 1
@@ -7101,7 +7138,7 @@ function BH:UpdateButtons()
     end
 
     -- show/hide main frame depending on buttons
-    if self.previewMode then
+    if self.unlockMode then
         -- In preview mode, hide any real buttons and show 3 dummy non-interactable buttons
         for i, btn in ipairs(self.buttons) do
             -- Unregister any secure state drivers that might override Hide()
@@ -7125,10 +7162,10 @@ function BH:UpdateButtons()
             "Interface\\Icons\\Spell_Nature_Rejuvenation",
         }
         -- Clean up old dummy buttons
-        if self.previewDummyBtns then
-            for _, db in ipairs(self.previewDummyBtns) do db:Hide(); db:SetParent(nil) end
+        if self.unlockDummyBtns then
+            for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
         end
-        self.previewDummyBtns = {}
+        self.unlockDummyBtns = {}
         local labelHeight = showLabel and 14 or 0
         local btnHeight = size + labelHeight
         for i = 1, 3 do
@@ -7167,7 +7204,7 @@ function BH:UpdateButtons()
                 end
             end
             db:Show()
-            table.insert(self.previewDummyBtns, db)
+            table.insert(self.unlockDummyBtns, db)
         end
         if layout == "VERTICAL" then
             self.frame:SetSize(size, 3 * btnHeight + 2 * spacing)
@@ -7177,26 +7214,26 @@ function BH:UpdateButtons()
         self.frame:Show()
     elseif id == 1 then
         -- No buttons and not previewing - clean up and hide
-        if self.previewDummyBtns then
-            for _, db in ipairs(self.previewDummyBtns) do db:Hide(); db:SetParent(nil) end
-            self.previewDummyBtns = nil
+        if self.unlockDummyBtns then
+            for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
+            self.unlockDummyBtns = nil
         end
         self.frame:Hide()
         BH.petFrame:Hide()
         BH.combatBuffFrame:Hide()
     else
         -- Real buttons exist - clean up dummies
-        if self.previewDummyBtns then
-            for _, db in ipairs(self.previewDummyBtns) do db:Hide(); db:SetParent(nil) end
-            self.previewDummyBtns = nil
+        if self.unlockDummyBtns then
+            for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
+            self.unlockDummyBtns = nil
         end
         self.frame:Show()
         if hasPetButton then BH.petFrame:Show() else BH.petFrame:Hide() end
         if hasCombatBuff then BH.combatBuffFrame:Show() else BH.combatBuffFrame:Hide() end
     end
 
-    -- Preview mode overlay on main buttons frame
-    if self.previewMode then
+    -- Unlock mode overlay on main buttons frame
+    if self.unlockMode then
         if not self.mainPreviewOverlay then
             local ov = self.frame:CreateTexture(nil, "OVERLAY")
             ov:SetAllPoints()
@@ -7237,7 +7274,7 @@ function BH:UpdateBeaconReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.beaconReminderEnabled ~= false) then
         self.beaconReminderFrame:Hide()
@@ -7313,7 +7350,7 @@ function BH:UpdateBeaconReminder()
         self.beaconReminderFrame:Show()
         -- Enable/disable mouse based on lock
         local locked = self.settings and self.settings.beaconReminderLocked
-        self.beaconReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.beaconReminderFrame:EnableMouse(self.unlockMode or not locked)
     else
         self.beaconReminderFrame:Hide()
     end
@@ -7327,7 +7364,7 @@ function BH:UpdateEarthShieldReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.earthShieldReminderEnabled ~= false) then
         self.earthShieldReminderFrame:Hide()
@@ -7405,7 +7442,7 @@ function BH:UpdateEarthShieldReminder()
         self.earthShieldReminderFrame:Show()
         -- Enable/disable mouse based on lock
         local locked = self.settings and self.settings.earthShieldReminderLocked
-        self.earthShieldReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.earthShieldReminderFrame:EnableMouse(self.unlockMode or not locked)
     else
         self.earthShieldReminderFrame:Hide()
     end
@@ -7419,7 +7456,7 @@ function BH:UpdateRepairReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not self.settings or not self.settings.repairReminderEnabled then
         self.repairReminderFrame:Hide()
@@ -7450,7 +7487,7 @@ function BH:UpdateRepairReminder()
         self.repairReminderFrame:Show()
         -- Enable/disable mouse based on lock
         local locked = self.settings and self.settings.repairReminderLocked
-        self.repairReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.repairReminderFrame:EnableMouse(self.unlockMode or not locked)
     else
         self.repairReminderFrame:Hide()
     end
@@ -7464,7 +7501,7 @@ function BH:UpdateSymbioticReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.symbioticReminderEnabled ~= false) then
         self.symbioticReminderFrame:Hide()
@@ -7502,7 +7539,7 @@ function BH:UpdateSymbioticReminder()
     if not auraData then
         local locked = self.settings and self.settings.symbioticReminderLocked
         self.symbioticReminderFrame:Show()
-        self.symbioticReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.symbioticReminderFrame:EnableMouse(self.unlockMode or not locked)
     else
         self.symbioticReminderFrame:Hide()
     end
@@ -7515,7 +7552,7 @@ function BH:UpdateCoachWhistleReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.coachWhistleReminderEnabled ~= false) then
         self.coachWhistleReminderFrame:Hide()
@@ -7548,7 +7585,7 @@ function BH:UpdateCoachWhistleReminder()
     else
         local locked = self.settings and self.settings.coachWhistleReminderLocked
         self.coachWhistleReminderFrame:Show()
-        self.coachWhistleReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.coachWhistleReminderFrame:EnableMouse(self.unlockMode or not locked)
     end
 end
 
@@ -7559,7 +7596,7 @@ function BH:UpdatePetReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.petReminderEnabled ~= false) then
         self.petReminderFrame:Hide()
@@ -7581,7 +7618,7 @@ function BH:UpdatePetReminder()
     end
 
     -- In preview mode always show
-    if self.previewMode then
+    if self.unlockMode then
         self.petReminderFrame:Show()
         local locked = self.settings and self.settings.petReminderLocked
         self.petReminderFrame:EnableMouse(not locked)
@@ -7599,7 +7636,7 @@ function BH:UpdatePetReminder()
     else
         self.petReminderFrame:Show()
         local locked = self.settings and self.settings.petReminderLocked
-        self.petReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.petReminderFrame:EnableMouse(self.unlockMode or not locked)
     end
 end
 
@@ -7610,7 +7647,7 @@ function BH:UpdateFoodReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.foodReminderEnabled ~= false) then
         self.foodReminderFrame:Hide()
@@ -7655,7 +7692,7 @@ function BH:UpdateFoodReminder()
     if not hasAnyInBags then
         local locked = self.settings and self.settings.foodReminderLocked
         self.foodReminderFrame:Show()
-        self.foodReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.foodReminderFrame:EnableMouse(self.unlockMode or not locked)
     else
         self.foodReminderFrame:Hide()
     end
@@ -7668,7 +7705,7 @@ function BH:UpdateFlaskReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.flaskReminderEnabled ~= false) then
         self.flaskReminderFrame:Hide()
@@ -7712,7 +7749,7 @@ function BH:UpdateFlaskReminder()
     if not hasAnyInBags then
         local locked = self.settings and self.settings.flaskReminderLocked
         self.flaskReminderFrame:Show()
-        self.flaskReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.flaskReminderFrame:EnableMouse(self.unlockMode or not locked)
     else
         self.flaskReminderFrame:Hide()
     end
@@ -7725,7 +7762,7 @@ function BH:UpdateOilReminder()
     -- this frame so it can be positioned, and this pass must not undo that.
     -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
     -- reminder within a fraction of a second of the preview being turned on.
-    if self.previewMode then return end
+    if self.unlockMode then return end
 
     if not (self.settings and self.settings.oilReminderEnabled ~= false) then
         self.oilReminderFrame:Hide()
@@ -7786,16 +7823,16 @@ function BH:UpdateOilReminder()
     if not hasAnyInBags then
         local locked = self.settings and self.settings.oilReminderLocked
         self.oilReminderFrame:Show()
-        self.oilReminderFrame:EnableMouse(self.previewMode or not locked)
+        self.oilReminderFrame:EnableMouse(self.unlockMode or not locked)
     else
         self.oilReminderFrame:Hide()
     end
 end
 
 -- Force-show or real-update all reminder frames depending on preview mode.
--- Call this whenever previewMode changes.
+-- Call this whenever unlockMode changes.
 function BH:RefreshAllReminderFrames()
-    if self.previewMode then
+    if self.unlockMode then
         -- Force-show all enabled reminder frames so they can be repositioned
         local function showIf(frame, settingKey, lockedKey)
             if not frame then return end
@@ -7882,7 +7919,7 @@ function BH:UpdateRaidToolsVisibility()
     if InCombatLockdown() then return end
 
     local enabled = self.settings and self.settings.raidToolsEnabled
-    local preview = self.previewMode
+    local preview = self.unlockMode
 
     if self.markersFrame then
         local inGroup = IsInGroup() or IsInRaid()
@@ -8237,7 +8274,7 @@ function BH:CreateRaidToolsFrame()
     mf:EnableMouse(true)
     mf:RegisterForDrag("LeftButton")
     mf:SetScript("OnDragStart", function()
-        if not (BH.settings and BH.settings.raidToolsMarkersLocked) or BH.previewMode then
+        if not (BH.settings and BH.settings.raidToolsMarkersLocked) or BH.unlockMode then
             mf:StartMoving()
             mf:SetUserPlaced(false)
         end
@@ -8263,7 +8300,7 @@ function BH:CreateRaidToolsFrame()
     mfDrag:EnableMouse(true)
     mfDrag:RegisterForDrag("LeftButton")
     mfDrag:SetScript("OnDragStart", function()
-        if not (BH.settings and BH.settings.raidToolsMarkersLocked) or BH.previewMode then
+        if not (BH.settings and BH.settings.raidToolsMarkersLocked) or BH.unlockMode then
             mf:StartMoving()
             mf:SetUserPlaced(false)
         end
@@ -8410,7 +8447,7 @@ function BH:CreateRaidToolsFrame()
     prf:EnableMouse(true)
     prf:RegisterForDrag("LeftButton")
     prf:SetScript("OnDragStart", function()
-        if not (BH.settings and BH.settings.raidToolsPullReadyLocked) or BH.previewMode then
+        if not (BH.settings and BH.settings.raidToolsPullReadyLocked) or BH.unlockMode then
             prf:StartMoving()
             prf:SetUserPlaced(false)
         end
@@ -8436,7 +8473,7 @@ function BH:CreateRaidToolsFrame()
     prfDrag:EnableMouse(true)
     prfDrag:RegisterForDrag("LeftButton")
     prfDrag:SetScript("OnDragStart", function()
-        if not (BH.settings and BH.settings.raidToolsPullReadyLocked) or BH.previewMode then
+        if not (BH.settings and BH.settings.raidToolsPullReadyLocked) or BH.unlockMode then
             prf:StartMoving()
             prf:SetUserPlaced(false)
         end
@@ -8616,8 +8653,8 @@ function BH:CreateRaidToolsFrame()
     local closeBtn = CreateSQButton(pcf, "Close", 68, 22)
     closeBtn:SetPoint("BOTTOMRIGHT", pcf, "BOTTOMRIGHT", -6, 6)
     closeBtn:SetScript("OnClick", function()
-        BH.previewMode = false
-        if BH.previewBtn then BH.previewBtn:SetText("Preview") end
+        BH.unlockMode = false
+        if BH.unlockBtn then BH.unlockBtn:SetText("Preview") end
         BH:UpdateButtons()
         BH:UpdateRaidToolsVisibility()
     end)
@@ -8876,9 +8913,9 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
             BH.challengeModeActive = false
         else
             -- Entering instance - turn off preview mode, let normal behavior take over
-            BH.previewMode = false
-            if BH.previewBtn then
-                BH.previewBtn:SetText("Preview")
+            BH.unlockMode = false
+            if BH.unlockBtn then
+                BH.unlockBtn:SetText("Preview")
             end
         end
         BH:CheckInstanceSound()
@@ -8983,6 +9020,23 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
                 BH.pullReadyFrame:Show()
             end
         end
+    elseif msg == "unlock" then
+        -- Same toggle as the Unlock Frames button, reachable without opening the
+        -- panel -- which matters because the panel can cover the frames you are
+        -- trying to position.
+        BH.unlockMode = not BH.unlockMode
+        BH:UpdateButtons()
+        BH:UpdateRaidToolsVisibility()
+        BH:RefreshAllReminderFrames()
+        BH:UpdateCalloutsButtonFrame()
+        BH:UpdateFrameLock()
+        BH:UpdateKelAlertUnlockState()
+        if BH.unlockBtn then
+            BH.unlockBtn:SetText(BH.unlockMode and "Lock Frames" or "Unlock Frames")
+        end
+        print(BH.unlockMode
+            and "Squizzumables: frames unlocked - drag them into place, then /sq unlock again."
+            or  "Squizzumables: frames locked.")
     elseif msg == 'reload' then
         BH:UpdateButtons()
         print(addonName.." buttons updated")
@@ -9077,6 +9131,7 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print("  /sq config - open options")
         print("  /sq reset - reset frame position")
         print("  /sq raidtools - toggle raid tools frame")
+        print("  /sq unlock - toggle Unlock Frames (drag everything into place)")
         print("  /sq reload - update buttons")
         print("  /sq feast - feast announce diagnostics")
         print("  /sq auras - paladin aura detection diagnostics")

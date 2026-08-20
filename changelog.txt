@@ -48,6 +48,12 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Added Unlock Frames: one toggle that makes every draggable frame in the addon visible and
+  movable at once, whatever its individual lock setting says, so repositioning no longer means
+  finding the right "Lock X" checkbox first. On the Settings tab, or /sq unlock without opening
+  the panel -- useful because the panel itself can cover the frames you are trying to move.
+  This is the old Preview button, extended to cover the Just For Kel alert and the dungeon
+  callouts frame, which it previously could not reach
 - Added a settings search box to the panel title bar. Type any part of an option name and it
   lists matching settings with the category each lives in; picking one switches to that
   category, scrolls the option into view and flashes it. Enter jumps straight to the top

@@ -37,7 +37,10 @@ local function EnsureAlertFrame()
     f:Hide()
 
     f:SetScript("OnMouseDown", function(self, btn)
-        if btn == "LeftButton" and not (BH.settings and BH.settings.kelAlertLocked) then
+        -- Unlock Frames overrides the per-frame lock, so this can be positioned
+        -- alongside everything else without unticking its own checkbox first.
+        if btn == "LeftButton"
+            and (BH.unlockMode or not (BH.settings and BH.settings.kelAlertLocked)) then
             self:StartMoving()
         end
     end)
