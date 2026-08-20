@@ -1,0 +1,24 @@
+# BigWigsMods/packager configuration.
+#
+# Libs/ is vendored (checked in) rather than pulled as an `externals` block, so
+# there is nothing to fetch at build time -- the zip is this repo minus the
+# development files listed below.
+
+package-as: Squizzumables
+
+# Hand-written, so use it verbatim instead of letting the packager synthesise a
+# changelog from commit subjects. markup-type text keeps it as plain text.
+manual-changelog:
+  filename: changelog.txt
+  markup-type: text
+
+# Development-only; nothing here should reach a player's AddOns folder.
+ignore:
+  - .claude
+  - .github
+  - .vscode
+  - .luarc.json
+  - .pkgmeta
+  - CLAUDE.md
+  - NOTES.md
+  - README.md

@@ -1,0 +1,27 @@
+name: Package and release
+
+# Tag-driven: the tag name becomes the release version, so pushing v1.61
+# publishes 1.61. Nothing is uploaded on an ordinary commit.
+on:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The packager reads tag history to work out the version and to build
+          # the changelog range, so a shallow clone is not enough.
+          fetch-depth: 0
+
+      - name: Package and upload
+        uses: BigWigsMods/packager@v2
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
