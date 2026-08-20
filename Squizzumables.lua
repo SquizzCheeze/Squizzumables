@@ -1152,6 +1152,21 @@ function BH:CreateOptionsPanel()
     -- box, the results list and the jump. Sits in the title bar, left of the
     -- close button.
     -- ------------------------------------------------------------------------
+    -- Unlock Frames lives in the title bar rather than on the Settings tab, so
+    -- it is one click away from whichever category is open -- positioning
+    -- frames is something you do while looking at their settings, not after
+    -- navigating back to Settings. Placed left of the search box to keep it off
+    -- the close button.
+    local unlockBtn = CreateSQButton(titleBar, "Unlock Frames", 112, 22)
+    unlockBtn:SetScript("OnClick", function()
+        BH:SetUnlockMode(not BH.unlockMode)
+    end)
+    ns.Rows.AddTooltip(unlockBtn, "Unlock Frames",
+        "Makes every draggable frame in the addon visible and movable at once, whatever its own "
+        .. "lock setting says. The options panel hides while unlocked so it is not in the way. "
+        .. "Also available as /sq unlock.")
+    self.unlockBtn = unlockBtn
+
     local searchBox = CreateFrame("EditBox", nil, titleBar, "InputBoxTemplate")
     searchBox:SetSize(180, 20)
     searchBox:SetPoint("RIGHT", closeBtn, "LEFT", -8, 0)
@@ -1255,6 +1270,10 @@ function BH:CreateOptionsPanel()
         box:ClearFocus()
         HideResults()
     end)
+
+    -- Anchored after the search box exists, so it sits to its left rather than
+    -- next to the close button, where a misclick would shut the panel.
+    unlockBtn:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
     panel:HookScript("OnHide", HideResults)
 
     -- Accent line under title
@@ -1947,16 +1966,6 @@ function BH:BuildSettingsTab(parent)
     ns.ApplyAccent(toolsSection, "text")
     yOffset = yOffset - 24
 
-    -- Unlock Frames: one toggle that makes every draggable frame in the addon
-    -- visible and movable at once, whatever its individual lock setting says.
-    -- Replaces hunting for the right "Lock X" checkbox to reposition one thing.
-    local unlockBtn = CreateSQButton(content, "Unlock Frames", 150, 26)
-    unlockBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    unlockBtn:SetScript("OnClick", function()
-        BH:SetUnlockMode(not BH.unlockMode)
-    end)
-    self.unlockBtn = unlockBtn
-    yOffset = yOffset - 36
 
     -- Reset button
     local resetBtn = CreateSQButton(content, "Reset to Defaults", 140, 26, SQ_COLORS.danger)
@@ -8985,11 +8994,13 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         if not inInstance then
             BH.challengeModeActive = false
         else
-            -- Entering instance - turn off preview mode, let normal behavior take over
-            BH.unlockMode = false
-            if BH.unlockBtn then
-                BH.unlockBtn:SetText("Preview")
-            end
+            -- Entering an instance: leave unlock mode so the placeholders and
+            -- forced-visible frames do not follow the player into content.
+            -- Goes through SetUnlockMode so the button label, the floating
+            -- control and every frame group are all brought back into line --
+            -- this used to set the flag directly and left the button reading
+            -- the wrong thing.
+            BH:SetUnlockMode(false)
         end
         BH:CheckInstanceSound()
         -- Start/stop brez tracking based on instance type
