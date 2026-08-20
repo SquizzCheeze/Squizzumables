@@ -48,6 +48,14 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Cooldown Manager sound alerts now work for cooldowns you have not enabled in Blizzard's own
+  Cooldown Manager. Aura state was read only from Blizzard's buff viewer, which contains only
+  the cooldowns you have chosen to show in it -- so an alert on anything else could never fire,
+  because its aura state was permanently "not active". The addon now reads your aura directly
+  when the viewer does not know about that cooldown
+- Added a sound preview button to the CDM Sounds tab. It was the only sound dropdown in the
+  addon without one, so there was no way to hear a sound before assigning it
+- Added /sq cdm, which reports why a Cooldown Manager sound alert is not firing
 - Cooldown Manager sound alerts should now actually fire. Active buff state was read from
   whether Blizzard's cooldown viewer item was shown, but a viewer item stays shown while its
   aura is inactive unless you have turned on Blizzard's "Hide When Inactive" edit-mode option,
