@@ -1277,7 +1277,7 @@ function BH:CreateOptionsPanel()
     navBar:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 0, 0)
     navBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 1, 40)
     navBar:SetWidth(NAV_WIDTH)
-    navBar:SetBackdrop({ bgFile = "Interface\BUTTONS\WHITE8X8" })
+    navBar:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
     navBar:SetBackdropColor(SQ_COLORS.tabInactive[1], SQ_COLORS.tabInactive[2], SQ_COLORS.tabInactive[3], 1)
 
     -- Divider between the sidebar and the content area.
@@ -1296,7 +1296,7 @@ function BH:CreateOptionsPanel()
         item:SetPoint("TOPRIGHT", navBar, "TOPRIGHT", -1, navCursorY)
         navCursorY = navCursorY - NAV_ITEM_H
 
-        item:SetBackdrop({ bgFile = "Interface\BUTTONS\WHITE8X8" })
+        item:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
         item:SetBackdropColor(0, 0, 0, 0)
 
         local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1953,20 +1953,7 @@ function BH:BuildSettingsTab(parent)
     local unlockBtn = CreateSQButton(content, "Unlock Frames", 150, 26)
     unlockBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     unlockBtn:SetScript("OnClick", function()
-        BH.unlockMode = not BH.unlockMode
-        if BH.unlockMode then
-            unlockBtn:SetText("Lock Frames")
-            print("Squizzumables: frames unlocked - drag any of them into place, then click Lock Frames.")
-        else
-            unlockBtn:SetText("Unlock Frames")
-            print("Squizzumables: frames locked.")
-        end
-        BH:UpdateButtons()
-        BH:UpdateRaidToolsVisibility()
-        BH:RefreshAllReminderFrames()
-        BH:UpdateCalloutsButtonFrame()
-        BH:UpdateFrameLock()
-        BH:UpdateKelAlertUnlockState()
+        BH:SetUnlockMode(not BH.unlockMode)
     end)
     self.unlockBtn = unlockBtn
     yOffset = yOffset - 36
@@ -2777,6 +2764,64 @@ end
 -- Show or hide the Just For Kel alert image for positioning while frames are
 -- unlocked. It is normally only visible for a few seconds when an alert fires,
 -- so without this it is the one frame Unlock Frames could not reach.
+-- Single entry point for Unlock Frames, used by the Settings button, /sq unlock
+-- and the Close button on the floating control. Having one path is what stops
+-- the three of them drifting: each has to hide the panel, refresh six different
+-- frame groups and keep the button label in sync.
+function BH:SetUnlockMode(on)
+    on = on and true or false
+    if self.unlockMode == on then return end
+    self.unlockMode = on
+
+    if on then
+        -- Get the options panel out of the way. It is 820 wide and will usually
+        -- be sitting on top of the frames being positioned. Remember whether it
+        -- was open so it can be put back when frames are locked again.
+        self.unlockReopenPanel = (self.optionsPanel and self.optionsPanel:IsShown()) and true or false
+        if self.optionsPanel then self.optionsPanel:Hide() end
+    end
+
+    self:UpdateButtons()
+    self:UpdateRaidToolsVisibility()
+    self:RefreshAllReminderFrames()
+    self:UpdateCalloutsButtonFrame()
+    self:UpdateFrameLock()
+    self:UpdateKelAlertUnlockState()
+    if self.unlockBtn then
+        self.unlockBtn:SetText(on and "Lock Frames" or "Unlock Frames")
+    end
+
+    if on then
+        print("Squizzumables: frames unlocked - drag them into place, then click Done or use /sq unlock.")
+    else
+        print("Squizzumables: frames locked.")
+        if self.unlockReopenPanel then
+            self.unlockReopenPanel = false
+            self:CreateOptionsPanel()
+        end
+    end
+end
+
+-- The unlock control is free-floating and keeps its own saved position, so it
+-- stays where the player parked it across sessions instead of snapping back
+-- beside the options panel.
+function BH:SaveUnlockControlPosition()
+    self:SaveFramePos("previewControlFrame", "unlockControlPosition")
+end
+
+function BH:LoadUnlockControlPosition()
+    local f = self.previewControlFrame
+    if not f then return end
+    local pos = SquizzumablesDB and SquizzumablesDB.unlockControlPosition
+    if pos then
+        f:ClearAllPoints()
+        f:SetPoint(pos.point, UIParent, pos.relativePoint, pos.x, pos.y)
+    elseif not f:GetPoint() then
+        f:ClearAllPoints()
+        f:SetPoint("TOP", UIParent, "TOP", 0, -140)
+    end
+end
+
 function BH:UpdateKelAlertUnlockState()
     local f = self.kelAlertFrame
     if not f and self.LoadKelAlertPosition then
@@ -2785,11 +2830,35 @@ function BH:UpdateKelAlertUnlockState()
         f = self.kelAlertFrame
     end
     if not f then return end
+
     if self.unlockMode then
+        -- Showing the frame is not enough to see it. Its texture is only set
+        -- when an alert actually fires, so until then it is a 200x200 frame
+        -- drawing nothing -- visible to the mouse but invisible to the eye.
+        -- Give it a labelled placeholder so there is something to aim at.
+        if not f.unlockPlaceholder then
+            local ph = CreateFrame("Frame", nil, f, "BackdropTemplate")
+            ph:SetAllPoints()
+            ph:SetBackdrop({
+                bgFile   = "Interface\\BUTTONS\\WHITE8X8",
+                edgeFile = "Interface\\BUTTONS\\WHITE8X8",
+                edgeSize = 1,
+            })
+            ph:SetBackdropColor(0, 0, 0, 0.55)
+            local r, g, b = ns.GetAccentColor()
+            ph:SetBackdropBorderColor(r, g, b, 0.9)
+            local phText = ph:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            phText:SetPoint("CENTER")
+            phText:SetText("Just For Kel\nalert image")
+            phText:SetJustifyH("CENTER")
+            ns.ApplyAccent(phText, "text")
+            f.unlockPlaceholder = ph
+        end
+        f.unlockPlaceholder:Show()
         f:EnableMouse(true)
-        if f.tex then f.tex:Show() end
         f:Show()
     else
+        if f.unlockPlaceholder then f.unlockPlaceholder:Hide() end
         f:EnableMouse(not (self.settings and self.settings.kelAlertLocked))
         f:Hide()
     end
@@ -8070,12 +8139,12 @@ function BH:UpdateRaidToolsVisibility()
             self.cdm:ShowPreview()
         end
 
-        -- Show preview control frame, anchor to options panel if available
+        -- Show the unlock control. It is free-floating and remembers where it
+        -- was left: it used to be re-anchored to the options panel every time,
+        -- which meant it jumped back beside the panel on each toggle and could
+        -- not be parked somewhere out of the way.
         if self.previewControlFrame then
-            if self.optionsPanel and self.optionsPanel:IsShown() then
-                self.previewControlFrame:ClearAllPoints()
-                self.previewControlFrame:SetPoint("TOPLEFT", self.optionsPanel, "TOPRIGHT", 4, 0)
-            end
+            self:LoadUnlockControlPosition()
             self.previewControlFrame:Show()
         end
     else
@@ -8595,11 +8664,14 @@ function BH:CreateRaidToolsFrame()
     pcf:SetClampedToScreen(true)
     pcf:RegisterForDrag("LeftButton")
     pcf:SetScript("OnDragStart", function() pcf:StartMoving() end)
-    pcf:SetScript("OnDragStop", function() pcf:StopMovingOrSizing() end)
+    pcf:SetScript("OnDragStop", function()
+        pcf:StopMovingOrSizing()
+        BH:SaveUnlockControlPosition()
+    end)
 
     local pcfTitle = pcf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     pcfTitle:SetPoint("TOP", pcf, "TOP", 0, -6)
-    pcfTitle:SetText("Preview Mode")
+    pcfTitle:SetText("Frames Unlocked")
     pcfTitle:SetTextColor(0.1, 0.8, 0.1)
 
     local lockBtn = CreateSQButton(pcf, "Lock All", 68, 22)
@@ -8648,15 +8720,16 @@ function BH:CreateRaidToolsFrame()
         -- reminder added later without this list having to be updated.
         ns.Rows.RefreshAll()
         print("Squizzumables: All frames locked")
+        -- Locking everything means the player is finished positioning, so leave
+        -- unlock mode too. Otherwise the locks appear to do nothing, because
+        -- unlock mode overrides them.
+        BH:SetUnlockMode(false)
     end)
 
-    local closeBtn = CreateSQButton(pcf, "Close", 68, 22)
+    local closeBtn = CreateSQButton(pcf, "Done", 68, 22)
     closeBtn:SetPoint("BOTTOMRIGHT", pcf, "BOTTOMRIGHT", -6, 6)
     closeBtn:SetScript("OnClick", function()
-        BH.unlockMode = false
-        if BH.unlockBtn then BH.unlockBtn:SetText("Preview") end
-        BH:UpdateButtons()
-        BH:UpdateRaidToolsVisibility()
+        BH:SetUnlockMode(false)
     end)
 
     pcf:Hide()
@@ -9021,22 +9094,9 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             end
         end
     elseif msg == "unlock" then
-        -- Same toggle as the Unlock Frames button, reachable without opening the
-        -- panel -- which matters because the panel can cover the frames you are
-        -- trying to position.
-        BH.unlockMode = not BH.unlockMode
-        BH:UpdateButtons()
-        BH:UpdateRaidToolsVisibility()
-        BH:RefreshAllReminderFrames()
-        BH:UpdateCalloutsButtonFrame()
-        BH:UpdateFrameLock()
-        BH:UpdateKelAlertUnlockState()
-        if BH.unlockBtn then
-            BH.unlockBtn:SetText(BH.unlockMode and "Lock Frames" or "Unlock Frames")
-        end
-        print(BH.unlockMode
-            and "Squizzumables: frames unlocked - drag them into place, then /sq unlock again."
-            or  "Squizzumables: frames locked.")
+        -- Reachable without opening the panel, which matters because the panel
+        -- can cover the frames being positioned.
+        BH:SetUnlockMode(not BH.unlockMode)
     elseif msg == 'reload' then
         BH:UpdateButtons()
         print(addonName.." buttons updated")
