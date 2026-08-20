@@ -1607,6 +1607,102 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
     preferredIndex = 3,
 }
 
+-- Shared modal for both directions: export fills it with a string to copy,
+-- import waits for one to be pasted. One frame because the two are the same
+-- thing -- a big selectable text box -- and having two would mean two places to
+-- get the select-all and focus handling right.
+function BH:ShowProfileStringDialog(mode, text)
+    local f = self.profileIOFrame
+    if not f then
+        f = CreateFrame("Frame", "SQUIZZUMABLESProfileIO", UIParent, "BackdropTemplate")
+        f:SetSize(520, 260)
+        f:SetPoint("CENTER")
+        f:SetFrameStrata("FULLSCREEN_DIALOG")
+        f:SetMovable(true)
+        f:EnableMouse(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        ApplySQBackdrop(f, SQ_COLORS.bg, SQ_COLORS.border)
+        table.insert(UISpecialFrames, "SQUIZZUMABLESProfileIO")
+
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -12)
+        ns.ApplyAccent(f.title, "text")
+
+        f.hint = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        f.hint:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -6)
+        f.hint:SetWidth(490)
+        f.hint:SetJustifyH("LEFT")
+        f.hint:SetWordWrap(true)
+        f.hint:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+        local scroll = CreateFrame("ScrollFrame", "SQUIZZUMABLESProfileIOScroll", f, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -74)
+        scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -34, 46)
+
+        local edit = CreateFrame("EditBox", nil, scroll)
+        edit:SetMultiLine(true)
+        edit:SetAutoFocus(false)
+        edit:SetFontObject(ChatFontNormal)
+        edit:SetWidth(460)
+        edit:SetScript("OnEscapePressed", function() f:Hide() end)
+        scroll:SetScrollChild(edit)
+        f.edit = edit
+
+        f.action = CreateSQButton(f, "Import", 110, 24)
+        f.action:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 14)
+
+        local closeBtn = CreateSQButton(f, "Close", 80, 24)
+        closeBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 14)
+        closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+        self.profileIOFrame = f
+    end
+
+    f.edit:SetText(text or "")
+    if mode == "export" then
+        f.title:SetText("Export Profile")
+        f.hint:SetText("Press Ctrl-A then Ctrl-C to copy this string. Anyone with Squizzumables "
+            .. "can paste it into Import to get these settings.")
+        f.action:Hide()
+        -- Select it for them: the first thing anyone does here is select all.
+        f.edit:SetFocus()
+        f.edit:HighlightText()
+    else
+        f.title:SetText("Import Profile")
+        f.hint:SetText("Paste a Squizzumables profile string here, then choose Import. "
+            .. "It is added as a new profile -- nothing you already have is changed.")
+        f.action:Show()
+        f.action:SetText("Import")
+        f.action:SetScript("OnClick", function()
+            local data, err = ns.ProfileIO.Decode(f.edit:GetText())
+            if not data then
+                print("Squizzumables: " .. (err or "Could not read that string."))
+                return
+            end
+            -- Never overwrite an existing profile silently: an import that
+            -- quietly replaced the profile you were using would be unrecoverable.
+            local name = data.name or "Imported"
+            local base, n = name, 2
+            while SquizzumablesDB.profiles and SquizzumablesDB.profiles[name] do
+                name = base .. " (" .. n .. ")"
+                n = n + 1
+            end
+            local ok, result = ns.ProfileIO.Apply(data, name)
+            if not ok then
+                print("Squizzumables: " .. tostring(result))
+                return
+            end
+            print("Squizzumables: imported profile '" .. result .. "'. Select it from the Active Profile dropdown to use it.")
+            f:Hide()
+            BH:RefreshSettingsTab()
+        end)
+        f.edit:SetFocus()
+    end
+    f:Show()
+end
+
 function BH:BuildSettingsTab(parent)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
@@ -1712,6 +1808,31 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateDefaultProfile()
         print("Squizzumables: Current settings copied to Default profile.")
     end)
+    yOffset = yOffset - 32
+
+    local exportBtn = CreateSQButton(content, "Export", 80, 24)
+    exportBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    exportBtn:SetScript("OnClick", function()
+        local str, err = ns.ProfileIO.Export()
+        if not str then
+            print("Squizzumables: " .. (err or "Could not export that profile."))
+            return
+        end
+        BH:ShowProfileStringDialog("export", str)
+    end)
+    ns.Rows.AddTooltip(exportBtn, "Export",
+        "Produces a shareable string for the active profile. Only settings you have changed from "
+        .. "the defaults are included, which keeps the string short and means importing it into a "
+        .. "newer version picks up any newly added defaults.")
+
+    local importBtn = CreateSQButton(content, "Import", 80, 24)
+    importBtn:SetPoint("LEFT", exportBtn, "RIGHT", 6, 0)
+    importBtn:SetScript("OnClick", function()
+        BH:ShowProfileStringDialog("import", "")
+    end)
+    ns.Rows.AddTooltip(importBtn, "Import",
+        "Paste a profile string from someone else. It always arrives as a new profile, so nothing "
+        .. "you already have is overwritten.")
     yOffset = yOffset - 32
 
     local resetFromDefaultBtn = CreateSQButton(content, "Reset from Default", 140, 24)
