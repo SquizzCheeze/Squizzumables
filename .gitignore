@@ -1,3 +1,6 @@
 # WoW writes these; not part of the addon
 *.bak
 *.old
+
+# Machine-local Claude Code permission grants, not shared config
+.claude/settings.local.json

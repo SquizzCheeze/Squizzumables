@@ -1,0 +1,18 @@
+# Normalise to LF in the repository regardless of the checkout platform.
+* text=auto eol=lf
+
+*.lua   text
+*.toc   text
+*.md    text
+*.txt   text
+*.json  text
+*.xml   text
+*.pl    text
+*.awk   text
+
+# Media must never be line-ending converted.
+*.png   binary
+*.blp   binary
+*.tga   binary
+*.ogg   binary
+*.mp3   binary
