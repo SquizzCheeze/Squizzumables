@@ -124,6 +124,29 @@ per-button per-frame in the countdown timer) and had to be repeated at every dow
 which is how the v1.58 crash got through. If you find yourself adding a `pcall` around a
 comparison, use a `Safe*` accessor instead.
 
+
+**Alerts that fire on *absence* need an extra guard.** An unreadable value looks
+identical to a missing one, so any alert whose trigger is "this is not there"
+will fire spuriously the moment data goes secret — which is exactly when combat
+starts. The class buff sounds did this: every alert went off at the start of a
+pull for buffs the player actually had. The Cooldown Manager's "removed" and
+"available" alerts had the same latent shape, since an unreadable cooldown reads
+as "not on cooldown", i.e. as the ability becoming ready.
+
+Alerts that fire on *presence* are safe — unreadable data just means they stay
+quiet, which is the harmless direction.
+
+So for anything that alerts on absence:
+  - check `BH.Secrets.AurasAreSecret()` (or the relevant readability flag) and
+    skip the whole comparison when it is true
+  - leave the previous-state tracking table **untouched** as well, not just the
+    sound. Recording state from an unreadable pass overwrites the real state,
+    and the next readable pass then treats things that never moved as fresh
+    transitions
+  - remember `C_Secrets.ShouldAurasBeSecret` may not exist, in which case
+    `AurasAreSecret()` answers "not secret" and protects nothing — keep a
+    time-based suppression on `PLAYER_REGEN_DISABLED` as the fallback
+
 `SafeAuraExpiration` deliberately passes `0` through unchanged rather than normalising it to
 `math.huge`. `0` is the client's "permanent / no duration" marker and this addon's call sites test
 for it explicitly (`BH:NeedsRefresh` treats `0` as "never needs refreshing"; `CreateButton` treats

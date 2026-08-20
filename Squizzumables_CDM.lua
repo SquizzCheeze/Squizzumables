@@ -429,14 +429,24 @@ local function FireCDSounds()
             local tracker = cdmModule.soundTrackers[cdID]
             -- Current cooldown state
             local onCD = false
+            local cdReadable = true
             local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(tracker.spellID)
             if cdInfo then
                 local start, dur = cdInfo.startTime, cdInfo.duration
                 if start and dur then
-                    local ok = not (BH.Secrets.HasAnySecret(start, dur))
-                    if ok and dur > 1.5 then onCD = true end
+                    if BH.Secrets.HasAnySecret(start, dur) then
+                        cdReadable = false
+                    elseif dur > 1.5 then
+                        onCD = true
+                    end
                 end
             end
+            -- Hold the previous state when the cooldown could not be read this
+            -- pass, rather than letting "unreadable" count as "not on
+            -- cooldown". That reads as the ability coming off cooldown and
+            -- fires an alert for something that never went anywhere -- the same
+            -- failure as the class buff sounds firing at the start of combat.
+            if not cdReadable then break end
             local hasAura  = cdmModule.activeBuffCooldowns[cdID] or false
             local isActive = onCD or hasAura
             -- Transitions

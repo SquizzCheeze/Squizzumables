@@ -48,6 +48,14 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Fixed the class buff sound alerts all firing at the start of combat for buffs you actually
+  had. Aura data stops being readable a fraction before the addon stops updating, so one pass
+  could land in that window and read every buff as missing. Sound alerts are now skipped
+  entirely while aura data is unreadable, and the tracking they use is left untouched rather
+  than being overwritten with the false state
+- Fixed the same latent problem in the Cooldown Manager sound alerts, where an unreadable
+  cooldown counted as "not on cooldown" and could fire an "available" alert for an ability
+  that never came off cooldown
 - Profiles can now be exported to a shareable string and imported from one, via Export and
   Import next to the profile buttons on the Settings tab. Only settings you have changed from
   the defaults go into the string, so it stays short, and an old string imported into a newer

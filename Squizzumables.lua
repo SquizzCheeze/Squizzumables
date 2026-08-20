@@ -7019,8 +7019,19 @@ function BH:UpdateButtons()
         end
     end
 
-    -- Class buff sound alert: play once per spellID when its button first appears
-    do
+    -- Class buff sound alert: play once per spellID when its button first appears.
+    --
+    -- Skipped entirely while aura data is secret. At the moment combat starts,
+    -- auras stop being readable a fraction before InCombatLockdown() trips, so a
+    -- pass can land in that window, read every buff as missing, and fire alerts
+    -- for buffs the player actually has -- which is exactly what it sounded
+    -- like: the alerts all going off as a pull began.
+    --
+    -- The tracking table is left untouched as well, not just the sounds. Marking
+    -- everything as "was needed" from an unreadable pass would overwrite the
+    -- real pre-combat state, and the next readable pass would then treat buffs
+    -- that never went anywhere as freshly missing.
+    if not BH.Secrets.AurasAreSecret() then
         local s = self.settings
         for spellID, _ in pairs(classBuff_spellIDs_this_pass) do
             if not classBuffWasNeeded[spellID] then
@@ -9060,6 +9071,13 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         C_Timer.After(3, function() BH.suppressBuffSounds = false end)
         BH:UpdateButtons()
     elseif event == "PLAYER_REGEN_DISABLED" then
+        -- Suppress buff sounds briefly on entering combat. The sound block in
+        -- UpdateButtons already skips itself while auras are secret, which is
+        -- the real guard; this is the fallback for a client where
+        -- C_Secrets.ShouldAurasBeSecret is unavailable, since there the secret
+        -- check silently answers "not secret" and stops protecting anything.
+        BH.suppressBuffSounds = true
+        C_Timer.After(3, function() BH.suppressBuffSounds = false end)
         -- Entering combat: hide the main button frame (hides all non-pet buttons inside it).
         -- Pet buttons live on BH.petFrame (a plain non-secure Frame) so they stay visible.
         BH.frame:Hide()
