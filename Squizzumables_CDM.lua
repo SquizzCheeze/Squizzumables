@@ -193,6 +193,24 @@ local function HookBlizzardBuffFrames()
     end
 end
 
+-- Is the player currently carrying this cooldown's aura?
+--
+-- The Blizzard buff viewer alone is not enough. It contains only the cooldowns
+-- the player has chosen to show in it, while alerts are configured from the full
+-- category set -- so a buff that is trackable but toggled off in Blizzard's
+-- Cooldown Manager never appears in activeBuffCooldowns and its alerts could
+-- never fire. Reading the player's aura directly covers that, and also covers
+-- Blizzard's known bind-miss where a freshly applied aura leaves the viewer
+-- item's IsActive stuck false.
+--
+-- Viewer first because it is a plain table lookup, and because it keeps working
+-- in combat when aura reads turn secret and GetAuraBySpellID returns nothing.
+local function CooldownAuraActive(cdID, spellID)
+    if cdID and cdmModule.activeBuffCooldowns[cdID] then return true end
+    if spellID and BH.Secrets.GetAuraBySpellID("player", spellID) then return true end
+    return false
+end
+
 -- ============================================================================
 -- Cooldown Discovery â€” Pure C_CooldownViewer API, no frame interaction.
 -- ============================================================================
@@ -352,8 +370,7 @@ local function ApplyProxyVisuals(proxy, groupData)
             end
         end
 
-        -- Check if buff is active via Blizzard CDM frame tracking (CMC-style)
-        local hasAura = cdmModule.activeBuffCooldowns[proxy.cooldownID] or false
+        local hasAura = CooldownAuraActive(proxy.cooldownID, proxy.spellID)
 
         local isActive = onCD or hasAura
 
@@ -469,7 +486,7 @@ local function FireCDSounds()
             -- fires an alert for something that never went anywhere -- the same
             -- failure as the class buff sounds firing at the start of combat.
             if not cdReadable then break end
-            local hasAura  = cdmModule.activeBuffCooldowns[cdID] or false
+            local hasAura  = CooldownAuraActive(cdID, tracker.spellID)
             local isActive = onCD or hasAura
             -- Transitions
             local justBecameReady  = not isActive and tracker._wasOnCD
@@ -512,12 +529,14 @@ function cdmModule:PrintSoundDiagnostics()
     for _, viewerName in ipairs(BUFF_VIEWERS) do
         local viewer = _G[viewerName]
         local kids, active, withIsActive = 0, 0, 0
+        local childIDs = {}
         if viewer then
             local ok, children = pcall(function() return { viewer:GetChildren() } end)
             if ok and children then
                 for _, child in ipairs(children) do
                     if child and child.cooldownID then
                         kids = kids + 1
+                        childIDs[#childIDs + 1] = tostring(child.cooldownID)
                         if child.IsActive then
                             withIsActive = withIsActive + 1
                             local gotState, state = pcall(child.IsActive, child)
@@ -529,6 +548,9 @@ function cdmModule:PrintSoundDiagnostics()
         end
         print(string.format("  %s: %s, %d tracked child(ren), %d expose IsActive, %d active now",
             viewerName, viewer and "found" or "MISSING", kids, withIsActive, active))
+        if #childIDs > 0 then
+            print("      contains cooldownIDs: " .. table.concat(childIDs, ", "))
+        end
     end
 
     local soundAlerts = GetCDMSoundAlerts()
@@ -541,13 +563,26 @@ function cdmModule:PrintSoundDiagnostics()
                    and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
         local spellName = info and info.spellID and C_Spell.GetSpellName(info.spellID)
         local assignment = specData and specData.assignments and specData.assignments[cdID]
-        print(string.format("  cooldownID %s (%s): %d alert(s), hasAura now: %s, tracked: %s, group: %s",
+        -- Report the two aura signals separately. The viewer only knows about
+        -- cooldowns the player has chosen to show in it, so the case where a
+        -- direct aura read disagrees with it is exactly what needs to be seen.
+        local sid = info and info.spellID
+        local viewerSays = cdmModule.activeBuffCooldowns[cdID] and true or false
+        local auraSays   = (sid and BH.Secrets.GetAuraBySpellID("player", sid)) and true or false
+        print(string.format("  cooldownID %s (%s, spellID %s): %d alert(s), group: %s, tracked: %s",
             tostring(cdID),
             tostring(BH.Secrets.SafeString(spellName, "?")),
+            tostring(sid),
             #alerts,
-            tostring(cdmModule.activeBuffCooldowns[cdID] and true or false),
-            tracker and "yes" or "no (never evaluated)",
-            assignment or "FREE"))
+            assignment or "FREE",
+            tracker and "yes" or "no (never evaluated)"))
+        print(string.format("      aura active now -- viewer: %s, direct read: %s",
+            tostring(viewerSays), tostring(auraSays)))
+        if tracker then
+            print(string.format("      last seen -- hasAura: %s, active: %s",
+                tostring(tracker._wasHasAura and true or false),
+                tostring(tracker._wasOnCD and true or false)))
+        end
         for _, alert in ipairs(alerts) do
             print(string.format("      when=%s type=%s sound=%s",
                 tostring(alert.when), tostring(alert.type), tostring(alert.sound)))
