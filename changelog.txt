@@ -48,6 +48,12 @@ V1.60
 - The per-button buff countdown was rebuilding a closure on every button on every rendered
   frame to display a value that changes once a second; it is now throttled and allocation-free
 - Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Cooldown Manager sound alerts should now actually fire. Active buff state was read from
+  whether Blizzard's cooldown viewer item was shown, but a viewer item stays shown while its
+  aura is inactive unless you have turned on Blizzard's "Hide When Inactive" edit-mode option,
+  which is off by default. For most setups that meant every tracked buff looked permanently
+  active, so the applied and removed transitions could never happen. It now reads the item's
+  real aura state instead. The CDM Sounds tab remains hidden behind /squizz CDMS
 - Fixed the class buff sound alerts all firing at the start of combat for buffs you actually
   had. Aura data stops being readable a fraction before the addon stops updating, so one pass
   could land in that window and read every buff as missing. Sound alerts are now skipped

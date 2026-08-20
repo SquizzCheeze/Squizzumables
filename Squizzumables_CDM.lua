@@ -10,6 +10,8 @@
     - Creates our own proxy frames with icon textures and cooldown sweep widgets.
     - Drives cooldown sweeps via SetCooldownFromDurationObject(C_Spell.GetSpellCooldownDuration()).
     - Tracks active buff state by hooking Blizzard CDM buff frames (read-only via hooksecurefunc â€” taint-safe).
+    - Reads active buff state from each viewer item's IsActive(), which is real aura state.
+      Never IsShown() -- see the note on ScanBlizzardBuffState for why that was wrong.
     - Queues container mutations during InCombatLockdown(), flushes on PLAYER_REGEN_ENABLED.
 ]]
 ---@diagnostic disable: undefined-global
@@ -123,8 +125,19 @@ local UpdateAllProxyCooldowns
 -- The two buff-type CDM viewers: category 2 = buff icons, category 3 = tracked bars
 local BUFF_VIEWERS = { "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
 
--- Scan both buff viewers' children visibility to populate activeBuffCooldowns
-local function ScanBlizzardBuffFrameVisibility()
+-- Populate activeBuffCooldowns from the Blizzard buff viewers.
+--
+-- Active state comes from the viewer item's IsActive(), which reports real aura
+-- state, and NEVER from IsShown(). A buff viewer item stays shown while the aura
+-- is inactive unless the player has turned on Blizzard's "Hide When Inactive"
+-- edit-mode option, and that is off by default -- so reading IsShown() made every
+-- tracked buff look permanently active for most players. That is why the CDM
+-- sound alerts never fired correctly: the "buff applied" and "buff removed"
+-- transitions could never happen, because the state never changed.
+--
+-- IsShown() is kept only as a fallback for a client that does not expose
+-- IsActive at all.
+local function ScanBlizzardBuffState()
     wipe(cdmModule.activeBuffCooldowns)
     for _, viewerName in ipairs(BUFF_VIEWERS) do
         local viewer = _G[viewerName]
@@ -132,8 +145,17 @@ local function ScanBlizzardBuffFrameVisibility()
             local ok, children = pcall(function() return { viewer:GetChildren() } end)
             if ok and children then
                 for _, child in ipairs(children) do
-                    if child and child.cooldownID and child:IsShown() then
-                        cdmModule.activeBuffCooldowns[child.cooldownID] = true
+                    if child and child.cooldownID then
+                        local active
+                        if child.IsActive then
+                            local gotState, state = pcall(child.IsActive, child)
+                            active = gotState and state or false
+                        else
+                            active = child:IsShown() or false
+                        end
+                        if active then
+                            cdmModule.activeBuffCooldowns[child.cooldownID] = true
+                        end
                     end
                 end
             end
@@ -152,7 +174,7 @@ local function HookBlizzardBuffFrames()
                     if child and child.cooldownID and not child._sqzBuffHooked then
                         child._sqzBuffHooked = true
                         local function OnBuffStateChanged()
-                            ScanBlizzardBuffFrameVisibility()
+                            ScanBlizzardBuffState()
                             UpdateAllProxyCooldowns()
                         end
                         if child.OnActiveStateChanged then
@@ -886,7 +908,7 @@ function cdmModule:Reconcile()
 
     -- Hook Blizzard buff frames and scan active state (CMC-style)
     HookBlizzardBuffFrames()
-    ScanBlizzardBuffFrameVisibility()
+    ScanBlizzardBuffState()
 
     -- Update all proxy cooldown sweeps
     UpdateAllProxyCooldowns()
@@ -1249,7 +1271,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "UNIT_AURA" then
         local unit = ...
         if unit == "player" then
-            ScanBlizzardBuffFrameVisibility()
+            ScanBlizzardBuffState()
             HookBlizzardBuffFrames()
             UpdateAllProxyCooldowns()
         end
