@@ -9277,6 +9277,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             print(string.format("    itemID %d: name=%s, spellName=%s, hasSpellID=%s",
                 itemID, tostring(itemName), safeName, tostring(hasSpell)))
         end
+    elseif msg == "cdm" then
+        if BH.cdm and BH.cdm.PrintSoundDiagnostics then
+            BH.cdm:PrintSoundDiagnostics()
+        else
+            print(addonName .. ": Cooldown Manager module not loaded.")
+        end
     elseif msg == 'auras' then
         -- Paladin aura diagnostics: which auras the addon can actually see on you.
         -- If an aura you have active reads "detected: NO" here, the problem is the
@@ -9345,6 +9351,7 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print("  /sq reload - update buttons")
         print("  /sq feast - feast announce diagnostics")
         print("  /sq auras - paladin aura detection diagnostics")
+        print("  /sq cdm - cooldown manager sound alert diagnostics")
         print("  /sq debug - show quality info")
         print("  /ginvite <name> - guild invite a player")
     end

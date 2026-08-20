@@ -496,6 +496,68 @@ local function FireCDSounds()
     end
 end
 
+-- Diagnostics for the CDM sound alerts, reachable as /sq cdm.
+--
+-- The alert chain has several places it can quietly stop -- the Blizzard buff
+-- viewers not existing, cooldown IDs not lining up between the viewer that
+-- reports aura state and the one alerts were configured against, or an alert
+-- being attached to a spell that is in a named group and therefore handled on a
+-- different path. This prints each of those so a failure can be identified
+-- rather than guessed at.
+function cdmModule:PrintSoundDiagnostics()
+    print("Squizzumables CDM sound diagnostics:")
+    print("  CDM enabled:", tostring(BH.settings and BH.settings.cdmEnabled))
+    print("  auras secret right now:", tostring(BH.Secrets.AurasAreSecret()))
+
+    for _, viewerName in ipairs(BUFF_VIEWERS) do
+        local viewer = _G[viewerName]
+        local kids, active, withIsActive = 0, 0, 0
+        if viewer then
+            local ok, children = pcall(function() return { viewer:GetChildren() } end)
+            if ok and children then
+                for _, child in ipairs(children) do
+                    if child and child.cooldownID then
+                        kids = kids + 1
+                        if child.IsActive then
+                            withIsActive = withIsActive + 1
+                            local gotState, state = pcall(child.IsActive, child)
+                            if gotState and state then active = active + 1 end
+                        end
+                    end
+                end
+            end
+        end
+        print(string.format("  %s: %s, %d tracked child(ren), %d expose IsActive, %d active now",
+            viewerName, viewer and "found" or "MISSING", kids, withIsActive, active))
+    end
+
+    local soundAlerts = GetCDMSoundAlerts()
+    local specData = GetSpecData()
+    local n = 0
+    for cdID, alerts in pairs(soundAlerts) do
+        n = n + #alerts
+        local tracker = cdmModule.soundTrackers[cdID]
+        local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
+                   and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+        local spellName = info and info.spellID and C_Spell.GetSpellName(info.spellID)
+        local assignment = specData and specData.assignments and specData.assignments[cdID]
+        print(string.format("  cooldownID %s (%s): %d alert(s), hasAura now: %s, tracked: %s, group: %s",
+            tostring(cdID),
+            tostring(BH.Secrets.SafeString(spellName, "?")),
+            #alerts,
+            tostring(cdmModule.activeBuffCooldowns[cdID] and true or false),
+            tracker and "yes" or "no (never evaluated)",
+            assignment or "FREE"))
+        for _, alert in ipairs(alerts) do
+            print(string.format("      when=%s type=%s sound=%s",
+                tostring(alert.when), tostring(alert.type), tostring(alert.sound)))
+        end
+    end
+    if n == 0 then
+        print("  No sound alerts configured. Add one from /squizz CDMS.")
+    end
+end
+
 UpdateAllProxyCooldowns = function()
     for _, proxy in pairs(cdmModule.proxyFrames) do
         UpdateProxyCooldown(proxy)
@@ -2254,6 +2316,26 @@ function BH:RebuildCDMSoundsRight()
     soundDD:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff - 4)
     ns.Rows.AddTooltip(soundDD, "Alert sound", "Sound played when this alert fires. Includes the bundled sounds and any registered on the Sounds tab.")
     soundDD:SetSelectedValue(cdmSoundsState.newAlertSound or "None")
+
+    -- Speaker preview, matching every other sound dropdown in the addon. This
+    -- tab was the only one without one, so there was no way to hear a sound
+    -- before committing it to an alert.
+    local sndPreviewBtn = CreateFrame("Button", nil, content)
+    sndPreviewBtn:SetSize(22, 22)
+    sndPreviewBtn:SetPoint("LEFT", soundDD, "RIGHT", 6, 0)
+    local sndNorm = sndPreviewBtn:CreateTexture(nil, "BACKGROUND")
+    sndNorm:SetAllPoints()
+    sndNorm:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+    local sndHi = sndPreviewBtn:CreateTexture(nil, "HIGHLIGHT")
+    sndHi:SetAllPoints()
+    sndHi:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+    sndHi:SetAlpha(0.6)
+    sndPreviewBtn:SetScript("OnEnter", function() sndNorm:SetAlpha(0.7) end)
+    sndPreviewBtn:SetScript("OnLeave", function() sndNorm:SetAlpha(1.0) end)
+    sndPreviewBtn:SetScript("OnClick", function()
+        local snd = cdmSoundsState.newAlertSound or "None"
+        if snd ~= "None" then BH:PlaySound(snd) end
+    end)
     yOff = yOff - 34
 
     -- ── Add Alert button (red, like Blizzard's) ───────────────────────────
