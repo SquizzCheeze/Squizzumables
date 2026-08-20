@@ -107,6 +107,40 @@ which: an addon folder for a previous expansion is not evidence about this one. 
 at all. Check the `.toc` interface version before treating an addon as current.
 
 
+## Releasing
+
+Published to CurseForge (project `1483099`) and GitHub Releases by
+`BigWigsMods/packager`, driven from `.github/workflows/release.yml` and configured by
+`.pkgmeta`. Ordinary commits publish nothing; a tag publishes.
+
+    # bump ## Version in the .toc, add a changelog.txt section, commit
+    git tag -a v1.61 -m "Squizzumables 1.61"
+    git push --tags
+
+**The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
+falls back to the commit hash and ships an "alpha" build named after it instead of a version.
+
+**Dry-run first via `workflow_dispatch`** (Actions -> Package and release -> Run workflow). It
+passes `-d`, so nothing can reach CurseForge, and it attaches the built zip as an artifact for
+inspection. Worth doing whenever `.pkgmeta` changes, because the ignore list is the easy thing to
+get wrong and a bad upload cannot be taken back -- a CurseForge file is live to players the moment
+it lands, and the version number is spent whether or not it was right.
+
+Three things cost a night each and are not discoverable from a green checkmark:
+
+- **`release.sh` skips a missing token silently and still exits 0.** The tell is the credential
+  summary it prints around line 35: `CurseForge ID: 1483099 [token set]`. That suffix comes from
+  `${cf_token:+ [token set]}`, so **no suffix means the token is empty** -- not that the line is
+  merely terse. A green run with a GitHub release and nothing on CurseForge is this.
+- **`actions/upload-artifact` skips hidden paths by default**, and the packager builds into
+  `.release/`. Without `include-hidden-files: true` the artifact comes back empty while the
+  packager step stays green, which reads exactly like a build failure and is not one.
+- **The secret is `CF_API_TOKEN`** (`CF_API_KEY` also works -- `release.sh` tries KEY first, then
+  TOKEN, first non-empty wins). A misnamed secret is not an error in GitHub Actions; it silently
+  interpolates to an empty string. `.github/workflows/release.yml` has a dry-run-only step that
+  prints the *length* of both, which is how to tell "not reaching the job" from "reaching it and
+  being rejected".
+
 ## File layout and load order
 
 Load order is defined in `Squizzumables.toc` and matters — later files assume earlier ones already
