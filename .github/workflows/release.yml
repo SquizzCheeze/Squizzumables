@@ -4,9 +4,8 @@ name: Package and release
 # publishes 1.61. Ordinary commits do nothing.
 #
 # workflow_dispatch is the dry run -- it packages but passes -d, so nothing
-# reaches CurseForge. Use it to check what ends up in the zip before burning a
-# real version number, since a CurseForge file is visible to players the moment
-# it uploads.
+# reaches CurseForge. Use it to check the build before burning a real version
+# number, since a CurseForge file is visible to players the moment it uploads.
 on:
   push:
     tags:
@@ -26,26 +25,38 @@ jobs:
           # the changelog range, so a shallow clone is not enough.
           fetch-depth: 0
 
+      # Reports whether the secrets reach the job at all, without revealing
+      # them -- only their length, and GitHub masks the values regardless.
+      # release.sh prints "[token set]" only when its token variable is
+      # non-empty, and CurseForge was coming up bare while GitHub was fine.
+      - name: Check secret visibility
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TOK_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          TOK_KEY: ${{ secrets.CF_API_KEY }}
+        run: |
+          echo "secrets.CF_API_TOKEN length: ${#TOK_TOKEN}"
+          echo "secrets.CF_API_KEY   length: ${#TOK_KEY}"
+          if [ -z "$TOK_TOKEN" ] && [ -z "$TOK_KEY" ]; then
+            echo "NEITHER secret is reaching this job."
+          fi
+
       - name: Package and upload
         uses: BigWigsMods/packager@v2
         with:
           args: ${{ github.event_name == 'workflow_dispatch' && '-d' || '' }}
-
         env:
+          # release.sh tries CF_API_KEY first, then CF_API_TOKEN. Both are wired
+          # up so the secret works under either name.
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
 
-      # Diagnostic. always() so it still reports when the packager step failed,
-      # which is the case worth seeing.
       - name: Show what the packager produced
         if: always() && github.event_name == 'workflow_dispatch'
         run: |
-          echo "===== workspace ====="
-          ls -la
           echo "===== .release ====="
           ls -laR .release || echo "(no .release directory)"
-          echo "===== zips anywhere ====="
-          find . -name '*.zip' -not -path './.git/*' || true
 
       - name: Upload the build for inspection
         if: always() && github.event_name == 'workflow_dispatch'
@@ -55,6 +66,5 @@ jobs:
           path: .release/**
           if-no-files-found: warn
           # .release is a hidden directory and upload-artifact skips hidden
-          # paths unless told otherwise -- which is why the first two dry runs
-          # came back empty while the packager itself was green.
+          # paths unless told otherwise.
           include-hidden-files: true
