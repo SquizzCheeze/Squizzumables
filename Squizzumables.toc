@@ -2,6 +2,7 @@
 ## Title: Squizzumables
 ## Notes: Reminds you to apply food, flasks, oils and class buffs in dungeons, raids and delves. Use /sq config to customize.
 ## Author: Squizz
+## X-License: MIT
 ## Version: 1.60
 ## SavedVariables: SquizzumablesDB
 ## IconTexture: Interface\Icons\INV_Misc_Food_15

@@ -62,3 +62,14 @@ There is no build step — edit the `.lua` files and `/reload` in game. `CLAUDE.
 architecture and, more usefully, the constraints: secret aura values, taint safety, and the APIs
 that no longer work on 12.1+. `NOTES.md` records what was investigated and found impossible, so
 it does not get attempted twice. `changelog.txt` carries root-cause writeups for past fixes.
+
+## License
+
+[MIT](LICENSE), covering the addon code.
+
+Two exceptions, both bundled rather than written here:
+
+- `Libs/LibStub` — public domain.
+- `Libs/LibSharedMedia-3.0` — LGPL v2.1, by Elkano.
+
+The audio and image files in `Media/` are not covered by the MIT grant.
