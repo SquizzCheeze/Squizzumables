@@ -54,3 +54,7 @@ jobs:
           name: Squizzumables-dryrun
           path: .release/**
           if-no-files-found: warn
+          # .release is a hidden directory and upload-artifact skips hidden
+          # paths unless told otherwise -- which is why the first two dry runs
+          # came back empty while the packager itself was green.
+          include-hidden-files: true
