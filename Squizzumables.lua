@@ -1369,7 +1369,6 @@ function BH:CreateOptionsPanel()
     local calloutsTabBtn = CreateTab("Callouts")
     local kelTabBtn = CreateTab("Kelerts")
     local cdmSoundsTabBtn = CreateTab("CDM Sounds")
-    cdmSoundsTabBtn:Hide()  -- hidden until /squizz CDMS
 
     -- Content area: everything right of the sidebar.
     local contentArea = CreateFrame("Frame", nil, panel)

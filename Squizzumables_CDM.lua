@@ -1508,9 +1508,16 @@ end
 -- Settings Tab â€” BuildCDMTab (called from Squizzumables.lua)
 -- ============================================================================
 
+-- Fallback accent, used only where a region is built and thrown away often
+-- enough that registering it for live recolouring would grow the registry
+-- without bound. Anything long-lived should use ns.ApplyAccent instead so it
+-- follows the class-colour toggle.
 local ACCENT_R, ACCENT_G, ACCENT_B = 0.87, 0.73, 0.37
 local TEXT_R, TEXT_G, TEXT_B = 0.90, 0.90, 0.90
 local DIM_R, DIM_G, DIM_B = 0.55, 0.55, 0.58
+
+-- Width of the spell list beside the alert editor on the CDM Sounds tab.
+local LEFT_PANEL_W = 210
 
 -- Reference to the currently displayed group editor (for refresh)
 local cdmTabState = {}
@@ -2018,7 +2025,7 @@ end
 -- ============================================================================
 -- CDM Sounds Tab — per-cooldown sound alert configuration
 -- Replicates the layout of Blizzard's New Alert panel: icon grid on the left,
--- Type / When / Sound Alert dropdowns + Add Alert button on the right.
+-- When / Sound Alert dropdowns + Add Alert button on the right.
 -- ============================================================================
 
 local cdmSoundsState = {
@@ -2045,12 +2052,12 @@ function BH:BuildCDMSoundsTab(parent)
     -- ── Left panel (scrollable spell icon grid) ───────────────────────────
     local leftPanel = CreateFrame("Frame", nil, parent)
     leftPanel:SetPoint("TOPLEFT",    parent, "TOPLEFT",    0, 0)
+    leftPanel:SetWidth(LEFT_PANEL_W)
     leftPanel:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 0)
-    leftPanel:SetWidth(180)
 
     local leftHdr = leftPanel:CreateFontString(nil, "OVERLAY")
     leftHdr:SetFont("Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
-    leftHdr:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    ns.ApplyAccent(leftHdr, "text")
     leftHdr:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 8, -10)
     leftHdr:SetText("COOLDOWNS")
 
@@ -2059,20 +2066,20 @@ function BH:BuildCDMSoundsTab(parent)
     leftScroll:SetPoint("BOTTOMRIGHT", leftPanel,  "BOTTOMRIGHT", -22, 4)
 
     local leftContent = CreateFrame("Frame", nil, leftScroll)
-    leftContent:SetWidth(150)
+    leftContent:SetWidth(LEFT_PANEL_W - 30)
     leftScroll:SetScrollChild(leftContent)
     cdmSoundsState.leftContent = leftContent
 
     -- ── Vertical divider ──────────────────────────────────────────────────
     local divider = parent:CreateTexture(nil, "ARTWORK")
     divider:SetWidth(1)
-    divider:SetPoint("TOPLEFT",    parent, "TOPLEFT",    182, -4)
-    divider:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 182,  4)
+    divider:SetPoint("TOPLEFT",    parent, "TOPLEFT",    LEFT_PANEL_W + 2, -4)
+    divider:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", LEFT_PANEL_W + 2,  4)
     divider:SetColorTexture(0.25, 0.25, 0.30, 0.8)
 
     -- ── Right panel (alert editor) ────────────────────────────────────────
     local rightPanel = CreateFrame("Frame", nil, parent)
-    rightPanel:SetPoint("TOPLEFT",     parent, "TOPLEFT",     186, 0)
+    rightPanel:SetPoint("TOPLEFT",     parent, "TOPLEFT",     LEFT_PANEL_W + 8, 0)
     rightPanel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT",  -1, 0)
 
     local rightScroll = CreateFrame("ScrollFrame", nil, rightPanel, "UIPanelScrollFrameTemplate")
@@ -2080,9 +2087,20 @@ function BH:BuildCDMSoundsTab(parent)
     rightScroll:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -22, 4)
 
     local rightContent = CreateFrame("Frame", nil, rightScroll)
-    rightContent:SetWidth(240)
     rightScroll:SetScrollChild(rightContent)
     cdmSoundsState.rightContent = rightContent
+
+    -- The editor stretches to whatever width the panel has, rather than sitting
+    -- at a fixed 240 as it did when the options window was 460 wide. The rows
+    -- inside anchor to both edges of this frame, so following a resize is just
+    -- a width change -- no rebuild, which matters because OnSizeChanged fires
+    -- continuously while the resize grip is being dragged.
+    local function SizeRightContent()
+        local w = rightScroll:GetWidth()
+        if w and w > 0 then rightContent:SetWidth(w) end
+    end
+    rightScroll:HookScript("OnSizeChanged", SizeRightContent)
+    rightContent:SetWidth(math.max(240, rightScroll:GetWidth() or 240))
 
     self:PopulateCDMSoundsLeft()
     self:RebuildCDMSoundsRight()
@@ -2149,7 +2167,7 @@ function BH:PopulateCDMSoundsLeft()
             local lbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             lbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
             lbl:SetText(catInfo.label)
-            lbl:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+            lbl:SetTextColor(ns.GetAccentColor())
             yOffset = yOffset - 16
 
             local col = 0
@@ -2175,7 +2193,7 @@ function BH:PopulateCDMSoundsLeft()
                 local sel = btn:CreateTexture(nil, "OVERLAY")
                 sel:SetPoint("TOPLEFT",     -1,  1)
                 sel:SetPoint("BOTTOMRIGHT",  1, -1)
-                sel:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.75)
+                do local ar, ag, ab = ns.GetAccentColor(); sel:SetColorTexture(ar, ag, ab, 0.75) end
                 sel:SetDrawLayer("OVERLAY", 1)
                 if cdmSoundsState.selectedCooldownID == cdInfo.cooldownID then
                     sel:Show()
@@ -2271,7 +2289,7 @@ function BH:RebuildCDMSoundsRight()
     local subLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     subLabel:SetPoint("TOPLEFT", content, "TOPLEFT", lp + 38, yOff - 16)
     subLabel:SetText("New Alert")
-    subLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    subLabel:SetTextColor(ns.GetAccentColor())
 
     yOff = yOff - 44
 
@@ -2284,27 +2302,16 @@ function BH:RebuildCDMSoundsRight()
     yOff = yOff - 10
 
     -- ── Type ──────────────────────────────────────────────────────────────
-    local typeLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    typeLbl:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
-    typeLbl:SetText("Type")
-    typeLbl:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
-    yOff = yOff - 2
-
-    local typeDD = CreateSQDropdown(content, "", 200, {
-        { text = "Sound", value = "Sound" },
-    }, function(val)
-        cdmSoundsState.newAlertType = val
-    end)
-    typeDD:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff - 4)
-    ns.Rows.AddTooltip(typeDD, "Alert type", "What kind of cooldown event this alert listens for.")
-    typeDD:SetSelectedValue(cdmSoundsState.newAlertType or "Sound")
-    yOff = yOff - 34
+    -- No "Type" control: it offered exactly one value, Sound, so it was a
+    -- dropdown that could not be changed. Alerts are still stored with
+    -- type = "Sound" so a second kind can be added later without a migration.
+    cdmSoundsState.newAlertType = "Sound"
 
     -- ── When ──────────────────────────────────────────────────────────────
     local whenLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     whenLbl:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
     whenLbl:SetText("When")
-    whenLbl:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    whenLbl:SetTextColor(ns.GetAccentColor())
     yOff = yOff - 2
 
     local isBuff = cdInfo.viewerType == "buff"
@@ -2342,7 +2349,7 @@ function BH:RebuildCDMSoundsRight()
     local soundLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     soundLbl:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
     soundLbl:SetText("Sound Alert")
-    soundLbl:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    soundLbl:SetTextColor(ns.GetAccentColor())
     yOff = yOff - 2
 
     local soundDD = CreateSQDropdown(content, "", 200, BH:BuildSoundDropdownItems(), function(val)
@@ -2373,8 +2380,10 @@ function BH:RebuildCDMSoundsRight()
     end)
     yOff = yOff - 34
 
-    -- ── Add Alert button (red, like Blizzard's) ───────────────────────────
-    local addBtn = CreateSQButton(content, "Add Alert", 110, 24, { 0.55, 0.15, 0.15, 1 })
+    -- ── Add Alert button ──────────────────────────────────────────────────
+    -- Accent, not the red danger colour it used to use: adding an alert is not
+    -- a destructive action, and red is reserved for the remove buttons below.
+    local addBtn = CreateSQButton(content, "Add Alert", 110, 24)
     addBtn:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
     addBtn:SetScript("OnClick", function()
         local alertType  = cdmSoundsState.newAlertType  or "Sound"
@@ -2414,8 +2423,11 @@ function BH:RebuildCDMSoundsRight()
     else
         for idx, alert in ipairs(alerts) do
             local rowBG = CreateFrame("Frame", nil, content, "BackdropTemplate")
-            rowBG:SetSize(200, 28)
-            rowBG:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
+            rowBG:SetHeight(28)
+            -- Anchored to both edges so the row follows the panel width instead
+            -- of staying at the 200px the old 460-wide window allowed.
+            rowBG:SetPoint("TOPLEFT",  content, "TOPLEFT",   lp,  yOff)
+            rowBG:SetPoint("TOPRIGHT", content, "TOPRIGHT", -lp,  yOff)
             rowBG:SetBackdrop({
                 bgFile   = "Interface\\BUTTONS\\WHITE8X8",
                 edgeFile = "Interface\\BUTTONS\\WHITE8X8",

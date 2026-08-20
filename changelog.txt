@@ -55,6 +55,12 @@ V1.60
   when the viewer does not know about that cooldown
 - Added a sound preview button to the CDM Sounds tab. It was the only sound dropdown in the
   addon without one, so there was no way to hear a sound before assigning it
+- The CDM Sounds page is now a normal category in the sidebar rather than being hidden behind
+  /squizz CDMS, and has been reworked for the wider settings window: the spell list and the
+  alert editor both use the available width instead of the 460px the panel used to be, its
+  headings follow the class colour setting like the rest of the addon, the Add Alert button is
+  no longer red (it is not a destructive action), and the Type dropdown is gone since it only
+  ever offered one value
 - Added /sq cdm, which reports why a Cooldown Manager sound alert is not firing
 - Cooldown Manager sound alerts should now actually fire. Active buff state was read from
   whether Blizzard's cooldown viewer item was shown, but a viewer item stays shown while its
