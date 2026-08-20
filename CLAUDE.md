@@ -32,37 +32,124 @@ without a fundamentally different detection approach that doesn't depend on read
   which declares the Lua 5.1 runtime and the WoW API globals used across the addon (plus the
   `ketho.wow-api` annotations extension for full API types). There is no CLI lint command — this
   is editor-time diagnostics only.
+- There is no Lua interpreter here, so four standalone checks in `.claude/` stand in for the
+  parse the editor cannot run headlessly. Run all four after any bulk edit:
+
+      perl .claude/check-backslashes.pl <files>   # lone backslashes: "Fonts\FRIZQT__.TTF"
+      perl .claude/check-strings.pl     <files>   # unterminated strings / mangled escapes
+      awk  -f .claude/check-balance.awk <files>   # per-function block balance
+      perl .claude/check-toc.pl                   # every .toc entry exists on disk
+
+  Each exists because a real bug got through the others. Structural checks pass happily on a
+  broken string literal, and the backslash check passes happily on an escape that has been
+  collapsed into a raw byte, which is how `"\226\128\148"` became one 0x96 and truncated a line.
+
+  **In both `check-strings.pl` and `check-balance.awk`, strings are stripped BEFORE comments.**
+  Reversing that makes any `" -- "` inside a string read as a comment marker and truncate the
+  line; this codebase's diagnostics are full of them. That exact bug has been written twice.
+
+  Validate a new check against a known-bad file *and* a known-good one. Note that the corruption
+  can hit the test as easily as the code: bash `printf` and Perl both read `\226` as octal, so a
+  control file has to be written with explicit `chr(92)` to contain a real backslash.
+
+  **Do not trust `mcp__ide__getDiagnostics` after editing files from the shell.** The Lua Language
+  Server serves a cached result and does not rescan on an external write, so it reports the
+  previous version of the file — including a clean bill of health for code that no longer exists.
+  `touch` does not invalidate it and neither does re-querying a single URI. The tell is that the
+  reported line numbers no longer land on the constructs named in the message; check one before
+  believing any of it. It is only trustworthy for files edited through the editor itself, so the
+  four checks above are the real gate.
+
 - `changelog.txt` is maintained by hand; check it for recent behavioral history/root-cause notes
   before assuming something is a fresh bug — many past fixes have detailed root-cause writeups
   there worth reading first.
 - Useful in-game slash commands while developing: `/sq config` (options panel), `/sq reset` (reset
-  main frame position), `/sq reload` (recompute buttons), `/sq feast` and `/sq debug` (diagnostic
-  dumps), `/squizz` (open config directly; `/squizz CDMS` opens the hidden CDM Sounds tab),
-  `/ginvite <name>` (guild invite helper).
+  main frame position), `/sq reload` (recompute buttons), `/sq unlock` (toggle unlock mode),
+  `/sq raidtools`, `/sq notes` (reopen the release notes), and the diagnostic dumps `/sq feast`,
+  `/sq debug`, `/sq dk`, `/sq timeline`, `/sq auras` (aura secrecy state) and `/sq cdm` (CDM
+  sound wiring). `/squizz` opens config directly and `/squizz <TabID>` jumps to a named page.
+  `/ginvite <name>` is the guild invite helper.
+
+### Researching the WoW API
+
+**Use the generated annotations as the source of truth, not the community wiki.**
+
+    https://github.com/Ketho/vscode-wow-api
+    Annotations/Core/Blizzard_APIDocumentationGenerated/<Namespace>Documentation.lua
+
+Those files are produced from the client's own `Blizzard_APIDocumentation`, so they match what
+the game actually exposes. Raw fetch, for example:
+
+    https://raw.githubusercontent.com/Ketho/vscode-wow-api/master/Annotations/Core/
+      Blizzard_APIDocumentationGenerated/EncounterTimelineDocumentation.lua
+
+warcraft.wiki.gg is community-written and has been wrong here in ways that changed conclusions:
+for `C_EncounterTimeline` it listed 7 functions where the real API has 33, omitted the entire
+write side of the namespace, and claimed a structure field had been removed that still exists.
+Use it for prose explanation if helpful, never as the basis for a decision.
+
+Better still, when the question is about *behaviour* rather than a signature: the `ketho.wow-api`
+VS Code extension ships Blizzard's actual FrameXML Lua, installed locally at
+
+    C:\Users\<you>\.vscode\extensions\ketho.wow-api-<version>\Annotations\FrameXML\
+      Annotations\AddOns\<Blizzard_AddonName>\
+
+That is the real client code, so it answers questions the annotations cannot -- which CVar gates a
+feature, when a frame decides to show itself, what a flat `false` return actually means. It
+settled two encounter-timeline questions in one read (`Blizzard_EncounterTimeline/`,
+`Blizzard_SettingsDefinitions_Frame/AdvancedOptions.lua`). Grep it before guessing or asking the
+user to test something in-game.
+
+Second-best evidence is a *currently maintained* addon running on *current* content. Be careful
+which: an addon folder for a previous expansion is not evidence about this one. Reading
+`LittleWigs_TheWarWithin` (11.x modules, 11.x content) once led to the wrong conclusion that
+`COMBAT_LOG_EVENT_UNFILTERED` still worked, when the giveaway was that no Midnight pack existed
+at all. Check the `.toc` interface version before treating an addon as current.
+
 
 ## File layout and load order
 
 Load order is defined in `Squizzumables.toc` and matters — later files assume earlier ones already
-initialized `BH`:
+initialized `BH`. `perl .claude/check-toc.pl` verifies every listed path exists on disk.
 
 1. `Libs/LibStub/LibStub.lua`, `Libs/LibSharedMedia-3.0/LibSharedMedia-3.0.lua` — third-party libs, don't edit.
-2. `Squizzumables_Config.lua` — static data only: consumable item IDs (food/flask/oil) and
-   per-class buff definitions (`BH.defaults`). Update this file each expansion/season when
+2. `Squizzumables_Config.lua` — static data only: consumable item IDs (food/flask/oil/augment rune)
+   and per-class buff definitions (`BH.defaults`). Update this file each expansion/season when
    consumable item IDs rotate.
-3. `Squizzumables.lua` — the core: default settings (`BH.defaultSettings`), the profile system,
-   the main consumable/buff reminder frame, the entire options/settings UI (all tabs), most of the
-   standalone reminder frames (repair, symbiotic, pet, battle-res, food/flask/oil "empty bag"
-   reminders, healer CC), raid tools (pull timer/markers), dungeon callouts, feast announce, and
-   the event dispatcher + slash commands at the bottom.
-4. `Squizzumables_CDM.lua` — Cooldown Manager proxy module (`BH.cdm`).
-5. `Squizzumables_SpellAlerts.lua` — "Just For Kel" custom spell-triggered image/sound alerts.
+3. `Squizzumables_Secrets.lua` — `BH.Secrets`, the only sanctioned way to read an aura or any other
+   possibly-secret value. See "Secret aura values" below; nothing should read those fields directly.
+4. `UI/Widgets.lua` — the hand-rolled widget kit (`CreateSQButton`, `CreateSQCheckbox`,
+   `CreateSQSlider`, `CreateSQDropdown`, `CreateSQColorPicker`, `CreateSQDivider`) plus
+   `SQ_COLORS` and the accent-colour helpers. Everything here is exported on `ns`, and each
+   consuming file pulls what it needs into file-locals at the top — follow that, do not add
+   globals.
+5. `UI/Rows.lua` — the declarative settings-row kit (`get`/`set`/`disabled`/`tooltip`,
+   self-registering refresh) and `ns.Rows.AddTooltip`. Prefer this over hand-built rows.
+6. `UI/Glow.lua` — `ns.Glow`, the three-tier button glow. Pass `anchorTo` to glow one child
+   region rather than the whole button frame.
+7. `Squizzumables.lua` — the core: default settings (`BH.defaultSettings`), the migration list,
+   the profile system, the main consumable/buff reminder frame, the entire options/settings UI
+   (all tabs), the text-reminder registry (`BH.REMINDERS`) and its gates, raid tools (pull
+   timer/markers), dungeon callouts, feast announce, and the event dispatcher + slash commands at
+   the bottom.
+8. `Core/ProfileIO.lua` — profile import/export strings.
+9. `Core/EncounterTimeline.lua` — `BH.Timeline`, the write side of `C_EncounterTimeline`.
+10. `Core/Minimap.lua` — minimap button and addon compartment entry.
+11. `Core/Welcome.lua` — first-run welcome and the per-version release notes popup. `RELEASE_NOTES`
+    there is hand-maintained and keyed by the `.toc` Version string; update it alongside
+    `changelog.txt`.
+12. `Squizzumables_CDM.lua` — Cooldown Manager proxy module (`BH.cdm`).
+13. `Squizzumables_SpellAlerts.lua` — "Kelerts", the user-defined spell alerts (full-screen image
+    + sound on an aura), and the M+ Death Tally.
 
 All modules share a single global table `BH` (each file does `local BH = BH` or
 `if not BH then BH = {} end`) — this is the addon's namespace; there is no `require`/module
-system. Feature-specific submodules attach themselves as `BH.cdm`, etc. `SquizzumablesDB` is the
-single `SavedVariables` table (declared in the `.toc`), containing all persisted profiles.
+system. Feature-specific submodules attach themselves as `BH.cdm`, etc. The per-addon private
+table is `ns` (the second vararg), used for `ns.Rows`, `ns.Glow`, `ns.SQ_COLORS` and the widget
+constructors. `SquizzumablesDB` is the single `SavedVariables` table (declared in the `.toc`),
+containing all persisted profiles.
 
-Files are large (`Squizzumables.lua` is ~9000 lines); within a file, sections are marked with
+Files are large (`Squizzumables.lua` is ~10,000 lines); within a file, sections are marked with
 `-- ====...====` or `------...------` banner comments — use these (via grep) to jump to a feature
 area rather than reading linearly.
 
@@ -161,6 +248,73 @@ Counter uses) and edge-detects the false→true transition. **Don't reach for co
 `UNIT_DIED` for new features that need to detect a group member's death or combat state — poll
 instead.**
 
+**Cooldown Manager sound alerts** (`Squizzumables_CDM.lua`): five findings here cost a long
+debugging session each; none are guessable from the API docs.
+
+*Secrecy is itself information.* `C_Spell.GetSpellCooldown` returns secret `startTime`/`duration`
+in combat, so an addon cannot compute whether a spell is ready — `duration == 0` throws. But
+Blizzard's `CooldownViewerItemMixin` already computed it and cached the answer on the item frame
+as `isOnActualCooldown` / `cooldownIsActive`. Those are derived from the secret timestamps *only
+while a cooldown is running*; when the spell is ready there is nothing secret to derive from and
+the field reads as a plain `false`. Observed in one pass, in combat:
+
+    Hammer of Justice   (ready)       isOnActualCooldown = false
+    Blessing of Freedom (on cooldown) isOnActualCooldown = SECRET
+
+So **secret means "on cooldown"**, and the `SECRET → false` transition is exactly "now available".
+Treating secret as "unreadable, give up" is what kept the available alert silent in combat for
+weeks. The failure direction is safe: a value secret for some unrelated reason makes an alert
+late, never spurious.
+
+*A spell can live in two viewers at once.* Blessing of Freedom is `61107` in
+`UtilityCooldownViewer` (tracks its cooldown) **and** `92824` in `BuffIconCooldownViewer` (tracks
+the aura it applies). Only the cooldown-type viewers (Essential, Utility) populate the cooldown
+fields; a buff item leaves them `nil` forever. Resolve a spell to its *cooldown-type* item before
+reading cooldown state — `cdmModule.cooldownForSpell` exists for this.
+
+*`cooldownID` is not a stable key; `spellID` is.* The same spell appears under different
+cooldownIDs between category sets and between builds, so alerts saved against one silently stop
+matching. Sound alerts are stored keyed by spellID (`AlertKey`), with a one-time
+`MigrateSoundAlerts` folding legacy cooldownID keys over. That migration is **all-or-nothing on
+purpose**: it is not idempotent, so writing a partial result back would let the next run migrate
+its own output and remap alerts onto the wrong spell. EllesmereUI independently keys by spellID
+for the same reason.
+
+*Viewer items come from a frame pool, lazily.* Blizzard drives them from
+`itemFramePool:EnumerateActive()` (see `CooldownViewerMixin:OnUpdate`), not `GetChildren()`, and
+acquires them on its own schedule. A one-shot sweep at load hooks the buff viewers but misses
+Essential/Utility. Re-sweep on a timer; it is idempotent via a per-frame tag. Read `cooldownID`
+off the item inside any hook callback rather than closing over it — pooled frames get recycled
+onto other cooldowns.
+
+*A cooldown finishing is a clock event, not a state-change event.* Nothing fires when a timer
+merely runs out, so the sound pass needs its own ticker. Driving it only from state-change hooks
+meant transitions sat pending until something unrelated happened to call it — which presented as
+"the sound plays when combat ends, or when some other spell's alert fires".
+
+`hooksecurefunc` on `CooldownViewerItemMixin:TriggerAlertEvent` is also wired up and gives
+Blizzard's own alert timing (it fires regardless of whether the player configured a Blizzard
+alert, since the gating is inside the function). It is not the primary path — it appears not to
+fire when the viewers are alpha-suppressed by another addon — so both it and the poll run, with
+`ClaimAlert(spellID, when)` dropping whichever notices second inside 0.6s. Never let one path
+suppress the other outright: whichever is favoured will eventually be the one that is broken.
+
+**Encounter timeline** (`Core/EncounterTimeline.lua`, `BH.Timeline`): only the **write** side of
+`C_EncounterTimeline` is usable. On the read side, `EncounterTimelineEventInfo` exposes just `id`,
+`source`, `duration` and `maxQueueDuration` as readable values — `spellID`, `spellName`,
+`iconFileID`, `icons`, `severity` and `isApproximate` are secret, so they can be passed to a
+display function but not compared. **An addon can draw a bar for an incoming boss ability and
+cannot find out which ability it is**, which rules out "play my sound when <ability> is coming".
+BigWigs hits the same wall and works around it by rounding `duration` to the nearest second and
+looking it up in a hand-built per-boss, per-difficulty table (see `BigWigs_MidnightLairs`) — a
+per-patch treadmill this addon is not taking on. Don't reattempt per-ability timeline alerts
+unless Blizzard un-secrets `spellID`.
+
+The write side (`AddScriptEvent`) carries our own data, so nothing about it is secret; use
+`BH.Timeline.Add`/`Start`/`Cancel` rather than calling the API directly, and note `iconFileID`
+must be a numeric file ID (`C_Spell.GetSpellTexture(id)`), not a texture path. `/sq timeline`
+reports feature availability and fires a test event.
+
 **Consumable/buff reminder core** (`Squizzumables.lua`): on `PLAYER_LOGIN` and periodic
 bag/aura/equipment events, scans configured item IDs in `BH.defaults.consumables` and buff spell
 IDs in `BH.defaults.classBuffs` against current bags/auras/weapon enchants and renders
@@ -168,6 +322,33 @@ clickable reminder buttons. Class buff entries support flags like `petCheck`, `s
 `tankBuff`, `weaponImbue`, `auraCheck`, and `buffVariants` (mutually-exclusive/equivalent buff
 IDs) — follow the existing per-class entry shape in `Squizzumables_Config.lua` when adding new
 class/spec handling rather than inventing a new flag scheme.
+
+**Text reminder registry and gates** (`Squizzumables.lua`, "Text reminder registry"): every
+standalone text reminder is one record in `BH.REMINDERS`. Frame construction, the options-tab
+block, the settings keys and the saved anchor are all derived from `key`, so adding a reminder
+means adding a record — not new frame code. Each record also declares `gates = { ... }`, naming
+predicates in `BH.REMINDER_GATES` (`enabled`, `class`, `spec`, `notSpec`, `knows`, `buffEnabled`,
+`equipped`, `visible`, `outOfCombat`, `group`, `realGroup`). `BH:ReminderGate(def)` runs them and
+returns the frame, or nil once it has hidden it; each `Update<Name>Reminder` opens with that and
+then contains only what is genuinely specific to it. **Put a new visibility condition in the gate
+table, not inline** — the ten hand-written copies of these checks had drifted apart, and one of
+them (the bag reminder's master toggle) had silently stopped being read at all. An unknown gate
+name errors at load rather than passing quietly.
+
+Two things sit outside the gate list. `healerCC` is `eventDriven` — driven by `BH:CheckRoleCC` off
+`UNIT_AURA`, with no gates and no `shouldShow`. And `combatSafe` on a record is read by
+`BH:HideCombatUnsafeReminders` on `PLAYER_REGEN_DISABLED`, which sweeps the reminders not worth
+showing mid-fight off screen. The ones that stay up (Beacon, Earth Shield, Symbiotic, Coach
+Whistle, pet, Healthstone) are the ones with it set. There is no matching "show" call — leaving
+combat just runs `UpdateAllReminders`, so every frame is re-decided on its merits through the gates.
+
+**Kelerts** (`Squizzumables_SpellAlerts.lua`): `settings.alerts` is a table of alert records
+keyed by an internal id, each with its own `trigger`, image, sound and timing. `alerts.lust` is
+flagged `builtin`: it cannot be renamed or deleted, and it is the only one with no `trigger.spellID`
+because it watches all of `LUST_DEBUFF_IDS` at once. Everything else in the table is user-made.
+`CurrentAlert()` is the tab's cursor and deliberately falls back rather than returning nil.
+Triggers are *presence* checks through `BH.Secrets.GetAuraBySpellID`, so secret auras make an
+alert quiet rather than spurious — see the absence-guard note above for why that direction matters.
 
 **Consumable data churn**: item/spell IDs in `Squizzumables_Config.lua` (`consumables.food`,
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard

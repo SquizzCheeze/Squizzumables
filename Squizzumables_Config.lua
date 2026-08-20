@@ -48,6 +48,13 @@ BH.defaults = {
             243734,  -- Thalassian Phoenix Oil (Rank 2) - same spellID, different itemID
             237370,  -- Refulgent Whetstone (Rank 1)
             237371,  -- Refulgent Whetstone (Rank 2) - same spellID, different itemID
+        },
+        augmentRune = {
+            -- Augment runes: a flask-shaped consumable (bag item, applies a
+            -- long buff) rather than anything new, so it rides the same
+            -- machinery as food and flask.
+            259085,  -- Void-Touched Augment Rune (Midnight)
+            243191,  -- Ethereal Augment Rune (The War Within)
         }
     },
     classBuffs = {
@@ -59,6 +66,18 @@ BH.defaults = {
             { spellID = 31687, petCheck = true, label = "Water Ele" },  -- Summon Water Elemental
         },
         WARRIOR = { spellID = 6673 },     -- Battle Shout (Attack Power)
+        DEATHKNIGHT = {
+            -- Death Knights are the one class with a *permanent* weapon enchant
+            -- rather than a temporary imbue, so this cannot use weaponImbue:
+            -- GetWeaponEnchantInfo only reports temporary enchants and never
+            -- sees a runeforge. weaponRune reads the enchant ID out of the
+            -- equipped weapon's item link instead.
+            --
+            -- The button casts Death Gate, because runeforging needs a
+            -- runeforge and the one in Acherus is the reliable way to reach
+            -- one. Applying the rune itself is not something a button can do.
+            { spellID = 50977, weaponRune = true, label = "Runeforge" },  -- Death Gate
+        },
         DRUID = { spellID = 1126 },       -- Mark of the Wild (Versatility)
         EVOKER = {
             { spellID = 381748, castSpellID = 364342, buffVariants = {  -- Blessing of the Bronze
@@ -108,6 +127,11 @@ BH.defaults = {
             { spellID = 712, petCheck = true, label = "Sayaad" },       -- Summon Sayaad
             { spellID = 691, petCheck = true, label = "Felhunter" },    -- Summon Felhunter
             { spellID = 30146, petCheck = true, label = "Felguard" },   -- Summon Felguard (Demonology)
+            -- Warlocks are the only source of healthstones, so rather than
+            -- telling them one is missing they get the button to make it: Create
+            -- Healthstone alone, Create Soulwell in a group so it serves everyone.
+            -- Everyone else gets the text reminder instead.
+            { spellID = 6201, healthstoneCheck = true, label = "Healthstone" },  -- Create Healthstone (swaps to Soulwell in a group)
         },
         HUNTER = {
             { spellID = 883, petCheck = true, callPetCheck = true, label = "Pet 1" },    -- Call Pet 1

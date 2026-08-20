@@ -69,6 +69,11 @@ cdmModule.proxyFrames = {}
 cdmModule.pendingMutations = {}
 -- Active buff cooldown tracking (populated by hooking Blizzard CDM buff frames)
 cdmModule.activeBuffCooldowns = {}
+-- Every cooldown the Blizzard buff viewers carry, active or not. Distinguishing
+-- "the viewer says this is inactive" from "the viewer has never heard of this"
+-- is what lets the sound alerts tell a real aura-removed transition from an
+-- unreadable one in combat.
+cdmModule.knownBuffCooldowns = {}
 -- Per-cooldown sound state trackers for spells NOT in a named group
 cdmModule.soundTrackers = {}
 
@@ -110,6 +115,10 @@ local function GetCDMSoundAlerts()
     end
     local sd = SquizzumablesDB.cdmData[key]
     if not sd.soundAlerts then sd.soundAlerts = {} end
+    -- Fold any cooldownID-keyed leftovers onto spellIDs before handing the
+    -- table out, so every caller sees one entry per spell. Defined further
+    -- down (it needs SpellIDForCooldown), hence the module-table lookup.
+    if cdmModule.MigrateSoundAlerts then cdmModule.MigrateSoundAlerts(sd) end
     return sd.soundAlerts
 end
 
@@ -139,6 +148,7 @@ local BUFF_VIEWERS = { "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
 -- IsActive at all.
 local function ScanBlizzardBuffState()
     wipe(cdmModule.activeBuffCooldowns)
+    wipe(cdmModule.knownBuffCooldowns)
     for _, viewerName in ipairs(BUFF_VIEWERS) do
         local viewer = _G[viewerName]
         if viewer then
@@ -146,6 +156,7 @@ local function ScanBlizzardBuffState()
             if ok and children then
                 for _, child in ipairs(children) do
                     if child and child.cooldownID then
+                        cdmModule.knownBuffCooldowns[child.cooldownID] = true
                         local active
                         if child.IsActive then
                             local gotState, state = pcall(child.IsActive, child)
@@ -159,6 +170,323 @@ local function ScanBlizzardBuffState()
                     end
                 end
             end
+        end
+    end
+end
+
+
+-- ============================================================================
+-- Blizzard alert-event hook
+--
+-- The right way to know a cooldown changed state, and the reason the poll-based
+-- detection below could never work in combat.
+--
+-- Blizzard's Cooldown Manager already computes exactly the transitions we care
+-- about -- see CooldownViewerItemMixin in Blizzard_CooldownViewer. Every one of
+-- them funnels through a single method:
+--
+--     function CooldownViewerItemMixin:TriggerAlertEvent(event)
+--         if self.alertsByEvent then ... play the player's configured alert ...
+--
+-- Two properties make it the correct hook point:
+--
+--  1. It is called whenever the transition happens, not only when the player
+--     has configured a Blizzard alert. The gating lives *inside* the function
+--     (`self.alertsByEvent[event]`), so a hook sees every event even for a
+--     cooldown the player has set no Blizzard alert on. The upstream condition
+--     is real cooldown state -- for Available:
+--         self.allowAvailableAlert = ... not self.isOnGCD
+--             and spellCooldownInfo.duration > MIN_GLOBAL_RECOVERY_TIME
+--             and self.cooldownEnabled
+--
+--  2. Blizzard's code is not subject to the secret-value restrictions that
+--     apply to ours. C_Spell.GetSpellCooldown returns secret start/duration to
+--     an addon in combat, which is why polling could not see a utility spell
+--     come off cooldown until combat ended -- and then fired the backlog all at
+--     once. Blizzard's own timers have no such problem.
+--
+-- So this hook replaces the poll for any cooldown that appears in one of the
+-- viewers. The poll stays as the fallback for cooldowns the player has not
+-- added to Blizzard's Cooldown Manager, since those have no item frame to hook.
+-- ============================================================================
+
+-- Blizzard's alert event -> the `when` value stored in our own alert entries.
+local ALERT_EVENT_TO_WHEN = {}
+-- Exposed so the settings UI can turn Blizzard's GetValidAlertTypes list
+-- into the option values used here.
+cdmModule.AlertEventToWhen = ALERT_EVENT_TO_WHEN
+do
+    local e = Enum and Enum.CooldownViewerAlertEventType
+    if e then
+        ALERT_EVENT_TO_WHEN[e.Available]     = "available"
+        ALERT_EVENT_TO_WHEN[e.OnCooldown]    = "start"
+        ALERT_EVENT_TO_WHEN[e.OnAuraApplied] = "applied"
+        ALERT_EVENT_TO_WHEN[e.OnAuraRemoved] = "removed"
+        ALERT_EVENT_TO_WHEN[e.ChargeGained]  = "chargegained"
+        ALERT_EVENT_TO_WHEN[e.PandemicTime]  = "pandemic"
+    end
+end
+
+-- Cooldowns whose events arrive via the hook. The poll skips these so a single
+-- transition cannot play the sound twice.
+cdmModule.hookDrivenCooldowns = {}
+-- The same set expressed as spell IDs. Stored alerts are keyed by whatever
+-- cooldownID was current when they were created, which may not be the one the
+-- live viewer reports, so the poll has to ask "is this spell hook-driven?"
+-- rather than "is this cooldownID hook-driven?" -- otherwise it runs alongside
+-- the hook and plays the sound twice.
+cdmModule.hookDrivenSpellIDs = {}
+-- cooldownID -> the live Blizzard viewer item frame.
+cdmModule.viewerItems = {}
+-- spellID -> the buff-viewer item for it, when one exists. Kept apart from
+-- cooldownForSpell because IsActive() means different things on the two: on a
+-- buff item it is overridden to report the aura, but the base version is just
+-- `self.cooldownID ~= nil`, i.e. permanently true.
+cdmModule.buffItemForSpell = {}
+
+-- spellID -> the cooldownID the live viewer currently uses for it. The inverse
+-- of SpellIDForCooldown, and what lets code holding a spell-keyed alert find
+-- the cooldown it belongs to.
+cdmModule.cooldownForSpell = {}
+
+-- cooldownID is not a stable key; spellID is.
+--
+-- The same spell turns up under different cooldownIDs -- between the category
+-- sets, and between game builds -- so an alert saved against one ID silently
+-- stops matching when the viewer reports another. /sq cdm caught exactly this:
+-- alerts stored on 19409 "Hammer of Justice" and 92819 "Avenging Wrath" while
+-- the live viewer items were 29350 and 29266. The same output showed Avenging
+-- Wrath configured twice under two IDs, which is the same drift accumulating
+-- across sessions.
+--
+-- So both sides are resolved to a spellID before matching. Memoised because
+-- this runs from the alert hook, and the mapping does not change within a
+-- session for a given ID.
+local cooldownSpellIDCache = {}
+
+local function SpellIDForCooldown(cdID)
+    if not cdID then return nil end
+    local cached = cooldownSpellIDCache[cdID]
+    if cached ~= nil then return cached or nil end
+    local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
+               and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+    local spellID = info and BH.Secrets.SafeNumber(info.spellID, nil)
+    cooldownSpellIDCache[cdID] = spellID or false
+    return spellID
+end
+cdmModule.SpellIDForCooldown = SpellIDForCooldown
+
+-- The key alerts are stored under: the spell, not the cooldown.
+local function AlertKey(cdID)
+    return SpellIDForCooldown(cdID) or cdID
+end
+cdmModule.AlertKey = AlertKey
+
+-- Fold alerts stored under old cooldownIDs onto their spellID.
+--
+-- Alerts were originally keyed by cooldownID, which is not stable: the same
+-- spell appears under different IDs between category sets and between builds.
+-- The result was the same alert accumulating under several keys -- one player
+-- had Avenging Wrath filed under 92819, 68661 and 29266, and Blessing of
+-- Freedom under 22390 and 61107, from adding them at different times.
+--
+-- Reading through a resolver made those fire again but left the duplicates in
+-- place, so the UI and diagnostics reported four alerts where the player had
+-- created two. This consolidates them for real, dropping exact duplicates
+-- (same when + type + sound).
+--
+-- Runs per spec, on the spec's own data, the first time that spec's alerts are
+-- touched -- a cooldownID belonging to a spec you are not currently in may not
+-- resolve, and marking it migrated then would strand it.
+local function MigrateSoundAlerts(specStore)
+    if not specStore or specStore.soundAlertsBySpell then return end
+    local old = specStore.soundAlerts
+    if not old then
+        specStore.soundAlertsBySpell = true
+        return
+    end
+
+    local merged, unresolved = {}, false
+    for storedID, list in pairs(old) do
+        local resolved = SpellIDForCooldown(storedID)
+        if not resolved then unresolved = true end
+        local key = resolved or storedID
+        merged[key] = merged[key] or {}
+        for _, alert in ipairs(list) do
+            local dup = false
+            for _, existing in ipairs(merged[key]) do
+                if existing.when == alert.when and existing.type == alert.type
+                   and existing.sound == alert.sound then
+                    dup = true
+                    break
+                end
+            end
+            if not dup then table.insert(merged[key], alert) end
+        end
+    end
+
+    -- All-or-nothing, deliberately.
+    --
+    -- Writing a partial result back and leaving the store un-flagged meant the
+    -- next call would migrate again -- but over keys that are now spellIDs. If
+    -- a spellID also happens to be a valid cooldownID it resolves to a
+    -- different spell entirely, and the alerts are silently remapped or merged
+    -- onto the wrong entry. A migration that can run twice over its own output
+    -- has to be idempotent, and this one is not.
+    --
+    -- So if anything failed to resolve, leave the original data completely
+    -- untouched and try again later, when the cooldown info is available.
+    if unresolved then return end
+
+    specStore.soundAlerts = merged
+    specStore.soundAlertsBySpell = true
+end
+cdmModule.MigrateSoundAlerts = MigrateSoundAlerts
+
+-- Alerts configured for this cooldown. Post-migration this is a plain lookup;
+-- the spell-resolving fallback stays for a store that has not migrated yet.
+local function CollectAlertsFor(cdID)
+    local stored = GetCDMSoundAlerts()
+    local key = AlertKey(cdID)
+    local out = {}
+    for _, a in ipairs(stored[key] or {}) do out[#out + 1] = a end
+    if key ~= cdID then
+        for _, a in ipairs(stored[cdID] or {}) do out[#out + 1] = a end
+    end
+    return out
+end
+cdmModule.CollectAlertsFor = CollectAlertsFor
+
+-- Two paths can notice the same transition: the Blizzard alert hook and the
+-- poll. Having one suppress the other is fragile -- it goes completely silent
+-- whenever the favoured path is the one not working, which is precisely what
+-- happened when the hook was assumed to cover cooldowns it had not attached to.
+--
+-- So both paths stay live and whichever notices first claims the alert; the
+-- loser is dropped inside a short window. Keyed on spellID because the two
+-- paths reach the same spell through different cooldownIDs.
+local recentAlertPlays = {}
+local ALERT_DEDUPE_WINDOW = 0.6
+
+local function ClaimAlert(spellID, when)
+    if not spellID or not when then return true end
+    local key = spellID .. ":" .. when
+    local now = GetTime()
+    local last = recentAlertPlays[key]
+    if last and (now - last) < ALERT_DEDUPE_WINDOW then return false end
+    recentAlertPlays[key] = now
+    return true
+end
+cdmModule.ClaimAlert = ClaimAlert
+
+local function PlayAlertsFor(cdID, when)
+    local matched = nil
+    for _, alert in ipairs(CollectAlertsFor(cdID)) do
+        -- Only ever one sound per event, even if the same spell ended up with
+        -- alerts filed under two cooldownIDs.
+        if not matched and alert.when == when and alert.type == "Sound"
+           and alert.sound and alert.sound ~= "None" then
+            matched = alert
+        end
+    end
+    if not matched or not BH.PlaySound then return end
+    -- Claim only once something would actually be played, so a cooldown with no
+    -- alert configured never occupies the dedupe slot.
+    if not ClaimAlert(SpellIDForCooldown(cdID) or cdID, when) then return end
+    BH:PlaySound(matched.sound)
+end
+
+-- Hook TriggerAlertEvent on every cooldown item in every viewer.
+--
+-- Idempotent: items are recycled and new ones appear on spec change, so this is
+-- re-run on the same events that re-run the buff hooks, and each item is tagged
+-- once.
+-- A spell can appear in two viewers at once: the Essential/Utility one that
+-- tracks its cooldown, and the buff one that tracks the aura it applies.
+-- Blessing of Freedom is both 61107 (utility) and 92824 (buff icon).
+--
+-- Only the cooldown-type item computes cooldown state; a buff item leaves
+-- isOnActualCooldown and friends nil forever. Conflating them meant asking a
+-- buff item whether its spell was on cooldown, getting nil, and reading that
+-- as "unreadable" -- which is what kept the available alert silent.
+local ALL_VIEWERS = {
+    { name = "EssentialCooldownViewer", tracksCooldown = true  },
+    { name = "UtilityCooldownViewer",   tracksCooldown = true  },
+    { name = "BuffIconCooldownViewer",  tracksCooldown = false },
+    { name = "BuffBarCooldownViewer",   tracksCooldown = false },
+}
+
+-- Walk a viewer's item frames.
+--
+-- Blizzard drives its own per-item work from `itemFramePool:EnumerateActive()`
+-- (see CooldownViewerMixin:OnUpdate), and that is the authoritative set. Item
+-- frames are pooled and created lazily, so a single GetChildren() sweep at load
+-- can easily run before the Essential/Utility viewers have acquired any -- which
+-- is why the buff alerts worked while "available" on a utility spell never did.
+-- GetChildren is kept as a fallback for a client that does not expose the pool.
+local function ForEachViewerItem(viewer, fn)
+    if viewer.itemFramePool and viewer.itemFramePool.EnumerateActive then
+        local ok = pcall(function()
+            for item in viewer.itemFramePool:EnumerateActive() do fn(item) end
+        end)
+        if ok then return end
+    end
+    local ok, children = pcall(function() return { viewer:GetChildren() } end)
+    if ok and children then
+        for _, child in ipairs(children) do fn(child) end
+    end
+end
+
+local function HookBlizzardAlertEvents()
+    if not (Enum and Enum.CooldownViewerAlertEventType) then return end
+    for _, viewerInfo in ipairs(ALL_VIEWERS) do
+        local viewer = _G[viewerInfo.name]
+        if viewer then
+            ForEachViewerItem(viewer, function(child)
+                if child and child.cooldownID and child.TriggerAlertEvent
+                   and not child._sqzAlertHooked then
+                    child._sqzAlertHooked = true
+                    hooksecurefunc(child, "TriggerAlertEvent", function(item, event)
+                        -- Read the ID off the item rather than closing over it:
+                        -- pooled frames get recycled onto other cooldowns.
+                        local cdID = item and item.cooldownID
+                        local when = ALERT_EVENT_TO_WHEN[event]
+                        if not cdID or not when then return end
+                        if BH.suppressBuffSounds then return end
+                        PlayAlertsFor(cdID, when)
+                    end)
+                end
+                -- Refreshed every sweep, not just when the hook is first
+                -- installed: a recycled frame carries _sqzAlertHooked with it
+                -- onto a different cooldown, so recording ownership only at
+                -- hook time left the new cooldown looking poll-driven.
+                if child and child.cooldownID and child._sqzAlertHooked then
+                    cdmModule.hookDrivenCooldowns[child.cooldownID] = true
+                    -- Keep a handle on the live item frame. Blizzard writes its
+                    -- own computed cooldown state onto these (cooldownIsActive,
+                    -- availableAlertTriggerTime), and that is state we can read
+                    -- when C_Spell.GetSpellCooldown gives us only secrets.
+                    cdmModule.viewerItems[child.cooldownID] = child
+                    do
+                        local s2 = SpellIDForCooldown(child.cooldownID)
+                        -- Only a cooldown-type viewer item carries usable
+                        -- cooldown state. Letting a buff item claim this slot
+                        -- is what made Blessing of Freedom resolve to 92824
+                        -- (buff icon) rather than 61107 (utility), and every
+                        -- cooldown field on a buff item is nil.
+                        if s2 and viewerInfo.tracksCooldown then
+                            cdmModule.cooldownForSpell[s2] = child.cooldownID
+                        end
+                        -- Buff items are the only ones whose IsActive()
+                        -- reports aura state, so keep them separately.
+                        if s2 and not viewerInfo.tracksCooldown then
+                            cdmModule.buffItemForSpell[s2] = child
+                        end
+                    end
+                    local sid = SpellIDForCooldown(child.cooldownID)
+                    if sid then cdmModule.hookDrivenSpellIDs[sid] = true end
+                end
+            end)
         end
     end
 end
@@ -205,10 +533,102 @@ end
 --
 -- Viewer first because it is a plain table lookup, and because it keeps working
 -- in combat when aura reads turn secret and GetAuraBySpellID returns nothing.
+-- Returns: isActive, isReadable.
+--
+-- The second return matters in combat. An aura that cannot be read looks
+-- identical to one that is absent, and "absent" is what drives the "removed"
+-- alert -- so a caller that cannot tell the two apart either fires a removal
+-- alert for a buff that never went anywhere, or (if it plays safe and skips
+-- everything) goes silent for the whole fight. Both have happened here.
+-- Is this cooldown running, according to Blizzard's own viewer item?
+--
+-- Returns: isOnCooldown, isReadable.
+--
+-- C_Spell.GetSpellCooldown hands an addon secret startTime/duration in combat,
+-- so we cannot compute this ourselves -- comparing them throws. But Blizzard's
+-- CooldownViewerItemMixin already did the comparison, in untainted code, and
+-- cached the answer on the item frame:
+--
+--     self.cooldownIsActive = endTime > timeNow;
+--     self.isOnActualCooldown = not self.isOnGCD and self.cooldownIsActive;
+--
+-- Reading a plain boolean it left behind is not the same as doing arithmetic on
+-- secrets. Whether the client marks those derived fields secret too is exactly
+-- what the readability check below establishes -- if it does, we degrade to
+-- "cannot tell" and nothing is worse than before.
+local function CooldownActiveFromViewer(cdID, spellID)
+    -- Always go through the spell's cooldown-type item. The cooldownID an alert
+    -- arrives with may belong to the buff viewer's copy of the same spell, and
+    -- a buff item leaves every cooldown field nil forever.
+    local item
+    local sid = spellID or (cdID and SpellIDForCooldown(cdID))
+    local cooldownID = sid and cdmModule.cooldownForSpell[sid]
+    if cooldownID then item = cdmModule.viewerItems[cooldownID] end
+    if not item and cdID then item = cdmModule.viewerItems[cdID] end
+    if not item then return false, false end
+
+    local active = item.isOnActualCooldown
+    if active == nil then active = item.cooldownIsActive end
+    if active == nil then return false, false end
+
+    -- A secret value here *is* the answer.
+    --
+    -- Blizzard computes `cooldownIsActive = endTime > timeNow`, where endTime
+    -- comes from startTime + duration. While a cooldown is running those are
+    -- secret, so the derived boolean is secret too. When the spell is ready
+    -- there is no running cooldown to derive from and the field reads as a
+    -- plain false.
+    --
+    -- Observed directly, in combat, in the same pass:
+    --     Hammer of Justice   (ready)       isOnActualCooldown = false
+    --     Blessing of Freedom (on cooldown) isOnActualCooldown = SECRET
+    --
+    -- So "unreadable" and "on cooldown" coincide, and the secret->false
+    -- transition is exactly the moment the spell becomes available. Treating
+    -- secret as "not readable" instead threw that signal away and was why the
+    -- available alert could never fire in combat.
+    --
+    -- Failure direction is safe: if a value were ever secret for some unrelated
+    -- reason while the spell was ready, the alert would be late, never spurious.
+    if BH.Secrets.IsSecret(active) then return true, true end
+
+    return active and true or false, true
+end
+cdmModule.CooldownActiveFromViewer = CooldownActiveFromViewer
+
 local function CooldownAuraActive(cdID, spellID)
-    if cdID and cdmModule.activeBuffCooldowns[cdID] then return true end
-    if spellID and BH.Secrets.GetAuraBySpellID("player", spellID) then return true end
-    return false
+    if cdID and cdmModule.activeBuffCooldowns[cdID] then return true, true end
+
+    -- Only a *buff* item's IsActive() reports the aura.
+    --
+    -- CooldownViewerBuffItemMixin overrides ShouldBeActive to check the aura,
+    -- but the base CooldownViewerItemMixin version is just
+    --     return self.cooldownID ~= nil;
+    -- so on an Essential/Utility item IsActive() is permanently true. Reading it
+    -- there made hasAura always true, which made isActive always true, which
+    -- meant the "available" alert could never fire -- in or out of combat.
+    local sid = spellID or (cdID and SpellIDForCooldown(cdID))
+    local buffItem = sid and cdmModule.buffItemForSpell[sid]
+    if buffItem and buffItem.IsActive then
+        local ok, active = pcall(buffItem.IsActive, buffItem)
+        if ok and active ~= nil and not BH.Secrets.IsSecret(active) then
+            -- Blizzard tracks these on "player" and "target", so this covers a
+            -- buff placed on the current target as well as on the player.
+            return active and true or false, true
+        end
+    end
+
+    -- The viewer is authoritative for anything it carries, and it keeps working
+    -- in combat because it reads Blizzard's own frame state, not the aura API.
+    -- So "the viewer knows this cooldown and did not mark it active" is a real
+    -- negative, not a failed read.
+    if cdID and cdmModule.knownBuffCooldowns[cdID] then return false, true end
+    -- Not in the viewer: the only source left is a direct aura read, which
+    -- returns nothing once auras go secret. Say so rather than reporting a
+    -- confident "not active".
+    if BH.Secrets.AurasAreSecret() then return false, false end
+    if spellID and BH.Secrets.GetAuraBySpellID("player", spellID) then return true, true end
+    return false, true
 end
 
 -- ============================================================================
@@ -370,7 +790,7 @@ local function ApplyProxyVisuals(proxy, groupData)
             end
         end
 
-        local hasAura = CooldownAuraActive(proxy.cooldownID, proxy.spellID)
+        local hasAura, auraReadable = CooldownAuraActive(proxy.cooldownID, proxy.spellID)
 
         local isActive = onCD or hasAura
 
@@ -390,22 +810,32 @@ local function ApplyProxyVisuals(proxy, groupData)
         local justBecameActive = hasAura and not proxy._wasHasAura
         local justStartedCD    = isActive and not proxy._wasOnCD
 
-        -- Glow when CD finishes (group setting)
-        if justBecameReady and groupData.glowOnReady and ActionButton_ShowOverlayGlow then
-            ActionButton_ShowOverlayGlow(proxy.GlowFrame or proxy)
+        -- Glow when CD finishes (group setting).
+        --
+        -- Through ns.Glow rather than ActionButton_ShowOverlayGlow directly:
+        -- that function is deprecated, and this routes to the modern
+        -- ActionButtonSpellAlertManager where the client has it.
+        if justBecameReady and groupData.glowOnReady then
+            local target = proxy.GlowFrame or proxy
+            ns.Glow.Show(target)
             proxy._glowShowing = true
             C_Timer.After(2, function()
                 if proxy._glowShowing then
-                    ActionButton_HideOverlayGlow(proxy.GlowFrame or proxy)
+                    ns.Glow.Hide(target)
                     proxy._glowShowing = false
                 end
             end)
         end
 
         -- Per-cooldown sound alerts (CDM Sounds tab settings)
-        local justAuraRemoved = not hasAura and proxy._wasHasAura
+        -- Absence-driven, so it needs the readability guard; the presence-driven
+        -- transitions above are safe either way. Same rule as the tracker path.
+        local justAuraRemoved = auraReadable and not hasAura and proxy._wasHasAura
+        -- Not skipped when the Blizzard alert hook also covers this cooldown:
+        -- both paths run and ClaimAlert drops whichever is second, so a
+        -- cooldown the hook failed to attach to is still caught here.
         if justBecameReady or justBecameActive or justStartedCD or justAuraRemoved then
-            local alerts = GetCDMSoundAlerts()[proxy.cooldownID]
+            local alerts = CollectAlertsFor(proxy.cooldownID)
             if alerts then
                 for _, alert in ipairs(alerts) do
                     local fire = (alert.when == "available" and justBecameReady)
@@ -415,7 +845,8 @@ local function ApplyProxyVisuals(proxy, groupData)
                               or (alert.when == "removed"   and justAuraRemoved)
                     if fire and alert.type == "Sound" and alert.sound
                        and alert.sound ~= "None" and BH.PlaySound
-                       and not BH.suppressBuffSounds then
+                       and not BH.suppressBuffSounds
+                       and ClaimAlert(proxy.spellID or proxy.cooldownID, alert.when) then
                         BH:PlaySound(alert.sound)
                     end
                 end
@@ -423,7 +854,8 @@ local function ApplyProxyVisuals(proxy, groupData)
         end
 
         proxy._wasOnCD    = isActive
-        proxy._wasHasAura = hasAura
+        -- Never record an unreadable aura pass over the real state.
+        if auraReadable then proxy._wasHasAura = hasAura end
     end
 
     -- Tooltip setup
@@ -452,47 +884,106 @@ local function FireCDSounds()
     local soundAlerts = GetCDMSoundAlerts()
     if not next(soundAlerts) then return end
     local specData = GetSpecData()
-    for cdID, alerts in pairs(soundAlerts) do
+    for alertKey, alerts in pairs(soundAlerts) do
         repeat
             if not alerts or #alerts == 0 then break end
-            -- Skip if in a named group — ApplyProxyVisuals handles it there
-            local assignment = specData and specData.assignments[cdID]
-            if assignment and assignment ~= "FREE" then break end
-            -- Initialise a minimal tracker on first encounter
-            if not cdmModule.soundTrackers[cdID] then
-                local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
-                           and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if not (info and info.spellID) then break end
-                cdmModule.soundTrackers[cdID] = { spellID = info.spellID }
+
+            -- Alerts are stored keyed by spellID (see MigrateSoundAlerts), so
+            -- the key is not a cooldownID and must not be handed to
+            -- GetCooldownViewerCooldownInfo. Doing that returned nil and broke
+            -- out of the loop for every alert, which is what "tracked: no
+            -- (never evaluated)" meant.
+            --
+            -- A legacy store that has not migrated yet still holds cooldownID
+            -- keys, so both readings are tried.
+            local spellID, cdID
+            local asSpell = SpellIDForCooldown(alertKey)
+            if asSpell then
+                cdID, spellID = alertKey, asSpell        -- legacy cooldownID key
+            else
+                spellID = alertKey
+                cdID    = cdmModule.cooldownForSpell[alertKey]
             end
-            local tracker = cdmModule.soundTrackers[cdID]
+            if not spellID then break end
+
+            -- Deliberately NOT skipped when the Blizzard alert hook also covers
+            -- this cooldown. Both paths run and ClaimAlert drops whichever is
+            -- second, so a cooldown the hook silently failed to attach to is
+            -- still caught here instead of going quiet.
+            -- Skip if in a named group — ApplyProxyVisuals handles it there
+            local assignment = cdID and specData and specData.assignments[cdID]
+            if assignment and assignment ~= "FREE" then break end
+
+            if not cdmModule.soundTrackers[alertKey] then
+                cdmModule.soundTrackers[alertKey] = { spellID = spellID }
+            end
+            local tracker = cdmModule.soundTrackers[alertKey]
             -- Current cooldown state
             local onCD = false
-            local cdReadable = true
-            local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(tracker.spellID)
-            if cdInfo then
-                local start, dur = cdInfo.startTime, cdInfo.duration
-                if start and dur then
-                    if BH.Secrets.HasAnySecret(start, dur) then
-                        cdReadable = false
-                    elseif dur > 1.5 then
-                        onCD = true
+            -- Blizzard's viewer item first. It holds the answer already worked
+            -- out from values we are not allowed to compare, and it is the only
+            -- source that survives combat -- /sq cdm reports
+            -- "GetSpellCooldown secret? startTime: true, duration: true" there,
+            -- which is why the "available" alert could never fire in combat
+            -- from the API path no matter what drove the poll.
+            local cdReadable
+            onCD, cdReadable = CooldownActiveFromViewer(cdID, spellID)
+
+            if not cdReadable then
+                -- No viewer item (spell not in Blizzard's Cooldown Manager), or
+                -- it gave us a secret. Fall back to the API, which works fine
+                -- out of combat.
+                cdReadable = true
+                local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(tracker.spellID)
+                if cdInfo then
+                    local start, dur = cdInfo.startTime, cdInfo.duration
+                    if start and dur then
+                        if BH.Secrets.HasAnySecret(start, dur) then
+                            cdReadable = false
+                        elseif dur > 1.5 then
+                            onCD = true
+                        end
                     end
                 end
             end
-            -- Hold the previous state when the cooldown could not be read this
-            -- pass, rather than letting "unreadable" count as "not on
-            -- cooldown". That reads as the ability coming off cooldown and
-            -- fires an alert for something that never went anywhere -- the same
-            -- failure as the class buff sounds firing at the start of combat.
-            if not cdReadable then break end
-            local hasAura  = CooldownAuraActive(cdID, tracker.spellID)
+            local hasAura, auraReadable = CooldownAuraActive(cdID, tracker.spellID)
             local isActive = onCD or hasAura
-            -- Transitions
-            local justBecameReady  = not isActive and tracker._wasOnCD
-            local justBecameActive = hasAura and not tracker._wasHasAura
-            local justStartedCD    = isActive and not tracker._wasOnCD
-            local justAuraRemoved  = not hasAura and tracker._wasHasAura
+
+            -- Each transition is gated on the readability of the thing it
+            -- actually depends on, rather than one blanket bail-out.
+            --
+            -- This used to `break` whenever the cooldown was unreadable, which
+            -- silenced every alert for that cooldown -- including the aura ones,
+            -- which do not depend on the cooldown at all. In combat the
+            -- cooldown is routinely unreadable, so in practice no CDM sound
+            -- fired in combat at all.
+            --
+            -- The rule (see CLAUDE.md): alerts that fire on *presence* are safe
+            -- when data is unreadable, because they simply stay quiet. Alerts
+            -- that fire on *absence* are not, because unreadable looks exactly
+            -- like gone.
+            -- Aura readability only matters for a cooldown that actually has an
+            -- aura dimension. Most utility cooldowns do not: they are a plain
+            -- timer with no associated buff, so `isActive` is just `onCD` and
+            -- whether auras happen to be secret is irrelevant to them.
+            --
+            -- Requiring auraReadable unconditionally is what broke "available"
+            -- in combat. AurasAreSecret() is true in combat, and a non-buff
+            -- cooldown is absent from knownBuffCooldowns, so CooldownAuraActive
+            -- correctly reported "cannot tell" -- and that answer, about an aura
+            -- the cooldown does not even have, vetoed the transition. The alert
+            -- then sat pending until combat ended and auras became readable
+            -- again, which is precisely the reported behaviour.
+            local auraRelevant = cdmModule.knownBuffCooldowns[cdID]
+                              or hasAura or tracker._wasHasAura
+            local auraUsable   = auraReadable or not auraRelevant
+
+            local justBecameActive = hasAura and not tracker._wasHasAura            -- presence
+            local justStartedCD    = cdReadable and isActive and not tracker._wasOnCD  -- presence
+            local justBecameReady  = cdReadable and auraUsable                      -- absence
+                                     and not isActive and tracker._wasOnCD
+            local justAuraRemoved  = auraReadable                                   -- absence
+                                     and not hasAura and tracker._wasHasAura
             if (justBecameReady or justBecameActive or justStartedCD or justAuraRemoved) and BH.PlaySound then
                 for _, alert in ipairs(alerts) do
                     local fire = (alert.when == "available" and justBecameReady)
@@ -502,13 +993,17 @@ local function FireCDSounds()
                               or (alert.when == "removed"   and justAuraRemoved)
                     if fire and alert.type == "Sound" and alert.sound
                        and alert.sound ~= "None"
-                       and not BH.suppressBuffSounds then
+                       and not BH.suppressBuffSounds
+                       and ClaimAlert(tracker.spellID or cdID, alert.when) then
                         BH:PlaySound(alert.sound)
                     end
                 end
             end
-            tracker._wasOnCD    = isActive
-            tracker._wasHasAura = hasAura
+            -- Only record state that was actually read. Writing back an
+            -- unreadable pass overwrites the real state, and the next readable
+            -- pass then sees a transition on something that never moved.
+            if cdReadable then tracker._wasOnCD = isActive end
+            if auraUsable then tracker._wasHasAura = hasAura end
         until true
     end
 end
@@ -525,6 +1020,26 @@ function cdmModule:PrintSoundDiagnostics()
     print("Squizzumables CDM sound diagnostics:")
     print("  CDM enabled:", tostring(BH.settings and BH.settings.cdmEnabled))
     print("  auras secret right now:", tostring(BH.Secrets.AurasAreSecret()))
+    print("  in combat:", tostring(InCombatLockdown()))
+    do
+        local hooked = 0
+        for _ in pairs(cdmModule.hookDrivenCooldowns) do hooked = hooked + 1 end
+        print(string.format("  cooldowns driven by Blizzard alert hook: %d", hooked))
+        -- Name them: "is it hooked?" is the first question whenever an alert
+        -- does not fire, and a bare count cannot answer it for one spell.
+        for cdID in pairs(cdmModule.hookDrivenCooldowns) do
+            local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
+                       and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+            local spellID = info and info.spellID
+            local name = spellID and C_Spell.GetSpellName(spellID)
+            local nAlerts = #CollectAlertsFor(cdID)
+            print(string.format("      [%s] %s -- %d sound alert(s) configured",
+                tostring(cdID), BH.Secrets.SafeString(name, "?"), nAlerts))
+        end
+        print("    (these fire from Blizzard's own state machine and work in combat;")
+        print("     anything not listed falls back to polling, which cannot see a")
+        print("     cooldown come up in combat -- add it to Blizzard's Cooldown Manager)")
+    end
 
     for _, viewerName in ipairs(BUFF_VIEWERS) do
         local viewer = _G[viewerName]
@@ -556,26 +1071,82 @@ function cdmModule:PrintSoundDiagnostics()
     local soundAlerts = GetCDMSoundAlerts()
     local specData = GetSpecData()
     local n = 0
-    for cdID, alerts in pairs(soundAlerts) do
+    for alertKey, alerts in pairs(soundAlerts) do
         n = n + #alerts
-        local tracker = cdmModule.soundTrackers[cdID]
-        local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo
-                   and C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-        local spellName = info and info.spellID and C_Spell.GetSpellName(info.spellID)
+        local tracker = cdmModule.soundTrackers[alertKey]
+        -- Keys are spellIDs post-migration; resolve back to the live
+        -- cooldownID for the viewer-state lookups below.
+        local sid, cdID
+        local asSpell = cdmModule.SpellIDForCooldown(alertKey)
+        if asSpell then cdID, sid = alertKey, asSpell
+        else sid, cdID = alertKey, cdmModule.cooldownForSpell[alertKey] end
+        local spellName = sid and C_Spell.GetSpellName(sid)
         local assignment = specData and specData.assignments and specData.assignments[cdID]
         -- Report the two aura signals separately. The viewer only knows about
         -- cooldowns the player has chosen to show in it, so the case where a
         -- direct aura read disagrees with it is exactly what needs to be seen.
-        local sid = info and info.spellID
         local viewerSays = cdmModule.activeBuffCooldowns[cdID] and true or false
         local auraSays   = (sid and BH.Secrets.GetAuraBySpellID("player", sid)) and true or false
-        print(string.format("  cooldownID %s (%s, spellID %s): %d alert(s), group: %s, tracked: %s",
-            tostring(cdID),
+        print(string.format("  %s (spellID %s, live cooldownID %s): %d alert(s), group: %s, tracked: %s",
             tostring(BH.Secrets.SafeString(spellName, "?")),
             tostring(sid),
+            tostring(cdID or "none"),
             #alerts,
             assignment or "FREE",
             tracker and "yes" or "no (never evaluated)"))
+        do
+            -- The question this whole block exists to answer: is this stored
+            -- alert actually reachable, or filed under a cooldownID the live
+            -- viewer no longer uses?
+            local hookedByID    = cdmModule.hookDrivenCooldowns[cdID] and true or false
+            local hookedBySpell = sid and cdmModule.hookDrivenSpellIDs[sid] and true or false
+            print(string.format("      delivery -- hook by ID: %s, hook by spell: %s, else poll",
+                tostring(hookedByID), tostring(hookedBySpell)))
+            if not hookedByID and hookedBySpell then
+                print("      note: stored under a stale cooldownID; matched by spellID instead")
+            end
+        end
+        do
+            -- Proof of why the poll cannot work in combat: report whether the
+            -- cooldown fields we would have to compare are secret right now.
+            -- Run this out of combat and in combat -- if these flip to true,
+            -- any addon doing `spellCooldownInfo.duration == 0` throws there.
+            local cdi = sid and C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(sid)
+            if cdi then
+                print(string.format("      GetSpellCooldown secret? startTime: %s, duration: %s",
+                    tostring(BH.Secrets.IsSecret(cdi.startTime)),
+                    tostring(BH.Secrets.IsSecret(cdi.duration))))
+            else
+                print("      GetSpellCooldown returned nothing")
+            end
+            -- The alternative source: state Blizzard already computed and left
+            -- on its own item frame. If this reads true/false rather than
+            -- "unreadable", the available alert can work in combat.
+            local vActive, vReadable = CooldownActiveFromViewer(cdID, sid)
+            -- Report the cooldown-type item, which is the one actually
+            -- consulted -- not whatever item the alert key happened to name.
+            local cdItemID = sid and cdmModule.cooldownForSpell[sid]
+            local item = cdItemID and cdmModule.viewerItems[cdItemID]
+            print(string.format("      viewer item: %s, onCooldown: %s",
+                item and ("yes (cooldownID " .. tostring(cdItemID) .. ")")
+                    or "NO cooldown-type item (spell not in Essential/Utility CDM)",
+                vReadable and tostring(vActive) or "unreadable"))
+            if item then
+                -- Break out each field: "unreadable" was conflating two very
+                -- different causes -- the value being secret, versus Blizzard
+                -- never having computed it for this item at all.
+                local function describe(v)
+                    if v == nil then return "nil (never set)" end
+                    if BH.Secrets.IsSecret(v) then return "SECRET" end
+                    return tostring(v)
+                end
+                print(string.format("        isOnActualCooldown=%s cooldownIsActive=%s",
+                    describe(item.isOnActualCooldown), describe(item.cooldownIsActive)))
+                print(string.format("        allowAvailableAlert=%s availableAlertTriggerTime=%s isOnGCD=%s",
+                    describe(item.allowAvailableAlert), describe(item.availableAlertTriggerTime),
+                    describe(item.isOnGCD)))
+            end
+        end
         print(string.format("      aura active now -- viewer: %s, direct read: %s",
             tostring(viewerSays), tostring(auraSays)))
         if tracker then
@@ -1005,7 +1576,44 @@ function cdmModule:Reconcile()
 
     -- Hook Blizzard buff frames and scan active state (CMC-style)
     HookBlizzardBuffFrames()
+    HookBlizzardAlertEvents()
     ScanBlizzardBuffState()
+
+    -- Blizzard's viewers acquire item frames from a pool, lazily and on their
+    -- own schedule -- a spec change, an edit-mode change, or simply the first
+    -- time a category is populated. A one-shot sweep at init therefore misses
+    -- items that do not exist yet, which is exactly how the utility cooldowns
+    -- ended up unhooked. Re-sweeping is idempotent (each frame is tagged) and
+    -- costs a short walk of already-hooked frames, so run it on a slow ticker
+    -- rather than trying to guess every event that could grow the pool.
+    if not cdmModule.alertHookTicker then
+        cdmModule.alertHookTicker = C_Timer.NewTicker(2, function()
+            if BH.settings and BH.settings.cdmEnabled ~= false then
+                HookBlizzardAlertEvents()
+            end
+        end)
+    end
+
+    -- Drive the sound pass on its own clock.
+    --
+    -- FireCDSounds used to run only from UpdateAllProxyCooldowns, which is
+    -- called on buff-state-change hooks and on rebuilds -- and nothing else. In
+    -- combat, with no buff changing state, it simply never ran, so a cooldown
+    -- coming off cooldown was never noticed. The transition stayed pending and
+    -- then flushed at the next thing that happened to call it: another spell's
+    -- buff alert, or the end of combat. That is exactly the reported symptom --
+    -- "it plays when combat ends, or when some other spell's sound fires".
+    --
+    -- A cooldown finishing is a clock event, not a state-change event: nothing
+    -- fires when a timer merely runs out. So it needs polling on a timer, at a
+    -- resolution fine enough that the alert is not audibly late.
+    if not cdmModule.soundPollTicker then
+        cdmModule.soundPollTicker = C_Timer.NewTicker(0.2, function()
+            if BH.settings and BH.settings.cdmEnabled ~= false then
+                FireCDSounds()
+            end
+        end)
+    end
 
     -- Update all proxy cooldown sweeps
     UpdateAllProxyCooldowns()
@@ -1370,6 +1978,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if unit == "player" then
             ScanBlizzardBuffState()
             HookBlizzardBuffFrames()
+            HookBlizzardAlertEvents()
             UpdateAllProxyCooldowns()
         end
     elseif event == "SPELLS_CHANGED" then
@@ -2039,7 +2648,7 @@ local cdmSoundsState = {
 
 local CDM_SOUND_WHEN_LABELS = {
     available = "Available",
-    active    = "Active",
+    active    = "Active (buff up)",
     start     = "On Cooldown",
     applied   = "On Aura Applied",
     removed   = "On Aura Removed",
@@ -2146,15 +2755,38 @@ function BH:PopulateCDMSoundsLeft()
         { key = "utility",  label = "UTILITY"   },
         { key = "buff",     label = "BUFFS"     },
     }
+    -- One entry per spell, not per cooldownID.
+    --
+    -- A spell can appear in two viewers at once -- Blessing of Freedom is in
+    -- Utility (its cooldown) and in Buffs (the buff it applies) -- and since
+    -- alerts are keyed by spell, both entries edited the same alert list while
+    -- each offered only its own viewer's subset of triggers.
+    --
+    -- So list each spell once, placed under its cooldown-type entry where it
+    -- has one, and keep the alternate cooldownIDs as `siblings` so the trigger
+    -- list can be the union of what all of them support.
     local byCat = { cooldown = {}, utility = {}, buff = {} }
+    local bySpell = {}
+
+    local function AddEntry(cdInfo, cat)
+        local sid = cdInfo.spellID
+        local existing = sid and bySpell[sid]
+        if existing then
+            existing.siblings = existing.siblings or {}
+            table.insert(existing.siblings, cdInfo.cooldownID)
+            return
+        end
+        if sid then bySpell[sid] = cdInfo end
+        table.insert(byCat[cat], cdInfo)
+    end
+
+    -- Cooldown-type viewers first, so they win the placement.
     for _, cdInfo in pairs(cooldowns) do
         local cat = cdInfo.viewerType or "cooldown"
-        if byCat[cat] then
-            table.insert(byCat[cat], cdInfo)
-        end
+        if byCat[cat] then AddEntry(cdInfo, cat) end
     end
     for _, buffInfo in pairs(buffCooldowns) do
-        table.insert(byCat.buff, buffInfo)
+        AddEntry(buffInfo, "buff")
     end
     for _, list in pairs(byCat) do
         table.sort(list, function(a, b) return (a.name or "") < (b.name or "") end)
@@ -2182,6 +2814,7 @@ function BH:PopulateCDMSoundsLeft()
                     iconTex:SetAllPoints()
                     iconTex:SetTexture(cdInfo.icon)
                     iconTex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+                    btn.iconTex = iconTex
                 end
 
                 -- Hover highlight
@@ -2197,6 +2830,10 @@ function BH:PopulateCDMSoundsLeft()
                 sel:SetDrawLayer("OVERLAY", 1)
                 if cdmSoundsState.selectedCooldownID == cdInfo.cooldownID then
                     sel:Show()
+                    -- Rebuilding the panel makes fresh cdInfo tables, so
+                    -- re-point the selection at the new one -- the old one
+                    -- still carries last build's siblings list.
+                    cdmSoundsState.selectedCDInfo = cdInfo
                 else
                     sel:Hide()
                 end
@@ -2209,6 +2846,29 @@ function BH:PopulateCDMSoundsLeft()
                     GameTooltip:Show()
                 end)
                 btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+                -- Badge for "this spell has alerts configured", so the panel can
+                -- be read at a glance instead of clicking every icon in turn.
+                local configured = #(cdmModule.CollectAlertsFor(cdInfo.cooldownID)) > 0
+                if configured then
+                    local edge = btn:CreateTexture(nil, "BACKGROUND")
+                    edge:SetPoint("TOPLEFT",     -2,  2)
+                    edge:SetPoint("BOTTOMRIGHT",  2, -2)
+                    edge:SetColorTexture(0.15, 0.85, 0.35, 1)
+                    btn.configuredEdge = edge
+
+                    local dot = btn:CreateTexture(nil, "OVERLAY")
+                    dot:SetSize(10, 10)
+                    dot:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 3, 3)
+                    dot:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+                    dot:SetDrawLayer("OVERLAY", 2)
+                    btn.configuredDot = dot
+                elseif btn.iconTex then
+                    -- Dim the ones with nothing on them, so the configured
+                    -- entries carry the eye.
+                    btn.iconTex:SetDesaturated(true)
+                    btn.iconTex:SetAlpha(0.55)
+                end
 
                 btn.cdID   = cdInfo.cooldownID
                 btn.cdInfo = cdInfo
@@ -2315,27 +2975,84 @@ function BH:RebuildCDMSoundsRight()
     yOff = yOff - 2
 
     local isBuff = cdInfo.viewerType == "buff"
-    local whenItems
-    if isBuff then
-        whenItems = {
-            { text = "On Aura Applied", value = "applied" },
-            { text = "On Aura Removed", value = "removed" },
-        }
-    else
-        whenItems = {
-            { text = "Available",   value = "available" },
-            { text = "Active",      value = "active"    },
-            { text = "On Cooldown", value = "start"     },
-        }
+    -- Which triggers this cooldown can actually produce.
+    --
+    -- Ask Blizzard rather than inferring from which viewer the cooldown came
+    -- from. C_CooldownViewer.GetValidAlertTypes(cooldownID) returns exactly the
+    -- events that are meaningful for that spell, and it is the same list
+    -- Blizzard builds its own alert UI from.
+    --
+    -- The old split was "buff viewer gets the aura options, everything else
+    -- gets the cooldown options", which offered "Active" on every
+    -- Essential/Utility cooldown. But Active fires on the buff appearing, so on
+    -- a spell with no buff at all -- Hammer of Justice, Cleanse -- it could
+    -- never fire, and nothing told the player that.
+    local WHEN_ORDER = { "available", "start", "active", "applied", "removed" }
+    local WHEN_TEXT = {
+        available = "Available",
+        start     = "On Cooldown",
+        active    = "Active (buff up)",
+        applied   = "On Aura Applied",
+        removed   = "On Aura Removed",
+    }
+
+    -- Union the valid triggers across every cooldownID this spell has.
+    --
+    -- The left panel now lists a spell once, but Blessing of Freedom is 61107
+    -- in Utility and 92824 in BuffIcon, and GetValidAlertTypes answers per
+    -- cooldownID: the utility copy offers Available and On Cooldown, the buff
+    -- copy offers the aura ones. Asking only the entry that happened to be
+    -- listed is why the same spell showed different options depending on which
+    -- of its two icons you clicked.
+    local allowed = {}
+    local anyAnswer = false
+
+    local idsToAsk = { cdID }
+    if cdInfo.siblings then
+        for _, siblingID in ipairs(cdInfo.siblings) do
+            idsToAsk[#idsToAsk + 1] = siblingID
+        end
     end
-    local buffWhens = { applied = true, removed = true }
-    local cdWhens   = { available = true, active = true, start = true }
-    local defaultWhen
-    if isBuff then
-        defaultWhen = buffWhens[cdmSoundsState.newAlertWhen] and cdmSoundsState.newAlertWhen or "applied"
-    else
-        defaultWhen = cdWhens[cdmSoundsState.newAlertWhen] and cdmSoundsState.newAlertWhen or "available"
+
+    for _, askID in ipairs(idsToAsk) do
+        local validTypes = C_CooldownViewer and C_CooldownViewer.GetValidAlertTypes
+                           and C_CooldownViewer.GetValidAlertTypes(askID)
+        if validTypes and #validTypes > 0 then
+            anyAnswer = true
+            for _, alertEvent in ipairs(validTypes) do
+                local when = cdmModule.AlertEventToWhen[alertEvent]
+                if when then allowed[when] = true end
+            end
+        end
     end
+
+    if anyAnswer then
+        -- "Active" is our own name for "the buff is up", which Blizzard
+        -- expresses as OnAuraApplied, so offer it wherever that is valid.
+        if allowed.applied then allowed.active = true end
+    else
+        -- No answer from the API: fall back to the previous behaviour rather
+        -- than offering nothing at all.
+        if isBuff then
+            allowed.applied, allowed.removed = true, true
+        else
+            allowed.available, allowed.start, allowed.active = true, true, true
+        end
+    end
+
+    local whenItems = {}
+    for _, when in ipairs(WHEN_ORDER) do
+        if allowed[when] then
+            whenItems[#whenItems + 1] = { text = WHEN_TEXT[when], value = when }
+        end
+    end
+
+    -- Keep the previous selection if this cooldown supports it, otherwise
+    -- take the first option it does support. Falling back to a fixed value
+    -- could select something absent from the list for this spell.
+    local defaultWhen = allowed[cdmSoundsState.newAlertWhen]
+                        and cdmSoundsState.newAlertWhen
+                        or (whenItems[1] and whenItems[1].value)
     local whenDD = CreateSQDropdown(content, "", 200, whenItems, function(val)
         cdmSoundsState.newAlertWhen = val
     end)
@@ -2392,12 +3109,18 @@ function BH:RebuildCDMSoundsRight()
         if not alertSound or alertSound == "None" then return end
 
         local soundAlerts = GetCDMSoundAlerts()
-        if not soundAlerts[cdID] then soundAlerts[cdID] = {} end
-        table.insert(soundAlerts[cdID], {
+        -- Keyed by spell, not cooldownID: cooldownIDs drift between builds and
+        -- category sets, which is how the same alert ended up stored several times.
+        local akey = cdmModule.AlertKey(cdID)
+        if not soundAlerts[akey] then soundAlerts[akey] = {} end
+        table.insert(soundAlerts[akey], {
             type  = alertType,
             when  = alertWhen,
             sound = alertSound,
         })
+        -- Repopulate the left panel too: the configured badge on this
+        -- spell just changed.
+        BH:PopulateCDMSoundsLeft()
         BH:RebuildCDMSoundsRight()
     end)
     yOff = yOff - 34
@@ -2412,7 +3135,7 @@ function BH:RebuildCDMSoundsRight()
 
     -- ── Existing alerts for this spell ────────────────────────────────────
     local soundAlerts = GetCDMSoundAlerts()
-    local alerts = soundAlerts[cdID] or {}
+    local alerts = soundAlerts[cdmModule.AlertKey(cdID)] or {}
 
     if #alerts == 0 then
         local noAlertsTxt = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -2464,10 +3187,14 @@ function BH:RebuildCDMSoundsRight()
             local capturedIdx = idx
             remBtn:SetScript("OnClick", function()
                 local sa = GetCDMSoundAlerts()
-                if sa[cdID] then
-                    table.remove(sa[cdID], capturedIdx)
-                    if #sa[cdID] == 0 then sa[cdID] = nil end
+                local akey = cdmModule.AlertKey(cdID)
+                if sa[akey] then
+                    table.remove(sa[akey], capturedIdx)
+                    if #sa[akey] == 0 then sa[akey] = nil end
                 end
+                -- Repopulate the left panel too: the configured badge on this
+                -- spell just changed.
+                BH:PopulateCDMSoundsLeft()
                 BH:RebuildCDMSoundsRight()
             end)
 

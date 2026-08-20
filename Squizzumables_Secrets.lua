@@ -131,6 +131,22 @@ function Secrets.SafeAuraSourceUnit(aura)
     return v
 end
 
+--- Did the player cast this aura?
+---
+--- The common question at every "is my buff on them" call site, and worth one
+--- function because the naive spelling -- `aura.sourceUnit and
+--- UnitIsUnit(aura.sourceUnit, "player")` -- reads the field directly and was
+--- copied to eight places before anyone noticed.
+---
+--- Returns false, not nil, when the source cannot be read. Callers treat this
+--- as "not mine", which for a reminder is the cautious direction; callers that
+--- must distinguish "no" from "cannot tell" should check AurasAreSecret first.
+function Secrets.AuraIsFromPlayer(aura)
+    local source = Secrets.SafeAuraSourceUnit(aura)
+    if not source then return false end
+    return UnitIsUnit(source, "player") == true
+end
+
 function Secrets.SafeAuraStacks(aura)
     if not readable(aura) then return nil end
     return Secrets.SafeNumber(aura.applications, nil)

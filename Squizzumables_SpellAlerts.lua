@@ -206,6 +206,41 @@ local LUST_DEBUFF_IDS = {
     [206151] = true,  -- Temporal Displacement   (Fury of the Aspects)
 }
 
+
+-- Which alert the settings tab is editing. Not persisted: it is a cursor in the
+-- UI, not a preference.
+local selectedAlertID = "lust"
+
+local function AllAlerts()
+    BH.settings.alerts = BH.settings.alerts or {}
+    return BH.settings.alerts
+end
+BH.AllAlerts = AllAlerts
+
+--- The alert currently being edited.
+---
+--- Falls back rather than returning nil: deleting an alert leaves the selection
+--- dangling until the tab rebuilds, and every control in that tab would error
+--- on a nil record.
+local function CurrentAlert()
+    local all = AllAlerts()
+    local a = all[selectedAlertID]
+    if not a then
+        selectedAlertID = next(all) or "lust"
+        a = all[selectedAlertID]
+    end
+    if not a then
+        a = CopyTable(BH.defaultSettings.alerts.lust)
+        all.lust = a
+        selectedAlertID = "lust"
+    end
+    return a
+end
+BH.CurrentAlert = CurrentAlert
+
+function BH.SelectAlert(id) selectedAlertID = id end
+function BH.SelectedAlertID() return selectedAlertID end
+
 -- Check each known sated-like debuff by spellID directly instead of scanning
 -- all auras by index. As of 12.1.0, GetAuraDataByIndex throws a taint error
 -- ("Auras cannot be accessed when secret") when auras are secret (in combat,
@@ -233,19 +268,42 @@ local function HasLustDebuff()
     return false
 end
 
-local lustWasActive = false
+--- Is this alert's trigger currently true?
+---
+--- Aura triggers only so far. The built-in lust alert carries no spell of its
+--- own because it watches every variant of the exhaustion debuff at once; an
+--- alert the player adds names one spell.
+local function TriggerActive(alert)
+    local t = alert.trigger or {}
+    if t.type ~= nil and t.type ~= "aura" then return false end
 
--- Returns a writable randomSounds table for kelLustAlert, creating one if
--- missing. Existing profiles that predate this feature get the default
+    if alert.builtin and not t.spellID then
+        return HasLustDebuff()
+    end
+
+    local spellID = tonumber(t.spellID)
+    if not spellID then return false end
+    local filter = t.harmful and "HARMFUL" or "HELPFUL"
+    -- Presence check only, so there is no secret field to read off the result.
+    return BH.Secrets.GetAuraBySpellID("player", spellID, filter) ~= nil
+end
+BH.AlertTriggerActive = TriggerActive
+
+-- Previous trigger state, per alert id, for edge detection.
+local alertWasActive = {}
+
+-- Returns a writable randomSounds table for the alert being edited, creating
+-- one if missing. Existing profiles that predate this feature get the default
 -- settings' (shared) empty table filled in by the generic deep-merge in
 -- LoadSettings — writing into that shared table directly would corrupt the
--- default for every other profile, so swap in a fresh table on first write.
+-- default for every other profile and every other alert, so swap in a fresh
+-- table on first write.
 local function GetOrCreateRandomSoundsTable()
-    BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-    local rs = BH.settings.kelLustAlert.randomSounds
-    if type(rs) ~= "table" or rs == BH.defaultSettings.kelLustAlert.randomSounds then
+    local alert = CurrentAlert()
+    local rs = alert.randomSounds
+    if type(rs) ~= "table" or rs == BH.defaultSettings.alerts.lust.randomSounds then
         rs = {}
-        BH.settings.kelLustAlert.randomSounds = rs
+        alert.randomSounds = rs
     end
     return rs
 end
@@ -255,22 +313,82 @@ function BH:CheckKelAlerts(unit)
     if unit ~= "player" then return end
     if not self.settings then return end
 
-    -- ── Lust detection ────────────────────────────────────────────────────
-    local la = self.settings.kelLustAlert
-    if la and la.enabled ~= false then
-        local lustNow = HasLustDebuff()
-        if lustNow and not lustWasActive and not BH.playerZoning then
-            ShowAlert(la)
+    -- Edge-detect every alert, not just the built-in one. State is kept per
+    -- alert id so adding one cannot disturb another's.
+    for id, alert in pairs(AllAlerts()) do
+        if type(alert) == "table" and alert.enabled ~= false then
+            local now = TriggerActive(alert)
+            if now and not alertWasActive[id] and not BH.playerZoning then
+                ShowAlert(alert)
+            end
+            alertWasActive[id] = now
+        else
+            -- A disabled alert resets, so switching one on while its trigger is
+            -- already up fires once straight away -- which doubles as proof the
+            -- alert is wired up correctly.
+            alertWasActive[id] = false
         end
-        lustWasActive = lustNow
-    else
-        lustWasActive = false
     end
 end
 
 
 
 
+
+-- ============================================================================
+-- Alert list management
+-- ============================================================================
+
+--- Dropdown entries for every configured alert, built-ins first.
+---
+--- Sorted by name rather than by id so the list reads naturally, and built-ins
+--- pinned to the top so the Lust alert stays where players expect it.
+local function AlertItems()
+    local all = AllAlerts()
+    local ids = {}
+    for id in pairs(all) do
+        if type(all[id]) == "table" then ids[#ids + 1] = id end
+    end
+    table.sort(ids, function(a, b)
+        local ab = all[a].builtin and 0 or 1
+        local bb = all[b].builtin and 0 or 1
+        if ab ~= bb then return ab < bb end
+        return (all[a].name or a):lower() < (all[b].name or b):lower()
+    end)
+    local items = {}
+    for _, id in ipairs(ids) do
+        items[#items + 1] = { text = all[id].name or id, value = id }
+    end
+    return items
+end
+
+--- A key not already in use. Ids are internal and never shown; the display name
+--- is a separate field the player can edit freely (and duplicate).
+local function NextAlertID()
+    local all = AllAlerts()
+    local n = 1
+    while all["custom" .. n] do n = n + 1 end
+    return "custom" .. n
+end
+
+StaticPopupDialogs["SQUIZZUMABLES_DELETE_ALERT"] = {
+    text = "Delete the alert '%s'?",
+    button1 = "Delete",
+    button2 = "Cancel",
+    OnAccept = function(self, data)
+        local all = AllAlerts()
+        if all[data] and not all[data].builtin then
+            all[data] = nil
+            BH.SelectAlert(next(all) or "lust")
+            BH:SaveSettings()
+            BH:RefreshJustForKelTab()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
 
 -- ============================================================================
 -- Settings tab: "Just For Kel"
@@ -291,7 +409,7 @@ function BH:BuildJustForKelTab(parent)
     -- Section header
     local hdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    hdr:SetText("LUST ALERT")
+    hdr:SetText("KELERTS")
     ns.ApplyAccent(hdr, "text")
     yOffset = yOffset - 20
 
@@ -300,19 +418,121 @@ function BH:BuildJustForKelTab(parent)
     lustNote:SetWidth(372)
     lustNote:SetJustifyH("LEFT")
     lustNote:SetWordWrap(true)
-    lustNote:SetText("Fires when you gain any lust debuff (Sated, Exhaustion, Temporal Displacement, Insanity, Fatigued).")
+    lustNote:SetText("A full-screen image and a sound when an aura lands on you. Pick an alert to edit it, or add your own for any buff or debuff.")
     lustNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 36
+    yOffset = yOffset - 40
 
-    -- Lust enable
-    local lustEnableCb = CreateSQCheckbox(content, "Enable lust alert", function(val)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.enabled = val
+    -- Which alert every control below is editing.
+    local alertDrop = CreateSQDropdown(content, "Alert:", 170, AlertItems(), function(val)
+        BH.SelectAlert(val)
+        BH:RefreshJustForKelTab()
+    end)
+    alertDrop:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    self.kelAlertDrop = alertDrop
+    ns.Rows.AddTooltip(alertDrop, "Alert", "Which alert the settings below apply to. Each alert keeps its own image, sound and trigger.")
+
+    local newBtn = CreateSQButton(content, "New", 52, 24)
+    newBtn:SetPoint("LEFT", alertDrop.btn, "RIGHT", 8, 0)
+    newBtn:SetScript("OnClick", function()
+        local id = NextAlertID()
+        -- Start from the lust alert's defaults so a new alert already has a
+        -- working image, sound and timing; only the trigger has to be filled in.
+        local a = CopyTable(BH.defaultSettings.alerts.lust)
+        a.builtin = nil
+        a.name    = "New Alert"
+        a.enabled = false
+        a.trigger = { type = "aura", harmful = false }
+        AllAlerts()[id] = a
+        BH.SelectAlert(id)
+        BH:SaveSettings()
+        BH:RefreshJustForKelTab()
+    end)
+    ns.Rows.AddTooltip(newBtn, "New alert", "Add an alert. It starts as a copy of the lust alert's image and sound, switched off, with no spell set yet.")
+
+    local delBtn = CreateSQButton(content, "Delete", 62, 24, SQ_COLORS.danger)
+    delBtn:SetPoint("LEFT", newBtn, "RIGHT", 6, 0)
+    delBtn:SetScript("OnClick", function()
+        local a = CurrentAlert()
+        if a.builtin then return end
+        StaticPopup_Show("SQUIZZUMABLES_DELETE_ALERT", a.name or BH.SelectedAlertID(), nil, BH.SelectedAlertID())
+    end)
+    self.kelAlertDelBtn = delBtn
+    ns.Rows.AddTooltip(delBtn, "Delete alert", "Remove the selected alert. The built-in lust alert cannot be deleted; turn it off instead.")
+    yOffset = yOffset - 50
+
+    -- Name and trigger spell
+    local nameLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    nameLbl:SetText("Name:")
+    nameLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+    local nameEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+    nameEdit:SetSize(140, 20)
+    nameEdit:SetPoint("LEFT", nameLbl, "RIGHT", 4, 0)
+    nameEdit:SetAutoFocus(false)
+    nameEdit:SetMaxLetters(40)
+    local function SaveAlertName(box)
+        local a = CurrentAlert()
+        if a.builtin then return end
+        local text = strtrim(box:GetText() or "")
+        a.name = (text ~= "") and text or "Unnamed Alert"
+        BH:SaveSettings()
+        BH:RefreshJustForKelTab()
+    end
+    nameEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveAlertName(box) end)
+    nameEdit:SetScript("OnEditFocusLost", SaveAlertName)
+    self.kelAlertNameEdit = nameEdit
+    ns.Rows.AddTooltip(nameEdit, "Alert name", "What this alert is called in the list above. The built-in lust alert cannot be renamed.")
+
+    local spellLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    spellLbl:SetPoint("LEFT", nameEdit, "RIGHT", 10, 0)
+    spellLbl:SetText("Spell ID:")
+    spellLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+    local spellEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+    spellEdit:SetSize(70, 20)
+    spellEdit:SetPoint("LEFT", spellLbl, "RIGHT", 4, 0)
+    spellEdit:SetAutoFocus(false)
+    spellEdit:SetNumeric(true)
+    spellEdit:SetMaxLetters(9)
+    local function SaveAlertSpell(box)
+        local a = CurrentAlert()
+        if a.builtin then return end
+        a.trigger = a.trigger or {}
+        a.trigger.type = "aura"
+        a.trigger.spellID = tonumber(box:GetText())
+        BH:SaveSettings()
+        BH:RefreshJustForKelTab()
+    end
+    spellEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveAlertSpell(box) end)
+    spellEdit:SetScript("OnEditFocusLost", SaveAlertSpell)
+    self.kelAlertSpellEdit = spellEdit
+    ns.Rows.AddTooltip(spellEdit, "Trigger spell ID", "The aura that fires this alert, taken from the spell's Wowhead URL. The built-in lust alert watches every lust debuff at once (Sated, Exhaustion, Temporal Displacement, Insanity, Fatigued), so it has no single ID.")
+    yOffset = yOffset - 26
+
+    -- Buff or debuff. Kept separate from the ID because an aura lookup searches
+    -- one list or the other, never both, so a wrong guess would simply never fire.
+    local harmfulCb = CreateSQCheckbox(content, "Trigger is a debuff", function(val)
+        local a = CurrentAlert()
+        if a.builtin then return end
+        a.trigger = a.trigger or {}
+        a.trigger.type = "aura"
+        a.trigger.harmful = val
+        BH:SaveSettings()
+    end)
+    harmfulCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    self.kelAlertHarmfulCb = harmfulCb
+    ns.Rows.AddTooltip(harmfulCb, "Trigger is a debuff", "Tick this if the spell above is a debuff; leave it clear for a buff. It has to match, or the alert never fires.")
+    yOffset = yOffset - 26
+
+    -- Alert enable
+    local lustEnableCb = CreateSQCheckbox(content, "Enable this alert", function(val)
+        CurrentAlert().enabled = val
         BH:SaveSettings()
     end)
     lustEnableCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelLustEnableCb = lustEnableCb
-    ns.Rows.AddTooltip(lustEnableCb, "Enable lust alert", "Shows an image and plays a sound when a Bloodlust-type effect is used on you. Triggers on the Sated/Exhaustion debuff, so it fires for Heroism, Time Warp, Primal Rage and the rest.")
+    ns.Rows.AddTooltip(lustEnableCb, "Enable this alert", "Show the image and play the sound when this alert's trigger appears on you.")
     yOffset = yOffset - 26
 
     -- Lust row 1: Texture · Frames · FPS
@@ -327,8 +547,7 @@ function BH:BuildJustForKelTab(parent)
     lTexEdit:SetAutoFocus(false)
     lTexEdit:SetMaxLetters(128)
     local function SaveLustTex(self)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.texture = self:GetText()
+        CurrentAlert().texture = self:GetText()
         BH:SaveSettings()
     end
     lTexEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustTex(self) end)
@@ -347,8 +566,7 @@ function BH:BuildJustForKelTab(parent)
     lFramesEdit:SetAutoFocus(false)
     lFramesEdit:SetNumeric(true)
     local function SaveLustFrames(self)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.frameCount = math.max(0, tonumber(self:GetText()) or 0)
+        CurrentAlert().frameCount = math.max(0, tonumber(self:GetText()) or 0)
         BH:SaveSettings()
     end
     lFramesEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustFrames(self) end)
@@ -367,8 +585,7 @@ function BH:BuildJustForKelTab(parent)
     lFpsEdit:SetAutoFocus(false)
     lFpsEdit:SetNumeric(true)
     local function SaveLustFPS(self)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.fps = math.max(1, tonumber(self:GetText()) or 10)
+        CurrentAlert().fps = math.max(1, tonumber(self:GetText()) or 10)
         BH:SaveSettings()
     end
     lFpsEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustFPS(self) end)
@@ -389,8 +606,7 @@ function BH:BuildJustForKelTab(parent)
     lDurEdit:SetAutoFocus(false)
     lDurEdit:SetNumeric(true)
     local function SaveLustDur(self)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.duration = math.max(1, tonumber(self:GetText()) or 5)
+        CurrentAlert().duration = math.max(1, tonumber(self:GetText()) or 5)
         BH:SaveSettings()
     end
     lDurEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustDur(self) end)
@@ -399,8 +615,7 @@ function BH:BuildJustForKelTab(parent)
     ns.Rows.AddTooltip(lDurEdit, "Duration", "How many seconds the alert stays on screen.")
 
     local lLoopCb = CreateSQCheckbox(content, "Loop", function(val)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.loop = val
+        CurrentAlert().loop = val
         BH:SaveSettings()
     end)
     lLoopCb:SetPoint("LEFT", lDurEdit, "RIGHT", 14, 0)
@@ -410,8 +625,7 @@ function BH:BuildJustForKelTab(parent)
 
     -- Lust row 2b: Sound loop
     local lSndLoopCb = CreateSQCheckbox(content, "Loop sound", function(val)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.soundLoop = val
+        CurrentAlert().soundLoop = val
         BH:SaveSettings()
     end)
     lSndLoopCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -428,8 +642,7 @@ function BH:BuildJustForKelTab(parent)
     lSndLoopIntervalEdit:SetPoint("LEFT", lSndLoopIntervalLbl, "RIGHT", 4, 0)
     lSndLoopIntervalEdit:SetAutoFocus(false)
     local function SaveLustSndInterval(self)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.soundLoopInterval = math.max(0.5, tonumber(self:GetText()) or 2.0)
+        CurrentAlert().soundLoopInterval = math.max(0.5, tonumber(self:GetText()) or 2.0)
         BH:SaveSettings()
     end
     lSndLoopIntervalEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustSndInterval(self) end)
@@ -450,8 +663,7 @@ function BH:BuildJustForKelTab(parent)
     lSndLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
     local lSndDrop = CreateSQDropdown(content, "", 260, BH:BuildSoundDropdownItems(), function(val)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.sound = val
+        CurrentAlert().sound = val
         BH:SaveSettings()
     end)
     lSndDrop:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 62, yOffset - 4)
@@ -477,7 +689,7 @@ function BH:BuildJustForKelTab(parent)
             frameCount        = math.max(0, tonumber(lFramesEdit:GetText()) or 0),
             fps               = math.max(1, tonumber(lFpsEdit:GetText()) or 10),
             loop              = lLoopCb:GetChecked(),
-            opacity           = (BH.settings and BH.settings.kelLustAlert and BH.settings.kelLustAlert.opacity) or 1.0,
+            opacity           = (BH.settings and CurrentAlert() and CurrentAlert().opacity) or 1.0,
             soundLoop         = lSndLoopCb:GetChecked(),
             soundLoopInterval = math.max(0.5, tonumber(lSndLoopIntervalEdit:GetText()) or 2.0),
         })
@@ -490,8 +702,7 @@ function BH:BuildJustForKelTab(parent)
         { text = "Ambience", value = "Ambience" },
         { text = "Dialog",   value = "Dialog"   },
     }, function(val)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.soundChannel = val
+        CurrentAlert().soundChannel = val
         BH:SaveSettings()
     end)
     lChanDrop:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 62, yOffset - 4)
@@ -517,7 +728,7 @@ function BH:BuildJustForKelTab(parent)
     rsNote:SetWidth(372)
     rsNote:SetJustifyH("LEFT")
     rsNote:SetWordWrap(true)
-    rsNote:SetText("Check any sounds below to have the lust alert play a random pick from them instead of the Sound above. Leave all unchecked (default) to just use the Sound above.")
+    rsNote:SetText("Check any sounds below to have this alert play a random pick from them instead of the Sound above. Leave all unchecked (default) to just use the Sound above.")
     rsNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 34
 
@@ -591,11 +802,10 @@ function BH:BuildJustForKelTab(parent)
 
     local opacitySlider = CreateSQSlider(content, "Alert Opacity %", 220, 0, 100, 1)
     opacitySlider:SetAfterValueChanged(function(val)
-        BH.settings.kelLustAlert = BH.settings.kelLustAlert or {}
-        BH.settings.kelLustAlert.opacity = val / 100
+        CurrentAlert().opacity = val / 100
         BH:SaveSettings()
     end)
-    opacitySlider:SetValue(math.floor(((BH.settings and BH.settings.kelLustAlert and BH.settings.kelLustAlert.opacity) or 1.0) * 100 + 0.5))
+    opacitySlider:SetValue(math.floor(((BH.settings and CurrentAlert() and CurrentAlert().opacity) or 1.0) * 100 + 0.5))
     opacitySlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelOpacitySlider = opacitySlider
     ns.Rows.AddTooltip(opacitySlider, "Alert Opacity %", "Transparency of the alert image.")
@@ -712,8 +922,44 @@ function BH:RefreshJustForKelTab()
     local content = self.kelTabContent
     if not content then return end
 
-    -- Lust controls
-    local la = (BH.settings and BH.settings.kelLustAlert) or {}
+    -- Alert selector. Rebuilt on every refresh because adding, deleting and
+    -- renaming all change the list, and all three route back through here.
+    if self.kelAlertDrop then
+        self.kelAlertDrop:SetItems(AlertItems())
+        self.kelAlertDrop:SetSelectedValue(BH.SelectedAlertID())
+    end
+
+    -- Per-alert controls
+    local la = (BH.settings and CurrentAlert()) or {}
+    local builtin = la.builtin and true or false
+    local trig = la.trigger or {}
+
+    -- The built-in alert's identity and trigger are fixed, so those three
+    -- controls grey out rather than disappearing -- the layout stays put when
+    -- switching between it and a custom alert.
+    local function SetEditEnabled(box, on)
+        if on then box:Enable() else box:Disable() end
+        box:SetAlpha(on and 1 or 0.35)
+    end
+
+    if self.kelAlertNameEdit then
+        self.kelAlertNameEdit:SetText(la.name or BH.SelectedAlertID() or "")
+        SetEditEnabled(self.kelAlertNameEdit, not builtin)
+    end
+    if self.kelAlertSpellEdit then
+        self.kelAlertSpellEdit:SetText(builtin and "" or tostring(trig.spellID or ""))
+        SetEditEnabled(self.kelAlertSpellEdit, not builtin)
+    end
+    if self.kelAlertHarmfulCb then
+        self.kelAlertHarmfulCb:SetChecked(builtin or (trig.harmful and true or false))
+        self.kelAlertHarmfulCb:SetAlpha(builtin and 0.35 or 1)
+        self.kelAlertHarmfulCb.checkbox:SetEnabled(not builtin)
+    end
+    if self.kelAlertDelBtn then
+        self.kelAlertDelBtn:SetAlpha(builtin and 0.35 or 1)
+        self.kelAlertDelBtn:SetEnabled(not builtin)
+    end
+
     if self.kelLustEnableCb   then self.kelLustEnableCb:SetChecked(la.enabled ~= false) end
     if self.kelLustTexEdit    then self.kelLustTexEdit:SetText(la.texture or "") end
     if self.kelLustFramesEdit then self.kelLustFramesEdit:SetText(tostring(la.frameCount or 0)) end

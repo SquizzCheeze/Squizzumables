@@ -3,6 +3,159 @@ Squizzumables Changelog
 
 V1.60
 
+- Reminder buttons now glow, so they catch your eye without being looked at directly. Colour,
+  pulse speed and pulse depth are all adjustable, or turn the pulse off for a steady ring. On by
+  default; the toggle is under Settings > Misc
+- Added a minimap button (left-click settings, right-click unlock frames, drag to move it round
+  the edge) and an entry in Blizzard's addon compartment. The minimap button can be hidden
+- New installs get a short welcome explaining what the addon does, and an update note listing
+  what changed appears once after each new version. /sq notes reopens it
+
+- Kelerts are no longer just the lust alert. The tab is now a list you can add to: pick a
+  buff or debuff by spell ID, name it, and it gets its own full-screen image, sound, timing,
+  opacity and random-sound pool, exactly as the lust alert always had. The lust alert is still
+  there, still watching every lust debuff at once, and cannot be deleted or renamed -- switch it
+  off instead. Your existing lust alert settings carry over, in every profile
+
+- New "Show in" settings: pick which content the addon appears in -- open world, each dungeon and
+  raid difficulty, Mythic+, timewalking, delves, battlegrounds. Defaults match the old behaviour,
+  so nothing changes unless you change it. Mythic+ was previously hidden with no way to turn it
+  back on; it is now just another tick box
+- The "no food/flask/oil/augment rune in bags" reminders are now one frame that names whichever
+  you are short of, rather than up to four banners stacked on top of each other. One position,
+  scale and lock between them, with a tick box per category to choose what it mentions. Your
+  existing per-category choices carry over, but the frame starts at its default position
+- "Lock All" now actually locks everything. It worked from a hand-written list that had fallen
+  five frames behind -- the Coach's Whistle, pet, role CC, augment rune and healthstone frames
+  were never locked, while the button still reported that everything was
+
+- Augment runes are now tracked like food and flasks: a button to use one when the buff is
+  missing, a "no augment rune in bags" reminder, and their own section on the Items tab with a
+  drop zone for adding your own. Covers the Midnight and War Within runes out of the box
+- Healthstones are now tracked. If you are not carrying one and there is a warlock in the group
+  who could make you one, you get a reminder; if there is no warlock, nothing, since it would be
+  a reminder to do something you cannot do. Unlike the other bag reminders this one stays up in
+  combat, which is when it matters
+- Warlocks get a button rather than the reminder, since they are the ones who can fix it. Solo it
+  casts Create Healthstone; in a group it casts Create Soulwell so the whole group is covered
+
+- Death Knights are now supported. The class had no entry in the addon at all. You get a reminder
+  when an equipped weapon has no runeforge on it, naming which hand is bare. Out in the world the
+  button casts Death Gate, since runeforging needs a runeforge; standing in Acherus it becomes
+  Runeforging itself
+- Class Buffs tab now lists Death Knight runeforging alongside the other class entries, so it can
+  be turned off or given its own sound like anything else
+
+- Unlock mode now actually unlocks everything. A frame you had locked would show its green
+  preview tint and then refuse to be dragged, because the preview code was still honouring the
+  per-frame lock it exists to override. Locked frames can now be repositioned without unlocking
+  them first
+- Every movable frame now gets the green preview tint. The Coach's Whistle, pet and healer/tank CC
+  frames never had one, because each frame's overlay was written out by hand and those three had
+  been missed. They are now generated from one list, so a new frame cannot be forgotten
+- The markers and pull/ready frames can now be dragged. Their buttons cover almost the whole
+  frame, so trying to move them fired a ready check, started a pull, or placed a raid marker
+  instead. Their buttons are click-through while frames are unlocked
+- The dungeon callouts frame can now be dragged from anywhere on it, not only its title bar
+- Removed the small tab above the buttons frame. That frame is now dragged directly like every
+  other frame, while frames are unlocked, so there is no permanent scrap of UI on screen
+- Settings panel: fixed dropdowns overlapping the label of the option below them, long
+  descriptions running into the next setting, and section headings sitting flush against the row
+  above
+
+- Settings are now backfilled recursively, so a new option nested inside an existing group
+  reaches everyone rather than only new installs. Previously only top-level settings were filled
+  in automatically and each nested group needed its own hand-written merge, which is how two
+  separate one-off fixes for the lust alert came to be needed. One-time repairs to saved data are
+  now a numbered, ordered list rather than a boolean flag per fix
+- "Enable Bag Reminders" did nothing. Turning the master toggle off left the reminder showing for
+  as long as any single category underneath it was still ticked
+- Internal: each reminder used to decide for itself whether it should be on screen, which meant
+  the same class, spec, group and content-type checks written out ten times over, free to drift
+  apart -- and they had. Every reminder now declares which of those checks apply to it and they
+  are evaluated in one place. The bag reminder bug above is what that turned up
+- Internal: the button-building code was one 900-line function covering class buffs, consumables,
+  layout and sounds together. It is now four, which is why several bugs in it this release took as
+  long to find as they did
+
+- Class buffs now show the "Min:" minimum-remaining-duration box for every buff, not only for
+  self buffs, tank buffs and weapon imbues. The threshold was always being applied to group buffs
+  like Fortitude and Arcane Intellect -- defaulting to 30 minutes -- there was simply no way to
+  see or change it. Set it to 0 to only be prompted when the buff is missing entirely. Buffs with
+  no duration, such as Paladin auras and Lightning Shield, are unaffected
+
+- Performance: the addon used to walk every bag slot repeatedly on every update. Rebuilding the
+  buttons is driven by UNIT_AURA, which fires for every member of your group on every aura change,
+  and each pass did several full six-bag walks plus another complete walk for every button it
+  built. The "no food/flask/oil in bags" checks were worse again -- a full bag walk nested inside a
+  loop over every configured consumable. Bag contents are now scanned once when the bags actually
+  change, and every check is a table lookup. In a raid this was running more or less continuously
+- Consumable buttons now appear in the order the items are configured rather than the order they
+  happen to sit in your bags, so they stop moving around when you rearrange your bags
+
+- Cooldown Manager sounds: the "when available" alert never fired in combat. It would arrive late,
+  when combat ended, or get flushed early by some unrelated spell's alert. Several causes stacked
+  on top of each other:
+    * Nothing drove the sound pass on a clock. It ran only from buff-state-change hooks, and a
+      cooldown finishing is not a state change -- no event fires when a timer merely runs out. It
+      now polls on its own ticker
+    * C_Spell.GetSpellCooldown hands an addon secret startTime/duration in combat, so the addon
+      cannot work out whether a spell is ready; comparing those values throws. It now reads the
+      answer Blizzard already computed and cached on its own Cooldown Manager item frame
+    * That cached value is itself secret while a cooldown is running, and a plain false when the
+      spell is ready -- so a secret value *is* the "still on cooldown" signal, and the transition
+      out of it is the moment the spell becomes available. Treating secret as "cannot tell" threw
+      away the exact signal the alert needed
+    * A spell can appear in two Cooldown Manager viewers at once -- one tracking its cooldown and
+      one tracking the buff it applies -- and only the first carries cooldown state. The buff copy
+      was being read for some spells, where every cooldown field is empty
+- Cooldown Manager sounds: alerts were keyed by Blizzard's cooldown ID, which is not stable -- the
+  same spell gets different IDs between categories and between game builds. Alerts saved under an
+  older ID silently stopped firing, and adding them again created a duplicate rather than fixing
+  the original; one profile had the same spell stored three times over. Alerts are now keyed by
+  spell ID, and existing ones are migrated across and de-duplicated on load
+- Cooldown Manager sounds: "Active" now also fires for a buff you place on your current target,
+  not only on yourself. A buff on a party member who is neither you nor your target still cannot
+  be seen -- Blizzard's Cooldown Manager only tracks player and target, so there is nothing to
+  read
+- Cooldown Manager sounds: a spell that appears in two of Blizzard's viewers at once -- once for
+  its cooldown and once for the buff it applies, as Blessing of Freedom does -- was listed twice
+  in the spell picker. Both entries edited the same alerts while each offered only half the
+  triggers, so which options you saw depended on which of the two icons you clicked. Each spell is
+  now listed once, with the triggers merged from all of its entries
+- Cooldown Manager sounds: the alert trigger list is now taken from Blizzard's own per-spell list
+  rather than assumed from the category. "Active" is no longer offered on spells that apply no
+  buff and could never fire it, and is relabelled "Active (buff up)" -- it means the buff is up,
+  not that the ability is ready
+- Cooldown Manager sounds: spells with alerts configured are now marked in the picker with a
+  border and a speaker badge, and spells without any are dimmed, so the list can be read without
+  clicking through every icon
+
+- Cooldown Manager sounds: alerts on cooldowns not in Blizzard's Cooldown Manager, and the
+  "buff removed" alert, could go quiet in combat for the same secret-value reasons. Each alert
+  type is now gated only on the data it actually depends on, rather than one blanket check that
+  silenced everything
+- /sq cdm now reports combat state, which alert delivery path each configured sound uses, and
+  whether the underlying cooldown data is readable -- the whole chain above was diagnosed with it
+
+- Encounter timeline: the pull countdown now also appears on Blizzard's encounter timeline,
+  alongside boss abilities. It is driven by the game's countdown event rather than by our own
+  Pull button, so a pull started by anyone in the group shows up, not just your own. Toggle on
+  the Raid Tools tab; /sq timeline reports whether the timeline is available on your client and
+  fires a test event. Blizzard's timeline has to be switched on for this to show anything --
+  Options > Gameplay > Combat > Combat Warnings, 'Enable Boss Warnings' then 'Boss Ability
+  Timeline' -- and /sq timeline now names whichever of those two is off rather than just
+  reporting that the feature is disabled
+- Encounter timeline: investigated building BigWigs-style per-ability boss sounds directly into
+  the addon, and it cannot be done. Of the data the timeline gives an addon about an incoming
+  ability, only its ID, source and duration are readable — the spell ID, name, icon and severity
+  are secret values, which can be displayed but not compared. So an addon can draw a bar for an
+  incoming ability but cannot find out which ability it is. BigWigs works around this by
+  identifying abilities from their duration rounded to the nearest second, against a hand-built
+  table per boss and per difficulty, which is a per-patch maintenance job for every boss in the
+  game. Not something worth taking on when BigWigs already does it well. Recorded in NOTES.md
+  so it does not get attempted again
+
 - Profiles: frame positions for the flask, oil, healer CC and dungeon callout frames were
   never carried between profiles — PROFILE_POSITION_KEYS was a hand-maintained list that had
   drifted out of sync with the frames that actually exist, so those four were neither saved to

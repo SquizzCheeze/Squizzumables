@@ -271,7 +271,7 @@ function ProfileIO.Apply(data, profileName)
         disabled    = type(data.disabled) == "table" and CopyTable(data.disabled) or {},
         minDuration = type(data.minDuration) == "table" and CopyTable(data.minDuration) or {},
         customItems = type(data.customItems) == "table" and CopyTable(data.customItems)
-                      or { food = {}, flask = {}, oil = {} },
+                      or BH.NewCustomItemsTable(),
         positions   = type(data.positions) == "table" and CopyTable(data.positions) or {},
     }
     return true, profileName

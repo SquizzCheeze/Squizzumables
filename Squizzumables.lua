@@ -36,6 +36,10 @@ BH.defaultSettings = {
     -- Draw headings, tab highlights, checkboxes, slider fills and button
     -- accents in the player's class colour instead of the default warm gold.
     useClassColorAccent = true,
+    -- Mirror our own timers onto Blizzard's encounter timeline. See
+    -- Core/EncounterTimeline.lua for why only the write side of the API is used.
+    timelineTimers = true,
+    timelinePullTimer = true,
     raidToolsEnabled = true,
     raidToolsPullTimer = 10,
     raidToolsShowMarkers = true,
@@ -87,15 +91,34 @@ BH.defaultSettings = {
     deathTallyRowFontSize = 12,
 
     -- Food/Flask/Oil "no items in bag" reminders
-    foodReminderLocked = false,
-    foodReminderScale = 1.0,
     foodReminderEnabled = true,
-    flaskReminderLocked = false,
-    flaskReminderScale = 1.0,
     flaskReminderEnabled = true,
-    oilReminderLocked = false,
-    oilReminderScale = 1.0,
     oilReminderEnabled = true,
+    -- The four bag categories share one frame now, so scale/lock/position are
+    -- shared too. The per-category *Enabled keys survive as watch toggles.
+    augmentRuneReminderEnabled = true,
+    bagsReminderLocked = false,
+    bagsReminderScale = 1.0,
+    bagsReminderEnabled = true,
+    healthstoneReminderLocked = false,
+    healthstoneReminderScale = 1.0,
+    healthstoneReminderEnabled = true,
+    -- Where the addon shows itself. Filled from CONTENT_TYPES on load, so a
+    -- content type added later reaches existing players through ApplyDefaults
+    -- rather than needing a migration.
+    contentTypes = {},
+    -- Minimap button. The angle is where round the minimap it was dragged to;
+    -- 200 degrees puts it bottom-left, clear of the default clock and tracking
+    -- icons.
+    -- Glow every reminder button, so they are noticeable without being looked
+    -- at directly.
+    glowReminderButtons = true,
+    glowColor = { r = 1.0, g = 0.82, b = 0.0 },
+    glowPulse = true,
+    glowPulseSpeed = 0.6,
+    glowMinAlpha = 0.35,
+    minimapButtonHidden = false,
+    minimapButtonAngle = 200,
 
     -- Feast announce
     feastAnnounceEnabled = true,
@@ -141,22 +164,33 @@ BH.defaultSettings = {
     kelAlertScale    = 1.0,
     kelAlertLocked   = false,
     -- Kelerts: lust alert
-    kelLustAlert = {
-        enabled           = false,
-        texture           = "duckrun",
-        sound             = "Squizzumables: Ducky",
-        duration          = 5,
-        frameCount        = 15,
-        fps               = 30,
-        loop              = true,
-        opacity           = 1.0,
-        soundLoop         = false,
-        soundLoopInterval = 2.0,
-        soundChannel      = "Master",
-        -- Random sound pool: [soundName] = true for sounds included in the
-        -- random pick. Empty by default — with nothing checked, the alert
-        -- just uses `sound` above unchanged (opt-in feature).
-        randomSounds      = {},
+    -- Custom spell alerts ("Kelerts"): a full-screen image and sound when a
+    -- chosen aura appears.
+    --
+    -- The lust alert is an entry in this table rather than a special case, so
+    -- the same editor drives it and anything the player adds. `builtin` only
+    -- stops it being deleted.
+    alerts = {
+        lust = {
+            name    = "Lust / Exhaustion",
+            builtin = true,
+            trigger = { type = "aura", harmful = true },
+            enabled           = false,
+            texture           = "duckrun",
+            sound             = "Squizzumables: Ducky",
+            duration          = 5,
+            frameCount        = 15,
+            fps               = 30,
+            loop              = true,
+            opacity           = 1.0,
+            soundLoop         = false,
+            soundLoopInterval = 2.0,
+            soundChannel      = "Master",
+            -- Random sound pool: [soundName] = true for sounds included in the
+            -- random pick. Empty by default — with nothing checked, the alert
+            -- just uses `sound` above unchanged (opt-in feature).
+            randomSounds      = {},
+        },
     },
 
 }
@@ -185,6 +219,80 @@ BH.defaultSettings = {
 local FIRST_BAG = BACKPACK_CONTAINER or 0
 local LAST_BAG  = (NUM_BAG_SLOTS or 4) + (NUM_REAGENTBAG_SLOTS or 1)
 BH.FIRST_BAG, BH.LAST_BAG = FIRST_BAG, LAST_BAG
+
+-- ----------------------------------------------------------------------------
+-- Bag snapshot
+--
+-- Everything that wants to know "is this item in my bags, and how many" reads
+-- this table instead of walking the bags itself.
+--
+-- The walks were the problem, not their cost individually. UpdateButtons is
+-- driven by UNIT_AURA, which fires for every unit in the group on every aura
+-- change, so in a raid it runs more or less continuously -- and each run did
+-- several full six-bag walks, plus another complete walk inside CountItemInBags
+-- for every button it built. The reminder checks were worse again: a bag walk
+-- nested inside a loop over the configured consumables, so O(items x bags x
+-- slots) each time.
+--
+-- Bag contents only change on bag events, so the scan belongs there. One walk
+-- per actual change, and every consumer becomes a hash lookup.
+--
+--   BH.bagCache[itemID] = { count, link, quality, bag, slot }
+--
+-- `count` is the summed stack count; `bag`/`slot` are the first location found,
+-- kept because the item link and crafting quality are per-slot data.
+-- ----------------------------------------------------------------------------
+
+BH.bagCache = {}
+
+function BH:RebuildBagCache()
+    local cache = wipe(self.bagCache)
+    for bag = FIRST_BAG, LAST_BAG do
+        local slots = C_Container.GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local itemID = C_Container.GetContainerItemID(bag, slot)
+            if itemID then
+                local entry = cache[itemID]
+                if entry then
+                    local info = C_Container.GetContainerItemInfo(bag, slot)
+                    entry.count = entry.count + (info and info.stackCount or 1)
+                else
+                    local info = C_Container.GetContainerItemInfo(bag, slot)
+                    cache[itemID] = {
+                        count   = (info and info.stackCount) or 1,
+                        link    = C_Container.GetContainerItemLink(bag, slot),
+                        quality = info and info.craftingQuality,
+                        bag     = bag,
+                        slot    = slot,
+                    }
+                end
+            end
+        end
+    end
+    self.bagCacheStale = false
+end
+
+-- Rebuild only if something has actually changed since the last scan. Callers
+-- can hit this freely; it is a flag check in the common case.
+function BH:EnsureBagCache()
+    if self.bagCacheStale ~= false then self:RebuildBagCache() end
+    return self.bagCache
+end
+
+function BH:MarkBagCacheStale()
+    self.bagCacheStale = true
+end
+
+--- The cache entry for an item, or nil if it is not in the player's bags.
+function BH:GetBagEntry(itemID)
+    if not itemID then return nil end
+    return self:EnsureBagCache()[itemID]
+end
+
+--- Is this item in the player's bags at all?
+function BH:HasItemInBags(itemID)
+    return self:GetBagEntry(itemID) ~= nil
+end
 
 -- ----------------------------------------------------------------------------
 -- Options-panel widget cache
@@ -258,6 +366,29 @@ end
 --      the loop after BH:LoadFramePos)
 --   3. BH:LoadAllFramePositions (re-anchors everything after a profile switch)
 -- Add a new draggable frame here and all three follow automatically.
+-- The consumable categories, in display order.
+--
+-- One list, because the empty customItems table used to be written out
+-- longhand in seven places -- so adding a category meant finding all seven,
+-- and missing one would silently drop the player's custom items for it.
+local CONSUMABLE_CATEGORIES = { "food", "flask", "oil", "augmentRune" }
+BH.CONSUMABLE_CATEGORIES = CONSUMABLE_CATEGORIES
+
+-- Category display names, for the options UI and reminder text.
+local CONSUMABLE_LABELS = {
+    food = "Food", flask = "Flask", oil = "Weapon Oil", augmentRune = "Augment Rune",
+}
+BH.CONSUMABLE_LABELS = CONSUMABLE_LABELS
+
+local function NewCustomItemsTable()
+    local t = {}
+    for _, cat in ipairs(CONSUMABLE_CATEGORIES) do t[cat] = {} end
+    return t
+end
+-- Exposed so ProfileIO can build the same shape on import rather than
+-- carrying its own literal, which had already fallen a category behind.
+BH.NewCustomItemsTable = NewCustomItemsTable
+
 local POSITION_PAIRS = {
     { "markersFrame",             "markersPosition" },
     { "pullReadyFrame",           "pullReadyPosition" },
@@ -268,9 +399,8 @@ local POSITION_PAIRS = {
     { "coachWhistleReminderFrame","coachWhistleReminderPosition" },
     { "petReminderFrame",         "petReminderPosition" },
     { "bresCounterFrame",         "bresCounterPosition" },
-    { "foodReminderFrame",        "foodReminderPosition" },
-    { "flaskReminderFrame",       "flaskReminderPosition" },
-    { "oilReminderFrame",         "oilReminderPosition" },
+    { "healthstoneReminderFrame", "healthstoneReminderPosition" },
+    { "bagsReminderFrame",        "bagsReminderPosition" },
     { "healerCCReminderFrame",    "healerCCReminderPosition" },
     { "deathTallyFrame",          "deathTallyPosition" },
 }
@@ -310,7 +440,7 @@ function BH:EnsureProfiles()
             settings = SquizzumablesDB.settings and CopyTable(SquizzumablesDB.settings) or CopyTable(BH.defaultSettings),
             disabled = SquizzumablesDB.disabled and CopyTable(SquizzumablesDB.disabled) or {},
             minDuration = SquizzumablesDB.minDuration and CopyTable(SquizzumablesDB.minDuration) or {},
-            customItems = SquizzumablesDB.customItems and CopyTable(SquizzumablesDB.customItems) or { food = {}, flask = {}, oil = {} },
+            customItems = SquizzumablesDB.customItems and CopyTable(SquizzumablesDB.customItems) or NewCustomItemsTable(),
             positions = {},
         }
         -- Migrate position data
@@ -336,7 +466,7 @@ function BH:EnsureProfiles()
             settings = CopyTable(BH.defaultSettings),
             disabled = {},
             minDuration = {},
-            customItems = { food = {}, flask = {}, oil = {} },
+            customItems = NewCustomItemsTable(),
             positions = {},
         }
     end
@@ -388,7 +518,7 @@ function BH:SaveToProfile()
     profile.settings = CopyTable(SquizzumablesDB.settings or {})
     profile.disabled = CopyTable(SquizzumablesDB.disabled or {})
     profile.minDuration = CopyTable(SquizzumablesDB.minDuration or {})
-    profile.customItems = CopyTable(SquizzumablesDB.customItems or { food = {}, flask = {}, oil = {} })
+    profile.customItems = CopyTable(SquizzumablesDB.customItems or NewCustomItemsTable())
 
     if not profile.positions then profile.positions = {} end
     for _, key in ipairs(PROFILE_POSITION_KEYS) do
@@ -406,7 +536,7 @@ function BH:LoadFromProfile(profileName)
     SquizzumablesDB.settings = CopyTable(profile.settings or BH.defaultSettings)
     SquizzumablesDB.disabled = CopyTable(profile.disabled or {})
     SquizzumablesDB.minDuration = CopyTable(profile.minDuration or {})
-    SquizzumablesDB.customItems = CopyTable(profile.customItems or { food = {}, flask = {}, oil = {} })
+    SquizzumablesDB.customItems = CopyTable(profile.customItems or NewCustomItemsTable())
 
     if profile.positions then
         for _, key in ipairs(PROFILE_POSITION_KEYS) do
@@ -466,7 +596,7 @@ function BH:CreateProfile(name, copyFrom)
             settings = CopyTable(BH.defaultSettings),
             disabled = {},
             minDuration = {},
-            customItems = { food = {}, flask = {}, oil = {} },
+            customItems = NewCustomItemsTable(),
             positions = {},
         }
     end
@@ -612,6 +742,146 @@ function BH:OnSpecChanged()
 end
 
 -- Load settings
+-- ----------------------------------------------------------------------------
+-- Defaults and versioned migrations
+--
+-- Two separate jobs that were previously tangled together in LoadSettings:
+--
+--   MIGRATIONS     run once each, in order, to repair existing saved data.
+--   ApplyDefaults  runs every load, after them. Backfills anything still
+--                  missing, at any depth.
+--
+-- Migrations run first because ApplyDefaults replaces any value whose default
+-- is a table -- so a legacy string where a table is now expected would be gone
+-- before the migration that knows how to convert it ever sees it.
+--
+-- The old code filled only top-level keys and then hand-wrote a deep merge for
+-- each nested table that turned out to need one -- kelLustAlert, then
+-- feastAnnounceChannel. Every future nested default would have silently failed
+-- to reach existing users until someone noticed, which is exactly how
+-- kelLustMigrated2 and kelLustMigrated3 came to exist.
+-- ----------------------------------------------------------------------------
+
+-- Fill in anything absent from `tbl` that `defaults` defines, recursively.
+-- Never overwrites a value the player has set, including `false`.
+local function ApplyDefaults(tbl, defaults)
+    for k, v in pairs(defaults) do
+        if type(v) == "table" then
+            if type(tbl[k]) ~= "table" then tbl[k] = {} end
+            ApplyDefaults(tbl[k], v)
+        elseif tbl[k] == nil then
+            tbl[k] = v
+        end
+    end
+    return tbl
+end
+BH.ApplyDefaults = ApplyDefaults
+
+-- Ordered, run-once fixes for saved data. Keyed by the dbVersion they bring the
+-- database up to, so adding one means appending an entry and bumping
+-- DB_VERSION -- no new boolean flag in SquizzumablesDB each time.
+--
+-- Each receives (db, settings). They only ever repair existing data: a fresh
+-- install is stamped at DB_VERSION and skips all of them, so it cannot be
+-- retroactively "fixed" into defaults that no longer apply.
+local DB_VERSION = 5
+
+local MIGRATIONS = {
+    -- v1: the lust alert shipped with enabled = false by mistake.
+    [1] = function(_, s)
+        if type(s.kelLustAlert) == "table" and s.kelLustAlert.enabled == false then
+            s.kelLustAlert.enabled = true
+        end
+    end,
+
+    -- v2: its sound defaulted to "None"; give it the raid warning.
+    [2] = function(_, s)
+        if type(s.kelLustAlert) == "table" and s.kelLustAlert.sound == "None" then
+            s.kelLustAlert.sound = "__builtin_raidwarning"
+        end
+    end,
+
+    -- v3: duckrun became the default texture/frames/fps/sound.
+    [3] = function(_, s)
+        if type(s.kelLustAlert) ~= "table" then return end
+        local la = s.kelLustAlert
+        if la.texture == "" or la.texture == nil then la.texture = "duckrun" end
+        if (la.frameCount or 0) == 0 then la.frameCount = 15 end
+        if (la.fps or 10) == 10 then la.fps = 30 end
+        if la.sound == "None" or la.sound == "__builtin_raidwarning" or la.sound == nil then
+            la.sound = "Squizzumables: Ducky"
+        end
+    end,
+
+    -- v5: the single kelLustAlert became one entry in an alerts table, so the
+    -- player can add their own. Carries the configured alert across rather
+    -- than letting ApplyDefaults hand back a fresh one -- someone who picked
+    -- a texture and sound should keep them.
+    --
+    -- Unlike the earlier migrations this also walks the stored profiles. Those
+    -- are copied wholesale into the live settings on a profile switch, and
+    -- ApplyDefaults does not run again at that point, so a profile left holding
+    -- the old key would quietly lose its alert the first time it was selected.
+    [5] = function(db, s)
+        local function MoveAlert(t)
+            if type(t) ~= "table" or type(t.kelLustAlert) ~= "table" then return end
+            t.alerts = t.alerts or {}
+            local moved = t.kelLustAlert
+            moved.name    = moved.name or "Lust / Exhaustion"
+            moved.builtin = true
+            moved.trigger = moved.trigger or { type = "aura", harmful = true }
+            t.alerts.lust = moved
+            t.kelLustAlert = nil
+        end
+
+        MoveAlert(s)
+        for _, profile in pairs(db.profiles or {}) do
+            MoveAlert(profile.settings)
+        end
+    end,
+
+    -- v4: feastAnnounceChannel went from a single string to a per-context table.
+    [4] = function(_, s)
+        if type(s.feastAnnounceChannel) ~= "string" then return end
+        local old = s.feastAnnounceChannel
+        s.feastAnnounceChannel = CopyTable(BH.defaultSettings.feastAnnounceChannel)
+        -- Keep the player's old choice where it still means something.
+        if old == "INSTANCE_CHAT" then
+            s.feastAnnounceChannel.party    = "INSTANCE_CHAT"
+            s.feastAnnounceChannel.instance = "INSTANCE_CHAT"
+        elseif old == "RAID" or old == "RAID_WARNING" then
+            s.feastAnnounceChannel.party    = old
+            s.feastAnnounceChannel.instance = old
+            s.feastAnnounceChannel.raid     = old
+        end
+    end,
+}
+
+-- Run whichever migrations this database has not seen, in order.
+local function RunMigrations(db, settings, isNewInstall)
+    if isNewInstall then
+        db.dbVersion = DB_VERSION
+        return
+    end
+
+    -- No dbVersion yet: either a genuinely old database, or one from before
+    -- versioning. The three legacy booleans say which of the first three
+    -- migrations already ran; anything they do not cover starts from zero.
+    if db.dbVersion == nil then
+        local done = 0
+        if db.kelLustMigrated  then done = 1 end
+        if db.kelLustMigrated2 then done = 2 end
+        if db.kelLustMigrated3 then done = 3 end
+        db.dbVersion = done
+    end
+
+    for version = db.dbVersion + 1, DB_VERSION do
+        local migrate = MIGRATIONS[version]
+        if migrate then migrate(db, settings) end
+        db.dbVersion = version
+    end
+end
+
 function BH:LoadSettings()
     -- Always use defaults for consumables and class buffs
     -- This ensures new items added to config are always available
@@ -640,7 +910,7 @@ function BH:LoadSettings()
     
     -- Ensure customItems table exists for user-added items
     if not SquizzumablesDB.customItems then
-        SquizzumablesDB.customItems = { food = {}, flask = {}, oil = {} }
+        SquizzumablesDB.customItems = NewCustomItemsTable()
     end
     
     -- Load appearance settings with defaults
@@ -649,77 +919,16 @@ function BH:LoadSettings()
         SquizzumablesDB.settings = CopyTable(BH.defaultSettings)
     end
     self.settings = SquizzumablesDB.settings
-    -- New installs already get current defaults directly — skip the one-time
-    -- migrations below so they don't get retroactively "fixed" into old
-    -- defaults (e.g. force-enabling the lust alert) that no longer apply.
-    if isNewInstall then
-        SquizzumablesDB.kelLustMigrated = true
-        SquizzumablesDB.kelLustMigrated2 = true
-        SquizzumablesDB.kelLustMigrated3 = true
-    end
-    -- Ensure all settings exist (top-level keys)
-    for k, v in pairs(BH.defaultSettings) do
-        if self.settings[k] == nil then
-            self.settings[k] = type(v) == "table" and CopyTable(v) or v
-        end
-    end
-    -- Deep-merge nested defaults for kelLustAlert (fill in missing sub-keys)
-    if type(self.settings.kelLustAlert) == "table" then
-        for k, v in pairs(BH.defaultSettings.kelLustAlert) do
-            if self.settings.kelLustAlert[k] == nil then
-                self.settings.kelLustAlert[k] = v
-            end
-        end
-    end
-    -- Migrate legacy feastAnnounceChannel: convert old string to per-context table
-    if type(self.settings.feastAnnounceChannel) == "string" then
-        local old = self.settings.feastAnnounceChannel
-        self.settings.feastAnnounceChannel = CopyTable(BH.defaultSettings.feastAnnounceChannel)
-        -- Preserve the user's old choice for party/instance if it was set deliberately
-        if old == "INSTANCE_CHAT" then
-            self.settings.feastAnnounceChannel.party    = "INSTANCE_CHAT"
-            self.settings.feastAnnounceChannel.instance = "INSTANCE_CHAT"
-        elseif old == "RAID" or old == "RAID_WARNING" then
-            self.settings.feastAnnounceChannel.party    = old
-            self.settings.feastAnnounceChannel.instance = old
-            self.settings.feastAnnounceChannel.raid     = old
-        end
-    end
-    -- Deep-merge nested defaults for feastAnnounceChannel (fill in missing sub-keys)
-    if type(self.settings.feastAnnounceChannel) == "table" then
-        for k, v in pairs(BH.defaultSettings.feastAnnounceChannel) do
-            if self.settings.feastAnnounceChannel[k] == nil then
-                self.settings.feastAnnounceChannel[k] = v
-            end
-        end
-    end
-    -- One-time migration v1: lust alert was shipped with enabled=false by mistake
-    if not SquizzumablesDB.kelLustMigrated then
-        if type(self.settings.kelLustAlert) == "table" and self.settings.kelLustAlert.enabled == false then
-            self.settings.kelLustAlert.enabled = true
-        end
-        SquizzumablesDB.kelLustMigrated = true
-    end
-    -- One-time migration v2: lust alert sound was "None" by default; set to Raid Warning
-    if not SquizzumablesDB.kelLustMigrated2 then
-        if type(self.settings.kelLustAlert) == "table" and self.settings.kelLustAlert.sound == "None" then
-            self.settings.kelLustAlert.sound = "__builtin_raidwarning"
-        end
-        SquizzumablesDB.kelLustMigrated2 = true
-    end
-    -- One-time migration v3: set duckrun as default texture/frames/fps/sound
-    if not SquizzumablesDB.kelLustMigrated3 then
-        if type(self.settings.kelLustAlert) == "table" then
-            local la = self.settings.kelLustAlert
-            if la.texture == "" or la.texture == nil then la.texture = "duckrun" end
-            if (la.frameCount or 0) == 0 then la.frameCount = 15 end
-            if (la.fps or 10) == 10 then la.fps = 30 end
-            if la.sound == "None" or la.sound == "__builtin_raidwarning" or la.sound == nil then
-                la.sound = "Squizzumables: Ducky"
-            end
-        end
-        SquizzumablesDB.kelLustMigrated3 = true
-    end
+
+    -- Migrations first, then defaults. The order matters: ApplyDefaults
+    -- replaces any value whose default is a table, so on a legacy database
+    -- where feastAnnounceChannel is still a plain string it would wipe that
+    -- string before migration 4 could read the player's old choice out of it.
+    RunMigrations(SquizzumablesDB, self.settings, isNewInstall)
+
+    -- Then backfill anything still missing, at any depth.
+    ApplyDefaults(self.settings, BH.defaultSettings)
+
     -- Enforce minimum button spacing
     if self.settings.buttonSpacing < 5 then
         self.settings.buttonSpacing = 5
@@ -754,9 +963,6 @@ function BH:LoadSettings()
     -- Apply frame lock setting
     self:UpdateFrameLock()
     -- Apply drag handle position
-    if self.dragHandle then
-        self:UpdateDragHandlePosition()
-    end
 end
 
 -- Save settings
@@ -842,9 +1048,8 @@ local SCALED_FRAMES = {
     { "coachWhistleReminderFrame","coachWhistleReminderScale" },
     { "petReminderFrame",         "petReminderScale" },
     { "bresCounterFrame",         "bresCounterScale" },
-    { "foodReminderFrame",        "foodReminderScale" },
-    { "flaskReminderFrame",       "flaskReminderScale" },
-    { "oilReminderFrame",         "oilReminderScale" },
+    { "healthstoneReminderFrame", "healthstoneReminderScale" },
+    { "bagsReminderFrame",        "bagsReminderScale" },
     { "healerCCReminderFrame",    "healerCCReminderScale" },
     { "kelAlertFrame",            "kelAlertScale" },
     -- deathTallyScale was settable in the Kelerts tab but never re-applied on
@@ -896,26 +1101,19 @@ end
 function BH:UpdateFrameLock()
     if self.unlockMode then
         self.frame:SetMovable(true)
-        if self.dragHandle then self.dragHandle:Show() end
         return
     end
     if self.settings and self.settings.frameLocked then
         self.frame:SetMovable(false)
-        if self.dragHandle then
-            self.dragHandle:Hide()
-        end
     else
         self.frame:SetMovable(true)
-        if self.dragHandle then
-            self.dragHandle:Show()
-        end
     end
 end
 
 -- Add a custom item to a category
 function BH:AddCustomItem(category, itemID)
     if not self.customItems then
-        self.customItems = { food = {}, flask = {}, oil = {} }
+        self.customItems = NewCustomItemsTable()
     end
     if not self.customItems[category] then
         self.customItems[category] = {}
@@ -1870,39 +2068,44 @@ function BH:BuildSettingsTab(parent)
     yOffset = yOffset - 22
 
     -- Button Size
-    local sizeSlider = CreateSQSlider(content, "Button Size", 300, 20, 64, 2)
-    sizeSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    sizeSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonSize = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.sizeSlider = sizeSlider
-    ns.Rows.AddTooltip(sizeSlider, "Button Size", "Width and height of each reminder button, in pixels.")
-    yOffset = yOffset - 50
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Button Size",
+        width = 300, min = 20, max = 64, step = 2,
+        tooltip = "Width and height of each reminder button, in pixels.",
+        get = function() return BH.settings.buttonSize or 36 end,
+        set = function(value)
+            BH.settings.buttonSize = value
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+    })
 
-    -- Button Spacing
-    local spacingSlider = CreateSQSlider(content, "Button Spacing", 300, 5, 20, 1)
-    spacingSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    spacingSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonSpacing = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.spacingSlider = spacingSlider
-    ns.Rows.AddTooltip(spacingSlider, "Button Spacing", "Gap between reminder buttons, in pixels.")
-    yOffset = yOffset - 50
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Button Spacing",
+        width = 300, min = 5, max = 20, step = 1,
+        tooltip = "Gap between reminder buttons, in pixels.",
+        get = function() return BH.settings.buttonSpacing or 5 end,
+        set = function(value)
+            BH.settings.buttonSpacing = value
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+    })
 
-    -- Show Label Text
-    local labelCheckbox = CreateSQCheckbox(content, "Show Label Text", function(checked)
-        BH.settings.showLabelText = checked
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    labelCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.labelCheckbox = labelCheckbox
-    ns.Rows.AddTooltip(labelCheckbox, "Show Label Text", "Show the name under each reminder button. Turn off for a more compact row of icons.")
-    yOffset = yOffset - 30
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show Label Text",
+        tooltip = "Show the name under each reminder button. Turn off for a more compact row of icons.",
+        get = function() return BH.settings.showLabelText and true or false end,
+        set = function(v)
+            BH.settings.showLabelText = v
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+    })
+
 
     -- Class-coloured accents. Recolours live rather than needing a reload:
     -- every long-lived accent region is registered with ns.ApplyAccent, and
@@ -1931,150 +2134,115 @@ function BH:BuildSettingsTab(parent)
     ns.ApplyAccent(layoutSection, "text")
     yOffset = yOffset - 22
 
-    -- Layout Direction
-    local layoutDropdown = CreateSQDropdown(content, "Layout Direction", 160, {
-        { text = "Horizontal", value = "HORIZONTAL" },
-        { text = "Vertical", value = "VERTICAL" },
-    }, function(value)
-        BH.settings.layoutDirection = value
-        BH:ValidateGrowDirection()
-        BH:SaveSettings()
-        if BH.growDropdown then
-            BH.growDropdown:SetItems(BH:GetGrowItemsForLayout(value))
-            BH.growDropdown:SetSelectedValue(BH.settings.growDirection)
-        end
-        BH:UpdateDragHandlePosition()
-        BH:UpdateButtons()
-    end)
-    layoutDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.layoutDropdown = layoutDropdown
-    ns.Rows.AddTooltip(layoutDropdown, "Layout Direction", "Whether the reminder buttons lay out in a row or a column.")
-    yOffset = yOffset - 56
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Layout Direction",
+        width = 160,
+        tooltip = "Whether the reminder buttons lay out in a row or a column.",
+        items = {
+            { text = "Horizontal", value = "HORIZONTAL" },
+            { text = "Vertical",   value = "VERTICAL" },
+        },
+        get = function() return BH.settings.layoutDirection or "HORIZONTAL" end,
+        set = function(value)
+            BH.settings.layoutDirection = value
+            -- Not every grow direction is valid in every layout, so let the
+            -- existing validator correct it; the grow row below rebuilds its
+            -- own options from this on the refresh that follows.
+            BH:ValidateGrowDirection()
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+    })
 
-    -- Grow Direction
-    local growDropdown = CreateSQDropdown(content, "Grow Direction", 160,
-        BH:GetGrowItemsForLayout(BH.settings.layoutDirection or "HORIZONTAL"),
-        function(value)
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Grow Direction",
+        width = 160,
+        tooltip = "Which way new buttons are added from the anchor as the number of reminders changes.",
+        -- A function, so the options follow the layout above rather than the
+        -- layout handler reaching across to rewrite them.
+        items = function()
+            return BH:GetGrowItemsForLayout(BH.settings.layoutDirection or "HORIZONTAL")
+        end,
+        get = function() return BH.settings.growDirection end,
+        set = function(value)
             BH.settings.growDirection = value
             BH:SaveSettings()
-            BH:UpdateDragHandlePosition()
             BH:UpdateButtons()
-        end)
-    growDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.growDropdown = growDropdown
-    ns.Rows.AddTooltip(growDropdown, "Grow Direction", "Which way new buttons are added from the anchor as the number of reminders changes.")
-    yOffset = yOffset - 56
+        end,
+    })
 
-    -- Anchor Point
-    local anchorDropdown = CreateSQDropdown(content, "Anchor Point", 160, {
-        { text = "Top", value = "TOP" },
-        { text = "Left", value = "LEFT" },
-        { text = "Center", value = "CENTER" },
-        { text = "Right", value = "RIGHT" },
-        { text = "Bottom", value = "BOTTOM" },
-    }, function(value)
-        BH.settings.anchorPoint = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-        BH:UpdateFrameAnchor()
-    end)
-    anchorDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.anchorDropdown = anchorDropdown
-    ns.Rows.AddTooltip(anchorDropdown, "Anchor Point", "Which edge of the button block stays put as buttons are added or removed.")
-    yOffset = yOffset - 56
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Anchor Point",
+        width = 160,
+        tooltip = "Which edge of the button block stays put as buttons are added or removed.",
+        items = {
+            { text = "Top",    value = "TOP" },
+            { text = "Left",   value = "LEFT" },
+            { text = "Center", value = "CENTER" },
+            { text = "Right",  value = "RIGHT" },
+            { text = "Bottom", value = "BOTTOM" },
+        },
+        get = function() return BH.settings.anchorPoint or "CENTER" end,
+        set = function(value)
+            BH.settings.anchorPoint = value
+            BH:SaveSettings()
+            BH:UpdateButtons()
+            BH:UpdateFrameAnchor()
+        end,
+    })
 
-    -- Lock Frame
-    local lockCheckbox = CreateSQCheckbox(content, "Lock Frame Position", function(checked)
-        BH.settings.frameLocked = checked
-        BH:SaveSettings()
-        BH:UpdateFrameLock()
-    end)
-    lockCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.lockCheckbox = lockCheckbox
-    ns.Rows.AddTooltip(lockCheckbox, "Lock Frame Position", "Stops the reminder buttons being dragged, and hides the drag handle above them.")
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Lock Frame Position",
+        tooltip = "Stops the reminder buttons being dragged. Unlock Frames overrides this while you are positioning things.",
+        get = function() return BH.settings.frameLocked and true or false end,
+        set = function(v)
+            BH.settings.frameLocked = v
+            BH:SaveSettings()
+            BH:UpdateFrameLock()
+        end,
+    })
 
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "BUTTON TEXT" })
 
-    -- === Button Text Section ===
-    local btnTextSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    btnTextSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    btnTextSection:SetText("BUTTON TEXT")
-    ns.ApplyAccent(btnTextSection, "text")
-    yOffset = yOffset - 22
+    -- Six sliders that differ only in label, range and which setting they
+    -- write, so they are a table rather than six near-identical blocks.
+    for _, s in ipairs({
+        { key = "buttonLabelFontSize",  label = "Label Font Size",          min = 6,   max = 24, default = 11,
+          tip = "Size of the name text under each button." },
+        { key = "buttonTimerFontSize",  label = "Timer Font Size",          min = 6,   max = 24, default = 12,
+          tip = "Size of the remaining-time countdown drawn on each button." },
+        { key = "buttonCountFontSize",  label = "Count Font Size",          min = 6,   max = 24, default = 11,
+          tip = "Size of the bag-quantity number in the corner of each button." },
+        { key = "buttonHeaderFontSize", label = "Header Font Size (MH/OH)", min = 6,   max = 24, default = 10,
+          tip = "Size of the small header above a button, such as the MH and OH markers on weapon oils." },
+        { key = "buttonLabelOffsetX",   label = "Label X Offset",           min = -20, max = 20, default = 0,
+          tip = "Nudge the label text horizontally relative to its button." },
+        { key = "buttonLabelOffsetY",   label = "Label Y Offset",           min = -20, max = 10, default = 0,
+          tip = "Nudge the label text vertically relative to its button." },
+    }) do
+        yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+            type = "slider",
+            label = s.label,
+            width = 300, min = s.min, max = s.max, step = 1,
+            tooltip = s.tip,
+            get = function() return BH.settings[s.key] or s.default end,
+            set = function(value)
+                BH.settings[s.key] = value
+                BH:SaveSettings()
+                BH:UpdateButtons()
+            end,
+            -- The label offsets and font size only matter when labels are on.
+            disabled = (s.key:find("Label") ~= nil)
+                and function() return not BH.settings.showLabelText end
+                or nil,
+        })
+    end
 
-    -- Label font size
-    local labelFontSlider = CreateSQSlider(content, "Label Font Size", 300, 6, 24, 1)
-    labelFontSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    labelFontSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonLabelFontSize = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.labelFontSlider = labelFontSlider
-    ns.Rows.AddTooltip(labelFontSlider, "Label Font Size", "Size of the name text under each button.")
-    yOffset = yOffset - 50
-
-    -- Timer font size
-    local timerFontSlider = CreateSQSlider(content, "Timer Font Size", 300, 6, 24, 1)
-    timerFontSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    timerFontSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonTimerFontSize = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.timerFontSlider = timerFontSlider
-    ns.Rows.AddTooltip(timerFontSlider, "Timer Font Size", "Size of the remaining-time countdown drawn on each button.")
-    yOffset = yOffset - 50
-
-    -- Count font size
-    local countFontSlider = CreateSQSlider(content, "Count Font Size", 300, 6, 24, 1)
-    countFontSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    countFontSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonCountFontSize = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.countFontSlider = countFontSlider
-    ns.Rows.AddTooltip(countFontSlider, "Count Font Size", "Size of the bag-quantity number in the corner of each button.")
-    yOffset = yOffset - 50
-
-    -- Header font size
-    local headerFontSlider = CreateSQSlider(content, "Header Font Size (MH/OH)", 300, 6, 24, 1)
-    headerFontSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    headerFontSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonHeaderFontSize = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.headerFontSlider = headerFontSlider
-    ns.Rows.AddTooltip(headerFontSlider, "Header Font Size (MH/OH)", "Size of the small header above a button, such as the MH and OH markers on weapon oils.")
-    yOffset = yOffset - 50
-
-    -- Label X offset
-    local labelOffXSlider = CreateSQSlider(content, "Label X Offset", 300, -20, 20, 1)
-    labelOffXSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    labelOffXSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonLabelOffsetX = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.labelOffXSlider = labelOffXSlider
-    ns.Rows.AddTooltip(labelOffXSlider, "Label X Offset", "Nudge the label text horizontally relative to its button.")
-    yOffset = yOffset - 50
-
-    -- Label Y offset
-    local labelOffYSlider = CreateSQSlider(content, "Label Y Offset", 300, -20, 10, 1)
-    labelOffYSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    labelOffYSlider:SetAfterValueChanged(function(value)
-        BH.settings.buttonLabelOffsetY = value
-        BH:SaveSettings()
-        BH:UpdateButtons()
-    end)
-    self.labelOffYSlider = labelOffYSlider
-    ns.Rows.AddTooltip(labelOffYSlider, "Label Y Offset", "Nudge the label text vertically relative to its button.")
-    yOffset = yOffset - 50
 
     CreateSQDivider(content, yOffset)
     yOffset = yOffset - 14
@@ -2101,30 +2269,141 @@ function BH:BuildSettingsTab(parent)
         BH:ResetFramePosition()
         BH:SaveSettings()
         BH:UpdateFrameLock()
-        BH:UpdateDragHandlePosition()
         BH:RefreshSettingsTab()
         BH:UpdateButtons()
     end)
     yOffset = yOffset - 40
 
-    -- === Misc ===
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "SHOW IN" })
 
-    local miscLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    miscLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    miscLabel:SetText("MISC")
-    ns.ApplyAccent(miscLabel, "text")
-    yOffset = yOffset - 22
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "text",
+        label = "Which content the reminders appear in. Everything the addon shows -- buttons and text reminders alike -- is hidden where these are unticked.",
+    })
 
-    local guildInviteCB = CreateSQCheckbox(content, "Guild Invite on Right-Click", function(checked)
-        BH.settings.guildInviteContextEnabled = (checked == true)
-        BH:SaveSettings()
-    end)
-    guildInviteCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.guildInviteCB = guildInviteCB
-    ns.Rows.AddTooltip(guildInviteCB, "Guild Invite on Right-Click", "Adds a Guild Invite entry to the right-click menu on player names and unit frames.")
-    yOffset = yOffset - 28
+    for _, ct in ipairs(BH.CONTENT_TYPES) do
+        yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+            type = "check",
+            label = ct.label,
+            get = function()
+                local t = BH.settings and BH.settings.contentTypes
+                if t and t[ct.key] ~= nil then return t[ct.key] end
+                return ct.default
+            end,
+            set = function(v)
+                BH.settings.contentTypes = BH.settings.contentTypes or {}
+                BH.settings.contentTypes[ct.key] = v
+                BH:SaveSettings()
+                BH:UpdateButtons()
+                BH:UpdateAllReminders()
+            end,
+        })
+    end
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "MISC" })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Glow reminder buttons",
+        tooltip = "Pulses a highlight around each reminder button while it is showing, so they catch the eye without you having to look at them. Uses the same alert glow the game draws on your action bars.",
+        get = function() return BH.settings.glowReminderButtons ~= false end,
+        set = function(v)
+            BH.settings.glowReminderButtons = v
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "color",
+        label = "Glow colour",
+        tooltip = "Colour of the glow around reminder buttons.",
+        get = function()
+            local c = BH.settings.glowColor or {}
+            return c.r or 1.0, c.g or 0.82, c.b or 0.0
+        end,
+        set = function(r, g, b)
+            BH.settings.glowColor = { r = r, g = g, b = b }
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+        disabled = function() return BH.settings.glowReminderButtons == false end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Pulse the glow",
+        tooltip = "Fade the glow in and out. Turn this off for a steady ring instead.",
+        get = function() return BH.settings.glowPulse ~= false end,
+        set = function(v)
+            BH.settings.glowPulse = v
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+        disabled = function() return BH.settings.glowReminderButtons == false end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Pulse speed (seconds)",
+        width = 300, min = 0.2, max = 2.0, step = 0.1,
+        tooltip = "How long one fade takes. Lower is faster and more urgent.",
+        get = function() return BH.settings.glowPulseSpeed or 0.6 end,
+        set = function(v)
+            BH.settings.glowPulseSpeed = v
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+        disabled = function()
+            return BH.settings.glowReminderButtons == false
+                or BH.settings.glowPulse == false
+        end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Pulse depth",
+        width = 300, min = 0, max = 90, step = 5,
+        tooltip = "How far the glow fades at its dimmest. 0 barely dims; higher fades further out.",
+        get = function() return math.floor((1 - (BH.settings.glowMinAlpha or 0.35)) * 100) end,
+        set = function(v)
+            -- Stored as the alpha it dims *to*, shown as how far it fades --
+            -- "more depth" reading as a bigger number is the way round a player
+            -- expects.
+            BH.settings.glowMinAlpha = 1 - (v / 100)
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+        disabled = function()
+            return BH.settings.glowReminderButtons == false
+                or BH.settings.glowPulse == false
+        end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show minimap button",
+        tooltip = "A button on the minimap: left-click for settings, right-click to unlock frames, drag to move it round the edge. The addon is also in Blizzard's addon compartment either way.",
+        get = function() return not BH.settings.minimapButtonHidden end,
+        set = function(v)
+            BH.settings.minimapButtonHidden = not v
+            BH:SaveSettings()
+            BH:UpdateMinimapButton()
+        end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Guild Invite on Right-Click",
+        tooltip = "Adds a Guild Invite entry to the right-click menu on player names and unit frames.",
+        get = function() return BH.settings.guildInviteContextEnabled == true end,
+        set = function(v)
+            BH.settings.guildInviteContextEnabled = v
+            BH:SaveSettings()
+        end,
+    })
 
     -- Set scroll child height
     content:SetHeight(math.abs(yOffset) + 20)
@@ -2168,7 +2447,11 @@ end
 -- Refresh settings tab values to match current settings
 function BH:RefreshSettingsTab()
     if not self.settings then return end
-    -- Profile dropdown
+    -- Every option row syncs itself from its own get(). What is left here is
+    -- the two profile dropdowns, whose *item lists* change as profiles are
+    -- created and deleted, and the unlock button caption.
+    ns.Rows.RefreshAll()
+
     if self.profileDropdown then
         local items = {}
         for _, name in ipairs(self:GetProfileList()) do
@@ -2177,7 +2460,7 @@ function BH:RefreshSettingsTab()
         self.profileDropdown:SetItems(items)
         self.profileDropdown:SetSelectedValue(self:GetActiveProfileName())
     end
-    -- Spec profile dropdown
+
     if self.specProfileDropdown then
         local specIndex = GetSpecialization()
         local specName = "Current Spec"
@@ -2191,56 +2474,12 @@ function BH:RefreshSettingsTab()
         end
         self.specProfileDropdown.label:SetText("Profile for " .. specName)
         self.specProfileDropdown:SetItems(specItems)
-        local currentSpecProfile = self:GetSpecProfile()
-        self.specProfileDropdown:SetSelectedValue(currentSpecProfile or "")
+        self.specProfileDropdown:SetSelectedValue(self:GetSpecProfile() or "")
     end
-    if self.sizeSlider then
-        self.sizeSlider:SetValue(self.settings.buttonSize or 36)
-    end
-    if self.spacingSlider then
-        self.spacingSlider:SetValue(self.settings.buttonSpacing or 5)
-    end
-    if self.lockCheckbox then
-        self.lockCheckbox:SetChecked(self.settings.frameLocked or false)
-    end
-    if self.labelCheckbox then
-        self.labelCheckbox:SetChecked(self.settings.showLabelText ~= false)
-    end
+
     if self.unlockBtn then
         self.unlockBtn:SetText(self.unlockMode and "Lock Frames" or "Unlock Frames")
     end
-    if self.anchorDropdown then
-        self.anchorDropdown:SetSelectedValue(self.settings.anchorPoint or "LEFT")
-    end
-    if self.growDropdown then
-        self.growDropdown:SetItems(self:GetGrowItemsForLayout(self.settings.layoutDirection or "HORIZONTAL"))
-        self.growDropdown:SetSelectedValue(self.settings.growDirection or "RIGHT")
-    end
-    if self.layoutDropdown then
-        self.layoutDropdown:SetSelectedValue(self.settings.layoutDirection or "HORIZONTAL")
-    end
-    if self.labelFontSlider then
-        self.labelFontSlider:SetValue(self.settings.buttonLabelFontSize or 10)
-    end
-    if self.timerFontSlider then
-        self.timerFontSlider:SetValue(self.settings.buttonTimerFontSize or 10)
-    end
-    if self.countFontSlider then
-        self.countFontSlider:SetValue(self.settings.buttonCountFontSize or 10)
-    end
-    if self.headerFontSlider then
-        self.headerFontSlider:SetValue(self.settings.buttonHeaderFontSize or 10)
-    end
-    if self.labelOffXSlider then
-        self.labelOffXSlider:SetValue(self.settings.buttonLabelOffsetX or 0)
-    end
-    if self.labelOffYSlider then
-        self.labelOffYSlider:SetValue(self.settings.buttonLabelOffsetY or -2)
-    end
-    if self.guildInviteCB then
-        self.guildInviteCB:SetChecked(BH.settings.guildInviteContextEnabled ~= false)
-    end
-
 end
 
 -- ============================================================================
@@ -2266,56 +2505,56 @@ function BH:BuildRaidToolsTab(parent)
     ns.ApplyAccent(sectionLabel, "text")
     yOffset = yOffset - 22
 
-    local enableCheckbox = CreateSQCheckbox(content, "Enable Raid Tools", function(checked)
-        BH.settings.raidToolsEnabled = checked
-        BH:SaveSettings()
-        BH:UpdateRaidToolsVisibility()
-    end)
-    enableCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtEnableCheckbox = enableCheckbox
-    ns.Rows.AddTooltip(enableCheckbox, "Enable Raid Tools", "Master switch for the raid marker and pull timer frames. Turning this off hides both regardless of their own settings.")
-    yOffset = yOffset - 28
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Enable Raid Tools",
+        tooltip = "Master switch for the raid marker and pull timer frames. Turning this off hides both regardless of their own settings.",
+        get = function() return BH.settings.raidToolsEnabled ~= false end,
+        set = function(v)
+            BH.settings.raidToolsEnabled = v
+            BH:SaveSettings()
+            BH:UpdateRaidToolsVisibility()
+        end,
+    })
 
-    local desc = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    desc:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    desc:SetWidth(380)
-    desc:SetJustifyH("LEFT")
-    desc:SetText("Two movable frames: a compact markers frame (world + target markers) and a pull/ready frame (ready check + pull timer). Only visible when you are the group leader or assistant.")
-    desc:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 42
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "text",
+        label = "Two movable frames: a compact markers frame (world + target markers) and a pull/ready frame (ready check + pull timer). Only visible when you are the group leader or assistant.",
+    })
 
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "FRAMES" })
 
-    -- === Frames ===
-    local framesLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    framesLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    framesLabel:SetText("FRAMES")
-    ns.ApplyAccent(framesLabel, "text")
-    yOffset = yOffset - 22
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show Markers Frame",
+        tooltip = "Shows the world marker and target marker buttons. Only usable while you are group leader or an assistant.",
+        get = function() return BH.settings.raidToolsShowMarkers ~= false end,
+        set = function(v)
+            BH.settings.raidToolsShowMarkers = v
+            BH:SaveSettings()
+            BH:UpdateRaidToolsVisibility()
+        end,
+        -- Every frame here is gated on the master switch above, so grey them
+        -- out rather than letting the player set something with no effect.
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    local markersCheckbox = CreateSQCheckbox(content, "Show Markers Frame", function(checked)
-        BH.settings.raidToolsShowMarkers = checked
-        BH:SaveSettings()
-        BH:UpdateRaidToolsVisibility()
-    end)
-    markersCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtMarkersCheckbox = markersCheckbox
-    ns.Rows.AddTooltip(markersCheckbox, "Show Markers Frame", "Shows the world marker and target marker buttons. Only usable while you are group leader or an assistant.")
-    yOffset = yOffset - 28
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show Pull/Ready Frame",
+        tooltip = "Shows the pull timer and ready check buttons. Only usable while you are group leader or an assistant.",
+        get = function() return BH.settings.raidToolsShowPullReady ~= false end,
+        set = function(v)
+            BH.settings.raidToolsShowPullReady = v
+            BH:SaveSettings()
+            BH:UpdateRaidToolsVisibility()
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    local pullReadyCheckbox = CreateSQCheckbox(content, "Show Pull/Ready Frame", function(checked)
-        BH.settings.raidToolsShowPullReady = checked
-        BH:SaveSettings()
-        BH:UpdateRaidToolsVisibility()
-    end)
-    pullReadyCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtPullReadyCheckbox = pullReadyCheckbox
-    ns.Rows.AddTooltip(pullReadyCheckbox, "Show Pull/Ready Frame", "Shows the pull timer and ready check buttons. Only usable while you are group leader or an assistant.")
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
 
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
 
     -- === Markers Layout ===
     local layoutLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -2324,198 +2563,223 @@ function BH:BuildRaidToolsTab(parent)
     ns.ApplyAccent(layoutLabel, "text")
     yOffset = yOffset - 22
 
-    local function GetMarkersGrowItems(layout)
-        if layout == "VERTICAL" then
+    local function GetMarkersGrowItems()
+        if BH.settings.raidToolsMarkersLayout == "VERTICAL" then
             return {
                 { text = "Down", value = "DOWN" },
                 { text = "Up",   value = "UP" },
             }
-        else
-            return {
-                { text = "Left",  value = "LEFT" },
-                { text = "Right", value = "RIGHT" },
-            }
         end
+        return {
+            { text = "Left",  value = "LEFT" },
+            { text = "Right", value = "RIGHT" },
+        }
     end
 
-    local markersLayoutDropdown = CreateSQDropdown(content, "Layout Direction", 200, {
-        { text = "Horizontal", value = "HORIZONTAL" },
-        { text = "Vertical",   value = "VERTICAL" },
-    }, function(value)
-        BH.settings.raidToolsMarkersLayout = value
-        -- Reset grow direction to first valid option for new layout
-        local newGrow = (value == "VERTICAL") and "DOWN" or "LEFT"
-        BH.settings.raidToolsMarkersGrow = newGrow
-        BH:SaveSettings()
-        if self.rtMarkersGrowDropdown then
-            self.rtMarkersGrowDropdown:SetItems(GetMarkersGrowItems(value))
-            self.rtMarkersGrowDropdown:SetSelectedValue(newGrow)
-        end
-        BH:UpdateMarkersLayout()
-    end)
-    markersLayoutDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtMarkersLayoutDropdown = markersLayoutDropdown
-    ns.Rows.AddTooltip(markersLayoutDropdown, "Layout Direction", "Whether the marker buttons lay out in a row or a column.")
-    yOffset = yOffset - 52
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Layout Direction",
+        width = 200,
+        tooltip = "Whether the marker buttons lay out in a row or a column.",
+        items = {
+            { text = "Horizontal", value = "HORIZONTAL" },
+            { text = "Vertical",   value = "VERTICAL" },
+        },
+        get = function() return BH.settings.raidToolsMarkersLayout or "HORIZONTAL" end,
+        set = function(v)
+            BH.settings.raidToolsMarkersLayout = v
+            -- The old grow direction may not exist in the new layout, so reset
+            -- it. The grow dropdown below rebuilds its own options from this
+            -- value on the refresh that follows.
+            BH.settings.raidToolsMarkersGrow = (v == "VERTICAL") and "DOWN" or "LEFT"
+            BH:SaveSettings()
+            BH:UpdateMarkersLayout()
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    local markersGrowDropdown = CreateSQDropdown(content, "Grow Direction", 200,
-        GetMarkersGrowItems(BH.settings.raidToolsMarkersLayout or "HORIZONTAL"),
-    function(value)
-        BH.settings.raidToolsMarkersGrow = value
-        BH:SaveSettings()
-        BH:UpdateMarkersLayout()
-    end)
-    markersGrowDropdown:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtMarkersGrowDropdown = markersGrowDropdown
-    ns.Rows.AddTooltip(markersGrowDropdown, "Grow Direction", "Which way the marker buttons extend from their anchor.")
-    yOffset = yOffset - 52
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Grow Direction",
+        width = 200,
+        tooltip = "Which way the marker buttons extend from their anchor.",
+        -- A function, so the options follow the layout above automatically
+        -- instead of the layout dropdown having to reach over and rewrite them.
+        items = GetMarkersGrowItems,
+        get = function() return BH.settings.raidToolsMarkersGrow or "LEFT" end,
+        set = function(v)
+            BH.settings.raidToolsMarkersGrow = v
+            BH:SaveSettings()
+            BH:UpdateMarkersLayout()
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
 
-    -- === Pull Timer Settings ===
-    local pullLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    pullLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    pullLabel:SetText("PULL TIMER")
-    ns.ApplyAccent(pullLabel, "text")
-    yOffset = yOffset - 22
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "PULL TIMER" })
 
-    local pullSlider = CreateSQSlider(content, "Countdown Duration (seconds)", 300, 3, 30, 1)
-    pullSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    pullSlider:SetAfterValueChanged(function(value)
-        BH.settings.raidToolsPullTimer = value
-        BH:SaveSettings()
-        if BH.rtPullBtn and not BH.rtPullActive then
-            BH.rtPullBtn.label:SetText("Pull " .. value .. "s")
-        end
-    end)
-    self.rtPullSlider = pullSlider
-    ns.Rows.AddTooltip(pullSlider, "Countdown Duration (seconds)", "How long the pull timer counts down for when you start one.")
-    yOffset = yOffset - 50
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Countdown Duration (seconds)",
+        width = 300, min = 3, max = 30, step = 1,
+        tooltip = "How long the pull timer counts down for when you start one.",
+        get = function() return BH.settings.raidToolsPullTimer or 10 end,
+        set = function(value)
+            BH.settings.raidToolsPullTimer = value
+            BH:SaveSettings()
+            if BH.rtPullBtn and not BH.rtPullActive then
+                BH.rtPullBtn.label:SetText("Pull " .. value .. "s")
+            end
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show on encounter timeline",
+        tooltip = "Adds the pull countdown to Blizzard's encounter timeline, alongside boss abilities. "
+               .. "Works for a pull started by anyone in the group, not just your own button. "
+               .. "Needs the timeline to be turned on in Blizzard's settings; /sq timeline reports whether it is.",
+        get = function() return BH.settings.timelinePullTimer ~= false end,
+        set = function(v)
+            BH.settings.timelinePullTimer = v
+            BH:SaveSettings()
+            if not v and BH.Timeline then BH.Timeline.Stop("pull") end
+        end,
+    })
 
-    -- === Scale Settings ===
-    local scaleLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    scaleLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    scaleLabel:SetText("SCALE")
-    ns.ApplyAccent(scaleLabel, "text")
-    yOffset = yOffset - 22
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "text",
+        indent = 18,
+        width = 370,
+        label = "The timeline may only draw during an encounter, in which case a pre-pull countdown will not appear. Run /sq timeline to check on your client.",
+    })
 
-    local markersScaleSlider = CreateSQSlider(content, "Markers Frame Scale", 300, 50, 200, 5)
-    markersScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    markersScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.raidToolsMarkersScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.markersFrame then
-            BH.markersFrame:SetScale(value / 100)
-        end
-    end)
-    self.rtMarkersScaleSlider = markersScaleSlider
-    ns.Rows.AddTooltip(markersScaleSlider, "Markers Frame Scale", "Size of the marker button frame, as a percentage.")
-    yOffset = yOffset - 50
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
 
-    local prScaleSlider = CreateSQSlider(content, "Pull/Ready Frame Scale", 300, 50, 200, 5)
-    prScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    prScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.raidToolsPullReadyScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.pullReadyFrame then
-            BH.pullReadyFrame:SetScale(value / 100)
-        end
-    end)
-    self.rtPRScaleSlider = prScaleSlider
-    ns.Rows.AddTooltip(prScaleSlider, "Pull/Ready Frame Scale", "Size of the pull timer and ready check frame, as a percentage.")
-    yOffset = yOffset - 50
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "SCALE" })
 
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Markers Frame Scale",
+        width = 300, min = 50, max = 200, step = 5,
+        tooltip = "Size of the marker button frame, as a percentage.",
+        get = function() return (BH.settings.raidToolsMarkersScale or 1.0) * 100 end,
+        set = function(value, userInput)
+            BH.settings.raidToolsMarkersScale = value / 100
+            BH:SaveSettings()
+            if userInput and BH.markersFrame then
+                BH.markersFrame:SetScale(value / 100)
+            end
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    -- === Battle Res Counter ===
-    local bresLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    bresLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    bresLabel:SetText("BATTLE RES COUNTER")
-    ns.ApplyAccent(bresLabel, "text")
-    yOffset = yOffset - 22
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Pull/Ready Frame Scale",
+        width = 300, min = 50, max = 200, step = 5,
+        tooltip = "Size of the pull timer and ready check frame, as a percentage.",
+        get = function() return (BH.settings.raidToolsPullReadyScale or 1.0) * 100 end,
+        set = function(value, userInput)
+            BH.settings.raidToolsPullReadyScale = value / 100
+            BH:SaveSettings()
+            if userInput and BH.pullReadyFrame then
+                BH.pullReadyFrame:SetScale(value / 100)
+            end
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    local bresCheckbox = CreateSQCheckbox(content, "Enable Battle Res Counter", function(checked)
-        BH.settings.bresCounterEnabled = checked
-        BH:SaveSettings()
-        if not checked and BH.bresCounterFrame then
-            BH.bresCounterFrame:Hide()
-        end
-    end)
-    bresCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtBresCheckbox = bresCheckbox
-    ns.Rows.AddTooltip(bresCheckbox, "Enable Battle Res Counter", "Shows how many battle resurrection charges the group has left. Only appears in content that grants charges.")
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "BATTLE RES COUNTER" })
 
-    local bresScaleSlider = CreateSQSlider(content, "Battle Res Counter Scale", 300, 50, 200, 5)
-    bresScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    bresScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.bresCounterScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.bresCounterFrame then
-            BH.bresCounterFrame:SetScale(value / 100)
-        end
-    end)
-    self.rtBresScaleSlider = bresScaleSlider
-    ns.Rows.AddTooltip(bresScaleSlider, "Battle Res Counter Scale", "Size of the battle res counter, as a percentage.")
-    yOffset = yOffset - 50
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Enable Battle Res Counter",
+        tooltip = "Shows how many battle resurrection charges the group has left. Only appears in content that grants charges.",
+        get = function() return BH.settings.bresCounterEnabled and true or false end,
+        set = function(v)
+            BH.settings.bresCounterEnabled = v
+            BH:SaveSettings()
+            if not v and BH.bresCounterFrame then
+                BH.bresCounterFrame:Hide()
+            end
+        end,
+    })
 
-    local lockBresCheckbox = CreateSQCheckbox(content, "Lock Battle Res Counter", function(checked)
-        BH.settings.bresCounterLocked = checked
-        BH:SaveSettings()
-        if BH.bresCounterFrame then
-            BH.bresCounterFrame:SetMovable(not checked)
-            BH.bresCounterFrame:EnableMouse(not checked)
-        end
-    end)
-    lockBresCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtLockBresCheckbox = lockBresCheckbox
-    ns.Rows.AddTooltip(lockBresCheckbox, "Lock Battle Res Counter", "Stops the battle res counter being dragged.")
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Battle Res Counter Scale",
+        width = 300, min = 50, max = 200, step = 5,
+        tooltip = "Size of the battle res counter, as a percentage.",
+        get = function() return (BH.settings.bresCounterScale or 1.0) * 100 end,
+        set = function(value, userInput)
+            BH.settings.bresCounterScale = value / 100
+            BH:SaveSettings()
+            if userInput and BH.bresCounterFrame then
+                BH.bresCounterFrame:SetScale(value / 100)
+            end
+        end,
+        disabled = function() return not BH.settings.bresCounterEnabled end,
+    })
 
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Lock Battle Res Counter",
+        tooltip = "Stops the battle res counter being dragged.",
+        get = function() return BH.settings.bresCounterLocked and true or false end,
+        set = function(v)
+            BH.settings.bresCounterLocked = v
+            BH:SaveSettings()
+            if BH.bresCounterFrame then
+                BH.bresCounterFrame:SetMovable(not v)
+                BH.bresCounterFrame:EnableMouse(not v)
+            end
+        end,
+        disabled = function() return not BH.settings.bresCounterEnabled end,
+    })
 
-    -- === Lock Settings ===
-    local lockLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    lockLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    lockLabel:SetText("POSITION")
-    ns.ApplyAccent(lockLabel, "text")
-    yOffset = yOffset - 22
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "POSITION" })
 
-    local lockMarkersCheckbox = CreateSQCheckbox(content, "Lock Markers Frame", function(checked)
-        BH.settings.raidToolsMarkersLocked = checked
-        BH:SaveSettings()
-        if BH.markersFrame then
-            BH.markersFrame:SetMovable(not checked)
-        end
-        if BH.markersDragHandle then
-            if checked then BH.markersDragHandle:Hide() else BH.markersDragHandle:Show() end
-        end
-    end)
-    lockMarkersCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtLockMarkersCheckbox = lockMarkersCheckbox
-    ns.Rows.AddTooltip(lockMarkersCheckbox, "Lock Markers Frame", "Stops the marker frame being dragged.")
-    yOffset = yOffset - 28
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Lock Markers Frame",
+        tooltip = "Stops the marker frame being dragged.",
+        get = function() return BH.settings.raidToolsMarkersLocked and true or false end,
+        set = function(v)
+            BH.settings.raidToolsMarkersLocked = v
+            BH:SaveSettings()
+            if BH.markersFrame then
+                BH.markersFrame:SetMovable(not v)
+            end
+            if BH.markersDragHandle then
+                if v then BH.markersDragHandle:Hide() else BH.markersDragHandle:Show() end
+            end
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
 
-    local lockPRCheckbox = CreateSQCheckbox(content, "Lock Pull/Ready Frame", function(checked)
-        BH.settings.raidToolsPullReadyLocked = checked
-        BH:SaveSettings()
-        if BH.pullReadyFrame then
-            BH.pullReadyFrame:SetMovable(not checked)
-        end
-        if BH.pullReadyDragHandle then
-            if checked then BH.pullReadyDragHandle:Hide() else BH.pullReadyDragHandle:Show() end
-        end
-    end)
-    lockPRCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.rtLockPRCheckbox = lockPRCheckbox
-    ns.Rows.AddTooltip(lockPRCheckbox, "Lock Pull/Ready Frame", "Stops the pull timer frame being dragged.")
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Lock Pull/Ready Frame",
+        tooltip = "Stops the pull timer frame being dragged.",
+        get = function() return BH.settings.raidToolsPullReadyLocked and true or false end,
+        set = function(v)
+            BH.settings.raidToolsPullReadyLocked = v
+            BH:SaveSettings()
+            if BH.pullReadyFrame then
+                BH.pullReadyFrame:SetMovable(not v)
+            end
+            if BH.pullReadyDragHandle then
+                if v then BH.pullReadyDragHandle:Hide() else BH.pullReadyDragHandle:Show() end
+            end
+        end,
+        disabled = function() return BH.settings.raidToolsEnabled == false end,
+    })
+
 
     local resetBtn = CreateSQButton(content, "Reset Positions", 140, 26)
     resetBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -2538,9 +2802,7 @@ function BH:BuildRaidToolsTab(parent)
             SquizzumablesDB.bresCounterPosition = nil
             SquizzumablesDB.deathTallyPosition = nil
             SquizzumablesDB.coachWhistleReminderPosition = nil
-            SquizzumablesDB.foodReminderPosition = nil
-            SquizzumablesDB.flaskReminderPosition = nil
-            SquizzumablesDB.oilReminderPosition = nil
+            SquizzumablesDB.bagsReminderPosition = nil
         end
         if BH.beaconReminderFrame then
             BH.beaconReminderFrame:ClearAllPoints()
@@ -2570,17 +2832,9 @@ function BH:BuildRaidToolsTab(parent)
             BH.deathTallyFrame:ClearAllPoints()
             BH.deathTallyFrame:SetPoint("TOP", UIParent, "TOP", 220, -100)
         end
-        if BH.foodReminderFrame then
-            BH.foodReminderFrame:ClearAllPoints()
-            BH.foodReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 240)
-        end
-        if BH.flaskReminderFrame then
-            BH.flaskReminderFrame:ClearAllPoints()
-            BH.flaskReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 280)
-        end
-        if BH.oilReminderFrame then
-            BH.oilReminderFrame:ClearAllPoints()
-            BH.oilReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 320)
+        if BH.bagsReminderFrame then
+            BH.bagsReminderFrame:ClearAllPoints()
+            BH.bagsReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 240)
         end
         if BH.healerCCReminderFrame then
             BH.healerCCReminderFrame:ClearAllPoints()
@@ -2596,57 +2850,20 @@ function BH:BuildRaidToolsTab(parent)
     content:SetHeight(math.abs(yOffset) + 20)
 end
 
+-- Kept as a thin shim: the Raid Tools rows are declarative now, so each one
+-- syncs itself from its own get(). The five call sites elsewhere just want
+-- "make the panel match the settings", which RefreshAll does for every tab
+-- at once.
 function BH:RefreshRaidToolsTab()
-    if not self.settings then return end
-    if self.rtEnableCheckbox then
-        self.rtEnableCheckbox:SetChecked(self.settings.raidToolsEnabled ~= false)
-    end
-    if self.rtMarkersCheckbox then
-        self.rtMarkersCheckbox:SetChecked(self.settings.raidToolsShowMarkers ~= false)
-    end
-    if self.rtPullReadyCheckbox then
-        self.rtPullReadyCheckbox:SetChecked(self.settings.raidToolsShowPullReady ~= false)
-    end
-    if self.rtPullSlider then
-        self.rtPullSlider:SetValue(self.settings.raidToolsPullTimer or 10)
-    end
-    if self.rtMarkersScaleSlider then
-        self.rtMarkersScaleSlider:SetValue((self.settings.raidToolsMarkersScale or 1.0) * 100)
-    end
-    if self.rtPRScaleSlider then
-        self.rtPRScaleSlider:SetValue((self.settings.raidToolsPullReadyScale or 1.0) * 100)
-    end
-    if self.rtLockMarkersCheckbox then
-        self.rtLockMarkersCheckbox:SetChecked(self.settings.raidToolsMarkersLocked or false)
-    end
-    if self.rtLockPRCheckbox then
-        self.rtLockPRCheckbox:SetChecked(self.settings.raidToolsPullReadyLocked or false)
-    end
-    if self.rtMarkersLayoutDropdown then
-        self.rtMarkersLayoutDropdown:SetSelectedValue(self.settings.raidToolsMarkersLayout or "HORIZONTAL")
-    end
-    if self.rtMarkersGrowDropdown then
-        self.rtMarkersGrowDropdown:SetSelectedValue(self.settings.raidToolsMarkersGrow or "LEFT")
-    end
-    if self.rtBresCheckbox then
-        self.rtBresCheckbox:SetChecked(self.settings.bresCounterEnabled ~= false)
-    end
-    if self.rtBresScaleSlider then
-        self.rtBresScaleSlider:SetValue((self.settings.bresCounterScale or 1.0) * 100)
-    end
-    if self.rtLockBresCheckbox then
-        self.rtLockBresCheckbox:SetChecked(self.settings.bresCounterLocked or false)
-    end
-
+    ns.Rows.RefreshAll()
 end
 
 -- ============================================================================
--- LibSharedMedia-3.0 helper (optional — gracefully absent if LSM not loaded)
+-- LibSharedMedia-3.0 helper (optional -- gracefully absent if LSM not loaded)
 -- ============================================================================
 
 local CUSTOM_SOUNDS_PATH = "Interface\\AddOns\\Squizzumables\\Media\\Sounds\\"
 
--- Returns the LSM instance if any loaded addon has registered it, else nil.
 local function GetLSM()
     return LibStub and LibStub("LibSharedMedia-3.0", true)
 end
@@ -2853,7 +3070,7 @@ function BH:UpdateRoleCCFrame()
     else                      label = "TANK IN CC" end
     if self.healerCCReminderText then self.healerCCReminderText:SetText(label) end
     local locked = self.settings and self.settings.healerCCReminderLocked
-    frame:EnableMouse(self.unlockMode or not locked)
+    frame:EnableMouse(BH:ReminderMouseEnabled(locked))
     frame:Show()
 end
 
@@ -3101,14 +3318,16 @@ function BH:BuildTextRemindersTab(parent)
     ns.ApplyAccent(instLabel, "text")
     yOffset = yOffset - 22
 
-    local skyreachCheckbox = CreateSQCheckbox(content, "Play Sound on Skyreach (Mythic)", function(checked)
-        BH.settings.skyreachSoundEnabled = checked
-        BH:SaveSettings()
-    end)
-    skyreachCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trSkyreachSoundCheckbox = skyreachCheckbox
-    ns.Rows.AddTooltip(skyreachCheckbox, "Play Sound on Skyreach (Mythic)", "Plays a sound when you enter The Everbloom on Mythic difficulty, as a reminder about the Skyreach affix pull.")
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Play Sound on Skyreach (Mythic)",
+        tooltip = "Plays a sound when you enter The Everbloom on Mythic difficulty, as a reminder about the Skyreach affix pull.",
+        get = function() return BH.settings.skyreachSoundEnabled and true or false end,
+        set = function(v)
+            BH.settings.skyreachSoundEnabled = v
+            BH:SaveSettings()
+        end,
+    })
 
     -- === Food/Flask/Oil Bag Reminders ===
     local consumDivider = CreateSQDivider(content, yOffset)
@@ -3125,14 +3344,37 @@ function BH:BuildTextRemindersTab(parent)
     consumNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     consumNote:SetWidth(380)
     consumNote:SetJustifyH("LEFT")
-    consumNote:SetText("Shows a reminder when you have no food/flask/oil in bags while in a dungeon or raid.")
+    consumNote:SetText("One reminder naming whichever of these you have none of, plus a separate healthstone reminder. Untick a category to stop it being mentioned.")
     consumNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 28
 
-    local bagReminders = { "food", "flask", "oil" }
-    for i, key in ipairs(bagReminders) do
-        yOffset = yOffset - self:AddReminderSection(content, yOffset, key, i == #bagReminders)
+    -- One section for the combined frame (enable / scale / lock / position),
+    -- then the per-category watch toggles that decide what it can mention.
+    yOffset = yOffset - self:AddReminderSection(content, yOffset, "bags", true)
+
+    for _, cat in ipairs({
+        { key = "food",        label = "Watch food" },
+        { key = "flask",       label = "Watch flasks" },
+        { key = "oil",         label = "Watch weapon oils" },
+        { key = "augmentRune", label = "Watch augment runes" },
+    }) do
+        yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+            type = "check",
+            indent = 28,
+            label = cat.label,
+            tooltip = "Include this in the bag reminder when you have none of it.",
+            get = function() return BH.settings[cat.key .. "ReminderEnabled"] ~= false end,
+            set = function(v)
+                BH.settings[cat.key .. "ReminderEnabled"] = v
+                BH:SaveSettings()
+                BH:UpdateBagReminder()
+            end,
+            disabled = function() return BH.settings.bagsReminderEnabled == false end,
+        })
     end
+
+    yOffset = yOffset - self:AddReminderSection(content, yOffset, "healthstone", true)
+
     -- === Feast Announce ===
     local feastDivider = CreateSQDivider(content, yOffset)
     feastDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -3152,14 +3394,16 @@ function BH:BuildTextRemindersTab(parent)
     feastNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 28
 
-    local feastCheckbox = CreateSQCheckbox(content, "Enable Feast Announce", function(checked)
-        BH.settings.feastAnnounceEnabled = checked
-        BH:SaveSettings()
-    end)
-    feastCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trFeastAnnounceCheckbox = feastCheckbox
-    ns.Rows.AddTooltip(feastCheckbox, "Enable Feast Announce", "Announces to chat when you drop a feast, and alerts other Squizzumables users in your group with a sound.")
-    yOffset = yOffset - 30
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Enable Feast Announce",
+        tooltip = "Announces to chat when you drop a feast, and alerts other Squizzumables users in your group with a sound.",
+        get = function() return BH.settings.feastAnnounceEnabled ~= false end,
+        set = function(v)
+            BH.settings.feastAnnounceEnabled = v
+            BH:SaveSettings()
+        end,
+    })
 
     -- Per-context channel grid (Solo / In Party / In Instance / In Raid)
     local feastChanTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -3249,38 +3493,17 @@ function BH:BuildTextRemindersTab(parent)
     yOffset = yOffset - 30
 
     -- Sound alert when another Squizzumables user places a feast
-    local feastSoundLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    feastSoundLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    feastSoundLbl:SetText("Alert sound (plays when a feast is placed):")  -- sound on SQ_FEAST message or CLEU
-    feastSoundLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 22
-
-    local feastSoundDD = CreateSQDropdown(content, "", 220, BuildSoundDropdownItems(), function(value)
-        BH.settings.feastAlertSound = value
-        BH:SaveSettings()
-    end)
-    feastSoundDD:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    local curFeastSnd = BH.settings and BH.settings.feastAlertSound or "None"
-    feastSoundDD:SetSelectedValue(curFeastSnd)
-    self.trFeastAlertSoundDD = feastSoundDD
-    ns.Rows.AddTooltip(feastSoundDD, "Feast alert sound", "Sound played to you and to other Squizzumables users in the group when a feast is dropped.")
-
-    local feastSoundPreviewBtn = CreateFrame("Button", nil, content)
-    feastSoundPreviewBtn:SetSize(22, 22)
-    feastSoundPreviewBtn:SetPoint("LEFT", feastSoundDD, "RIGHT", 6, 0)
-    local fspNormal = feastSoundPreviewBtn:CreateTexture(nil, "BACKGROUND")
-    fspNormal:SetAllPoints()
-    fspNormal:SetTexture("Interface\\Common\\VoiceChat-Speaker")
-    local fspHighlight = feastSoundPreviewBtn:CreateTexture(nil, "HIGHLIGHT")
-    fspHighlight:SetAllPoints()
-    fspHighlight:SetTexture("Interface\\Common\\VoiceChat-Speaker")
-    fspHighlight:SetAlpha(0.6)
-    feastSoundPreviewBtn:SetScript("OnEnter", function() fspNormal:SetAlpha(0.7) end)
-    feastSoundPreviewBtn:SetScript("OnLeave", function() fspNormal:SetAlpha(1.0) end)
-    feastSoundPreviewBtn:SetScript("OnClick", function()
-        PlaySQSound(BH.settings and BH.settings.feastAlertSound or "None")
-    end)
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "sound",
+        label = "Alert sound (plays when a feast is placed)",
+        tooltip = "Sound played to you and to other Squizzumables users in the group when a feast is dropped.",
+        get = function() return BH.settings.feastAlertSound or "None" end,
+        set = function(value)
+            BH.settings.feastAlertSound = value
+            BH:SaveSettings()
+        end,
+        disabled = function() return BH.settings.feastAnnounceEnabled == false end,
+    })
 
     -- === Healer CC Alert ===
     local healerCCDivider = CreateSQDivider(content, yOffset)
@@ -3292,93 +3515,83 @@ function BH:BuildTextRemindersTab(parent)
     healerCCTitle:SetText("ROLE CC ALERT")
     ns.ApplyAccent(healerCCTitle, "text")
     yOffset = yOffset - 18
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "text",
+        label = "Plays a sound and shows an alert when a watched party or raid member is crowd controlled. Pick which roles to watch.",
+    })
 
-    local healerCCNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    healerCCNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    healerCCNote:SetWidth(380)
-    healerCCNote:SetJustifyH("LEFT")
-    healerCCNote:SetWordWrap(true)
-    healerCCNote:SetText("Plays a sound and shows an alert when a watched party or raid member is crowd controlled. Pick which roles to watch.")
-    healerCCNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 28
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Alert when healer is CC'd",
+        tooltip = "Watch group healers and raise the alert when one is crowd controlled.",
+        get = function() return BH.settings.healerCCAlertEnabled == true end,
+        set = function(v)
+            BH.settings.healerCCAlertEnabled = v
+            BH:SaveSettings()
+            BH:RefreshRoleCCWatchList()
+            BH:UpdateRoleCCFrame()
+        end,
+    })
 
-    local healerCCCheckbox = CreateSQCheckbox(content, "Alert when healer is CC'd", function(checked)
-        BH.settings.healerCCAlertEnabled = (checked == true)
-        BH:SaveSettings()
-        BH:RefreshRoleCCWatchList()
-        BH:UpdateRoleCCFrame()
-    end)
-    healerCCCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trHealerCCCheckbox = healerCCCheckbox
-    ns.Rows.AddTooltip(healerCCCheckbox, "Alert when healer is CC'd", "Watch group healers and raise the alert when one is crowd controlled.")
-    yOffset = yOffset - 30
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Alert when tank is CC'd",
+        tooltip = "Watch group tanks and raise the alert when one is crowd controlled. Shares the frame and sound with the healer alert; the label names whichever role is affected.",
+        get = function() return BH.settings.roleCCAlertTank == true end,
+        set = function(v)
+            BH.settings.roleCCAlertTank = v
+            BH:SaveSettings()
+            BH:RefreshRoleCCWatchList()
+            BH:UpdateRoleCCFrame()
+        end,
+    })
 
-    local tankCCCheckbox = CreateSQCheckbox(content, "Alert when tank is CC'd", function(checked)
-        BH.settings.roleCCAlertTank = (checked == true)
-        BH:SaveSettings()
-        BH:RefreshRoleCCWatchList()
-        BH:UpdateRoleCCFrame()
-    end)
-    tankCCCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trTankCCCheckbox = tankCCCheckbox
-    ns.Rows.AddTooltip(tankCCCheckbox, "Alert when tank is CC'd", "Watch group tanks and raise the alert when one is crowd controlled. Shares the frame and sound with the healer alert; the label names whichever role is affected.")
-    yOffset = yOffset - 30
+    -- Everything below only matters once at least one role is being watched.
+    local function noRoleWatched()
+        return not (BH.settings.healerCCAlertEnabled or BH.settings.roleCCAlertTank)
+    end
 
-    local healerCCLockCheckbox = CreateSQCheckbox(content, "Lock Position", function(checked)
-        BH.settings.healerCCReminderLocked = (checked == true)
-        BH:SaveSettings()
-        if BH.healerCCReminderFrame then
-            BH.healerCCReminderFrame:SetMovable(not checked)
-            BH.healerCCReminderFrame:EnableMouse(not checked)
-        end
-    end)
-    healerCCLockCheckbox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.trHealerCCLockCheckbox = healerCCLockCheckbox
-    ns.Rows.AddTooltip(healerCCLockCheckbox, "Lock Position", "Stops the role CC alert being dragged.")
-    yOffset = yOffset - 30
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Lock Position",
+        tooltip = "Stops the role CC alert being dragged.",
+        get = function() return BH.settings.healerCCReminderLocked == true end,
+        set = function(v)
+            BH.settings.healerCCReminderLocked = v
+            BH:SaveSettings()
+            if BH.healerCCReminderFrame then
+                BH.healerCCReminderFrame:SetMovable(not v)
+                BH.healerCCReminderFrame:EnableMouse(BH:ReminderMouseEnabled(v))
+            end
+        end,
+        disabled = noRoleWatched,
+    })
 
-    local healerCCScaleSlider = CreateSQSlider(content, "Scale", 200, 50, 200, 5)
-    healerCCScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    healerCCScaleSlider:SetAfterValueChanged(function(val)
-        BH.settings.healerCCReminderScale = val / 100
-        BH:SaveSettings()
-        if BH.healerCCReminderFrame then BH.healerCCReminderFrame:SetScale(val / 100) end
-    end)
-    self.trHealerCCScaleSlider = healerCCScaleSlider
-    ns.Rows.AddTooltip(healerCCScaleSlider, "Scale", "Size of the role CC alert, as a percentage.")
-    yOffset = yOffset - 50
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Scale",
+        width = 200, min = 50, max = 200, step = 5,
+        tooltip = "Size of the role CC alert, as a percentage.",
+        get = function() return (BH.settings.healerCCReminderScale or 1.0) * 100 end,
+        set = function(val)
+            BH.settings.healerCCReminderScale = val / 100
+            BH:SaveSettings()
+            if BH.healerCCReminderFrame then BH.healerCCReminderFrame:SetScale(val / 100) end
+        end,
+        disabled = noRoleWatched,
+    })
 
-    local healerCCSndLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    healerCCSndLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    healerCCSndLbl:SetText("Alert sound:")
-    healerCCSndLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 22
-
-    local healerCCSoundDD = CreateSQDropdown(content, "", 220, BuildSoundDropdownItems(), function(value)
-        BH.settings.healerCCAlertSound = value
-        BH:SaveSettings()
-    end)
-    healerCCSoundDD:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    healerCCSoundDD:SetSelectedValue(BH.settings and BH.settings.healerCCAlertSound or "None")
-    self.trHealerCCSoundDD = healerCCSoundDD
-    ns.Rows.AddTooltip(healerCCSoundDD, "Alert sound", "Sound played when a watched healer or tank is crowd controlled.")
-
-    local hccPreviewBtn = CreateFrame("Button", nil, content)
-    hccPreviewBtn:SetSize(22, 22)
-    hccPreviewBtn:SetPoint("LEFT", healerCCSoundDD, "RIGHT", 6, 0)
-    local hccNorm = hccPreviewBtn:CreateTexture(nil, "BACKGROUND")
-    hccNorm:SetAllPoints()
-    hccNorm:SetTexture("Interface\\Common\\VoiceChat-Speaker")
-    local hccHi = hccPreviewBtn:CreateTexture(nil, "HIGHLIGHT")
-    hccHi:SetAllPoints()
-    hccHi:SetTexture("Interface\\Common\\VoiceChat-Speaker")
-    hccHi:SetAlpha(0.6)
-    hccPreviewBtn:SetScript("OnEnter", function() hccNorm:SetAlpha(0.7) end)
-    hccPreviewBtn:SetScript("OnLeave", function() hccNorm:SetAlpha(1.0) end)
-    hccPreviewBtn:SetScript("OnClick", function()
-        PlaySQSound(BH.settings and BH.settings.healerCCAlertSound or "None")
-    end)
-    yOffset = yOffset - 34
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "sound",
+        label = "Alert sound",
+        tooltip = "Sound played when a watched healer or tank is crowd controlled.",
+        get = function() return BH.settings.healerCCAlertSound or "None" end,
+        set = function(value)
+            BH.settings.healerCCAlertSound = value
+            BH:SaveSettings()
+        end,
+        disabled = noRoleWatched,
+    })
 
     content:SetHeight(math.abs(yOffset) + 20)
 end
@@ -3611,6 +3824,7 @@ local CLASS_NAMES = {
     HUNTER = "Hunter", ROGUE = "Rogue", DEATHKNIGHT = "Death Knight",
     MONK = "Monk", DEMONHUNTER = "Demon Hunter",
 }
+BH.CLASS_NAMES = CLASS_NAMES
 
 function BH:BuildClassBuffsTab(parent)
     local desc = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -3703,7 +3917,14 @@ function BH:RefreshClassBuffList()
                             AddHeader("Class Buff")
                             headerAdded = true
                         end
-                        AddSpellRow(buffInfo.spellID, buffInfo.selfBuff or buffInfo.tankBuff or buffInfo.weaponImbue, CLASS_NAMES[playerClass] or playerClass)
+                        -- Every class buff gets the minimum-duration box, not just
+                        -- self/tank/imbue ones. NeedsRefresh has always applied
+                        -- GetMinDuration to group buffs too -- defaulting to 30
+                        -- minutes -- so the threshold was already in force for
+                        -- Fortitude and friends, just with no way to see or change
+                        -- it. Permanent buffs are unaffected either way, since
+                        -- NeedsRefresh returns early on an expiration of 0.
+                        AddSpellRow(buffInfo.spellID, not (buffInfo.weaponRune or buffInfo.healthstoneCheck), CLASS_NAMES[playerClass] or playerClass)
                     end
                 end
             end
@@ -3738,80 +3959,92 @@ function BH:RefreshClassBuffList()
 
       local petRow, petRowIsNew = self:AcquireWidget("classBuffRowCache", "petRow", function()
           local f = CreateFrame("Frame", nil, sc)
-          f:SetSize(380, 80)
+          -- Sized generously; the rows inside anchor from the top so extra
+          -- height is harmless, and too little would clip the last row.
+          f:SetSize(380, 130)
           return f
       end)
       petRow:Show()
       petRow:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
       self.petReminderRow = petRow
 
+      -- Height of the three rows below, shared by the cached path and the
+      -- build path so they cannot drift apart.
+      local petRowHeight = ns.Rows.HEIGHTS.check * 2 + ns.Rows.HEIGHTS.slider + 8
+
       if not petRowIsNew then
-          -- Re-sync only; a profile switch rewrites both settings.
-          if self.trPetEnableCheckbox then
-              self.trPetEnableCheckbox:SetChecked(BH.settings and BH.settings.petReminderEnabled ~= false)
-          end
-          if self.trPetScaleSlider then
-              self.trPetScaleSlider:SetValue((BH.settings and BH.settings.petReminderScale or 1.0) * 100)
-          end
-          if self.trPetLockCheckbox then
-              self.trPetLockCheckbox:SetChecked(BH.settings and BH.settings.petReminderLocked or false)
-          end
-          yOffset = yOffset - 84
+          -- Rows sync themselves; nothing to re-apply by hand.
+          ns.Rows.RefreshAll()
+          yOffset = yOffset - petRowHeight
           sc:SetHeight(math.abs(yOffset) + 20)
           return
       end
 
-        local petEnableCb = CreateSQCheckbox(petRow, "Show \"NO PET\" text when pet is missing", function(val)
-            BH.settings.petReminderEnabled = val
-            BH:SaveSettings()
-            BH:UpdatePetReminder()
-        end)
-        petEnableCb:SetPoint("TOPLEFT", petRow, "TOPLEFT", 0, 0)
-        petEnableCb:SetChecked(BH.settings and BH.settings.petReminderEnabled ~= false)
-        self.trPetEnableCheckbox = petEnableCb
+        -- Positioned inside petRow rather than the tab body, so this tracks its
+        -- own offset. Rows.Add takes whatever parent it is given.
+        local py = 0
+        py = py - ns.Rows.Add(petRow, py, {
+            type = "check",
+            indent = 0,
+            label = "Show \"NO PET\" text when pet is missing",
+            tooltip = "Shows a large NO PET reminder when your pet is dismissed or dead.",
+            get = function() return BH.settings.petReminderEnabled ~= false end,
+            set = function(v)
+                BH.settings.petReminderEnabled = v
+                BH:SaveSettings()
+                BH:UpdatePetReminder()
+            end,
+        })
 
-        local petScaleSlider = CreateSQSlider(petRow, "Scale", 200, 50, 300, 5)
-        petScaleSlider:SetAfterValueChanged(function(value, userInput)
-            if not userInput then return end
-            BH.settings.petReminderScale = value / 100
-            if BH.petReminderFrame then BH.petReminderFrame:SetScale(value / 100) end
-            BH:SaveSettings()
-        end)
-        petScaleSlider:SetValue((BH.settings and BH.settings.petReminderScale or 1.0) * 100)
-        petScaleSlider:SetPoint("TOPLEFT", petRow, "TOPLEFT", 0, -28)
-        self.trPetScaleSlider = petScaleSlider
+        py = py - ns.Rows.Add(petRow, py, {
+            type = "slider",
+            indent = 0,
+            label = "Scale",
+            width = 200, min = 50, max = 300, step = 5,
+            tooltip = "Size of the NO PET reminder, as a percentage.",
+            get = function() return (BH.settings.petReminderScale or 1.0) * 100 end,
+            set = function(value, userInput)
+                if not userInput then return end
+                BH.settings.petReminderScale = value / 100
+                if BH.petReminderFrame then BH.petReminderFrame:SetScale(value / 100) end
+                BH:SaveSettings()
+            end,
+            disabled = function() return BH.settings.petReminderEnabled == false end,
+        })
 
-        local petLockCb = CreateSQCheckbox(petRow, "Lock position", function(val)
-            BH.settings.petReminderLocked = val
-            if BH.petReminderFrame then BH.petReminderFrame:EnableMouse(not val) end
-            BH:SaveSettings()
-        end)
-        petLockCb:SetPoint("TOPLEFT", petRow, "TOPLEFT", 0, -60)
-        petLockCb:SetChecked(BH.settings and BH.settings.petReminderLocked or false)
-        self.trPetLockCheckbox = petLockCb
+        py = py - ns.Rows.Add(petRow, py, {
+            type = "check",
+            indent = 0,
+            label = "Lock position",
+            tooltip = "Stops the NO PET reminder being dragged.",
+            get = function() return BH.settings.petReminderLocked and true or false end,
+            set = function(v)
+                BH.settings.petReminderLocked = v
+                if BH.petReminderFrame then
+                    BH.petReminderFrame:EnableMouse(BH:ReminderMouseEnabled(v))
+                end
+                BH:SaveSettings()
+            end,
+            disabled = function() return BH.settings.petReminderEnabled == false end,
+        })
 
-        yOffset = yOffset - 84
+        yOffset = yOffset - petRowHeight
         sc:SetHeight(math.abs(yOffset) + 20)
     end
 end
 
 function BH:RefreshTextRemindersTab()
     if not self.settings then return end
-    -- Migrated sections refresh themselves; this covers the rest.
+    -- Every migrated row syncs itself from its own get(); this only has to
+    -- cover the two controls the declarative kit has no builder for -- the
+    -- announce text box, and the per-context channel grid, which is a keyed
+    -- set of dropdowns rather than one row.
     ns.Rows.RefreshAll()
-    if self.trSkyreachSoundCheckbox then
-        self.trSkyreachSoundCheckbox:SetChecked(self.settings.skyreachSoundEnabled ~= false)
-    end
-    if self.trFeastAnnounceCheckbox then
-        self.trFeastAnnounceCheckbox:SetChecked(self.settings.feastAnnounceEnabled ~= false)
-    end
+
     if self.trFeastAnnounceTextEdit then
         local txt = (self.settings.feastAnnounceText or "")
         self.trFeastAnnounceTextEdit:SetText(txt)
         self.trFeastAnnounceTextEdit.placeholder:SetShown(txt == "")
-    end
-    if self.trFeastAlertSoundDD then
-        self.trFeastAlertSoundDD:SetSelectedValue(self.settings.feastAlertSound or "None")
     end
     if self.trFeastChannelDDs then
         local chanDB = type(self.settings.feastAnnounceChannel) == "table"
@@ -3820,21 +4053,6 @@ function BH:RefreshTextRemindersTab()
         for key, dd in pairs(self.trFeastChannelDDs) do
             dd:SetSelectedValue(chanDB[key] or "NONE")
         end
-    end
-    if self.trHealerCCCheckbox then
-        self.trHealerCCCheckbox:SetChecked(self.settings.healerCCAlertEnabled == true)
-    end
-    if self.trTankCCCheckbox then
-        self.trTankCCCheckbox:SetChecked(self.settings.roleCCAlertTank == true)
-    end
-    if self.trHealerCCLockCheckbox then
-        self.trHealerCCLockCheckbox:SetChecked(self.settings.healerCCReminderLocked == true)
-    end
-    if self.trHealerCCScaleSlider then
-        self.trHealerCCScaleSlider:SetValue((self.settings.healerCCReminderScale or 1.0) * 100)
-    end
-    if self.trHealerCCSoundDD then
-        self.trHealerCCSoundDD:SetSelectedValue(self.settings.healerCCAlertSound or "None")
     end
 end
 
@@ -3876,6 +4094,18 @@ function BH:BuildCalloutsButtonFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:Hide()
+
+    -- Draggable by the frame itself, not only by its title bar. In unlock
+    -- mode the callout buttons and the title bar are muted so the drag can
+    -- reach this frame; without these scripts that left it unmovable from
+    -- anywhere at all.
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        BH:SaveCalloutsFramePosition()
+    end)
     ApplySQBackdrop(f)
     self.calloutsButtonFrame = f
 
@@ -4197,18 +4427,9 @@ local CONFIG_QUALITY_ATLAS = {
 
 -- Find an item in bags and return its link and crafting quality (for quality detection)
 local function FindItemInBags(itemID)
-    for bag = FIRST_BAG, LAST_BAG do
-        for slot = 1, C_Container.GetContainerNumSlots(bag) do
-            local bagItemID = C_Container.GetContainerItemID(bag, slot)
-            if bagItemID == itemID then
-                local itemLink = C_Container.GetContainerItemLink(bag, slot)
-                local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
-                local craftingQuality = containerInfo and containerInfo.craftingQuality
-                return itemLink, craftingQuality
-            end
-        end
-    end
-    return nil, nil
+    local entry = BH:GetBagEntry(itemID)
+    if not entry then return nil, nil end
+    return entry.link, entry.quality
 end
 
 -- Check if player meets item level requirement (for config panel)
@@ -4813,6 +5034,18 @@ function BH:RefreshItemList()
     AddDropZone("oil", "Weapon Oil")
     yOffset = yOffset - 5
 
+    -- Augment rune section - only show items in bags that meet level requirement
+    AddHeader("Augment Runes")
+    if self.consumables and self.consumables.augmentRune then
+        for _, itemID in ipairs(self.consumables.augmentRune) do
+            if FindItemInBags(itemID) and ConfigMeetsLevelRequirement(itemID) then
+                AddItemRow(itemID, "augmentRune")
+            end
+        end
+    end
+    AddDropZone("augmentRune", "Augment Rune")
+    yOffset = yOffset - 5
+
     -- Emerald Coach's Whistle section.
     -- Only rendered while the whistle is equipped, and its contents never vary,
     -- so it is built once and thereafter only re-anchored and re-synced. The
@@ -4994,16 +5227,8 @@ end
 
 -- Count total stack quantity of an itemID across all bags
 local function CountItemInBags(itemID)
-    local total = 0
-    for bag = FIRST_BAG, LAST_BAG do
-        for slot = 1, C_Container.GetContainerNumSlots(bag) do
-            if C_Container.GetContainerItemID(bag, slot) == itemID then
-                local info = C_Container.GetContainerItemInfo(bag, slot)
-                total = total + (info and info.stackCount or 1)
-            end
-        end
-    end
-    return total
+    local entry = BH:GetBagEntry(itemID)
+    return entry and entry.count or 0
 end
 
 -- create main frame
@@ -5011,6 +5236,24 @@ BH.frame = CreateFrame("Frame", "SQUIZZUMABLESFrame", UIParent)
 BH.frame:SetSize(50, 50)
 BH.frame:SetPoint("CENTER")
 BH.frame:SetMovable(true)
+BH.frame:SetClampedToScreen(true)
+
+-- The buttons frame is dragged by grabbing the frame itself, in unlock mode.
+--
+-- It used to carry a small tab above its top-left corner as the only way to
+-- move it, which meant the main frame worked differently from every other
+-- frame in the addon and put a permanent scrap of UI on screen. Mouse is off
+-- outside unlock mode so this can never intercept a click meant for a button
+-- inside it; SetAllFramesPreview turns it on.
+BH.frame:EnableMouse(false)
+BH.frame:RegisterForDrag("LeftButton")
+BH.frame:SetScript("OnDragStart", function(self)
+    if BH.unlockMode then self:StartMoving() end
+end)
+BH.frame:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    BH:SaveFramePosition()
+end)
 
 -- Non-secure container for pet summon buttons.
 -- BH.frame is hidden when entering combat; BH.petFrame is a plain Frame so its
@@ -5036,43 +5279,8 @@ BH.combatBuffFrame = CreateFrame("Frame", "SQUIZZUMABLESCombatBuffFrame", UIPare
 BH.combatBuffFrame:SetAllPoints(BH.frame)  -- always matches BH.frame's position and size
 BH.combatBuffFrame:Hide()
 
--- create drag handle bar on top of the frame
-BH.dragHandle = CreateFrame("Frame", "SQUIZZUMABLESDragHandle", BH.frame, "BackdropTemplate")
-BH.dragHandle:SetSize(20, 12)
-BH.dragHandle:SetPoint("BOTTOMLEFT", BH.frame, "TOPLEFT", 0, 2)
-BH.dragHandle:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 1,
-})
-BH.dragHandle:SetBackdropColor(0.7, 0.7, 0.7, 0.4)
-BH.dragHandle:SetBackdropBorderColor(0.8, 0.8, 0.8, 1.0)
-BH.dragHandle:EnableMouse(true)
-BH.dragHandle:RegisterForDrag("LeftButton")
-BH.dragHandle:SetScript("OnDragStart", function()
-    BH.frame:StartMoving()
-end)
-BH.dragHandle:SetScript("OnDragStop", function()
-    BH.frame:StopMovingOrSizing()
-    BH:SaveFramePosition()
-end)
-
--- Update drag handle position based on grow direction
-function BH:UpdateDragHandlePosition()
-    local grow = (self.settings and self.settings.growDirection) or "RIGHT"
-    local layout = (self.settings and self.settings.layoutDirection) or "HORIZONTAL"
-    self.dragHandle:ClearAllPoints()
-    self.dragHandle:SetSize(20, 12)
-    if grow == "UP" then
-        self.dragHandle:SetPoint("TOPLEFT", self.frame, "BOTTOMLEFT", 0, -2)
-    elseif grow == "LEFT" then
-        self.dragHandle:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", 0, 2)
-    elseif grow == "OUTWARD" then
-        self.dragHandle:SetPoint("BOTTOM", self.frame, "TOP", 0, 2)
-    else -- DOWN, RIGHT
-        self.dragHandle:SetPoint("BOTTOMLEFT", self.frame, "TOPLEFT", 0, 2)
-    end
-end
+-- The buttons frame has no drag tab: it is dragged directly in unlock mode.
+-- See the OnDragStart on BH.frame above.
 
 -- icon buttons table
 BH.buttons = {}
@@ -5405,6 +5613,15 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     btn:RegisterForClicks(SQ_GetClickEdge())
     btn:SetFrameStrata("MEDIUM")  -- Below the options panel (DIALOG)
     btn:Enable()
+
+    -- Glow, if the player wants it.
+    --
+    -- Every visible button gets one, because a button only exists when
+    -- something needs doing -- whether the buff is missing outright or just
+    -- running short. The point is to be noticeable from outside the eye
+    -- line, so singling out a subset would defeat it.
+    ns.Glow.Set(btn, BH.settings and BH.settings.glowReminderButtons ~= false, btn.icon)
+
     return btn
 end
 
@@ -5564,7 +5781,7 @@ local function PlayerHasBuffOnGroupMember(spellIDs)
         if not UnitIsUnit(unit, "player") and UnitExists(unit) then
             for _, checkID in ipairs(ids) do
                 local auraData = C_UnitAuras.GetUnitAuraBySpellID(unit, checkID)
-                if auraData and auraData.sourceUnit and UnitIsUnit(auraData.sourceUnit, "player") then
+                if BH.Secrets.AuraIsFromPlayer(auraData) then
                     return true
                 end
             end
@@ -5617,6 +5834,97 @@ end
 
 -- check weapon enchants (for oils)
 -- Returns: hasEnchant (bool), expirationTime (GetTime()-based, or nil)
+
+-- Does an equipped weapon lack a permanent enchant?
+--
+-- Death Knight runeforges are permanent enchants, and GetWeaponEnchantInfo only
+-- reports *temporary* ones -- so the weapon-imbue path used for Shaman and
+-- Paladin cannot see a rune at all, present or absent.
+--
+-- The enchant ID is the second field of the item string:
+--     item:<itemID>:<enchantID>:...
+-- Zero, or absent, means no enchant.
+--
+-- Returns: needsRune, slotLabel. Reports the main hand first; only mentions the
+-- off hand when the main hand is fine, so the button says one thing at a time.
+local RUNEFORGING_SPELL_ID = 53428
+local DEATH_GATE_SPELL_ID  = 50977
+
+-- Are we somewhere with a runeforge?
+--
+-- Matched against Blizzard's own localised zone strings rather than literal
+-- English, so this works in any locale. The globals are guarded because a
+-- missing one must not become a nil comparison, and because falling through to
+-- Death Gate is the harmless direction -- Death Gate is useful anywhere,
+-- Runeforging is useful in exactly one place.
+local function AtRuneforge()
+    local names = {
+        ORDER_HALL_DEATHKNIGHT,                     -- "Acherus"
+        DUNGEON_FLOOR_ICECROWNCITADELDEATHKNIGHT1,  -- "Lower Acherus"
+        DUNGEON_FLOOR_ICECROWNCITADELDEATHKNIGHT2,  -- "Upper Acherus"
+        DUNGEON_FLOOR_BROKENSHORE1,                 -- "The Heart of Acherus"
+    }
+    local here = { GetRealZoneText(), GetSubZoneText(), GetZoneText() }
+    for _, want in ipairs(names) do
+        if type(want) == "string" and want ~= "" then
+            for _, got in ipairs(here) do
+                -- Substring, not equality: the zone reports as "Acherus: The
+                -- Ebon Hold" while the global is just "Acherus", so an exact
+                -- match only ever hit on the sub-zone -- which meant the check
+                -- depended on standing in the right room.
+                if type(got) == "string" and got ~= "" and got:find(want, 1, true) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Which action to offer for an unruneforged weapon.
+--
+-- Runeforging can only be cast at a runeforge, so away from one the useful
+-- button is Death Gate, which drops you in Acherus beside one. Standing there,
+-- offering Death Gate is absurd, so the button becomes the runeforge itself.
+--
+-- This originally inferred proximity from C_Spell.IsSpellUsable, on the basis
+-- that the spell requires a nearby object. It does not: the API reports usable
+-- from the moment the spell is known, so the button showed Runeforging out in
+-- the world where it cannot be cast. The zone is the signal that actually
+-- works.
+local function RuneforgeAction()
+    if AtRuneforge() and BH.PlayerKnowsSpell(RUNEFORGING_SPELL_ID) then
+        return RUNEFORGING_SPELL_ID, "Runeforge"
+    end
+    if BH.PlayerKnowsSpell(DEATH_GATE_SPELL_ID) then
+        return DEATH_GATE_SPELL_ID, "To Acherus"
+    end
+    return nil
+end
+BH.RuneforgeAction = RuneforgeAction
+BH.AtRuneforge = AtRuneforge
+
+
+local function WeaponNeedsRune()
+    local function slotState(slotID)
+        local link = GetInventoryItemLink("player", slotID)
+        if not link then return false, false end          -- nothing equipped
+        -- The enchant field is *empty* on an unenchanted item ("item:12345::"),
+        -- not zero, so the digits are optional. Matching %d+ here happened to
+        -- work only because a failed match also came back nil.
+        local ench = tonumber(link:match("item:%d+:(%-?%d*):"))
+        return true, (ench or 0) ~= 0
+    end
+
+    local mhEquipped, mhEnchanted = slotState(16)
+    if mhEquipped and not mhEnchanted then return true, "MH" end
+
+    local ohEquipped, ohEnchanted = slotState(17)
+    if ohEquipped and not ohEnchanted then return true, "OH" end
+
+    return false, nil
+end
+BH.WeaponNeedsRune = WeaponNeedsRune
 local function GetMainHandEnchantInfo()
     local hasMain, mainExpiration = GetWeaponEnchantInfo()
     if hasMain and mainExpiration then
@@ -5713,9 +6021,9 @@ local _consumableBuffNames = { food = {}, flask = {} }
 
 local function BuildConsumableBuffCache()
     if not BH.consumables then return end
-    _consumableBuffCache = { food = {}, flask = {} }
-    _consumableBuffNames = { food = {}, flask = {} }
-    for _, category in ipairs({ "food", "flask" }) do
+    _consumableBuffCache = { food = {}, flask = {}, augmentRune = {} }
+    _consumableBuffNames = { food = {}, flask = {}, augmentRune = {} }
+    for _, category in ipairs({ "food", "flask", "augmentRune" }) do
         local list = BH.consumables[category]
         if list then
             for _, itemID in ipairs(list) do
@@ -5813,6 +6121,32 @@ local function HasFlaskBuff()
     return found, expTime
 end
 
+-- Known augment rune buffs.
+--
+-- The cache built from C_Item.GetItemSpell covers the *use* spell, which for
+-- these is not always the buff that ends up on the player, so the buff IDs are
+-- listed too. Both are checked; whichever answers first wins.
+local AUGMENT_RUNE_BUFF_IDS = {
+    1264426,  -- Void-Touched Augment Rune (Midnight)
+    1234969,  -- Ethereal Augment Rune (The War Within)
+}
+
+local function HasAugmentRuneBuff()
+    for spellID in pairs(_consumableBuffCache.augmentRune or {}) do
+        local auraData = BH.Secrets.GetAuraBySpellID("player", spellID)
+        if auraData then
+            return true, BH.Secrets.SafeAuraExpiration(auraData)
+        end
+    end
+    for _, spellID in ipairs(AUGMENT_RUNE_BUFF_IDS) do
+        local auraData = BH.Secrets.GetAuraBySpellID("player", spellID)
+        if auraData then
+            return true, BH.Secrets.SafeAuraExpiration(auraData)
+        end
+    end
+    return false, nil
+end
+
 -- build button list
 -- M+ active state
 BH.challengeModeActive = false
@@ -5842,6 +6176,8 @@ BH.unlockMode = false
 BH.REMINDERS = {
     {
         key = "beacon", globalName = "SQUIZZUMABLESBeaconReminder",
+        gates = { "enabled", "class", "spec", "visible" },
+        class = "PALADIN", spec = 65,
         label = "Beacon Reminder (Holy Paladin)",
         sectionHeader = "BEACON REMINDER (HOLY PALADIN)",
         enableLabel = "Enable Beacon Reminder",
@@ -5850,9 +6186,12 @@ BH.REMINDERS = {
         tooltip = "Shows a large reminder when you are missing one of your beacons. Holy Paladins only; hidden if you are talented into Beacon of Virtue.",
         text = "REMEMBER YOUR BEACON", color = { 1, 0.82, 0 },
         size = { 280, 50 }, defaultY = 200,
+        combatSafe = true,
     },
     {
         key = "earthShield", globalName = "SQUIZZUMABLESEarthShieldReminder",
+        gates = { "enabled", "class", "knows", "buffEnabled", "visible", "group" },
+        class = "SHAMAN", knowsSpell = 974, buffEnabledSpell = 974,
         label = "Earth Shield Reminder (Shaman)",
         sectionHeader = "EARTH SHIELD REMINDER (SHAMAN)",
         enableLabel = "Enable Earth Shield Reminder",
@@ -5861,9 +6200,13 @@ BH.REMINDERS = {
         tooltip = "Shows a large reminder when Earth Shield is missing from its expected target. Shamans who know Earth Shield only.",
         text = "REMEMBER EARTH SHIELD", color = { 0.00, 0.44, 0.87 },
         size = { 320, 50 }, defaultY = 160,
+        combatSafe = true,
     },
     {
         key = "repair", globalName = "SquizzumablesRepairReminderFrame",
+        -- No "visible" gate: worn gear is worth flagging anywhere, not just
+        -- in the content types the other reminders are limited to.
+        gates = { "enabled", "outOfCombat" },
         label = "Repair Reminder",
         sectionHeader = "REPAIR REMINDER",
         enableLabel = "Enable Repair Reminder",
@@ -5893,6 +6236,8 @@ BH.REMINDERS = {
     },
     {
         key = "symbiotic", globalName = "SQUIZZUMABLESSymbioticReminder",
+        gates = { "enabled", "class", "knows", "visible", "group" },
+        class = "DRUID", knowsSpell = SYMBIOTIC_CAST_SPELL_ID,
         label = "Symbiotic Relationship Reminder (Druid)",
         sectionHeader = "SYMBIOTIC RELATIONSHIP REMINDER (DRUID)",
         enableLabel = "Enable Symbiotic Relationship Reminder",
@@ -5901,51 +6246,54 @@ BH.REMINDERS = {
         tooltip = "Shows a reminder when a party or raid member is missing Symbiotic Relationship. Druids who have the talent only.",
         text = "SYMBIOTIC RELATIONSHIP", color = { 0.2, 0.9, 0.2 },
         size = { 340, 50 }, defaultY = 80,
+        combatSafe = true,
     },
     {
         key = "coachWhistle", globalName = "SQUIZZUMABLESCoachWhistleReminder",
+        gates = { "enabled", "equipped", "visible", "realGroup" },
+        equippedItem = COACH_WHISTLE_ITEM_ID,
         label = "Emerald Coach's Whistle Reminder",
         text = "USE COACH'S WHISTLE", color = { 0.2, 0.9, 0.6 },
         size = { 340, 50 }, defaultY = 40,
+        combatSafe = true,
     },
     {
         key = "pet", globalName = "SQUIZZUMABLESPetReminder",
+        -- Survival (255) has no pet.
+        gates = { "enabled", "class", "notSpec", "visible" },
+        class = "HUNTER", notSpec = 255,
         label = "No Pet Reminder (Hunter)",
         text = "NO PET", color = { 0.00, 0.78, 1.0 },
         size = { 240, 50 }, defaultY = 0,
+        combatSafe = true,
     },
     {
-        key = "food", globalName = "SQUIZZUMABLESFoodReminder",
-        label = "No Food In Bags Reminder",
-        sectionHeader = "FOOD REMINDER",
-        enableLabel = "Enable Food Reminder",
-        scaleLabel = "Food Reminder Scale",
-        lockLabel = "Lock Food Reminder",
-        tooltip = "Shows a reminder when you have no tracked food in your bags while in a dungeon or raid.",
+        -- One frame for all four bag reminders. See BH:UpdateBagReminder for
+        -- why they were merged; the per-category enable settings survive as
+        -- watch toggles.
+        key = "bags", globalName = "SQUIZZUMABLESBagsReminder",
+        gates = { "enabled", "outOfCombat", "visible" },
+        label = "Nothing In Bags Reminder",
+        sectionHeader = "BAG REMINDERS",
+        enableLabel = "Enable Bag Reminders",
+        scaleLabel = "Bag Reminder Scale",
+        lockLabel = "Lock Bag Reminder",
+        tooltip = "One reminder naming whichever of food, flask, weapon oil or augment rune you have none of. Pick which to watch below.",
         text = "NO FOOD IN BAGS", color = { 1, 0.55, 0.0 },
-        size = { 280, 50 }, defaultY = 240,
+        size = { 420, 50 }, defaultY = 240,
     },
     {
-        key = "flask", globalName = "SQUIZZUMABLESFlaskReminder",
-        label = "No Flask In Bags Reminder",
-        sectionHeader = "FLASK REMINDER",
-        enableLabel = "Enable Flask Reminder",
-        scaleLabel = "Flask Reminder Scale",
-        lockLabel = "Lock Flask Reminder",
-        tooltip = "Shows a reminder when you have no tracked flask in your bags while in a dungeon or raid.",
-        text = "NO FLASK IN BAGS", color = { 0.4, 0.8, 1.0 },
-        size = { 300, 50 }, defaultY = 280,
-    },
-    {
-        key = "oil", globalName = "SQUIZZUMABLESOilReminder",
-        label = "No Weapon Oil In Bags Reminder",
-        sectionHeader = "WEAPON OIL REMINDER",
-        enableLabel = "Enable Oil Reminder",
-        scaleLabel = "Oil Reminder Scale",
-        lockLabel = "Lock Oil Reminder",
-        tooltip = "Shows a reminder when you have no tracked weapon oil in your bags while in a dungeon or raid.",
-        text = "NO WEAPON OIL IN BAGS", color = { 0.5, 1.0, 0.5 },
-        size = { 300, 50 }, defaultY = 320,
+        key = "healthstone", globalName = "SQUIZZUMABLESHealthstoneReminder",
+        gates = { "enabled", "visible" },
+        label = "No Healthstone Reminder",
+        sectionHeader = "HEALTHSTONE REMINDER",
+        enableLabel = "Enable Healthstone Reminder",
+        scaleLabel = "Healthstone Reminder Scale",
+        lockLabel = "Lock Healthstone Reminder",
+        tooltip = "Shows a reminder when you are not carrying a healthstone and there is a warlock in the group who could make you one. Warlocks get a Create Healthstone button instead. Stays up in combat, since that is when it matters and a Soulwell can still be used.",
+        text = "NO HEALTHSTONE", color = { 1.0, 0.35, 0.35 },
+        size = { 260, 50 }, defaultY = 400,
+        combatSafe = true,
     },
     {
         key = "healerCC", globalName = "SQUIZZUMABLESHealerCCReminder",
@@ -6014,6 +6362,119 @@ end
 
 for _, def in ipairs(BH.REMINDERS) do
     CreateReminderFrame(def)
+end
+
+-- ============================================================================
+-- Movable frames and preview mode
+--
+-- One list of every frame the player can drag, and one routine that puts them
+-- all into preview. Adding a frame here is all it takes for it to get the green
+-- preview tint and become draggable.
+--
+-- This replaced a dozen hand-written blocks, each creating its own overlay
+-- texture and each having to be remembered. Predictably the list had drifted:
+-- the Coach's Whistle, pet and role-CC frames had no overlay at all, and the
+-- pet frame could not be positioned from preview until someone noticed.
+--
+-- The important rule, and the one the old code got wrong: **preview overrides
+-- the per-frame lock**. It used to do `frame:EnableMouse(not locked)` even in
+-- preview, so a locked frame sat there showing its tint and refusing to move --
+-- which is the exact opposite of what unlocking is for.
+-- ============================================================================
+
+local MOVABLE_FRAMES = {
+    -- field                enabled setting            extra gate
+    { field = "frame" },  -- main buttons frame; always previewable
+    { field = "markersFrame",        enabled = "raidToolsShowMarkers",   gate = "raidToolsEnabled", muteChildren = true },
+    { field = "pullReadyFrame",      enabled = "raidToolsShowPullReady", gate = "raidToolsEnabled", muteChildren = true },
+    { field = "bresCounterFrame",    enabled = "bresCounterEnabled" },
+    { field = "deathTallyFrame",     enabled = "deathTallyEnabled" },
+    { field = "calloutsButtonFrame", enabled = "dungeonCallouts", muteChildren = true },
+}
+
+-- Every text reminder, from the registry rather than by hand.
+for _, def in ipairs(BH.REMINDERS) do
+    MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+        field   = def.key .. "ReminderFrame",
+        enabled = def.key .. "ReminderEnabled",
+    }
+end
+BH.MOVABLE_FRAMES = MOVABLE_FRAMES
+
+-- The green tint. Kept on the frame itself rather than in a dozen BH fields.
+local function SetPreviewOverlay(frame, on)
+    if not frame then return end
+    if on then
+        if not frame.sqPreviewOverlay then
+            local ov = frame:CreateTexture(nil, "OVERLAY")
+            ov:SetAllPoints()
+            ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
+            frame.sqPreviewOverlay = ov
+        end
+        frame.sqPreviewOverlay:Show()
+    elseif frame.sqPreviewOverlay then
+        frame.sqPreviewOverlay:Hide()
+    end
+end
+
+-- Is this frame switched on at all? A frame the player has disabled stays
+-- hidden in preview -- there is nothing to position.
+-- Stop a frame's buttons responding while it is being positioned.
+--
+-- The markers and pull/ready frames are almost entirely covered by their own
+-- buttons, so a click aimed at "the frame" lands on a button instead: trying to
+-- drag them fired a ready check, started a pull, or set a raid marker. During
+-- preview their children go click-through so the drag reaches the frame.
+--
+-- Restores to mouse-enabled on the way out rather than remembering per-button
+-- state, because every child of these frames is a button that wants the mouse.
+local function MuteFrameChildren(frame, muted)
+    if not frame then return end
+    -- The marker and pull/ready buttons are SecureActionButtonTemplate frames,
+    -- so leave them alone under lockdown. Preview is an out-of-combat activity
+    -- anyway; this is here so a stray call in combat cannot taint anything.
+    if InCombatLockdown() then return end
+    local ok, children = pcall(function() return { frame:GetChildren() } end)
+    if not ok or not children then return end
+    for _, child in ipairs(children) do
+        if child and child.EnableMouse then
+            child:EnableMouse(not muted)
+        end
+    end
+end
+
+local function FrameEnabledForPreview(def, settings)
+    if not settings then return true end
+    if def.enabled and settings[def.enabled] == false then return false end
+    if def.gate and settings[def.gate] == false then return false end
+    return true
+end
+
+--- Put every movable frame into (or out of) preview.
+function BH:SetAllFramesPreview(on)
+    for _, def in ipairs(MOVABLE_FRAMES) do
+        local frame = self[def.field]
+        if frame then
+            if on and FrameEnabledForPreview(def, self.settings) then
+                -- Unconditionally movable and mouse-enabled: preview exists to
+                -- override the lock, not to respect it.
+                frame:SetMovable(true)
+                frame:EnableMouse(true)
+                frame:SetClampedToScreen(true)
+                SetPreviewOverlay(frame, true)
+                if def.muteChildren then MuteFrameChildren(frame, true) end
+                frame:Show()
+            else
+                SetPreviewOverlay(frame, false)
+                if def.muteChildren then MuteFrameChildren(frame, false) end
+                if on then frame:Hide() end
+            end
+        end
+    end
+
+    -- The buttons frame only takes the mouse while being positioned. Left on,
+    -- it would sit over its own secure buttons and eat their clicks.
+    if self.frame then self.frame:EnableMouse(on and true or false) end
 end
 
 -- === Battle Res Counter (Inspired by BigWigs BattleRes) ===
@@ -6450,31 +6911,101 @@ local BEACON_OF_VIRTUE = 200025
 local BEACON_AURA_IDS = { 53563, 156910, 200025 }
 
 -- Check if player is in a valid instance type (dungeon, raid, delve, follower dungeon)
-local function IsInValidInstance()
-    local inInstance, instanceType = IsInInstance()
-    
-    -- Debug: uncomment to see what instance type you're in
-    -- print("Squizzumables: inInstance=" .. tostring(inInstance) .. ", instanceType=" .. tostring(instanceType))
-    
-    -- party = 5-man dungeon (includes follower dungeons)
-    -- raid = raid instance  
-    -- scenario = delves and some special content (delves may report inInstance=false but instanceType=scenario)
-    if instanceType == "party" or instanceType == "raid" or instanceType == "scenario" then
-        return true
+
+-- ----------------------------------------------------------------------------
+-- Content types
+--
+-- Where the addon is allowed to show itself. This used to be one hardcoded rule
+-- -- "party, raid or scenario" -- plus a separate hardcoded suppression during
+-- Mythic+, so a player who wanted reminders in open world, or who *did* want
+-- them in a key, had no way to say so.
+--
+-- Order here is the order shown in the settings.
+-- ----------------------------------------------------------------------------
+
+local CONTENT_TYPES = {
+    { key = "world",         label = "Open World",        default = false },
+    { key = "normalDungeon", label = "Dungeon (Normal)",  default = true  },
+    { key = "heroicDungeon", label = "Dungeon (Heroic)",  default = true  },
+    { key = "mythicDungeon", label = "Dungeon (Mythic)",  default = true  },
+    -- Off by default: the addon has always hidden itself in a key, on the
+    -- grounds that a timed run is not the moment for a nag.
+    { key = "mythicPlus",    label = "Mythic+",           default = false },
+    { key = "lfr",           label = "Raid (LFR)",        default = true  },
+    { key = "normalRaid",    label = "Raid (Normal)",     default = true  },
+    { key = "heroicRaid",    label = "Raid (Heroic)",     default = true  },
+    { key = "mythicRaid",    label = "Raid (Mythic)",     default = true  },
+    { key = "timewalking",   label = "Timewalking",       default = true  },
+    { key = "delve",         label = "Delves & Scenarios",default = true  },
+    { key = "pvp",           label = "Battlegrounds & Arenas", default = false },
+}
+BH.CONTENT_TYPES = CONTENT_TYPES
+
+-- Publish the shipped defaults into defaultSettings, rather than writing them
+-- out a second time up there. ApplyDefaults then backfills them like any
+-- other nested setting, so a content type added later reaches existing
+-- players without a migration.
+BH.defaultSettings.contentTypes = BH.defaultSettings.contentTypes or {}
+for _, ct in ipairs(CONTENT_TYPES) do
+    BH.defaultSettings.contentTypes[ct.key] = ct.default
+end
+
+-- Difficulty IDs that need naming. Everything else falls through to the plain
+-- normal/heroic split for its instance type.
+local DIFFICULTY_TIMEWALKING = { [24] = true, [33] = true }
+
+--- Which of the above the player is currently in.
+local function CurrentContentType()
+    -- Mythic+ first: a key runs inside a party instance, so the instance type
+    -- alone would report it as a mythic dungeon.
+    if BH.challengeModeActive
+        or (C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive
+            and C_ChallengeMode.IsChallengeModeActive()) then
+        return "mythicPlus"
     end
-    
-    if not inInstance then return false end
-    
-    -- Fallback: Check if we're in a delve by map info
-    local mapID = C_Map.GetBestMapForUnit("player")
-    if mapID then
-        local mapInfo = C_Map.GetMapInfo(mapID)
-        if mapInfo and mapInfo.mapType == Enum.UIMapType.Dungeon then
-            return true
-        end
+
+    local _, instanceType = IsInInstance()
+    local _, _, difficultyID = GetInstanceInfo()
+
+    if DIFFICULTY_TIMEWALKING[difficultyID or 0] then return "timewalking" end
+
+    if instanceType == "party" then
+        if difficultyID == 23 then return "mythicDungeon" end
+        if difficultyID == 2  then return "heroicDungeon" end
+        return "normalDungeon"
+    elseif instanceType == "raid" then
+        if difficultyID == 17 then return "lfr" end
+        if difficultyID == 16 then return "mythicRaid" end
+        if difficultyID == 15 then return "heroicRaid" end
+        return "normalRaid"
+    elseif instanceType == "scenario" then
+        -- Delves report as scenarios, and are far and away the common case.
+        return "delve"
+    elseif instanceType == "pvp" or instanceType == "arena" then
+        return "pvp"
     end
-    
+
+    return "world"
+end
+BH.CurrentContentType = CurrentContentType
+
+--- Is the addon switched on for where the player is standing?
+function BH:ContentTypeEnabled()
+    local key = CurrentContentType()
+    local setting = self.settings and self.settings.contentTypes
+    if setting and setting[key] ~= nil then return setting[key] end
+    -- No stored value: fall back to the shipped default for that type.
+    for _, ct in ipairs(CONTENT_TYPES) do
+        if ct.key == key then return ct.default end
+    end
     return false
+end
+-- Kept under its historical name because a dozen call sites use it. It is now
+-- simply "is the addon switched on for this content type" -- the old
+-- party/raid/scenario test and the delve map-type fallback are both
+-- expressed in CONTENT_TYPES instead.
+local function IsInValidInstance()
+    return BH:ContentTypeEnabled() and true or false
 end
 
 -- Check if we should show buttons (valid instance, not in combat, M+ not active)
@@ -6500,28 +7031,45 @@ local function ShouldShowButtons()
         return false
     end
     
-    -- Hide during active M+.
-    -- Belt-and-suspenders: also poll C_ChallengeMode directly so that a
-    -- reload-while-in-M+ (where CHALLENGE_MODE_START never fires) is covered.
-    if BH.challengeModeActive then
-        return false
-    end
+    -- Whether to hide during a key is the content gate's decision now
+    -- ("Mythic+" in the content types, off by default), so this no longer
+    -- returns false on its own account. It still re-syncs the flag, because a
+    -- reload mid-key misses CHALLENGE_MODE_START and the death tally depends
+    -- on it.
     if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive
         and C_ChallengeMode.IsChallengeModeActive() then
-        BH.challengeModeActive = true  -- re-sync flag
-        -- Same reload-mid-key gap as above: start the death tally too if it
-        -- somehow missed CHALLENGE_MODE_START (e.g. addon just loaded).
+        BH.challengeModeActive = true
         if not deathTallyActive then
             BH:StartDeathTallyTracking()
         end
-        return false
     end
 
     -- Hide in combat
     if InCombatLockdown() then
         return false
     end
-    
+
+    return true
+end
+
+-- The same visibility rules, minus the combat check.
+--
+-- ShouldShowButtons has to refuse in combat because the main frame parents
+-- SecureActionButtonTemplate buttons, which cannot be created or changed under
+-- lockdown. The plain reminder frames have no secure children and no such
+-- restriction, and the two reminders that matter most -- Beacon and Earth
+-- Shield -- are precisely the ones you need mid-pull. Sharing one predicate
+-- meant they vanished the instant a pull started and did not come back until
+-- combat ended.
+--
+-- Reminders flagged combatSafe in BH.REMINDERS use this instead. The rest
+-- (repair, and the "no food/flask/oil in bags" trio) stay on the combat gate,
+-- because none of them can be acted on mid-fight anyway.
+local function ShouldShowReminders()
+    if BH.unlockMode then return true end
+    -- IsInValidInstance is the content-type gate, which already covers Mythic+
+    -- -- so there is no separate key check here any more.
+    if not IsInValidInstance() then return false end
     return true
 end
 
@@ -6542,96 +7090,68 @@ function BH:ScheduleUpdateButtons()
     end)
 end
 
-function BH:UpdateButtons()
-    if not IsLoggedIn() then return end  -- avoid running early when API is incomplete
-    if InCombatLockdown() then return end -- cannot create/change secure buttons in combat
+-- Can the player use this item yet? File scope so both the class-buff pass and
+-- the consumable pass can share it.
+local function MeetsLevelRequirement(itemID)
+    local playerLevel = UnitLevel("player")
+    local _, _, _, _, minLevel = C_Item.GetItemInfo(itemID)
+    -- If item info not loaded yet, assume we can use it (will recheck on next update)
+    if not minLevel then return true end
+    return playerLevel >= minLevel
+end
 
-    -- Always update consumable bag reminders regardless of instance/zone
-    self:UpdateFoodReminder()
-    self:UpdateFlaskReminder()
-    self:UpdateOilReminder()
-
-    -- Don't tear the buttons down in the middle of a click.
+-- Play the per-buff alert sound for any class buff whose button has just
+-- appeared, and forget the ones that no longer need it.
+--
+-- Takes the set of spellIDs that produced a button this pass. Split out of
+-- UpdateButtons because it is edge detection over a set, not button building,
+-- and the reasoning about secret auras below deserves to be findable.
+function BH:FireClassBuffSounds(spellIDsThisPass)
+    -- Class buff sound alert: play once per spellID when its button first appears.
     --
-    -- This function is driven by UNIT_AURA, which fires for every unit in the
-    -- group on every aura change, so in a group it runs more or less constantly
-    -- on its 0.2s debounce. The teardown below hides, unanchors and reparents
-    -- every button; if that lands between the player's mouse-down and mouse-up
-    -- the click is swallowed and the spell never goes off. Worse, buttons are
-    -- recycled from a pool in order, so the frame under the cursor can come
-    -- back as a different action entirely.
+    -- Skipped entirely while aura data is secret. At the moment combat starts,
+    -- auras stop being readable a fraction before InCombatLockdown() trips, so a
+    -- pass can land in that window, read every buff as missing, and fire alerts
+    -- for buffs the player actually has -- which is exactly what it sounded
+    -- like: the alerts all going off as a pull began.
     --
-    -- The window that matters is only while a mouse button is actually held.
-    -- Deferring on hover alone is wrong: after clicking a button the cursor
-    -- naturally stays on it, so the rebuild never ran and the button the player
-    -- just used sat there stale until they moved the mouse away.
-    --
-    -- The retry count is capped as a backstop, so a stuck mouse button or an
-    -- input state we did not anticipate can never stall updates indefinitely.
-    if not self.unlockMode and IsMouseButtonDown and IsMouseButtonDown()
-        and _updateButtonsDeferrals < 6 then
-        for _, btn in ipairs(self.buttons) do
-            if btn:IsShown() and btn:IsMouseOver() then
-                if not _updateButtonsHoverRetry then
-                    _updateButtonsHoverRetry = true
-                    _updateButtonsDeferrals = _updateButtonsDeferrals + 1
-                    C_Timer.After(0.1, function()
-                        _updateButtonsHoverRetry = false
-                        BH:UpdateButtons()
-                    end)
+    -- The tracking table is left untouched as well, not just the sounds. Marking
+    -- everything as "was needed" from an unreadable pass would overwrite the
+    -- real pre-combat state, and the next readable pass would then treat buffs
+    -- that never went anywhere as freshly missing.
+    if not BH.Secrets.AurasAreSecret() then
+        local s = self.settings
+        for spellID, _ in pairs(spellIDsThisPass) do
+            if not classBuffWasNeeded[spellID] then
+                classBuffWasNeeded[spellID] = true
+                local snd = s and s.classBuffSounds and s.classBuffSounds[spellID]
+                if snd and snd ~= "None" and not BH.suppressBuffSounds then
+                    PlaySQSound(snd)
                 end
-                return
+            end
+        end
+        -- Clear tracking for spells no longer showing buttons
+        for spellID in pairs(classBuffWasNeeded) do
+            if not spellIDsThisPass[spellID] then
+                classBuffWasNeeded[spellID] = nil
             end
         end
     end
-    _updateButtonsDeferrals = 0
+end
 
-    -- clear existing buttons - return to pool so frames are reused next UpdateButtons call
-    for i,btn in ipairs(self.buttons) do
-        btn:Hide()
-        btn:ClearAllPoints()
-        btn:SetScript("OnUpdate", nil)
-        btn.expirationTime = nil
-        btn.isCombatBuff = nil
-        UnregisterStateDriver(btn, "visibility")  -- remove any per-button combat-buff state driver
-        btn:SetParent(nil)
-        table.insert(SQ_BUTTON_POOL, btn)
-    end
-    self.buttons = {}
-    -- Clean up dummy preview buttons
-    if self.unlockDummyBtns then
-        for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
-        self.unlockDummyBtns = nil
-    end
-
-    local id = 1
-    local addedItems = {}  -- track items already added to avoid duplicates
-    local hasPetButton = false  -- true if any pet summon button is created this pass
+-- Append every class-buff button for this pass: group buffs, self buffs, tank
+-- buffs, weapon imbues, Paladin auras, Lightsmith rites and pet summons.
+--
+-- The largest single piece of what used to be UpdateButtons. Its parameters are
+-- deliberately named the same as the locals it used to close over, so the body
+-- moved across unchanged -- 385 lines of per-class special cases is exactly the
+-- code you do not want to be hand-editing while relocating it.
+--
+-- Returns the button index it reached, plus the two flags that decide whether
+-- the pet and combat-buff frames are shown.
+function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_this_pass)
+    local hasPetButton = false   -- true if any pet summon button is created this pass
     local hasCombatBuff = false  -- true if any group-wide buff button is created this pass
-
-    -- helper to check if item ID is in list
-    local function HasItemInList(itemID, list)
-        if not list then return false end
-        for _, id in ipairs(list) do
-            if id == itemID then return true end
-        end
-        return false
-    end
-
-    -- helper to check if player meets item level requirement
-    local function MeetsLevelRequirement(itemID)
-        local playerLevel = UnitLevel("player")
-        local _, _, _, _, minLevel = C_Item.GetItemInfo(itemID)
-        -- If item info not loaded yet, assume we can use it (will recheck on next update)
-        if not minLevel then return true end
-        return playerLevel >= minLevel
-    end
-
-    -- class buff(s) FIRST (will be in center)
-    -- Show only when someone in the group is missing the buff
-    -- Track which spellIDs generated buttons this pass (for per-buff sound alerts)
-    local classBuff_spellIDs_this_pass = {}
-    local _, class = UnitClass("player")
     local info = BH.classBuffs and BH.classBuffs[class]
     if info then
         if info.auraCheck and info.auras then
@@ -6890,6 +7410,44 @@ function BH:UpdateButtons()
                 if buffInfo.spellID and self:IsEnabled(buffInfo.spellID) then
                     if buffInfo.earthShield and earthShieldHandled then
                         -- Already handled in multi-shaman Earth Shield batch above
+                    elseif buffInfo.healthstoneCheck then
+                        -- Warlocks make their own, so they get a button rather
+                        -- than the text reminder everyone else gets. Which cast
+                        -- depends on whether they are alone -- see
+                        -- BH.HealthstoneAction. buffInfo.spellID stays the config
+                        -- key so the enable toggle and sound follow the entry
+                        -- rather than the spell being offered.
+                        local hsID, hsLabel = BH.HealthstoneAction()
+                        if hsID and not BH.HasHealthstone() then
+                            local icon = GetSpellIcon(hsID)
+                            if icon then
+                                self.buttons[id] = CreateButton(id, icon, "Make healthstones",
+                                    "spell", hsID, hsLabel, nil, nil)
+                                classBuff_spellIDs_this_pass[buffInfo.spellID] = true
+                                id = id + 1
+                            end
+                        end
+                    elseif buffInfo.weaponRune then
+                        -- Death Knight runeforge: a permanent enchant, so this
+                        -- reads the equipped weapon rather than an aura or a
+                        -- temporary imbue. See WeaponNeedsRune.
+                        --
+                        -- The action is whichever is useful where the player is
+                        -- standing -- the runeforge itself, or Death Gate to
+                        -- reach one. buffInfo.spellID stays the config key so
+                        -- the enable toggle and sound follow the entry, not the
+                        -- spell that happens to be offered.
+                        local needsRune, slotLabel = WeaponNeedsRune()
+                        local actionID, actionLabel = RuneforgeAction()
+                        if needsRune and actionID then
+                            local icon = GetSpellIcon(actionID)
+                            if icon then
+                                self.buttons[id] = CreateButton(id, icon, "Runeforge your weapon",
+                                    "spell", actionID, actionLabel, slotLabel, nil)
+                                classBuff_spellIDs_this_pass[buffInfo.spellID] = true
+                                id = id + 1
+                            end
+                        end
                     elseif buffInfo.weaponImbue then
                         -- Weapon imbue check (Shaman): show if spell is known but MH enchant is missing or expiring
                         if BH.PlayerKnowsSpell(buffInfo.spellID) then
@@ -7017,168 +7575,55 @@ function BH:UpdateButtons()
             end  -- not challengeModeActive
         end
     end
+    return id, hasPetButton, hasCombatBuff
+end
 
-    -- Class buff sound alert: play once per spellID when its button first appears.
+-- Append the food, flask and oil buttons for this pass.
+--
+-- Takes the next free button index and the set of items already added, and
+-- returns the index it reached. Threading `id` through the return rather than
+-- sharing an upvalue is what lets this live outside UpdateButtons at all.
+--
+-- Each of the three walks the configured list and looks the item up in the bag
+-- snapshot; see BH:RebuildBagCache for why that is not a bag walk.
+function BH:CollectConsumableButtons(id, addedItems, class)
+    -- Food, flask and augment rune are the same thing mechanically: an item in
+    -- the bags that applies a timed buff. Only the buff lookup and the button
+    -- caption differ, so they run through one loop rather than three
+    -- near-identical blocks. (Oil stays separate below -- it applies to weapon
+    -- slots and can produce two buttons.)
     --
-    -- Skipped entirely while aura data is secret. At the moment combat starts,
-    -- auras stop being readable a fraction before InCombatLockdown() trips, so a
-    -- pass can land in that window, read every buff as missing, and fire alerts
-    -- for buffs the player actually has -- which is exactly what it sounded
-    -- like: the alerts all going off as a pull began.
+    -- Each walks the configured list and looks the item up in the bag snapshot,
+    -- so the work is proportional to how many consumables are configured rather
+    -- than to how full the player's bags are -- and this runs on every
+    -- UNIT_AURA. See BH:RebuildBagCache.
     --
-    -- The tracking table is left untouched as well, not just the sounds. Marking
-    -- everything as "was needed" from an unreadable pass would overwrite the
-    -- real pre-combat state, and the next readable pass would then treat buffs
-    -- that never went anywhere as freshly missing.
-    if not BH.Secrets.AurasAreSecret() then
-        local s = self.settings
-        for spellID, _ in pairs(classBuff_spellIDs_this_pass) do
-            if not classBuffWasNeeded[spellID] then
-                classBuffWasNeeded[spellID] = true
-                local snd = s and s.classBuffSounds and s.classBuffSounds[spellID]
-                if snd and snd ~= "None" and not BH.suppressBuffSounds then
-                    PlaySQSound(snd)
-                end
-            end
-        end
-        -- Clear tracking for spells no longer showing buttons
-        for spellID in pairs(classBuffWasNeeded) do
-            if not classBuff_spellIDs_this_pass[spellID] then
-                classBuffWasNeeded[spellID] = nil
-            end
-        end
-    end
+    -- Side effect worth knowing: buttons appear in configured order rather than
+    -- bag order, which is at least stable when items move around.
+    local simpleConsumables = {
+        { key = "food",        caption = "Use food",         hasBuff = HasFoodBuff },
+        { key = "flask",       caption = "Use flask",        hasBuff = HasFlaskBuff },
+        { key = "augmentRune", caption = "Use augment rune", hasBuff = HasAugmentRuneBuff },
+    }
 
-    -- Symbiotic Relationship button, food/flask/oil consumable buttons, and reminder
-    -- frames only show when in a valid instance (or preview mode), not in open world.
-    if ShouldShowButtons() then
-
-    -- Symbiotic Relationship button for Druids with the talent
-    -- Guardian Druid: cast on healer | Restoration Druid: cast on tank
-    if class == "DRUID" and BH.PlayerKnowsSpell(SYMBIOTIC_CAST_SPELL_ID) then
-        -- Check if player already has the buff
-        local hasBuff = C_UnitAuras.GetPlayerAuraBySpellID(SYMBIOTIC_AURA_SPELL_ID)
-        if not hasBuff then
-            local specID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
-            local targetRole = nil
-            if specID == 104 then       -- Guardian
-                targetRole = "HEALER"
-            elseif specID == 105 then   -- Restoration
-                targetRole = "TANK"
-            end
-            if targetRole then
-                -- Find a group member with the matching role
-                local targetName = nil
-                local groupSize = GetNumGroupMembers()
-                local isRaid = IsInRaid()
-                for i = 1, groupSize do
-                    local unit = isRaid and ("raid" .. i) or ("party" .. i)
-                    if UnitExists(unit) and not UnitIsUnit(unit, "player")
-                        and not UnitIsDeadOrGhost(unit) and UnitIsConnected(unit) then
-                        if UnitGroupRolesAssigned(unit) == targetRole then
-                            targetName = UnitName(unit)
-                            break
-                        end
-                    end
-                end
-                if targetName then
-                    local icon = GetSpellIcon(SYMBIOTIC_CAST_SPELL_ID)
-                    if icon then
-                        local spellName = C_Spell.GetSpellName(SYMBIOTIC_CAST_SPELL_ID)
-                        self.buttons[id] = CreateButton(id, icon, "Cast on " .. targetName, "macro",
-                            "/cast [@" .. targetName .. "] " .. (spellName or ""), nil, nil, nil)
+    for _, cat in ipairs(simpleConsumables) do
+        local list = BH.consumables and BH.consumables[cat.key]
+        if list then
+            local hasBuff, expiration = cat.hasBuff()
+            for _, itemID in ipairs(list) do
+                local entry = not addedItems[itemID] and BH:GetBagEntry(itemID)
+                if entry and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
+                    -- (expiration or 0) rather than plain expiration: a
+                    -- permanent buff -- hearty food, for instance -- reports no
+                    -- expiration, and "hasBuff and nil or nil" collapses to nil,
+                    -- which NeedsRefresh reads as the buff being absent.
+                    local exp = hasBuff and (expiration or 0) or nil
+                    if self:NeedsRefresh(itemID, exp) then
+                        local icon = C_Item.GetItemIconByID(itemID)
+                        self.buttons[id] = CreateButton(id, icon, cat.caption, "item", itemID,
+                            nil, nil, exp, entry.link, entry.quality, entry.count)
+                        addedItems[itemID] = true
                         id = id + 1
-                    end
-                end
-            end
-        end
-    end
-
-    -- Emerald Coach's Whistle button – show if trinket is equipped and coaching needs refreshing
-    do
-        local hasWhistle = GetInventoryItemID("player", 13) == COACH_WHISTLE_ITEM_ID
-                        or GetInventoryItemID("player", 14) == COACH_WHISTLE_ITEM_ID
-        local coachExp = hasWhistle and GetCoachedAllyExpiration()
-        local needsCoach = hasWhistle and self:NeedsRefresh(COACH_WHISTLE_ITEM_ID, coachExp)
-        if needsCoach then
-            -- Find a real player party member to coach (prefer DAMAGER, then HEALER, then TANK)
-            local targetName = nil
-            local groupSize = GetNumGroupMembers()
-            local isRaid = IsInRaid()
-            for _, role in ipairs({"DAMAGER", "HEALER", "TANK"}) do
-                for i = 1, groupSize do
-                    local unit = isRaid and ("raid" .. i) or ("party" .. i)
-                    if UnitExists(unit) and not UnitIsUnit(unit, "player")
-                        and UnitIsPlayer(unit)
-                        and not UnitIsDeadOrGhost(unit) and UnitIsConnected(unit) then
-                        if UnitGroupRolesAssigned(unit) == role then
-                            targetName = UnitName(unit)
-                            break
-                        end
-                    end
-                end
-                if targetName then break end
-            end
-            if targetName then
-                local icon = C_Item.GetItemIconByID(COACH_WHISTLE_ITEM_ID)
-                if icon then
-                    self.buttons[id] = CreateButton(id, icon, "Coach: " .. targetName, "macro",
-                        "/use [@" .. targetName .. "] Emerald Coach's Whistle", nil, nil, nil)
-                    id = id + 1
-                end
-            end
-        end
-    end
-
-    -- food: check for specific item IDs in bags
-    -- Show if no food buff OR if buff time is below item's min duration
-    local hasFoodBuff, foodExpiration = HasFoodBuff()
-    if BH.consumables and BH.consumables.food then
-        for bag = FIRST_BAG, LAST_BAG do
-            for slot = 1, C_Container.GetContainerNumSlots(bag) do
-                local itemID = C_Container.GetContainerItemID(bag, slot)
-                if itemID and HasItemInList(itemID, BH.consumables.food) and not addedItems[itemID] and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
-                    -- Check if needs refresh based on min duration setting
-                    -- Guard against falsy-nil: food buffs with no expiration (hearty/permanent)
-                    -- return nil from HasFoodBuff; nil is falsy so "x and nil or nil" = nil,
-                    -- making NeedsRefresh think the buff is absent. Use (exp or 0) instead.
-                    local foodExp = hasFoodBuff and (foodExpiration or 0) or nil
-                    local needsRefresh = self:NeedsRefresh(itemID, foodExp)
-                    if needsRefresh then
-                        local icon = C_Item.GetItemIconByID(itemID)
-                        local itemLink = C_Container.GetContainerItemLink(bag, slot)
-                        local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
-                        local craftingQuality = containerInfo and containerInfo.craftingQuality
-                        local bagCount = CountItemInBags(itemID)
-                        self.buttons[id] = CreateButton(id, icon, "Use food", "item", itemID, nil, nil, foodExp, itemLink, craftingQuality, bagCount)
-                        addedItems[itemID] = true
-                        id = id+1
-                    end
-                end
-            end
-        end
-    end
-
-    -- flask: check for specific item IDs in bags
-    -- Show if no flask buff OR if buff time is below item's min duration
-    local hasFlaskBuff, flaskExpiration = HasFlaskBuff()
-    if BH.consumables and BH.consumables.flask then
-        for bag = FIRST_BAG, LAST_BAG do
-            for slot = 1, C_Container.GetContainerNumSlots(bag) do
-                local itemID = C_Container.GetContainerItemID(bag, slot)
-                if itemID and HasItemInList(itemID, BH.consumables.flask) and not addedItems[itemID] and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
-                    -- Check if needs refresh based on min duration setting
-                    local flaskExp = hasFlaskBuff and (flaskExpiration or 0) or nil
-                    local needsRefresh = self:NeedsRefresh(itemID, flaskExp)
-                    if needsRefresh then
-                        local icon = C_Item.GetItemIconByID(itemID)
-                        local itemLink = C_Container.GetContainerItemLink(bag, slot)
-                        local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
-                        local craftingQuality = containerInfo and containerInfo.craftingQuality
-                        local bagCount = CountItemInBags(itemID)
-                        self.buttons[id] = CreateButton(id, icon, "Use flask", "item", itemID, nil, nil, flaskExp, itemLink, craftingQuality, bagCount)
-                        addedItems[itemID] = true
-                        id = id+1
                     end
                 end
             end
@@ -7199,49 +7644,49 @@ function BH:UpdateButtons()
         local hasOH, ohExpiration = GetOffHandEnchantInfo()
         local hasOHWeapon = HasOffHandWeapon()
         
-        for bag = FIRST_BAG, LAST_BAG do
-            for slot = 1, C_Container.GetContainerNumSlots(bag) do
-                local itemID = C_Container.GetContainerItemID(bag, slot)
-                if itemID and HasItemInList(itemID, BH.consumables.oil) and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
-                    local icon = C_Item.GetItemIconByID(itemID)
-                    local itemLink = C_Container.GetContainerItemLink(bag, slot)
-                    local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
-                    local craftingQuality = containerInfo and containerInfo.craftingQuality
-                    -- Main hand oil button (show if missing or below min duration)
-                    local needsMH = self:NeedsRefresh(itemID, hasMH and mhExpiration or nil)
-                    local oilCount = CountItemInBags(itemID)
-                    if needsMH and not addedItems[itemID .. "_MH"] then
-                        self.buttons[id] = CreateButton(id, icon, "Apply oil (MH)", "oil", {itemID = itemID, slot = 16}, nil, "MH", hasMH and mhExpiration or nil, itemLink, craftingQuality, oilCount)
-                        addedItems[itemID .. "_MH"] = true
+        -- Configured list rather than a bag walk; see the food block above.
+        for _, itemID in ipairs(BH.consumables.oil) do
+            local entry = BH:GetBagEntry(itemID)
+            if entry and self:IsEnabled(itemID) and MeetsLevelRequirement(itemID) then
+                local icon = C_Item.GetItemIconByID(itemID)
+                -- Main hand oil button (show if missing or below min duration)
+                local needsMH = self:NeedsRefresh(itemID, hasMH and mhExpiration or nil)
+                if needsMH and not addedItems[itemID .. "_MH"] then
+                    self.buttons[id] = CreateButton(id, icon, "Apply oil (MH)", "oil",
+                        {itemID = itemID, slot = 16}, nil, "MH", hasMH and mhExpiration or nil,
+                        entry.link, entry.quality, entry.count)
+                    addedItems[itemID .. "_MH"] = true
+                    id = id+1
+                end
+                -- Off hand oil button (show if missing or below min duration)
+                if hasOHWeapon then
+                    local needsOH = self:NeedsRefresh(itemID, hasOH and ohExpiration or nil)
+                    if needsOH and not addedItems[itemID .. "_OH"] then
+                        self.buttons[id] = CreateButton(id, icon, "Apply oil (OH)", "oil",
+                            {itemID = itemID, slot = 17}, nil, "OH", hasOH and ohExpiration or nil,
+                            entry.link, entry.quality, entry.count)
+                        addedItems[itemID .. "_OH"] = true
                         id = id+1
-                    end
-                    -- Off hand oil button (show if missing or below min duration)
-                    if hasOHWeapon then
-                        local needsOH = self:NeedsRefresh(itemID, hasOH and ohExpiration or nil)
-                        if needsOH and not addedItems[itemID .. "_OH"] then
-                            self.buttons[id] = CreateButton(id, icon, "Apply oil (OH)", "oil", {itemID = itemID, slot = 17}, nil, "OH", hasOH and ohExpiration or nil, itemLink, craftingQuality, oilCount)
-                            addedItems[itemID .. "_OH"] = true
-                            id = id+1
-                        end
                     end
                 end
             end
         end
     end
+    return id
+end
 
-    else
-        -- Not in a valid instance: hide instance-only reminder frames
-        if self.beaconReminderFrame then self.beaconReminderFrame:Hide() end
-        if self.earthShieldReminderFrame then self.earthShieldReminderFrame:Hide() end
-        if self.symbioticReminderFrame then self.symbioticReminderFrame:Hide() end
-    end -- ShouldShowButtons
-
-    -- reposition buttons based on grow direction and layout direction
+-- Position the buttons built this pass, and size the frame around them.
+--
+-- Split out of UpdateButtons purely to make that function readable: this is
+-- ~110 lines of pure geometry that touches nothing but self.buttons and the
+-- layout settings, so it had no business sitting inline among the code that
+-- decides which buttons should exist.
+function BH:LayoutButtons(numButtons)
     local size = (self.settings and self.settings.buttonSize) or 36
     local spacing = (self.settings and self.settings.buttonSpacing) or 5
     local labelHeight = 26
     local headerHeight = 12
-    local numButtons = id - 1
+
     local grow = (self.settings and self.settings.growDirection) or "RIGHT"
     local layout = (self.settings and self.settings.layoutDirection) or "HORIZONTAL"
     
@@ -7345,6 +7790,178 @@ function BH:UpdateButtons()
     else
         self.frame:SetSize(1, 1)
     end
+end
+
+function BH:UpdateButtons()
+    if not IsLoggedIn() then return end  -- avoid running early when API is incomplete
+    if InCombatLockdown() then
+        -- Secure buttons cannot be created or changed under lockdown, but the
+        -- plain reminder frames can be, and refusing to update them here is
+        -- what made Beacon and Earth Shield disappear for the whole pull.
+        self:UpdateAllReminders()
+        return
+    end
+
+    -- Don't tear the buttons down in the middle of a click.
+    --
+    -- This function is driven by UNIT_AURA, which fires for every unit in the
+    -- group on every aura change, so in a group it runs more or less constantly
+    -- on its 0.2s debounce. The teardown below hides, unanchors and reparents
+    -- every button; if that lands between the player's mouse-down and mouse-up
+    -- the click is swallowed and the spell never goes off. Worse, buttons are
+    -- recycled from a pool in order, so the frame under the cursor can come
+    -- back as a different action entirely.
+    --
+    -- The window that matters is only while a mouse button is actually held.
+    -- Deferring on hover alone is wrong: after clicking a button the cursor
+    -- naturally stays on it, so the rebuild never ran and the button the player
+    -- just used sat there stale until they moved the mouse away.
+    --
+    -- The retry count is capped as a backstop, so a stuck mouse button or an
+    -- input state we did not anticipate can never stall updates indefinitely.
+    if not self.unlockMode and IsMouseButtonDown and IsMouseButtonDown()
+        and _updateButtonsDeferrals < 6 then
+        for _, btn in ipairs(self.buttons) do
+            if btn:IsShown() and btn:IsMouseOver() then
+                if not _updateButtonsHoverRetry then
+                    _updateButtonsHoverRetry = true
+                    _updateButtonsDeferrals = _updateButtonsDeferrals + 1
+                    C_Timer.After(0.1, function()
+                        _updateButtonsHoverRetry = false
+                        BH:UpdateButtons()
+                    end)
+                end
+                return
+            end
+        end
+    end
+    _updateButtonsDeferrals = 0
+
+    -- clear existing buttons - return to pool so frames are reused next UpdateButtons call
+    for i,btn in ipairs(self.buttons) do
+        btn:Hide()
+        btn:ClearAllPoints()
+        btn:SetScript("OnUpdate", nil)
+        -- Stop any glow before the frame goes back in the pool: it would
+        -- otherwise still be glowing when reused for a different reminder.
+        ns.Glow.Hide(btn)
+        btn.expirationTime = nil
+        btn.isCombatBuff = nil
+        UnregisterStateDriver(btn, "visibility")  -- remove any per-button combat-buff state driver
+        btn:SetParent(nil)
+        table.insert(SQ_BUTTON_POOL, btn)
+    end
+    self.buttons = {}
+    -- Clean up dummy preview buttons
+    if self.unlockDummyBtns then
+        for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
+        self.unlockDummyBtns = nil
+    end
+
+    local id = 1
+    local addedItems = {}  -- track items already added to avoid duplicates
+    -- Class buffs first, so they land in the centre of the row.
+    -- Show only when someone in the group is missing the buff
+    -- Track which spellIDs generated buttons this pass (for per-buff sound alerts)
+    local classBuff_spellIDs_this_pass = {}
+    local _, class = UnitClass("player")
+    local hasPetButton, hasCombatBuff
+    id, hasPetButton, hasCombatBuff =
+        self:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_this_pass)
+
+    self:FireClassBuffSounds(classBuff_spellIDs_this_pass)
+
+    -- Symbiotic Relationship button, food/flask/oil consumable buttons, and reminder
+    -- frames only show when in a valid instance (or preview mode), not in open world.
+    if ShouldShowButtons() then
+
+    -- Symbiotic Relationship button for Druids with the talent
+    -- Guardian Druid: cast on healer | Restoration Druid: cast on tank
+    if class == "DRUID" and BH.PlayerKnowsSpell(SYMBIOTIC_CAST_SPELL_ID) then
+        -- Check if player already has the buff
+        local hasBuff = C_UnitAuras.GetPlayerAuraBySpellID(SYMBIOTIC_AURA_SPELL_ID)
+        if not hasBuff then
+            local specID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
+            local targetRole = nil
+            if specID == 104 then       -- Guardian
+                targetRole = "HEALER"
+            elseif specID == 105 then   -- Restoration
+                targetRole = "TANK"
+            end
+            if targetRole then
+                -- Find a group member with the matching role
+                local targetName = nil
+                local groupSize = GetNumGroupMembers()
+                local isRaid = IsInRaid()
+                for i = 1, groupSize do
+                    local unit = isRaid and ("raid" .. i) or ("party" .. i)
+                    if UnitExists(unit) and not UnitIsUnit(unit, "player")
+                        and not UnitIsDeadOrGhost(unit) and UnitIsConnected(unit) then
+                        if UnitGroupRolesAssigned(unit) == targetRole then
+                            targetName = UnitName(unit)
+                            break
+                        end
+                    end
+                end
+                if targetName then
+                    local icon = GetSpellIcon(SYMBIOTIC_CAST_SPELL_ID)
+                    if icon then
+                        local spellName = C_Spell.GetSpellName(SYMBIOTIC_CAST_SPELL_ID)
+                        self.buttons[id] = CreateButton(id, icon, "Cast on " .. targetName, "macro",
+                            "/cast [@" .. targetName .. "] " .. (spellName or ""), nil, nil, nil)
+                        id = id + 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- Emerald Coach's Whistle button – show if trinket is equipped and coaching needs refreshing
+    do
+        local hasWhistle = GetInventoryItemID("player", 13) == COACH_WHISTLE_ITEM_ID
+                        or GetInventoryItemID("player", 14) == COACH_WHISTLE_ITEM_ID
+        local coachExp = hasWhistle and GetCoachedAllyExpiration()
+        local needsCoach = hasWhistle and self:NeedsRefresh(COACH_WHISTLE_ITEM_ID, coachExp)
+        if needsCoach then
+            -- Find a real player party member to coach (prefer DAMAGER, then HEALER, then TANK)
+            local targetName = nil
+            local groupSize = GetNumGroupMembers()
+            local isRaid = IsInRaid()
+            for _, role in ipairs({"DAMAGER", "HEALER", "TANK"}) do
+                for i = 1, groupSize do
+                    local unit = isRaid and ("raid" .. i) or ("party" .. i)
+                    if UnitExists(unit) and not UnitIsUnit(unit, "player")
+                        and UnitIsPlayer(unit)
+                        and not UnitIsDeadOrGhost(unit) and UnitIsConnected(unit) then
+                        if UnitGroupRolesAssigned(unit) == role then
+                            targetName = UnitName(unit)
+                            break
+                        end
+                    end
+                end
+                if targetName then break end
+            end
+            if targetName then
+                local icon = C_Item.GetItemIconByID(COACH_WHISTLE_ITEM_ID)
+                if icon then
+                    self.buttons[id] = CreateButton(id, icon, "Coach: " .. targetName, "macro",
+                        "/use [@" .. targetName .. "] Emerald Coach's Whistle", nil, nil, nil)
+                    id = id + 1
+                end
+            end
+        end
+    end
+
+    id = self:CollectConsumableButtons(id, addedItems, class)
+
+    else
+        -- Not in a valid instance: hide instance-only reminder frames
+        if self.beaconReminderFrame then self.beaconReminderFrame:Hide() end
+        if self.earthShieldReminderFrame then self.earthShieldReminderFrame:Hide() end
+        if self.symbioticReminderFrame then self.symbioticReminderFrame:Hide() end
+    end -- ShouldShowButtons
+
+    self:LayoutButtons(id - 1)
 
     -- show/hide main frame depending on buttons
     if self.unlockMode then
@@ -7441,74 +8058,313 @@ function BH:UpdateButtons()
         if hasCombatBuff then BH.combatBuffFrame:Show() else BH.combatBuffFrame:Hide() end
     end
 
-    -- Unlock mode overlay on main buttons frame
-    if self.unlockMode then
-        if not self.mainPreviewOverlay then
-            local ov = self.frame:CreateTexture(nil, "OVERLAY")
-            ov:SetAllPoints()
-            ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-            self.mainPreviewOverlay = ov
+    -- The green tint on this frame is applied by SetAllFramesPreview along
+    -- with every other movable frame. It used to be duplicated here, which
+    -- meant two overlay textures stacked on the same frame.
+
+    self:UpdateAllReminders()
+end
+
+-- Hide the reminders that are not worth showing in combat. There is no matching
+-- "show" call: on the way out of combat UpdateAllReminders re-evaluates every
+-- frame on its merits, which is the same path used everywhere else.
+function BH:HideCombatUnsafeReminders()
+    for _, def in ipairs(BH.REMINDERS) do
+        if not def.combatSafe then
+            local frame = self[def.key .. "ReminderFrame"]
+            if frame then frame:Hide() end
         end
-        self.mainPreviewOverlay:Show()
-        -- Show main drag handle
-        if self.dragHandle then self.dragHandle:Show() end
-    else
-        if self.mainPreviewOverlay then self.mainPreviewOverlay:Hide() end
+    end
+end
+
+-- Whether a reminder frame should take the mouse. Every reminder's show path
+-- goes through this rather than repeating `unlockMode or not locked` eleven
+-- times, which is what let the pet reminder quietly disagree with the other ten.
+--
+-- The combat clause is the BigWigs click-through pattern: now that combat-safe
+-- reminders stay up during a pull, a 340px banner sitting over the action bars
+-- must not be able to swallow a click, and there is nothing useful to click it
+-- for mid-fight anyway.
+function BH:ReminderMouseEnabled(locked)
+    if self.unlockMode then return true end   -- dragging is the whole point
+    if locked then return false end
+    if InCombatLockdown() then return false end
+    return true
+end
+
+-- Every plain (non-secure) reminder frame, refreshed in one place.
+--
+-- Split out of UpdateButtons because UpdateButtons returns early under
+-- InCombatLockdown -- it has to, it owns the secure buttons -- and that early
+-- return was taking the reminder frames down with it. These frames have no
+-- secure children, so they can be updated freely in combat; each individual
+-- Update*Reminder decides for itself whether it is combat-safe, via
+-- ShouldShowReminders versus ShouldShowButtons.
+-- Clear a reminder the moment the player casts the thing it is asking for.
+--
+-- Needed because the three combat-safe reminders detect *absence* of a buff,
+-- and in combat auras are secret: applying the buff is invisible to us, so the
+-- reminder would sit there for the rest of the fight. The player's own cast is
+-- not an aura read, so it still gets through, and it is decisive -- if you just
+-- cast Earth Shield, you no longer need reminding to cast Earth Shield.
+--
+-- Optimistic by design. If the cast was wasted (wrong target, immediately
+-- dispelled) the next readable pass puts the reminder straight back.
+function BH:OnReminderSpellcast(spellID)
+    -- Only the player's own cast reaches here, and that spellID is readable --
+    -- but launder it anyway so a future secret one degrades to "no match"
+    -- rather than throwing on the comparison below.
+    local id = BH.Secrets.SafeNumber(spellID, nil)
+    if not id then return end
+
+    for _, beaconID in ipairs(BEACON_AURA_IDS) do
+        if id == beaconID then
+            local needed = self.beaconsNeededLast or 1
+            self.beaconsBelieved = math.min(needed, (self.beaconsBelieved or 0) + 1)
+            self:UpdateBeaconReminder()
+            return
+        end
     end
 
-    -- Beacon reminder for Holy Paladins
-    if ShouldShowButtons() then
+    for _, esID in ipairs(ES_AURA_IDS) do
+        if id == esID then
+            local needed = self.esNeededLast or 1
+            self.esBelieved = math.min(needed, (self.esBelieved or 0) + 1)
+            self:UpdateEarthShieldReminder()
+            return
+        end
+    end
+
+    if id == SYMBIOTIC_CAST_SPELL_ID then
+        if self.symbioticReminderFrame and not self.unlockMode then
+            self.symbioticReminderFrame:Hide()
+        end
+    end
+end
+
+-- How many of the tracked units are still alive and present.
+local function CountLivingTracked(guids)
+    if not guids or #guids == 0 then return 0 end
+    local wanted = {}
+    for _, guid in ipairs(guids) do wanted[guid] = true end
+    local n = 0
+    for _, unit in ipairs(GetGroupUnits()) do
+        if UnitExists(unit) and not UnitIsDeadOrGhost(unit) then
+            local guid = UnitGUID(unit)
+            if guid and wanted[guid] then n = n + 1 end
+        end
+    end
+    return n
+end
+
+-- Bring a combat-safe reminder back when its buff is lost while auras are secret.
+--
+-- OnReminderSpellcast covers the buff being applied. This covers the other
+-- direction, which is the harder half: once auras are unreadable we cannot see
+-- a beacon or Earth Shield fall off, so without this the reminder would stay
+-- hidden for the rest of the fight after one cast.
+--
+-- The readable signal we do have is death. A beacon or Earth Shield is lost
+-- when its target dies, and UnitIsDeadOrGhost stays readable when the aura does
+-- not -- the same reasoning the M+ Death Tally uses. So each readable pass
+-- records which GUIDs carry the buff, and this checks whether enough of them
+-- are still standing.
+--
+-- What this still cannot see: Earth Shield running out of charges, a dispel, or
+-- Symbiotic Relationship expiring on its timer. There is no readable signal for
+-- any of those while auras are secret.
+function BH:PollBlindReminderLoss()
+    if not InCombatLockdown() then return end
+    if not BH.Secrets.AurasAreSecret() then return end
+    if self.unlockMode then return end
+
+    local changed = false
+
+    -- The clamp on *AliveLast below matters: a battle rez brings the unit back
+    -- but not the beacon, so the tracked count must only ever fall.
+    -- Beacons. Note this counts *drops*, not absolutes: a beacon cast while
+    -- blind lands on a unit we cannot identify, so it never joins beaconedGUIDs
+    -- and an absolute comparison would read as "still missing" and re-show the
+    -- reminder the instant it was correctly hidden. Only an actual fall in the
+    -- number of living tracked units means a beacon was lost.
+    if self.beaconedGUIDs and #self.beaconedGUIDs > 0 then
+        local aliveNow  = CountLivingTracked(self.beaconedGUIDs)
+        local alivePrev = self.beaconedAliveLast or aliveNow
+        if aliveNow < alivePrev then
+            self.beaconsBelieved = math.max(0, (self.beaconsBelieved or 0) - (alivePrev - aliveNow))
+            changed = true
+        end
+        self.beaconedAliveLast = math.min(alivePrev, aliveNow)
+    end
+
+    if self.esGUIDs and #self.esGUIDs > 0 then
+        local aliveNow  = CountLivingTracked(self.esGUIDs)
+        local alivePrev = self.esAliveLast or aliveNow
+        if aliveNow < alivePrev then
+            self.esBelieved = math.max(0, (self.esBelieved or 0) - (alivePrev - aliveNow))
+            changed = true
+        end
+        self.esAliveLast = math.min(alivePrev, aliveNow)
+    end
+
+    -- Let the normal update path decide what to show; it reads the same
+    -- believed counts, so there is one place that owns the decision.
+    if changed then
         self:UpdateBeaconReminder()
-
-        -- Earth Shield reminder for Shamans
         self:UpdateEarthShieldReminder()
-
-        -- Repair reminder
-        self:UpdateRepairReminder()
-
-        -- Symbiotic Relationship reminder for Druids
-        self:UpdateSymbioticReminder()
     end
-    -- Coach's Whistle reminder called unconditionally so it hides when leaving instances
+end
+
+-- Ticker for the above. Same AnimationGroup idiom as the Battle Res Counter and
+-- Death Tally -- cheaper than an OnUpdate, and the handler bails immediately
+-- unless we are actually blind, so out of combat this costs a function call
+-- every half second.
+do
+    -- Deliberately NOT parented to BH.frame: that frame is hidden on entering
+    -- combat, and an AnimationGroup on a hidden frame stops running -- which
+    -- would kill this ticker at exactly the moment it becomes useful. This host
+    -- is an empty frame that draws nothing and is never hidden.
+    local host = CreateFrame("Frame", nil, UIParent)
+    host:SetSize(1, 1)
+    host:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+    host:Show()
+    BH.tickerHost = host
+
+    local ticker = host:CreateAnimationGroup()
+    ticker:SetLooping("REPEAT")
+    ticker:SetScript("OnLoop", function() BH:PollBlindReminderLoss() end)
+    local anim = ticker:CreateAnimation()
+    anim:SetDuration(0.5)
+    ticker:Play()
+    BH.blindReminderTicker = ticker
+end
+
+-- ============================================================================
+-- Reminder gates
+--
+-- Every Update<Name>Reminder used to open with the same twenty-odd lines: bail
+-- if the frame does not exist, bail if preview mode owns visibility, hide if
+-- the reminder is switched off, hide if the wrong class, hide if the wrong
+-- spec, hide if the spell is not known, hide unless the content type allows
+-- it. Ten copies of the same checks, each free to drift from the others -- and
+-- they had.
+--
+-- The checks are named predicates now, and each reminder record lists the ones
+-- it wants in `gates`. What is left in each Update function is the part that is
+-- genuinely specific to that reminder.
+-- ============================================================================
+
+BH.REMINDER_GATES = {
+    enabled = function(def)
+        return BH.settings and BH.settings[def.key .. "ReminderEnabled"] ~= false
+    end,
+
+    class = function(def)
+        local _, class = UnitClass("player")
+        return class == def.class
+    end,
+
+    spec = function(def)
+        ---@diagnostic disable-next-line: undefined-global
+        local specID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
+        return specID == def.spec
+    end,
+
+    notSpec = function(def)
+        ---@diagnostic disable-next-line: undefined-global
+        local specID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
+        return specID ~= def.notSpec
+    end,
+
+    knows = function(def)
+        return BH.PlayerKnowsSpell(def.knowsSpell)
+    end,
+
+    -- The buff has its own tick in the class-buff list, and unticking it should
+    -- silence the reminder too.
+    buffEnabled = function(def)
+        return BH:IsEnabled(def.buffEnabledSpell)
+    end,
+
+    equipped = function(def)
+        return GetInventoryItemID("player", 13) == def.equippedItem
+            or GetInventoryItemID("player", 14) == def.equippedItem
+    end,
+
+    -- The content-type gate: dungeons, raids, the open world and so on, per the
+    -- player's "Show in" settings.
+    visible = function()
+        return ShouldShowReminders()
+    end,
+
+    outOfCombat = function()
+        return not InCombatLockdown()
+    end,
+
+    group = function()
+        return GetNumGroupMembers() > 0
+    end,
+
+    -- Stricter than `group`: a solo delve fills the party with NPC companions,
+    -- and telling someone to buff their bodyguard is noise.
+    realGroup = function()
+        return HasRealPlayerGroupMember()
+    end,
+}
+
+-- A misspelled gate would otherwise pass silently and the reminder would show
+-- in situations it was meant to be hidden in, which is the sort of bug that
+-- goes unnoticed for a patch cycle. Fail loudly at load instead.
+for _, def in ipairs(BH.REMINDERS) do
+    for _, name in ipairs(def.gates or {}) do
+        if not BH.REMINDER_GATES[name] then
+            error(("Squizzumables: reminder '%s' declares unknown gate '%s'"):format(def.key, name))
+        end
+    end
+end
+
+--- Run a reminder's shared gates.
+---
+--- Returns the frame when they all pass, and nil when one fails (having hidden
+--- the frame) or when there is nothing to decide yet -- no frame built, or
+--- preview mode owning visibility. Callers open with
+---
+---     local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.beacon)
+---     if not frame then return end
+function BH:ReminderGate(def)
+    local frame = self[def.key .. "ReminderFrame"]
+    if not frame then return nil end
+    -- Preview mode owns visibility: SetAllFramesPreview has already shown this
+    -- frame so it can be positioned, and this pass must not undo that. Without
+    -- it, UpdateButtons (driven by UNIT_AURA) hid every previewed reminder
+    -- within a fraction of a second of the preview being turned on.
+    if self.unlockMode then return nil end
+
+    for _, name in ipairs(def.gates or {}) do
+        if not BH.REMINDER_GATES[name](def) then
+            frame:Hide()
+            return nil
+        end
+    end
+    return frame
+end
+
+function BH:UpdateAllReminders()
+    self:UpdateBeaconReminder()
+    self:UpdateEarthShieldReminder()
+    self:UpdateRepairReminder()
+    self:UpdateSymbioticReminder()
     self:UpdateCoachWhistleReminder()
-    -- Hunter pet reminder
     self:UpdatePetReminder()
+    self:UpdateBagReminder()
+    self:UpdateHealthstoneReminder()
 end
 
 -- Update beacon reminder visibility for Holy Paladins
 -- Shows big centered text when beacons are missing
 function BH:UpdateBeaconReminder()
-    if not self.beaconReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
-
-    if not (self.settings and self.settings.beaconReminderEnabled ~= false) then
-        self.beaconReminderFrame:Hide()
-        return
-    end
-
-    -- Only for Holy Paladins (spec index 1)
-    local _, class = UnitClass("player")
-    if class ~= "PALADIN" then
-        self.beaconReminderFrame:Hide()
-        return
-    end
-
-    ---@diagnostic disable-next-line: undefined-global
-    local specID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
-    if specID ~= 65 then -- 65 = Holy Paladin
-        self.beaconReminderFrame:Hide()
-        return
-    end
-
-    -- Follow the same visibility rules as the main frame
-    if not ShouldShowButtons() then
-        self.beaconReminderFrame:Hide()
-        return
-    end
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.beacon)
+    if not frame then return end
 
     -- Determine how many beacons needed based on talents
     -- Beacon of Faith = 2 beacons, Beacon of Light = 1 beacon
@@ -7522,8 +8378,35 @@ function BH:UpdateBeaconReminder()
         beaconsNeeded = 2
     end
 
-    -- Count beacons sourced by the player on group members
+    -- Auras go secret in combat, and an unreadable aura is indistinguishable
+    -- from an absent one. This reminder fires on *absence*, so a secret pass
+    -- counts zero and asserts "missing" for a buff that is actually up -- and
+    -- keeps asserting it, because applying the buff cannot be seen either.
+    -- Hold whatever the last readable pass decided instead. The player's own
+    -- cast still clears it: see OnReminderSpellcast.
+    --
+    -- Beacon of Faith needs two beacons, so one cast is not enough to call it
+    -- done -- count the casts seen since going blind and only clear once they
+    -- cover what is needed.
+    if BH.Secrets.AurasAreSecret() then
+        self.beaconsNeededLast = beaconsNeeded
+        if (self.beaconsBelieved or 0) >= beaconsNeeded then
+            self.beaconReminderFrame:Hide()
+        else
+            local locked = self.settings and self.settings.beaconReminderLocked
+            self.beaconReminderFrame:Show()
+            self.beaconReminderFrame:EnableMouse(BH:ReminderMouseEnabled(locked))
+        end
+        return
+    end
+
+    -- Count beacons sourced by the player on group members.
+    --
+    -- Also record *whose* GUIDs carry them. Once auras go secret this is the
+    -- only handle left on the buff: PollBlindReminderLoss watches those units
+    -- for death, which is readable when the aura is not.
     local myBeaconCount = 0
+    local beaconedGUIDs = {}
     local groupSize = GetNumGroupMembers()
     if groupSize > 0 then
         local isRaid = IsInRaid()
@@ -7532,8 +8415,9 @@ function BH:UpdateBeaconReminder()
             if UnitExists(unit) and not UnitIsDeadOrGhost(unit) then
                 for _, auraID in ipairs(BEACON_AURA_IDS) do
                     local auraData = C_UnitAuras.GetUnitAuraBySpellID(unit, auraID)
-                    if auraData and auraData.sourceUnit and UnitIsUnit(auraData.sourceUnit, "player") then
+                    if BH.Secrets.AuraIsFromPlayer(auraData) then
                         myBeaconCount = myBeaconCount + 1
+                        beaconedGUIDs[#beaconedGUIDs + 1] = UnitGUID(unit)
                         break -- only count one beacon per unit
                     end
                 end
@@ -7543,12 +8427,19 @@ function BH:UpdateBeaconReminder()
         if not isRaid then
             for _, auraID in ipairs(BEACON_AURA_IDS) do
                 local auraData = C_UnitAuras.GetPlayerAuraBySpellID(auraID)
-                if auraData and auraData.sourceUnit and UnitIsUnit(auraData.sourceUnit, "player") then
+                if BH.Secrets.AuraIsFromPlayer(auraData) then
                     myBeaconCount = myBeaconCount + 1
+                    beaconedGUIDs[#beaconedGUIDs + 1] = UnitGUID("player")
                     break
                 end
             end
         end
+        -- Baseline for the blind tracking below: what is actually up, who is
+        -- carrying it, and how many of those are alive right now.
+        self.beaconedGUIDs     = beaconedGUIDs
+        self.beaconsNeededLast = beaconsNeeded
+        self.beaconsBelieved   = myBeaconCount
+        self.beaconedAliveLast = #beaconedGUIDs
     else
         -- Solo - no group members to beacon
         self.beaconReminderFrame:Hide()
@@ -7559,7 +8450,7 @@ function BH:UpdateBeaconReminder()
         self.beaconReminderFrame:Show()
         -- Enable/disable mouse based on lock
         local locked = self.settings and self.settings.beaconReminderLocked
-        self.beaconReminderFrame:EnableMouse(self.unlockMode or not locked)
+        self.beaconReminderFrame:EnableMouse(BH:ReminderMouseEnabled(locked))
     else
         self.beaconReminderFrame:Hide()
     end
@@ -7568,49 +8459,8 @@ end
 -- Update Earth Shield reminder visibility for Restoration Shamans
 -- Uses the same multi-shaman slot logic as the old button system
 function BH:UpdateEarthShieldReminder()
-    if not self.earthShieldReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
-
-    if not (self.settings and self.settings.earthShieldReminderEnabled ~= false) then
-        self.earthShieldReminderFrame:Hide()
-        return
-    end
-
-    -- Only for Shamans
-    local _, class = UnitClass("player")
-    if class ~= "SHAMAN" then
-        self.earthShieldReminderFrame:Hide()
-        return
-    end
-
-    -- Earth Shield must be known
-    if not BH.PlayerKnowsSpell(974) then
-        self.earthShieldReminderFrame:Hide()
-        return
-    end
-
-    -- Earth Shield must be enabled in settings
-    if not self:IsEnabled(974) then
-        self.earthShieldReminderFrame:Hide()
-        return
-    end
-
-    -- Follow the same visibility rules as the main frame
-    if not ShouldShowButtons() then
-        self.earthShieldReminderFrame:Hide()
-        return
-    end
-
-    -- Must be in a group
-    local groupSize = GetNumGroupMembers()
-    if groupSize == 0 then
-        self.earthShieldReminderFrame:Hide()
-        return
-    end
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.earthShield)
+    if not frame then return end
 
     -- Same logic as the old multi-shaman Earth Shield checks:
     -- Count how many Earth Shields the player has sourced (self + others)
@@ -7618,26 +8468,48 @@ function BH:UpdateEarthShieldReminder()
     -- Without Elemental Orbit the player can maintain 1 external ES (max 1).
     local myESCount = 0
     local hasSelfES = false
+    local esGUIDs = {}
+
+    -- Auras go secret in combat, and an unreadable aura is indistinguishable
+    -- from an absent one. This reminder fires on *absence*, so a secret pass
+    -- counts zero and asserts "missing" for a shield that is actually up -- and
+    -- keeps asserting it, because applying it cannot be seen either. Hold
+    -- whatever the last readable pass decided instead. The player's own cast
+    -- still clears it (OnReminderSpellcast) and PollBlindReminderLoss brings it
+    -- back if the shielded target dies.
+    if BH.Secrets.AurasAreSecret() then
+        if (self.esBelieved or 0) >= (self.esNeededLast or 1) then
+            self.earthShieldReminderFrame:Hide()
+        else
+            local locked = self.settings and self.settings.earthShieldReminderLocked
+            self.earthShieldReminderFrame:Show()
+            self.earthShieldReminderFrame:EnableMouse(BH:ReminderMouseEnabled(locked))
+        end
+        return
+    end
 
     -- Check if I have Earth Shield on myself (sourced by me = Elemental Orbit)
     for _, checkID in ipairs(ES_AURA_IDS) do
         local auraData = C_UnitAuras.GetPlayerAuraBySpellID(checkID)
-        if auraData and auraData.sourceUnit and UnitIsUnit(auraData.sourceUnit, "player") then
+        if BH.Secrets.AuraIsFromPlayer(auraData) then
             myESCount = myESCount + 1
             hasSelfES = true
+            esGUIDs[#esGUIDs + 1] = UnitGUID("player")
             break
         end
     end
 
     -- Check group members for Earth Shields sourced by me
     local isRaid = IsInRaid()
+    local groupSize = GetNumGroupMembers()
     for i = 1, groupSize do
         local unit = isRaid and ("raid" .. i) or ("party" .. i)
         if not (isRaid and UnitIsUnit(unit, "player")) and UnitExists(unit) then
             for _, checkID in ipairs(ES_AURA_IDS) do
                 local auraData = C_UnitAuras.GetUnitAuraBySpellID(unit, checkID)
-                if auraData and auraData.sourceUnit and UnitIsUnit(auraData.sourceUnit, "player") then
+                if BH.Secrets.AuraIsFromPlayer(auraData) then
                     myESCount = myESCount + 1
+                    esGUIDs[#esGUIDs + 1] = UnitGUID(unit)
                     break
                 end
             end
@@ -7646,12 +8518,16 @@ function BH:UpdateEarthShieldReminder()
 
     -- Max slots: 2 with Elemental Orbit (self ES detected), 1 without
     local maxES = hasSelfES and 2 or 1
+    self.esGUIDs      = esGUIDs
+    self.esNeededLast = maxES
+    self.esBelieved   = myESCount
+    self.esAliveLast  = #esGUIDs
 
     if myESCount < maxES then
         self.earthShieldReminderFrame:Show()
         -- Enable/disable mouse based on lock
         local locked = self.settings and self.settings.earthShieldReminderLocked
-        self.earthShieldReminderFrame:EnableMouse(self.unlockMode or not locked)
+        self.earthShieldReminderFrame:EnableMouse(BH:ReminderMouseEnabled(locked))
     else
         self.earthShieldReminderFrame:Hide()
     end
@@ -7660,23 +8536,8 @@ end
 -- Update repair reminder visibility
 -- Shows big centered text when any equipped item's durability is below threshold
 function BH:UpdateRepairReminder()
-    if not self.repairReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
-
-    if not self.settings or not self.settings.repairReminderEnabled then
-        self.repairReminderFrame:Hide()
-        return
-    end
-
-    -- Hide during combat
-    if InCombatLockdown() then
-        self.repairReminderFrame:Hide()
-        return
-    end
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.repair)
+    if not frame then return end
 
     local threshold = self.settings.repairReminderThreshold or 20
     local lowestPct = 100
@@ -7696,7 +8557,7 @@ function BH:UpdateRepairReminder()
         self.repairReminderFrame:Show()
         -- Enable/disable mouse based on lock
         local locked = self.settings and self.settings.repairReminderLocked
-        self.repairReminderFrame:EnableMouse(self.unlockMode or not locked)
+        self.repairReminderFrame:EnableMouse(BH:ReminderMouseEnabled(locked))
     else
         self.repairReminderFrame:Hide()
     end
@@ -7705,50 +8566,23 @@ end
 -- Update Symbiotic Relationship reminder visibility for Druids
 -- Shows big centered text when any party/raid member is missing the buff
 function BH:UpdateSymbioticReminder()
-    if not self.symbioticReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.symbiotic)
+    if not frame then return end
 
-    if not (self.settings and self.settings.symbioticReminderEnabled ~= false) then
-        self.symbioticReminderFrame:Hide()
-        return
-    end
-
-    -- Only for Druids
-    local _, class = UnitClass("player")
-    if class ~= "DRUID" then
-        self.symbioticReminderFrame:Hide()
-        return
-    end
-
-    -- Symbiotic Relationship must be known (talent)
-    if not BH.PlayerKnowsSpell(SYMBIOTIC_CAST_SPELL_ID) then
-        self.symbioticReminderFrame:Hide()
-        return
-    end
-
-    -- Follow the same visibility rules as the main frame
-    if not ShouldShowButtons() then
-        self.symbioticReminderFrame:Hide()
-        return
-    end
-
-    -- Must be in a group
-    local groupSize = GetNumGroupMembers()
-    if groupSize == 0 then
-        self.symbioticReminderFrame:Hide()
-        return
-    end
+    -- Auras go secret in combat, and an unreadable aura is indistinguishable
+    -- from an absent one. This reminder fires on *absence*, so a secret pass
+    -- counts zero and asserts "missing" for a buff that is actually up -- and
+    -- keeps asserting it, because applying the buff cannot be seen either.
+    -- Hold whatever the last readable pass decided instead. The player's own
+    -- cast still clears it: see OnReminderSpellcast.
+    if BH.Secrets.AurasAreSecret() then return end
 
     -- Check if the player has the Symbiotic Relationship buff on themselves
     local auraData = C_UnitAuras.GetPlayerAuraBySpellID(SYMBIOTIC_AURA_SPELL_ID)
     if not auraData then
         local locked = self.settings and self.settings.symbioticReminderLocked
         self.symbioticReminderFrame:Show()
-        self.symbioticReminderFrame:EnableMouse(self.unlockMode or not locked)
+        self.symbioticReminderFrame:EnableMouse(BH:ReminderMouseEnabled(locked))
     else
         self.symbioticReminderFrame:Hide()
     end
@@ -7756,318 +8590,219 @@ end
 
 -- Update Emerald Coach's Whistle reminder visibility
 function BH:UpdateCoachWhistleReminder()
-    if not self.coachWhistleReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
-
-    if not (self.settings and self.settings.coachWhistleReminderEnabled ~= false) then
-        self.coachWhistleReminderFrame:Hide()
-        return
-    end
-
-    -- Trinket must be equipped
-    local hasWhistle = GetInventoryItemID("player", 13) == COACH_WHISTLE_ITEM_ID
-                    or GetInventoryItemID("player", 14) == COACH_WHISTLE_ITEM_ID
-    if not hasWhistle then
-        self.coachWhistleReminderFrame:Hide()
-        return
-    end
-
-    if not ShouldShowButtons() then
-        self.coachWhistleReminderFrame:Hide()
-        return
-    end
-
-    -- Must have at least one real player group member (hides in solo delves with NPC companions)
-    if not HasRealPlayerGroupMember() then
-        self.coachWhistleReminderFrame:Hide()
-        return
-    end
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.coachWhistle)
+    if not frame then return end
 
     -- Show if coaching needs refreshing (buff missing or below min duration threshold)
     local coachExp = GetCoachedAllyExpiration()
     if not self:NeedsRefresh(COACH_WHISTLE_ITEM_ID, coachExp) then
-        self.coachWhistleReminderFrame:Hide()
+        frame:Hide()
     else
         local locked = self.settings and self.settings.coachWhistleReminderLocked
-        self.coachWhistleReminderFrame:Show()
-        self.coachWhistleReminderFrame:EnableMouse(self.unlockMode or not locked)
+        frame:Show()
+        frame:EnableMouse(BH:ReminderMouseEnabled(locked))
     end
 end
 
 -- Hunter: No Pet reminder
 function BH:UpdatePetReminder()
-    if not self.petReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
-
-    if not (self.settings and self.settings.petReminderEnabled ~= false) then
-        self.petReminderFrame:Hide()
-        return
-    end
-
-    -- Only for Hunters (class = HUNTER)
-    local _, class = UnitClass("player")
-    if class ~= "HUNTER" then
-        self.petReminderFrame:Hide()
-        return
-    end
-
-    -- Survival spec (255) does not use a pet — skip
-    local specID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
-    if specID == 255 then
-        self.petReminderFrame:Hide()
-        return
-    end
-
-    -- In preview mode always show
-    if self.unlockMode then
-        self.petReminderFrame:Show()
-        local locked = self.settings and self.settings.petReminderLocked
-        self.petReminderFrame:EnableMouse(not locked)
-        return
-    end
-
-    if not ShouldShowButtons() then
-        self.petReminderFrame:Hide()
-        return
-    end
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.pet)
+    if not frame then return end
 
     -- Show when player has no active pet
     if UnitExists("pet") then
-        self.petReminderFrame:Hide()
+        frame:Hide()
     else
-        self.petReminderFrame:Show()
+        frame:Show()
         local locked = self.settings and self.settings.petReminderLocked
-        self.petReminderFrame:EnableMouse(self.unlockMode or not locked)
+        frame:EnableMouse(BH:ReminderMouseEnabled(locked))
     end
 end
 
 -- Update food "no items in bag" reminder
-function BH:UpdateFoodReminder()
-    if not self.foodReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
 
-    if not (self.settings and self.settings.foodReminderEnabled ~= false) then
-        self.foodReminderFrame:Hide()
-        return
-    end
+-- The four "nothing in your bags" reminders, as one frame.
+--
+-- Food, flask, oil and augment rune each used to have their own frame, so a
+-- player who was short of all four got four banners stacked up the screen, each
+-- needing its own position, scale and lock. They are one line of text now,
+-- naming whichever are actually missing -- the same shape the role CC alert
+-- uses for healer and tank.
+--
+-- The per-category settings survive as *watch* toggles: unticking Food means
+-- "do not tell me about food", not "hide a frame".
+local BAG_REMINDER_ORDER = { "food", "flask", "oil", "augmentRune" }
+local BAG_REMINDER_WORDS = {
+    food        = "FOOD",
+    flask       = "FLASK",
+    oil         = "WEAPON OIL",
+    augmentRune = "AUGMENT RUNE",
+}
 
-    -- Hide during combat
-    if InCombatLockdown() then
-        self.foodReminderFrame:Hide()
-        return
-    end
-
-    -- Check if any enabled food items exist in bags
-    if not self.consumables or not self.consumables.food then
-        self.foodReminderFrame:Hide()
-        return
-    end
-
-    local hasAnyEnabled = false
-    local hasAnyInBags = false
-    for _, itemID in ipairs(self.consumables.food) do
-        if self:IsEnabled(itemID) then
-            hasAnyEnabled = true
-            for bag = FIRST_BAG, LAST_BAG do
-                for slot = 1, C_Container.GetContainerNumSlots(bag) do
-                    if C_Container.GetContainerItemID(bag, slot) == itemID then
-                        hasAnyInBags = true
-                        break
-                    end
-                end
-                if hasAnyInBags then break end
-            end
-            if hasAnyInBags then break end
-        end
-    end
-
-    if not hasAnyEnabled then
-        self.foodReminderFrame:Hide()
-        return
-    end
-
-    if not hasAnyInBags then
-        local locked = self.settings and self.settings.foodReminderLocked
-        self.foodReminderFrame:Show()
-        self.foodReminderFrame:EnableMouse(self.unlockMode or not locked)
-    else
-        self.foodReminderFrame:Hide()
-    end
+-- "FOOD", "FOOD OR FLASK", "FOOD, FLASK OR OIL" -- read aloud rather than a
+-- comma-separated dump, since this is a sentence the player reads at a glance.
+local function JoinMissing(words)
+    local n = #words
+    if n == 0 then return nil end
+    if n == 1 then return words[1] end
+    if n == 2 then return words[1] .. " OR " .. words[2] end
+    return table.concat(words, ", ", 1, n - 1) .. " OR " .. words[n]
 end
 
--- Update flask "no items in bag" reminder
-function BH:UpdateFlaskReminder()
-    if not self.flaskReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
-
-    if not (self.settings and self.settings.flaskReminderEnabled ~= false) then
-        self.flaskReminderFrame:Hide()
-        return
-    end
-
-    -- Hide during combat
-    if InCombatLockdown() then
-        self.flaskReminderFrame:Hide()
-        return
-    end
-
-    if not self.consumables or not self.consumables.flask then
-        self.flaskReminderFrame:Hide()
-        return
-    end
-
-    local hasAnyEnabled = false
-    local hasAnyInBags = false
-    for _, itemID in ipairs(self.consumables.flask) do
-        if self:IsEnabled(itemID) then
-            hasAnyEnabled = true
-            for bag = FIRST_BAG, LAST_BAG do
-                for slot = 1, C_Container.GetContainerNumSlots(bag) do
-                    if C_Container.GetContainerItemID(bag, slot) == itemID then
-                        hasAnyInBags = true
+--- Which watched categories have nothing usable in the bags.
+local function MissingBagCategories()
+    local missing = {}
+    for _, key in ipairs(BAG_REMINDER_ORDER) do
+        -- Watched at all?
+        if BH.settings and BH.settings[key .. "ReminderEnabled"] ~= false then
+            local list = BH.consumables and BH.consumables[key]
+            local anyEnabled, anyInBags = false, false
+            for _, itemID in ipairs(list or {}) do
+                if BH:IsEnabled(itemID) then
+                    anyEnabled = true
+                    if BH:HasItemInBags(itemID) then
+                        anyInBags = true
                         break
                     end
                 end
-                if hasAnyInBags then break end
             end
-            if hasAnyInBags then break end
+            -- Nothing enabled in a category is not the same as nothing carried:
+            -- the player has simply not asked us to track it.
+            if anyEnabled and not anyInBags then
+                missing[#missing + 1] = BAG_REMINDER_WORDS[key]
+            end
         end
     end
-
-    if not hasAnyEnabled then
-        self.flaskReminderFrame:Hide()
-        return
-    end
-
-    if not hasAnyInBags then
-        local locked = self.settings and self.settings.flaskReminderLocked
-        self.flaskReminderFrame:Show()
-        self.flaskReminderFrame:EnableMouse(self.unlockMode or not locked)
-    else
-        self.flaskReminderFrame:Hide()
-    end
+    return missing
 end
 
--- Update oil "no items in bag" reminder
-function BH:UpdateOilReminder()
-    if not self.oilReminderFrame then return end
-    -- Preview mode owns visibility: RefreshAllReminderFrames has already shown
-    -- this frame so it can be positioned, and this pass must not undo that.
-    -- Without this, UpdateButtons (driven by UNIT_AURA) hid every previewed
-    -- reminder within a fraction of a second of the preview being turned on.
-    if self.unlockMode then return end
+function BH:UpdateBagReminder()
+    -- Oil is suppressed for Holy Paladins running a Lightsmith rite, since the
+    -- imbue replaces oils entirely for them. Handled by IsEnabled on the items
+    -- themselves rather than here, so it applies wherever the list is read.
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.bags)
+    if not frame then return end
 
-    if not (self.settings and self.settings.oilReminderEnabled ~= false) then
-        self.oilReminderFrame:Hide()
+    local missing = MissingBagCategories()
+    if #missing == 0 then
+        frame:Hide()
         return
     end
 
-    -- Hide during combat
-    if InCombatLockdown() then
-        self.oilReminderFrame:Hide()
-        return
+    if self.bagsReminderText then
+        self.bagsReminderText:SetText("NO " .. JoinMissing(missing) .. " IN BAGS")
     end
+    local locked = self.settings and self.settings.bagsReminderLocked
+    frame:EnableMouse(BH:ReminderMouseEnabled(locked))
+    frame:Show()
+end
 
-    -- Only show if there's a mainhand weapon equipped
-    local mhItemID = GetInventoryItemID("player", 16)
-    if not mhItemID then
-        self.oilReminderFrame:Hide()
-        return
+
+
+
+-- Healthstones.
+--
+-- Deliberately not a consumable category. Food, flask, oil and augment runes
+-- are "you are missing this buff, click to apply it"; a healthstone is "you are
+-- not carrying one", and the moment you *use* it is not a moment for a
+-- reminder. So this is a bag-presence check with no button.
+local HEALTHSTONE_ITEM_IDS = {
+    5512,    -- Healthstone
+    224464,  -- Demonic Healthstone
+}
+
+local CREATE_HEALTHSTONE_SPELL_ID = 6201
+local CREATE_SOULWELL_SPELL_ID    = 29893
+
+-- Which healthstone action to offer a warlock.
+--
+-- Solo, Create Healthstone is the whole job. In a group the useful cast is a
+-- Soulwell: it serves everyone including the warlock, so it replaces the
+-- personal version rather than sitting alongside it.
+--
+-- Falls back to the personal cast if Soulwell is somehow unknown, so a
+-- low-level warlock still gets a usable button.
+function BH.HealthstoneAction()
+    if IsInGroup() and BH.PlayerKnowsSpell(CREATE_SOULWELL_SPELL_ID) then
+        return CREATE_SOULWELL_SPELL_ID, "Soulwell"
     end
-
-    if not self.consumables or not self.consumables.oil then
-        self.oilReminderFrame:Hide()
-        return
+    if BH.PlayerKnowsSpell(CREATE_HEALTHSTONE_SPELL_ID) then
+        return CREATE_HEALTHSTONE_SPELL_ID, "Healthstone"
     end
+    return nil
+end
 
-    -- Suppress oil reminder for Holy Paladins with a Lightsmith Rite talented (weapon imbue replaces oil)
-    local _, oilReminderClass = UnitClass("player")
-    if oilReminderClass == "PALADIN" then
-        local oilReminderSpecID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
-        if oilReminderSpecID == 65 and (BH.PlayerKnowsSpell(433568) or BH.PlayerKnowsSpell(433583)) then
-            self.oilReminderFrame:Hide()
-            return
+-- Is there anyone here who can make one?
+--
+-- Includes the player, since a warlock can conjure their own. GetGroupUnits
+-- already yields "player" first, so solo warlocks are covered without a
+-- special case.
+-- Is the player carrying a healthstone of any kind?
+function BH.HasHealthstone()
+    for _, itemID in ipairs(HEALTHSTONE_ITEM_IDS) do
+        if BH:HasItemInBags(itemID) then return true end
+    end
+    return false
+end
+
+local function GroupHasWarlock()
+    for _, unit in ipairs(GetGroupUnits()) do
+        if UnitExists(unit) then
+            local _, class = UnitClass(unit)
+            if class == "WARLOCK" then return true end
         end
     end
+    return false
+end
+BH.HEALTHSTONE_ITEM_IDS = HEALTHSTONE_ITEM_IDS
 
-    local hasAnyEnabled = false
-    local hasAnyInBags = false
-    for _, itemID in ipairs(self.consumables.oil) do
-        if self:IsEnabled(itemID) then
-            hasAnyEnabled = true
-            for bag = FIRST_BAG, LAST_BAG do
-                for slot = 1, C_Container.GetContainerNumSlots(bag) do
-                    if C_Container.GetContainerItemID(bag, slot) == itemID then
-                        hasAnyInBags = true
-                        break
-                    end
-                end
-                if hasAnyInBags then break end
-            end
-            if hasAnyInBags then break end
-        end
-    end
+function BH:UpdateHealthstoneReminder()
+    -- Unlike the consumable reminders this stays up in combat -- being without
+    -- a healthstone matters most mid-fight, and pulling one from a Soulwell is
+    -- something you can still do -- so there is no outOfCombat gate here.
+    local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.healthstone)
+    if not frame then return end
 
-    if not hasAnyEnabled then
-        self.oilReminderFrame:Hide()
+    if BH.HasHealthstone() then
+        self.healthstoneReminderFrame:Hide()
         return
     end
 
-    if not hasAnyInBags then
-        local locked = self.settings and self.settings.oilReminderLocked
-        self.oilReminderFrame:Show()
-        self.oilReminderFrame:EnableMouse(self.unlockMode or not locked)
-    else
-        self.oilReminderFrame:Hide()
+    -- A warlock gets a Create Healthstone button instead of being told
+    -- about it, since they are the one who can fix it. See the
+    -- healthstoneCheck branch in CollectClassBuffButtons.
+    local _, playerClass = UnitClass("player")
+    if playerClass == "WARLOCK" then
+        self.healthstoneReminderFrame:Hide()
+        return
     end
+
+    -- Only worth saying if someone can actually make you one. Healthstones
+    -- come from warlocks and nowhere else, so without one in the group this
+    -- is a reminder to do something you cannot do.
+    if not GroupHasWarlock() then
+        self.healthstoneReminderFrame:Hide()
+        return
+    end
+
+    local locked = self.settings and self.settings.healthstoneReminderLocked
+    self.healthstoneReminderFrame:Show()
+    self.healthstoneReminderFrame:EnableMouse(BH:ReminderMouseEnabled(locked))
 end
 
 -- Force-show or real-update all reminder frames depending on preview mode.
 -- Call this whenever unlockMode changes.
 function BH:RefreshAllReminderFrames()
     if self.unlockMode then
-        -- Force-show all enabled reminder frames so they can be repositioned
-        local function showIf(frame, settingKey, lockedKey)
-            if not frame then return end
-            if self.settings and self.settings[settingKey] == false then
-                frame:Hide(); return
-            end
-            local locked = self.settings and self.settings[lockedKey]
-            frame:EnableMouse(not locked)
-            frame:Show()
-        end
-        showIf(self.beaconReminderFrame,    "beaconReminderEnabled",    "beaconReminderLocked")
-        showIf(self.earthShieldReminderFrame,"earthShieldReminderEnabled","earthShieldReminderLocked")
-        showIf(self.symbioticReminderFrame,  "symbioticReminderEnabled", "symbioticReminderLocked")
-        showIf(self.coachWhistleReminderFrame,"coachWhistleReminderEnabled","coachWhistleReminderLocked")
-        showIf(self.repairReminderFrame,     "repairReminderEnabled",    "repairReminderLocked")
-        showIf(self.foodReminderFrame,       "foodReminderEnabled",      "foodReminderLocked")
-        showIf(self.flaskReminderFrame,      "flaskReminderEnabled",     "flaskReminderLocked")
-        showIf(self.oilReminderFrame,        "oilReminderEnabled",       "oilReminderLocked")
-        -- The pet reminder was previously missing from this list, so it was the
-        -- one reminder that could not be positioned from preview.
-        showIf(self.petReminderFrame,        "petReminderEnabled",       "petReminderLocked")
-        -- Role CC has two toggles rather than one enabled key, so it cannot go
-        -- through showIf. UpdateRoleCCFrame handles preview itself, since it
-        -- also runs whenever a role toggle changes.
+        -- SetAllFramesPreview already showed, tinted and unlocked every
+        -- movable frame, reminders included. This used to repeat that job
+        -- from its own hand-written list, and honoured each frame's lock
+        -- while doing it -- which is why a locked reminder showed its
+        -- preview tint and then refused to be dragged.
+        self:SetAllFramesPreview(true)
+        -- Role CC has two toggles rather than one enabled key, so it
+        -- decides for itself whether there is anything to show.
         self:UpdateRoleCCFrame()
-        -- Repair text preview
         if self.repairReminderFrame and self.repairReminderFrame:IsShown() and self.repairReminderText then
             self.repairReminderText:SetText("REPAIR (15%)")
         end
@@ -8078,9 +8813,8 @@ function BH:RefreshAllReminderFrames()
         self:UpdateSymbioticReminder()
         self:UpdateCoachWhistleReminder()
         self:UpdateRepairReminder()
-        self:UpdateFoodReminder()
-        self:UpdateFlaskReminder()
-        self:UpdateOilReminder()
+        self:UpdateBagReminder()
+        self:UpdateHealthstoneReminder()
         -- Role CC: shows only while a watched healer or tank actually has CC,
         -- and labels itself with whichever roles those are.
         self:UpdateRoleCCFrame()
@@ -8156,123 +8890,25 @@ function BH:UpdateRaidToolsVisibility()
 
     -- Preview mode overlays
     if preview then
-        -- Unlock all frames for moving during preview
+        -- One call now covers every movable frame: tint, mouse, movable, show.
+        -- See MOVABLE_FRAMES for the list and why it is a list.
         self:UpdateFrameLock()
-        -- Show drag handles regardless of lock
-        if self.markersDragHandle then self.markersDragHandle:Show() end
-        if self.pullReadyDragHandle then self.pullReadyDragHandle:Show() end
-        -- Show green transparent overlay on main frame
-        if self.frame and not self.mainPreviewOverlay then
-            local ov = self.frame:CreateTexture(nil, "OVERLAY")
-            ov:SetAllPoints()
-            ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-            self.mainPreviewOverlay = ov
+        self:SetAllFramesPreview(true)
+
+        -- Role CC has two toggles rather than one enabled key, so it decides
+        -- for itself whether there is anything to preview.
+        self:UpdateRoleCCFrame()
+
+        -- Repair shows a sample percentage so the frame is not empty.
+        if self.repairReminderFrame and self.repairReminderFrame:IsShown() and self.repairReminderText then
+            self.repairReminderText:SetText("REPAIR (15%)")
         end
-        if self.mainPreviewOverlay then self.mainPreviewOverlay:Show() end
-        -- Show green transparent overlay on markers frame
-        if self.markersFrame and not self.markersPreviewOverlay then
-            local ov = self.markersFrame:CreateTexture(nil, "OVERLAY")
-            ov:SetAllPoints()
-            ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-            self.markersPreviewOverlay = ov
-        end
-        if self.markersPreviewOverlay then self.markersPreviewOverlay:Show() end
-        -- Show green transparent overlay on pull/ready frame
-        if self.pullReadyFrame and not self.pullReadyPreviewOverlay then
-            local ov = self.pullReadyFrame:CreateTexture(nil, "OVERLAY")
-            ov:SetAllPoints()
-            ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-            self.pullReadyPreviewOverlay = ov
-        end
-        if self.pullReadyPreviewOverlay then self.pullReadyPreviewOverlay:Show() end
-        -- Show beacon reminder frame with overlay during preview
-        if self.beaconReminderFrame then
-            self.beaconReminderFrame:Show()
-            self.beaconReminderFrame:EnableMouse(true)
-            if not self.beaconPreviewOverlay then
-                local ov = self.beaconReminderFrame:CreateTexture(nil, "OVERLAY")
-                ov:SetAllPoints()
-                ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                self.beaconPreviewOverlay = ov
-            end
-            self.beaconPreviewOverlay:Show()
-        end
-        -- Show Earth Shield reminder frame with overlay during preview
-        if self.earthShieldReminderFrame then
-            self.earthShieldReminderFrame:Show()
-            self.earthShieldReminderFrame:EnableMouse(true)
-            if not self.earthShieldPreviewOverlay then
-                local ov = self.earthShieldReminderFrame:CreateTexture(nil, "OVERLAY")
-                ov:SetAllPoints()
-                ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                self.earthShieldPreviewOverlay = ov
-            end
-            self.earthShieldPreviewOverlay:Show()
-        end
-        -- Show Repair reminder frame with overlay during preview
-        if self.repairReminderFrame then
-            self.repairReminderFrame:Show()
-            self.repairReminderFrame:EnableMouse(true)
-            if not self.repairPreviewOverlay then
-                local ov = self.repairReminderFrame:CreateTexture(nil, "OVERLAY")
-                ov:SetAllPoints()
-                ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                self.repairPreviewOverlay = ov
-            end
-            self.repairPreviewOverlay:Show()
-        end
-        -- Show Symbiotic Relationship reminder frame with overlay during preview
-        if self.symbioticReminderFrame then
-            self.symbioticReminderFrame:Show()
-            self.symbioticReminderFrame:EnableMouse(true)
-            if not self.symbioticPreviewOverlay then
-                local ov = self.symbioticReminderFrame:CreateTexture(nil, "OVERLAY")
-                ov:SetAllPoints()
-                ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                self.symbioticPreviewOverlay = ov
-            end
-            self.symbioticPreviewOverlay:Show()
-        end
-        -- Show Bres counter frame with overlay during preview
-        if self.bresCounterFrame then
-            self:UpdateBresCounter()
-            if not self.bresPreviewOverlay then
-                local ov = self.bresCounterFrame:CreateTexture(nil, "OVERLAY")
-                ov:SetAllPoints()
-                ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                self.bresPreviewOverlay = ov
-            end
-            self.bresPreviewOverlay:Show()
-        end
-        -- Show Death Tally frame with overlay during preview
-        if self.deathTallyFrame then
-            self:UpdateDeathTallyDisplay()
-            if not self.deathTallyPreviewOverlay then
-                local ov = self.deathTallyFrame:CreateTexture(nil, "OVERLAY")
-                ov:SetAllPoints()
-                ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                self.deathTallyPreviewOverlay = ov
-            end
-            self.deathTallyPreviewOverlay:Show()
-        end
-        local consumReminders = {
-            { frame = self.foodReminderFrame,  overlay = "foodPreviewOverlay"  },
-            { frame = self.flaskReminderFrame, overlay = "flaskPreviewOverlay" },
-            { frame = self.oilReminderFrame,   overlay = "oilPreviewOverlay"   },
-        }
-        for _, r in ipairs(consumReminders) do
-            if r.frame then
-                r.frame:Show()
-                r.frame:EnableMouse(true)
-                if not self[r.overlay] then
-                    local ov = r.frame:CreateTexture(nil, "OVERLAY")
-                    ov:SetAllPoints()
-                    ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                    self[r.overlay] = ov
-                end
-                self[r.overlay]:Show()
-            end
-        end
+
+        -- Frames that draw their own sample content in preview. Showing the
+        -- frame is not enough for these -- the death tally would sit there
+        -- empty without its placeholder names.
+        self:UpdateDeathTallyDisplay()
+        if self.UpdateBresCounter then self:UpdateBresCounter() end
 
         -- Show CDM group previews
         if self.cdm and self.cdm.ShowPreview then
@@ -8288,72 +8924,42 @@ function BH:UpdateRaidToolsVisibility()
             self.previewControlFrame:Show()
         end
     else
-        -- Hide overlays
-        if self.mainPreviewOverlay then self.mainPreviewOverlay:Hide() end
-        if self.markersPreviewOverlay then self.markersPreviewOverlay:Hide() end
-        if self.pullReadyPreviewOverlay then self.pullReadyPreviewOverlay:Hide() end
-        if self.beaconPreviewOverlay then self.beaconPreviewOverlay:Hide() end
-        if self.earthShieldPreviewOverlay then self.earthShieldPreviewOverlay:Hide() end
-        if self.repairPreviewOverlay then self.repairPreviewOverlay:Hide() end
-        if self.symbioticPreviewOverlay then self.symbioticPreviewOverlay:Hide() end
-        if self.bresPreviewOverlay then self.bresPreviewOverlay:Hide() end
+        -- Leaving preview: drop every tint, then let each frame's own updater
+        -- decide whether it should still be on screen and whether its lock
+        -- allows dragging. SetAllFramesPreview(false) only clears the overlays;
+        -- it deliberately does not hide or show anything, because that is the
+        -- updaters' job.
+        self:SetAllFramesPreview(false)
+
         if self.bresCounterFrame and not bresTrackingActive then
             self.bresCounterFrame:Hide()
         end
-        if self.deathTallyPreviewOverlay then self.deathTallyPreviewOverlay:Hide() end
         if self.deathTallyFrame then
             self:UpdateDeathTallyDisplay()
         end
-        if self.foodPreviewOverlay then self.foodPreviewOverlay:Hide() end
-        if self.flaskPreviewOverlay then self.flaskPreviewOverlay:Hide() end
-        if self.oilPreviewOverlay then self.oilPreviewOverlay:Hide() end
-        -- Restore reminder frames' mouse enable based on lock setting
-        if self.beaconReminderFrame then
-            local locked = self.settings and self.settings.beaconReminderLocked
-            self.beaconReminderFrame:EnableMouse(not locked)
-        end
-        if self.earthShieldReminderFrame then
-            local locked = self.settings and self.settings.earthShieldReminderLocked
-            self.earthShieldReminderFrame:EnableMouse(not locked)
-        end
-        if self.repairReminderFrame then
-            local locked = self.settings and self.settings.repairReminderLocked
-            self.repairReminderFrame:EnableMouse(not locked)
-        end
-        if self.symbioticReminderFrame then
-            local locked = self.settings and self.settings.symbioticReminderLocked
-            self.symbioticReminderFrame:EnableMouse(not locked)
-        end
-        if self.foodReminderFrame then
-            local locked = self.settings and self.settings.foodReminderLocked
-            self.foodReminderFrame:EnableMouse(not locked)
-        end
-        if self.flaskReminderFrame then
-            local locked = self.settings and self.settings.flaskReminderLocked
-            self.flaskReminderFrame:EnableMouse(not locked)
-        end
-        if self.oilReminderFrame then
-            local locked = self.settings and self.settings.oilReminderLocked
-            self.oilReminderFrame:EnableMouse(not locked)
-        end
 
-        -- Restore bres counter mouse state based on lock
+        -- Restore per-frame mouse state from each frame's own lock setting.
+        -- Driven from the registry rather than one block per reminder.
+        for _, def in ipairs(BH.REMINDERS) do
+            local frame = self[def.key .. "ReminderFrame"]
+            if frame then
+                local locked = self.settings and self.settings[def.key .. "ReminderLocked"]
+                frame:EnableMouse(self:ReminderMouseEnabled(locked))
+            end
+        end
         if self.bresCounterFrame then
             local locked = self.settings and self.settings.bresCounterLocked
             self.bresCounterFrame:EnableMouse(not locked)
         end
-        -- Re-evaluate repair reminder (may have been shown by preview)
-        self:UpdateRepairReminder()
-        -- Hide CDM group previews
+
+        -- Re-evaluate anything preview may have shown or relabelled.
+        self:UpdateAllReminders()
         if self.cdm and self.cdm.HidePreview then
             self.cdm:HidePreview()
         end
 
-        -- Restore beacon reminder - hide it (UpdateBeaconReminder will show if needed)
-
-        -- Restore main frame lock state
         self:UpdateFrameLock()
-        -- Restore drag handle visibility based on lock
+        -- Drag handles follow their frame's lock again.
         if self.markersDragHandle then
             if self.settings and self.settings.raidToolsMarkersLocked then
                 self.markersDragHandle:Hide()
@@ -8817,47 +9423,44 @@ function BH:CreateRaidToolsFrame()
     local lockBtn = CreateSQButton(pcf, "Lock All", 68, 22)
     lockBtn:SetPoint("BOTTOMLEFT", pcf, "BOTTOMLEFT", 6, 6)
     lockBtn:SetScript("OnClick", function()
+        -- Driven off the registries rather than a hand-written list.
+        --
+        -- It was a hand-written list, and it had fallen behind by five: the
+        -- Coach's Whistle, pet, role CC, augment rune and healthstone frames
+        -- were never in it, so "Lock All" quietly left them unlocked. Nothing
+        -- announced that -- the button said it had locked everything.
+        for _, def in ipairs(BH.REMINDERS) do
+            BH.settings[def.key .. "ReminderLocked"] = true
+        end
         BH.settings.raidToolsMarkersLocked = true
         BH.settings.raidToolsPullReadyLocked = true
-        BH.settings.beaconReminderLocked = true
-        BH.settings.earthShieldReminderLocked = true
-        BH.settings.repairReminderLocked = true
-        BH.settings.symbioticReminderLocked = true
         BH.settings.bresCounterLocked = true
         BH.settings.deathTallyLocked = true
+        BH.settings.kelAlertLocked = true
         BH.settings.frameLocked = true
-        BH.settings.foodReminderLocked = true
-        BH.settings.flaskReminderLocked = true
-        BH.settings.oilReminderLocked = true
         BH:SaveSettings()
         -- Lock CDM groups
         if BH.cdm and BH.cdm.LockAll then
             BH.cdm:LockAll()
         end
-        if BH.markersFrame then BH.markersFrame:SetMovable(false) end
-        if BH.pullReadyFrame then BH.pullReadyFrame:SetMovable(false) end
-        if BH.beaconReminderFrame then BH.beaconReminderFrame:SetMovable(false); BH.beaconReminderFrame:EnableMouse(false) end
-        if BH.repairReminderFrame then BH.repairReminderFrame:SetMovable(false); BH.repairReminderFrame:EnableMouse(false) end
-        if BH.symbioticReminderFrame then BH.symbioticReminderFrame:SetMovable(false); BH.symbioticReminderFrame:EnableMouse(false) end
-        if BH.earthShieldReminderFrame then BH.earthShieldReminderFrame:SetMovable(false); BH.earthShieldReminderFrame:EnableMouse(false) end
-        if BH.bresCounterFrame then BH.bresCounterFrame:SetMovable(false); BH.bresCounterFrame:EnableMouse(false) end
-        if BH.deathTallyFrame then BH.deathTallyFrame:SetMovable(false); BH.deathTallyFrame:EnableMouse(false) end
-        if BH.foodReminderFrame then BH.foodReminderFrame:SetMovable(false); BH.foodReminderFrame:EnableMouse(false) end
-        if BH.flaskReminderFrame then BH.flaskReminderFrame:SetMovable(false); BH.flaskReminderFrame:EnableMouse(false) end
-        if BH.oilReminderFrame then BH.oilReminderFrame:SetMovable(false); BH.oilReminderFrame:EnableMouse(false) end
+
+        -- Apply to the live frames, from the same list preview mode uses, so a
+        -- frame can never be previewable but not lockable.
+        for _, def in ipairs(BH.MOVABLE_FRAMES or {}) do
+            local f = BH[def.field]
+            if f then
+                f:SetMovable(false)
+                f:EnableMouse(false)
+            end
+        end
+        if BH.kelAlertFrame then
+            BH.kelAlertFrame:SetMovable(false)
+            BH.kelAlertFrame:EnableMouse(false)
+        end
         BH:UpdateFrameLock()
-        -- Update options panel checkboxes if open
-        if BH.rtLockMarkersCheckbox then BH.rtLockMarkersCheckbox:SetChecked(true) end
-        if BH.rtLockPRCheckbox then BH.rtLockPRCheckbox:SetChecked(true) end
-        if BH.rtLockBeaconCheckbox then BH.rtLockBeaconCheckbox:SetChecked(true) end
-        if BH.rtLockBresCheckbox then BH.rtLockBresCheckbox:SetChecked(true) end
-        if BH.kelLockDeathTallyCheckbox then BH.kelLockDeathTallyCheckbox:SetChecked(true) end
-        if BH.itLockCheckbox then BH.itLockCheckbox:SetChecked(true) end
-        if BH.lockCheckbox then BH.lockCheckbox:SetChecked(true) end
-        -- The seven per-reminder lock checkboxes used to be pushed individually
-        -- here. They are declarative rows now and read their own value back
-        -- from settings, so one refresh covers all of them -- and covers any
-        -- reminder added later without this list having to be updated.
+        -- Options panel checkboxes used to be pushed one by one here. Every
+        -- lock is a declarative row now and reads its own value back, so the
+        -- RefreshAll below covers them -- including any added later.
         ns.Rows.RefreshAll()
         print("Squizzumables: All frames locked")
         -- Locking everything means the player is finished positioning, so leave
@@ -9004,6 +9607,11 @@ end
 
 -- hook events
 BH.frame:RegisterEvent("PLAYER_LOGIN")
+-- Sub-zone changes too, not just new areas. Walking to the runeforge inside
+-- Acherus changes only the sub-zone, and the Death Knight rune button needs
+-- to swap between Death Gate and Runeforging when it does.
+BH.frame:RegisterEvent("ZONE_CHANGED")
+BH.frame:RegisterEvent("ZONE_CHANGED_INDOORS")
 BH.frame:RegisterEvent("BAG_UPDATE_DELAYED")
 BH.frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 BH.frame:RegisterEvent("UNIT_AURA")
@@ -9024,7 +9632,12 @@ BH.frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")  -- spec swap → may sw
 BH.frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")  -- feast: player's own cast
 C_ChatInfo.RegisterAddonMessagePrefix("SQ_FEAST")
 C_ChatInfo.RegisterAddonMessagePrefix("SQ_CALLOUT")
-BH.frame:RegisterEvent("CHAT_MSG_ADDON")  -- inter-addon feast alerts from other Squizzumables users
+BH.frame:RegisterEvent("CHAT_MSG_ADDON")
+-- Pull countdowns, so the encounter-timeline mirror picks up a pull started by
+-- anyone in the group rather than only our own Raid Tools button.
+BH.frame:RegisterEvent("START_PLAYER_COUNTDOWN")
+BH.frame:RegisterEvent("CANCEL_PLAYER_COUNTDOWN")
+  -- inter-addon feast alerts from other Squizzumables users
 BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "PLAYER_LOGIN" then
         BH:LoadSettings()
@@ -9080,14 +9693,13 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         -- Entering combat: hide the main button frame (hides all non-pet buttons inside it).
         -- Pet buttons live on BH.petFrame (a plain non-secure Frame) so they stay visible.
         BH.frame:Hide()
-        if BH.beaconReminderFrame then BH.beaconReminderFrame:Hide() end
-        if BH.earthShieldReminderFrame then BH.earthShieldReminderFrame:Hide() end
-        if BH.repairReminderFrame then BH.repairReminderFrame:Hide() end
-        if BH.symbioticReminderFrame then BH.symbioticReminderFrame:Hide() end
-        if BH.foodReminderFrame then BH.foodReminderFrame:Hide() end
-        if BH.flaskReminderFrame then BH.flaskReminderFrame:Hide() end
-        if BH.oilReminderFrame then BH.oilReminderFrame:Hide() end
-        -- Brez counter stays visible in combat but disable mouse for click-through (BigWigs pattern)
+        -- Reminder frames are plain Frames with no secure children, so combat
+        -- does not force them down. Hide only the ones you could not act on
+        -- mid-fight anyway; the combatSafe ones (Beacon, Earth Shield,
+        -- Symbiotic) stay up, which is the whole point of them. Driven off the
+        -- registry rather than a hand-written list, because a hand-written list
+        -- of frames is exactly what drifted out of sync in bug 1.1.
+        BH:HideCombatUnsafeReminders()
         if BH.bresCounterFrame then BH.bresCounterFrame:EnableMouse(false) end
         if BH.deathTallyFrame then BH.deathTallyFrame:EnableMouse(false) end
     elseif event == "PLAYER_REGEN_ENABLED" then
@@ -9099,6 +9711,10 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         -- aura data (e.g. Lightning Shield, Water Shield) may not be fully settled the
         -- moment PLAYER_REGEN_ENABLED fires, causing false "buff missing" detections.
         BH:ScheduleUpdateButtons()
+        -- Re-evaluate every reminder now the combat gate has lifted: the ones
+        -- hidden for the pull come back, and the ones that stayed up take the
+        -- mouse again.
+        BH:UpdateAllReminders()
         -- Re-enable brez counter mouse interaction out of combat
         if BH.bresCounterFrame and bresTrackingActive then
             if not (BH.settings and BH.settings.bresCounterLocked) then
@@ -9118,6 +9734,10 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         BH.playerZoning = true
         C_Timer.After(3, function() BH.playerZoning = false end)
         BH:ScheduleUpdateButtons()
+    elseif event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" then
+        -- Sub-zone only. Cheap by comparison with the full zone handler below --
+        -- it just rebuilds the buttons, which is what the runeforge swap needs.
+        BH:UpdateButtons()
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         -- Suppress buff sounds briefly after a loading screen: aura state is not
         -- restored immediately and would otherwise fire a false alert.
@@ -9163,7 +9783,11 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
             end
         end
     elseif event == "BAG_UPDATE_DELAYED" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "GROUP_ROSTER_UPDATE" or event == "UNIT_PET" then
+        -- Bag contents changed: drop the snapshot. Marked rather than
+        -- rebuilt so several events in a row cost one scan, and the scan
+        -- happens on the next read rather than on the event.
         if event == "BAG_UPDATE_DELAYED" then
+            BH:MarkBagCacheStale()
             BuildFeastSpellLookup()  -- pick up feast items added to bags mid-session
         end
         BH:UpdateButtons()
@@ -9185,6 +9809,18 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         local ccUnit = arg1
         BH:CheckRoleCC(ccUnit)
         if BH.CheckKelAlerts then BH:CheckKelAlerts(ccUnit) end
+    elseif event == "START_PLAYER_COUNTDOWN" then
+        -- arg1 is initiatedBy, then timeRemaining and totalTime. All three can
+        -- be secret, and the two we care about get compared, so launder them
+        -- through SafeNumber rather than trusting the payload.
+        local timeRemaining, totalTime = ...
+        local seconds = BH.Secrets.SafeNumber(totalTime, nil)
+            or BH.Secrets.SafeNumber(timeRemaining, nil)
+        if seconds and seconds > 0 and BH.Timeline then
+            BH.Timeline.Start("pull", seconds)
+        end
+    elseif event == "CANCEL_PLAYER_COUNTDOWN" then
+        if BH.Timeline then BH.Timeline.Stop("pull") end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         BH:OnSpecChanged()
     elseif event == "UPDATE_INVENTORY_DURABILITY" then
@@ -9193,6 +9829,7 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         local castGUID, spellID = ...
         if arg1 == "player" then
             BH:OnFeastSpellcast(arg1, castGUID, spellID)
+            BH:OnReminderSpellcast(spellID)
         end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, payload, _, sender = arg1, ...
@@ -9282,6 +9919,61 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": Cooldown Manager module not loaded.")
         end
+    elseif msg == "notes" then
+        if BH.ShowReleaseNotes then BH.ShowReleaseNotes() end
+    elseif msg == "welcome" then
+        if BH.ShowFirstRun then BH.ShowFirstRun() end
+    elseif msg == "dk" then
+        -- Death Knight runeforge diagnostics.
+        --
+        -- IsSpellUsable turned out not to track the runeforge requirement -- it
+        -- reports usable as soon as the spell is known -- so the zone is what
+        -- decides. This prints both, plus the zone strings being matched, so a
+        -- mismatch can be spotted rather than inferred.
+        local function say(fmt, ...) print("|cff33ff99Squizzumables|r: " .. string.format(fmt, ...)) end
+        local _, class = UnitClass("player")
+        say("class: %s", tostring(class))
+
+        local RUNEFORGING, DEATH_GATE = 53428, 50977
+        local rfKnown = BH.PlayerKnowsSpell(RUNEFORGING)
+        local dgKnown = BH.PlayerKnowsSpell(DEATH_GATE)
+        local rfUsable, rfNoPower
+        if C_Spell.IsSpellUsable then rfUsable, rfNoPower = C_Spell.IsSpellUsable(RUNEFORGING) end
+        say("Runeforging (%d): known=%s usable=%s (usable is NOT proximity-aware)",
+            RUNEFORGING, tostring(rfKnown), tostring(rfUsable))
+        say("at a runeforge (by zone): %s", tostring(BH.AtRuneforge and BH.AtRuneforge()))
+        say("Death Gate  (%d): known=%s", DEATH_GATE, tostring(dgKnown))
+
+        -- Called plainly, not as `BH.x and BH.x()`: an and/or expression is
+        -- adjusted to a single value, so the second return would always be nil.
+        local actionID, actionLabel
+        if BH.RuneforgeAction then actionID, actionLabel = BH.RuneforgeAction() end
+        say("button would offer: %s (%s)", tostring(actionID), tostring(actionLabel))
+
+        local needs, slot
+        if BH.WeaponNeedsRune then needs, slot = BH.WeaponNeedsRune() end
+        say("weapon needs a rune: %s%s", tostring(needs), slot and (" (" .. slot .. ")") or "")
+        for _, slotID in ipairs({ 16, 17 }) do
+            local link = GetInventoryItemLink("player", slotID)
+            if link then
+                local ench = link:match("item:%d+:(%-?%d+):")
+                say("  slot %d enchantID: %s", slotID, tostring(ench))
+            else
+                say("  slot %d: empty", slotID)
+            end
+        end
+
+        -- Where we are, so a zone check can be added precisely if IsSpellUsable
+        -- turns out not to track proximity.
+        local mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+        say("map: %s (%s)", tostring(mapID), tostring(GetRealZoneText()))
+        say("sub-zone: %s", tostring(GetSubZoneText()))
+    elseif msg == "timeline" then
+        if BH.Timeline and BH.Timeline.PrintDiagnostics then
+            BH.Timeline.PrintDiagnostics()
+        else
+            print(addonName .. ": Encounter timeline module not loaded.")
+        end
     elseif msg == 'auras' then
         -- Paladin aura diagnostics: which auras the addon can actually see on you.
         -- If an aura you have active reads "detected: NO" here, the problem is the
@@ -9290,7 +9982,15 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print(addonName .. " Paladin Aura Debug:")
         print("  class:", class, " specID:",
             tostring(PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()))
-        print("  auras are secret right now:", tostring(BH.Secrets.AurasAreSecret()))
+        -- Report the context too. "Auras are secret" means something very
+        -- different in combat (expected, nothing is wrong) than standing in a
+        -- city (something is badly wrong), and the previous output could not
+        -- tell the two apart.
+        local _, instanceType = IsInInstance()
+        print(string.format("  in combat: %s, instance: %s",
+            tostring(InCombatLockdown()), tostring(instanceType)))
+        print("  auras are secret right now:", tostring(BH.Secrets.AurasAreSecret()),
+            InCombatLockdown() and "(expected in combat)" or "(UNEXPECTED out of combat)")
         local info = BH.classBuffs and BH.classBuffs[class]
         if not (info and info.auras) then
             print("  no aura list configured for this class")
@@ -9348,9 +10048,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print("  /sq raidtools - toggle raid tools frame")
         print("  /sq unlock - toggle Unlock Frames (drag everything into place)")
         print("  /sq reload - update buttons")
+        print("  /sq notes - reopen the release notes for this version")
         print("  /sq feast - feast announce diagnostics")
         print("  /sq auras - paladin aura detection diagnostics")
         print("  /sq cdm - cooldown manager sound alert diagnostics")
+        print("  /sq timeline - encounter timeline availability, and fire a test event")
+        print("  /sq dk - death knight runeforge diagnostics")
         print("  /sq debug - show quality info")
         print("  /ginvite <name> - guild invite a player")
     end

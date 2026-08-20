@@ -46,9 +46,17 @@ local CreateSQDivider  = ns.CreateSQDivider
 local ROW_H = {
     check   = 34,
     slider  = 50,
-    dropdown= 34,
+    -- A dropdown carries its label above the control, so it is roughly half
+    -- again as tall as it looks. At 34 the next row was drawn on top of the
+    -- label -- which is what put "Grow Direction" underneath the Layout
+    -- Direction control.
+    dropdown= 52,
+    sound   = 52,
+    color   = 30,
     button  = 36,
-    header  = 22,
+    -- Headers get breathing room above them, which reads as a section break
+    -- without needing a divider before every one.
+    header  = 30,
     divider = 18,
     spacer  = 14,
     text    = 28,
@@ -244,7 +252,78 @@ builders.dropdown = function(parent, y, spec)
         Rows.RefreshAll()
     end)
     return Finish(dd, parent, y, spec, function()
+        -- Re-evaluate the item list when it is dynamic, not just the selected
+        -- value. One dropdown's options can depend on another's value -- the
+        -- marker grow directions change with the layout -- and syncing only
+        -- the selection left those stale until the panel was rebuilt.
+        if type(spec.items) == "function" and dd.SetItems then
+            dd:SetItems(spec.items())
+        end
         if spec.get then dd:SetSelectedValue(spec.get()) end
+    end)
+end
+
+-- A sound picker: the dropdown plus the little speaker that plays the current
+-- choice.
+--
+-- These come as a pair everywhere they appear -- feast announce, role CC, class
+-- buffs, the Cooldown Manager -- and building the speaker by hand each time was
+-- most of what those sections consisted of. It also meant the CDM tab went a
+-- long time without one, so there was no way to hear a sound before committing
+-- it to an alert.
+builders.sound = function(parent, y, spec)
+    local items = spec.items
+    if type(items) == "function" then items = items() end
+    if not items and ns.BH and ns.BH.BuildSoundDropdownItems then
+        items = ns.BH:BuildSoundDropdownItems()
+    end
+
+    local dd = CreateSQDropdown(parent, spec.label or "", spec.width or 220, items or {},
+        function(value)
+            if spec.set then spec.set(value) end
+            if spec.after then spec.after(value) end
+            Rows.RefreshAll()
+        end)
+
+    local preview = CreateFrame("Button", nil, parent)
+    preview:SetSize(22, 22)
+    preview:SetPoint("LEFT", dd, "RIGHT", 6, 0)
+    local norm = preview:CreateTexture(nil, "BACKGROUND")
+    norm:SetAllPoints()
+    norm:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+    local hi = preview:CreateTexture(nil, "HIGHLIGHT")
+    hi:SetAllPoints()
+    hi:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+    hi:SetAlpha(0.6)
+    preview:SetScript("OnEnter", function() norm:SetAlpha(0.7) end)
+    preview:SetScript("OnLeave", function() norm:SetAlpha(1.0) end)
+    preview:SetScript("OnClick", function()
+        local snd = spec.get and spec.get()
+        if snd and snd ~= "None" and ns.BH and ns.BH.PlaySound then
+            ns.BH:PlaySound(snd)
+        end
+    end)
+    dd.previewButton = preview
+
+    return Finish(dd, parent, y, spec, function()
+        if type(spec.items) == "function" and dd.SetItems then
+            dd:SetItems(spec.items())
+        end
+        if spec.get then dd:SetSelectedValue(spec.get() or "None") end
+    end)
+end
+
+-- A colour swatch. spec.get returns r, g, b; spec.set receives them.
+builders.color = function(parent, y, spec)
+    local r, g, b = 1, 1, 1
+    if spec.get then r, g, b = spec.get() end
+    local picker = ns.CreateSQColorPicker(parent, spec.label, r, g, b, 1,
+        function(nr, ng, nb)
+            if spec.set then spec.set(nr, ng, nb) end
+            if spec.after then spec.after(nr, ng, nb) end
+        end)
+    return Finish(picker, parent, y, spec, function()
+        if spec.get and picker.SetColor then picker:SetColor(spec.get()) end
     end)
 end
 
@@ -259,7 +338,9 @@ end
 -- A section title. Indexed for search too, so "reminders" finds the section.
 builders.header = function(parent, y, spec)
     local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    fs:SetPoint("TOPLEFT", parent, "TOPLEFT", spec.indent or LEFT_PAD, y)
+    -- Sits low in its row, so the gap lands above the heading rather than
+    -- between the heading and the first option under it.
+    fs:SetPoint("TOPLEFT", parent, "TOPLEFT", spec.indent or LEFT_PAD, y - 8)
     fs:SetText(spec.label)
     ns.ApplyAccent(fs, "text")
     Rows.RegisterSearchEntry(spec.label, spec.tooltip, fs)
@@ -275,7 +356,9 @@ builders.text = function(parent, y, spec)
     fs:SetWordWrap(true)
     fs:SetText(spec.label)
     fs:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    return fs
+    -- Report the height this actually wrapped to. A fixed height meant a
+    -- three-line description ran into whatever followed it.
+    return fs, math.max(ROW_H.text, math.ceil(fs:GetStringHeight() + 14))
 end
 
 builders.divider = function(parent, y, spec)
@@ -292,7 +375,10 @@ function Rows.Add(parent, y, spec)
         geterrorhandler()("Squizzumables: unknown option row type '" .. tostring(spec.type) .. "'")
         return 0
     end
-    build(parent, y, spec)
+    -- A builder may report the height it actually needed -- text rows measure
+    -- their own wrapping. Otherwise fall back to the table.
+    local _, measured = build(parent, y, spec)
+    if measured then return measured end
     return spec.height and (spec.height + 8) or (ROW_H[spec.type] or 30)
 end
 

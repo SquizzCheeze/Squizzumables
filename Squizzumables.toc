@@ -4,13 +4,21 @@
 ## Author: Squizz
 ## Version: 1.60
 ## SavedVariables: SquizzumablesDB
+## IconTexture: Interface\Icons\INV_Misc_Food_15
+## AddonCompartmentFunc: Squizzumables_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: Squizzumables_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: Squizzumables_OnAddonCompartmentLeave
 Libs\LibStub\LibStub.lua
 Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 Squizzumables_Config.lua
 Squizzumables_Secrets.lua
 UI\Widgets.lua
 UI\Rows.lua
+UI\Glow.lua
 Squizzumables.lua
 Core\ProfileIO.lua
+Core\EncounterTimeline.lua
+Core\Minimap.lua
+Core\Welcome.lua
 Squizzumables_CDM.lua
 Squizzumables_SpellAlerts.lua
