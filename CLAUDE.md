@@ -132,6 +132,14 @@ Three things cost a night each and are not discoverable from a green checkmark:
   summary it prints around line 35: `CurseForge ID: 1483099 [token set]`. That suffix comes from
   `${cf_token:+ [token set]}`, so **no suffix means the token is empty** -- not that the line is
   merely terse. A green run with a GitHub release and nothing on CurseForge is this.
+
+  **But confirm on the author dashboard before concluding it.** CurseForge's public file API
+  (`https://www.curseforge.com/api/v1/mods/<id>/files`, and cfwidget) only lists files that have
+  passed **approval** -- a freshly uploaded file sits in *pending* and is invisible there for a
+  while. So "green run, GitHub release, nothing on the public API" is equally consistent with a
+  perfectly successful upload. Found on SquizzFrames' first automated release (2026-08-21), where
+  that reading produced a wrong "the token never arrived" call and a needless plan to delete the
+  tag and re-release. The upload had worked.
 - **`actions/upload-artifact` skips hidden paths by default**, and the packager builds into
   `.release/`. Without `include-hidden-files: true` the artifact comes back empty while the
   packager step stays green, which reads exactly like a build failure and is not one.
