@@ -1,0 +1,648 @@
+Squizzumables Changelog Archive
+==============================
+
+Shipped versions before the current one. The packager reads changelog.txt
+verbatim (see manual-changelog in .pkgmeta), so that file holds only the
+version being built -- otherwise every CurseForge release reposts the whole
+history as its release notes. Older sections move here instead of being
+deleted: many carry root-cause writeups worth grepping before assuming a bug
+is fresh. This file is in the .pkgmeta ignore list, so it never ships.
+
+V1.60
+
+- Reminder buttons now glow, so they catch your eye without being looked at directly. Colour,
+  pulse speed and pulse depth are all adjustable, or turn the pulse off for a steady ring. On by
+  default; the toggle is under Settings > Misc
+- Added a minimap button (left-click settings, right-click unlock frames, drag to move it round
+  the edge) and an entry in Blizzard's addon compartment. The minimap button can be hidden
+- New installs get a short welcome explaining what the addon does, and an update note listing
+  what changed appears once after each new version. /sq notes reopens it
+
+- Kelerts are no longer just the lust alert. The tab is now a list you can add to: pick a
+  buff or debuff by spell ID, name it, and it gets its own full-screen image, sound, timing,
+  opacity and random-sound pool, exactly as the lust alert always had. The lust alert is still
+  there, still watching every lust debuff at once, and cannot be deleted or renamed -- switch it
+  off instead. Your existing lust alert settings carry over, in every profile
+
+- New "Show in" settings: pick which content the addon appears in -- open world, each dungeon and
+  raid difficulty, Mythic+, timewalking, delves, battlegrounds. Defaults match the old behaviour,
+  so nothing changes unless you change it. Mythic+ was previously hidden with no way to turn it
+  back on; it is now just another tick box
+- The "no food/flask/oil/augment rune in bags" reminders are now one frame that names whichever
+  you are short of, rather than up to four banners stacked on top of each other. One position,
+  scale and lock between them, with a tick box per category to choose what it mentions. Your
+  existing per-category choices carry over, but the frame starts at its default position
+- "Lock All" now actually locks everything. It worked from a hand-written list that had fallen
+  five frames behind -- the Coach's Whistle, pet, role CC, augment rune and healthstone frames
+  were never locked, while the button still reported that everything was
+
+- Augment runes are now tracked like food and flasks: a button to use one when the buff is
+  missing, a "no augment rune in bags" reminder, and their own section on the Items tab with a
+  drop zone for adding your own. Covers the Midnight and War Within runes out of the box
+- Healthstones are now tracked. If you are not carrying one and there is a warlock in the group
+  who could make you one, you get a reminder; if there is no warlock, nothing, since it would be
+  a reminder to do something you cannot do. Unlike the other bag reminders this one stays up in
+  combat, which is when it matters
+- Warlocks get a button rather than the reminder, since they are the ones who can fix it. Solo it
+  casts Create Healthstone; in a group it casts Create Soulwell so the whole group is covered
+
+- Death Knights are now supported. The class had no entry in the addon at all. You get a reminder
+  when an equipped weapon has no runeforge on it, naming which hand is bare. Out in the world the
+  button casts Death Gate, since runeforging needs a runeforge; standing in Acherus it becomes
+  Runeforging itself
+- Class Buffs tab now lists Death Knight runeforging alongside the other class entries, so it can
+  be turned off or given its own sound like anything else
+
+- Unlock mode now actually unlocks everything. A frame you had locked would show its green
+  preview tint and then refuse to be dragged, because the preview code was still honouring the
+  per-frame lock it exists to override. Locked frames can now be repositioned without unlocking
+  them first
+- Every movable frame now gets the green preview tint. The Coach's Whistle, pet and healer/tank CC
+  frames never had one, because each frame's overlay was written out by hand and those three had
+  been missed. They are now generated from one list, so a new frame cannot be forgotten
+- The markers and pull/ready frames can now be dragged. Their buttons cover almost the whole
+  frame, so trying to move them fired a ready check, started a pull, or placed a raid marker
+  instead. Their buttons are click-through while frames are unlocked
+- The dungeon callouts frame can now be dragged from anywhere on it, not only its title bar
+- Removed the small tab above the buttons frame. That frame is now dragged directly like every
+  other frame, while frames are unlocked, so there is no permanent scrap of UI on screen
+- Settings panel: fixed dropdowns overlapping the label of the option below them, long
+  descriptions running into the next setting, and section headings sitting flush against the row
+  above
+
+- Settings are now backfilled recursively, so a new option nested inside an existing group
+  reaches everyone rather than only new installs. Previously only top-level settings were filled
+  in automatically and each nested group needed its own hand-written merge, which is how two
+  separate one-off fixes for the lust alert came to be needed. One-time repairs to saved data are
+  now a numbered, ordered list rather than a boolean flag per fix
+- "Enable Bag Reminders" did nothing. Turning the master toggle off left the reminder showing for
+  as long as any single category underneath it was still ticked
+- Internal: each reminder used to decide for itself whether it should be on screen, which meant
+  the same class, spec, group and content-type checks written out ten times over, free to drift
+  apart -- and they had. Every reminder now declares which of those checks apply to it and they
+  are evaluated in one place. The bag reminder bug above is what that turned up
+- Internal: the button-building code was one 900-line function covering class buffs, consumables,
+  layout and sounds together. It is now four, which is why several bugs in it this release took as
+  long to find as they did
+
+- Class buffs now show the "Min:" minimum-remaining-duration box for every buff, not only for
+  self buffs, tank buffs and weapon imbues. The threshold was always being applied to group buffs
+  like Fortitude and Arcane Intellect -- defaulting to 30 minutes -- there was simply no way to
+  see or change it. Set it to 0 to only be prompted when the buff is missing entirely. Buffs with
+  no duration, such as Paladin auras and Lightning Shield, are unaffected
+
+- Performance: the addon used to walk every bag slot repeatedly on every update. Rebuilding the
+  buttons is driven by UNIT_AURA, which fires for every member of your group on every aura change,
+  and each pass did several full six-bag walks plus another complete walk for every button it
+  built. The "no food/flask/oil in bags" checks were worse again -- a full bag walk nested inside a
+  loop over every configured consumable. Bag contents are now scanned once when the bags actually
+  change, and every check is a table lookup. In a raid this was running more or less continuously
+- Consumable buttons now appear in the order the items are configured rather than the order they
+  happen to sit in your bags, so they stop moving around when you rearrange your bags
+
+- Cooldown Manager sounds: the "when available" alert never fired in combat. It would arrive late,
+  when combat ended, or get flushed early by some unrelated spell's alert. Several causes stacked
+  on top of each other:
+    * Nothing drove the sound pass on a clock. It ran only from buff-state-change hooks, and a
+      cooldown finishing is not a state change -- no event fires when a timer merely runs out. It
+      now polls on its own ticker
+    * C_Spell.GetSpellCooldown hands an addon secret startTime/duration in combat, so the addon
+      cannot work out whether a spell is ready; comparing those values throws. It now reads the
+      answer Blizzard already computed and cached on its own Cooldown Manager item frame
+    * That cached value is itself secret while a cooldown is running, and a plain false when the
+      spell is ready -- so a secret value *is* the "still on cooldown" signal, and the transition
+      out of it is the moment the spell becomes available. Treating secret as "cannot tell" threw
+      away the exact signal the alert needed
+    * A spell can appear in two Cooldown Manager viewers at once -- one tracking its cooldown and
+      one tracking the buff it applies -- and only the first carries cooldown state. The buff copy
+      was being read for some spells, where every cooldown field is empty
+- Cooldown Manager sounds: alerts were keyed by Blizzard's cooldown ID, which is not stable -- the
+  same spell gets different IDs between categories and between game builds. Alerts saved under an
+  older ID silently stopped firing, and adding them again created a duplicate rather than fixing
+  the original; one profile had the same spell stored three times over. Alerts are now keyed by
+  spell ID, and existing ones are migrated across and de-duplicated on load
+- Cooldown Manager sounds: "Active" now also fires for a buff you place on your current target,
+  not only on yourself. A buff on a party member who is neither you nor your target still cannot
+  be seen -- Blizzard's Cooldown Manager only tracks player and target, so there is nothing to
+  read
+- Cooldown Manager sounds: a spell that appears in two of Blizzard's viewers at once -- once for
+  its cooldown and once for the buff it applies, as Blessing of Freedom does -- was listed twice
+  in the spell picker. Both entries edited the same alerts while each offered only half the
+  triggers, so which options you saw depended on which of the two icons you clicked. Each spell is
+  now listed once, with the triggers merged from all of its entries
+- Cooldown Manager sounds: the alert trigger list is now taken from Blizzard's own per-spell list
+  rather than assumed from the category. "Active" is no longer offered on spells that apply no
+  buff and could never fire it, and is relabelled "Active (buff up)" -- it means the buff is up,
+  not that the ability is ready
+- Cooldown Manager sounds: spells with alerts configured are now marked in the picker with a
+  border and a speaker badge, and spells without any are dimmed, so the list can be read without
+  clicking through every icon
+
+- Cooldown Manager sounds: alerts on cooldowns not in Blizzard's Cooldown Manager, and the
+  "buff removed" alert, could go quiet in combat for the same secret-value reasons. Each alert
+  type is now gated only on the data it actually depends on, rather than one blanket check that
+  silenced everything
+- /sq cdm now reports combat state, which alert delivery path each configured sound uses, and
+  whether the underlying cooldown data is readable -- the whole chain above was diagnosed with it
+
+- Encounter timeline: the pull countdown now also appears on Blizzard's encounter timeline,
+  alongside boss abilities. It is driven by the game's countdown event rather than by our own
+  Pull button, so a pull started by anyone in the group shows up, not just your own. Toggle on
+  the Raid Tools tab; /sq timeline reports whether the timeline is available on your client and
+  fires a test event. Blizzard's timeline has to be switched on for this to show anything --
+  Options > Gameplay > Combat > Combat Warnings, 'Enable Boss Warnings' then 'Boss Ability
+  Timeline' -- and /sq timeline now names whichever of those two is off rather than just
+  reporting that the feature is disabled
+- Encounter timeline: investigated building BigWigs-style per-ability boss sounds directly into
+  the addon, and it cannot be done. Of the data the timeline gives an addon about an incoming
+  ability, only its ID, source and duration are readable — the spell ID, name, icon and severity
+  are secret values, which can be displayed but not compared. So an addon can draw a bar for an
+  incoming ability but cannot find out which ability it is. BigWigs works around this by
+  identifying abilities from their duration rounded to the nearest second, against a hand-built
+  table per boss and per difficulty, which is a per-patch maintenance job for every boss in the
+  game. Not something worth taking on when BigWigs already does it well. Recorded in NOTES.md
+  so it does not get attempted again
+
+- Profiles: frame positions for the flask, oil, healer CC and dungeon callout frames were
+  never carried between profiles — PROFILE_POSITION_KEYS was a hand-maintained list that had
+  drifted out of sync with the frames that actually exist, so those four were neither saved to
+  nor restored from a profile and silently kept the previous profile's anchor on a switch.
+  The list is now derived from POSITION_PAIRS so it cannot drift again
+- Profiles: five separate places each hand-listed which frame positions to reload after a
+  profile change and every list was missing a different subset; all now call one
+  BH:LoadAllFramePositions()
+- Profiles: frame scales are per-profile settings but were only ever applied at login, never on
+  a profile switch, so switching profiles kept the old profile's scales until the next reload
+- M+ Death Tally: the scale setting was saved correctly but never applied at login, so the
+  tally always came back at 100% after a reload
+- Paladin auras: picking Concentration Aura left both aura buttons on screen, including one for
+  the aura you had just activated. The show/hide decision was a single all-or-nothing gate that
+  for Holy only tripped on Devotion — the Devotion exception is deliberate (you want it
+  available for Aura Mastery even when another paladin has it covered) but it also kept
+  offering every other aura. An aura you currently have active is now never offered
+- Clicks on the reminder buttons were sometimes swallowed, needing three or four attempts.
+  Two causes: (1) UpdateButtons unconditionally tears down every button and is driven by
+  UNIT_AURA, which fires for every group member on every aura change, so a rebuild landing
+  between mouse-down and mouse-up ate the click — rebuilds are now deferred while the cursor is
+  over a button; (2) the buttons registered both "AnyDown" and "AnyUp", firing the secure
+  action twice per click with the second attempt landing inside the GCD of the first — all
+  secure buttons now use a single click edge chosen from the client's ActionButtonUseKeyDown
+  setting, matching Blizzard's own action buttons
+- The same double-fire affected the dungeon callout buttons, which were sending their chat
+  message twice, and the raid target markers, whose "toggle" action was set and then
+  immediately cleared by the second fire
+- Talent-granted and talent-overridden spells were not detected: plain IsSpellKnown() returns
+  false for both, so a reminder could silently never fire for a given build. All 16 call sites
+  now go through a helper that falls through C_SpellBook.IsSpellKnown, IsPlayerSpell,
+  IsSpellKnownOrOverridesKnown and IsSpellKnown
+- The reagent bag was never scanned, so consumables kept there were invisible to the addon
+- Opening the options panel leaked frames: the item, class buff and custom sound lists
+  destroyed and rebuilt their rows every refresh, and WoW frames are never garbage collected.
+  Rows are now cached and reused, so after the first build a refresh allocates nothing
+- Secret value handling is now centralised in Squizzumables_Secrets.lua, built on the client's
+  real predicates (issecretvalue, issecrettable, hasanysecretvalues, C_Secrets). The main file
+  previously used pcall for this while the Cooldown Manager module used inline issecretvalue
+  checks; pcall works but allocates a closure at every call site and has to be repeated at
+  every downstream comparison, which is how the v1.58 aura crash got through. Checking once,
+  where the value is read, means the result is safe to use freely afterwards
+- The per-button buff countdown was rebuilding a closure on every button on every rendered
+  frame to display a value that changes once a second; it is now throttled and allocation-free
+- Removed an empty OnUpdate handler that ran every rendered frame for the whole session
+- Cooldown Manager sound alerts now work for cooldowns you have not enabled in Blizzard's own
+  Cooldown Manager. Aura state was read only from Blizzard's buff viewer, which contains only
+  the cooldowns you have chosen to show in it -- so an alert on anything else could never fire,
+  because its aura state was permanently "not active". The addon now reads your aura directly
+  when the viewer does not know about that cooldown
+- Added a sound preview button to the CDM Sounds tab. It was the only sound dropdown in the
+  addon without one, so there was no way to hear a sound before assigning it
+- The CDM Sounds page is now a normal category in the sidebar rather than being hidden behind
+  /squizz CDMS, and has been reworked for the wider settings window: the spell list and the
+  alert editor both use the available width instead of the 460px the panel used to be, its
+  headings follow the class colour setting like the rest of the addon, the Add Alert button is
+  no longer red (it is not a destructive action), and the Type dropdown is gone since it only
+  ever offered one value
+- Added /sq cdm, which reports why a Cooldown Manager sound alert is not firing
+- Cooldown Manager sound alerts should now actually fire. Active buff state was read from
+  whether Blizzard's cooldown viewer item was shown, but a viewer item stays shown while its
+  aura is inactive unless you have turned on Blizzard's "Hide When Inactive" edit-mode option,
+  which is off by default. For most setups that meant every tracked buff looked permanently
+  active, so the applied and removed transitions could never happen. It now reads the item's
+  real aura state instead. The CDM Sounds tab remains hidden behind /squizz CDMS
+- Fixed the class buff sound alerts all firing at the start of combat for buffs you actually
+  had. Aura data stops being readable a fraction before the addon stops updating, so one pass
+  could land in that window and read every buff as missing. Sound alerts are now skipped
+  entirely while aura data is unreadable, and the tracking they use is left untouched rather
+  than being overwritten with the false state
+- Fixed the same latent problem in the Cooldown Manager sound alerts, where an unreadable
+  cooldown counted as "not on cooldown" and could fire an "available" alert for an ability
+  that never came off cooldown
+- Profiles can now be exported to a shareable string and imported from one, via Export and
+  Import next to the profile buttons on the Settings tab. Only settings you have changed from
+  the defaults go into the string, so it stays short, and an old string imported into a newer
+  version picks up any newly added defaults rather than pinning them. An import always arrives
+  as a new profile, so nothing you already have is overwritten
+- Added Unlock Frames: one toggle that makes every draggable frame in the addon visible and
+  movable at once, whatever its individual lock setting says, so repositioning no longer means
+  finding the right "Lock X" checkbox first. On the Settings tab, or /sq unlock without opening
+  the panel -- useful because the panel itself can cover the frames you are trying to move.
+  This is the old Preview button, extended to cover the Just For Kel alert and the dungeon
+  callouts frame, which it previously could not reach
+- Added a settings search box to the panel title bar. Type any part of an option name and it
+  lists matching settings with the category each lives in; picking one switches to that
+  category, scrolls the option into view and flashes it. Enter jumps straight to the top
+  match. Also matches tooltip text, so "durability" finds the repair threshold
+- Every option in the settings panel now has a tooltip explaining what it does and when it
+  applies. There were none before
+- The settings panel is now a resizable 820x620 window with a left sidebar instead of 460x600
+  with a tab strip that wrapped onto two rows
+- Headings, sidebar highlights, checkbox ticks, slider fills and button accents can now be
+  drawn in your class colour instead of the default warm gold. On by default; toggle it with
+  "Use class colour for headings and accents" on the Settings tab. Changes apply immediately
+  rather than needing a reload
+- Preview mode: the beacon, earth shield, symbiotic relationship and consumable bag
+  reminders flashed up and vanished immediately when Preview was switched on. Preview showed
+  them, then the next UpdateButtons pass -- which runs off UNIT_AURA, so within a fraction of
+  a second -- re-evaluated them against real conditions and hid them again. Every reminder
+  update now leaves the frame alone while previewing. The Coach's Whistle reminder was the
+  only one that already did this, which is why it was the only one that did not flash
+- Preview mode: the No Pet reminder was missing from the preview list entirely, so it was the
+  one reminder that could never be positioned from preview
+- Role CC Alert: the Healer CC Alert is now a Role CC Alert with a per-role toggle, adding
+  the requested "Alert when tank is CC'd". One frame rather than one per role: the label
+  names whichever roles are actually crowd controlled ("HEALER IN CC", "TANK IN CC" or
+  "HEALER + TANK IN CC"), so it does not add another scale slider, lock checkbox and saved
+  position to the most crowded settings tab. Existing settings are untouched and tank
+  tracking defaults off, so nobody gets an alert they did not ask for
+- Added /sq auras — reports whether each configured aura is actually detectable on you, to
+  tell a mis-configured spell ID apart from a show/hide bug
+
+V1.59
+
+- Guild Invite right-click: fixed the "Guild Invite" entry never appearing on unit frame menus
+  (party/raid/target/focus/nameplate) while it worked fine from the Friends list — unit-based
+  menus pass only a unit token in contextData, not name/server, so the name lookup came back
+  empty and the option was skipped; the name/realm is now derived from the unit when absent
+
+V1.58
+
+- Updated for patch 12.1 (Interface bumped to 120100)
+- Lust alert: added a "Randomize Sound" option in the Kelerts tab — check any sounds from the
+  full sound list to have the alert play a random pick from them instead of the single Sound
+  setting; includes Select All/Select None. Default: nothing checked (unchanged behavior)
+- Fixed a crash in class buff detection ("attempt to compare field 'spellId' (a secret number
+  value...)") — reading an aura field is safe, but comparing/doing arithmetic on a secret field
+  (spellId, expirationTime) throws even when the API call itself was already pcall-guarded; now
+  every such comparison is individually guarded (UnitHasBuff's fallback scan, NeedsRefresh, and
+  the per-button timer countdown)
+
+V1.57
+
+- M+ Death Tally: fixed deaths never being detected — neither the plain UNIT_DIED game event
+  (unreliable for off-screen party/raid members) nor COMBAT_LOG_EVENT_UNFILTERED (removed from
+  the addon API) can be used for this anymore; death detection now polls UnitIsDeadOrGhost() per
+  group member every 0.5s and edge-detects the transition instead
+- M+ Death Tally: added a close (X) button so the summary can be dismissed manually once you're
+  done with M+; reappears fresh on the next key (CHALLENGE_MODE_START)
+
+V1.56
+
+- Removed the Interrupt Tracker module entirely (Squizzumables_InterruptTracker.lua deleted, its options tab, /sqit,
+  and all related settings) — kick/interrupt detection was no longer reliable after recent WoW API changes
+- Added sound "Squizzumables: Kel's Flail" (Kel's Flail.ogg) to all sound dropdowns
+- Lust alert: now disabled by default for new users (existing users are unaffected)
+- Added M+ Death Tally: a per-player death counter for the current Mythic+ key, shown as a
+  draggable/lockable/scalable frame with options in the Kelerts settings tab
+  - Tracking starts (and auto-resets) on CHALLENGE_MODE_START and stops on
+    CHALLENGE_MODE_COMPLETED/RESET; the final tally stays visible as a summary until the next key
+  - Names can be class-colored (toggle) and can hide the realm suffix (toggle)
+  - Title and row text each have their own font size slider
+
+V1.55
+
+- Added new ducky lust song
+
+V1.54
+
+- Update to 12.0.7
+
+V1.53
+
+- Guild invite: now hidden for players who are already in any guild (invite would just fail)
+  - Unit-based menus (party, raid, target, focus): checks GetGuildInfo(unit) to detect any guild membership
+  - Name-based menus (friend list, chat roster, etc.): checks if player is in our specific guild via roster scan
+- Guild invite: rewritten to use the modern WoW 12.0 Menu.ModifyMenu API 
+  - Covers all popup types: Party, Raid, Player, Friend, Guild, Chat Roster, Target, Focus, Arena Enemy, and more
+  - Fixed permission check to use the correct global CanGuildInvite() API
+  - Fixed invite call to use C_GuildInfo.Invite() (correct C_GuildInfo namespace)
+  - Cross-realm support: correctly appends -Server for players on different realms
+
+V1.52
+
+- Added right-click "Guild Invite" option on unit frames (party, raid, target, focus, friends list, etc.)
+- Fixed healer CC alerts not properly detecting when healers are out of range or zoning into instances
+
+V1.51
+
+V1.50
+- Interrupt tracker: added failed kick detection — own interrupt bars flash red on a missed kick and green on a successful one
+  - Uses a 0.6s watchdog timer after each kick cast; success is confirmed when a mob interrupt signal correlates within the window
+  - Result is broadcast to party members via addon message prefix SQIT so all Squizzumables users see each other's kick outcomes
+- Interrupt tracker: added Balance Druid (spec 102) to spec overrides — now correctly shows Solar Beam (45s CD) instead of Skull Bash
+- Interrupt tracker: fixed party member CDR talent scan using local player's talent config instead of the inspected player's
+  - Root cause: C_ClassTalents.GetActiveConfigID returns the local player's active config; inspect scans must use INSPECT_TRAIT_CONFIG_ID
+- Interrupt tracker: CDR talent scan now iterates all talent trees (spec, class, hero) instead of only the spec tree
+  - Fixes Coldthirst (DK), Seasoned Soldier (Warrior), and similar class-tree talents being missed for party members
+- Interrupt tracker: inspect is now queued for all registered party members regardless of class
+  - Previously only DRUID/PALADIN/PRIEST/EVOKER/MONK were inspected; DEATHKNIGHT/HUNTER/MAGE/WARRIOR CDR talents were never applied
+
+V1.49
+- Feast announce: added per-context channel selection — separate dropdowns for Solo, Party, Instance, and Raid
+  - defaults are NONE / PARTY / INSTANCE_CHAT / RAID
+
+V1.48
+- Added sound "Squizzumables: Ducky's Lust Attack" (DUCKYS_LUST_ATTACK.ogg) to all sound dropdowns
+- Removed all Mythic+ dungeon alert code (spell groups, aura tracking, UI sections) — M+ alerts are no longer part of this addon
+- Feast announce: default channel reverted to PARTY; auto-promotes to INSTANCE_CHAT only when inside an instance (LFG/heroic/raid)
+- Lust alert: added opacity slider (0–100%) in the Just For Kel settings tab under Alert Frame
+- Lust alert: added "Loop sound" checkbox and repeat interval (sec) field in the Just For Kel settings tab
+  - When enabled, the alert sound repeats at the configured interval for the full duration of the alert
+
+V1.47
+- Lust alert: fixed false alert firing on zone transitions (entering/leaving dungeons, hearthing, portals)
+  - Root cause: UNIT_AURA fires as auras re-apply after a zone change; if lustWasActive was false it would detect Sated and fire
+  - Fix: dedicated playerZoning flag suppresses the lust alert for 3 seconds after any zone transition
+
+V1.46
+- Added "Just For Kel" tab in settings with configurable spell alerts
+  - Shows a custom image (texture) and plays a sound when a specific spell aura is applied to you
+  - Add any number of alerts: each has a Spell ID, Label, Texture filename, Sound, and Duration
+  - Place .tga or .blp image files in the Media\ folder and enter the filename in the Texture field
+  - Each alert can be individually enabled/disabled; a Test button previews the image and sound immediately
+  - Alert image is draggable and lockable; scale adjustable via slider
+  - Master enable/disable toggle for all spell alerts
+
+V1.45
+- Interrupt tracker: fixed own player bar showing wrong (too low) cooldown during combat
+  - Root cause: talent CD reduction (e.g. Warrior Seasoned Soldier -10%) was compounding each time SPELLS_CHANGED fired — every application reduced the already-reduced myBaseCd, driving it from 15s down to 4s over time
+  - Fix: talent scan now always uses the canonical ALL_INTERRUPTS base CD, never the current myBaseCd
+- Interrupt tracker: fixed GetSpellCooldown being called during combat (on every SPELL_UPDATE_COOLDOWN / GCD), which could overwrite a correct myKickCdEnd with a stale or partially-registered engine value; now only called out of combat (matches BliZzi_Interrupts approach)
+- Interrupt tracker: fixed double-attribution of party kicks — heuristic (AttributeInterruptByHeuristic) now marks the interrupt signal as consumed so CorrelateSignals doesn't also attribute the same kick to a different member
+- Interrupt tracker: fixed player kick not suppressing heuristic attribution when UNIT_SPELLCAST_INTERRUPTED fires in the same frame as UNIT_SPELLCAST_SUCCEEDED — now checks the signal tape for a recent player cast signal, not just selfKickTime
+- Interrupt tracker: taint-hardened own player cast spellID resolution — pcall + name-based + TaintResolveID fallbacks in case WoW 12.0.5+ taints player UNIT_SPELLCAST_SUCCEEDED spellIDs
+- Coach's Whistle reminder: fixed flashing on/off when enabling preview mode — added previewMode guard (shows immediately, bypasses group/buff checks)
+- Coach's Whistle settings: fixed Items tab section not appearing even when trinket is equipped — COACH_WHISTLE_ITEM_ID constant was declared after RefreshItemList, now moved before it
+- Coach's Whistle reminder: fixed reminder scale slider layout in Items tab (was anchored to label's right edge, now a proper full-width CreateSQSlider row)
+
+V1.44
+- Added Emerald Coach's Whistle (item 193718) trinket button detection
+  - When the trinket is equipped and no ally has been coached (or coaching buff is below min duration threshold), a button appears
+  - Button macro auto-targets the best available real player (prefers DPS, then healer, then tank); NPC companions in delves are ignored
+  - Added "USE COACH'S WHISTLE" visual reminder frame (emerald/teal color, draggable, scalable, lockable)
+  - Settings moved to the Items tab: enable, min duration (0–60 min), scale, lock position
+  - Reminder and button are suppressed in solo delves (no real player group members) and in the open world
+  - Coached detection uses spell 386578 ("Coached" — 1-hour persistent buff on the coached ally)
+- Added healer CC alert: plays a sound and shows a "HEALER IN CC" visual when a party or raid healer is crowd controlled
+  - Enable in the Reminders tab with a sound dropdown, preview button, lock, and scale options
+  - Visual frame is draggable and stays visible for the full duration of the CC
+  - Detects any CC debuff (HARMFUL|CROWD_CONTROL filter) — stuns, fears, polymorphs, etc.
+  - Only plays sound on new CC application (transition from no CC to CC)
+- Fixed interrupt tracker party bars sometimes not updating when a party member kicked — improved spell ID resolution fallback so tainted or unrecognized spellIDs still correctly record the cast and trigger the cooldown
+- Fixed own interrupt bar occasionally flashing READY immediately after casting — added a guard so engine cooldown reads can't overwrite a freshly-set cooldown end time
+- Added periodic party re-scan (every 5s) so members who joined with delayed role/spec data get registered without needing a roster update
+
+V1.43
+- Holy Paladins with Rite of Sanctification or Rite of Adjuration (Lightsmith hero talents) now get a weapon imbue button instead of oil buttons
+  - The button auto-targets the main hand weapon slot on click — no weapon cursor interaction required
+  - The Rite buttons appear in the Class Buffs settings tab and can be individually toggled
+  - Oil buttons and the "no oil in bags" reminder are suppressed for Holy Paladins with either Rite talented
+- Fixed incorrect spell ID for Rite of Sanctification (was pointing to an internal dev spell)
+
+V1.42
+- Rewrote interrupt tracker to be more reliable in combat
+
+V1.41
+- Fix feast announce 
+- Pet summon buttons (Call Pet, Summon Pet) are now available during active Mythic+ keys — previously they were hidden along with all other class buff buttons
+
+V1.40
+- Fixed shield buttons (Lightning Shield / Water Shield) reappearing at the start of a Mythic+ key — all class buff buttons are now correctly suppressed for the duration of an active key, not just Paladin aura buttons
+- Fixed Lua error "attempt to call a nil value" on line ~5054 — IsCurrentSpell does not exist in Midnight 12.0.5; the aura detection fallback now guards against the API being absent
+
+V1.39
+- Added spec-specific profiles: you can now assign a different profile to each of your specs and the addon will automatically swap to the right one whenever you change spec
+  - A new "Profile for [Spec Name]" dropdown appears in the Settings tab below the main Active Profile dropdown
+  - Selecting "— (use character profile)" reverts that spec to the normal per-character profile
+  - The active profile dropdown label updates to reflect the profile that was loaded after a spec swap
+- Marksmanship Hunters no longer see Call Pet buttons — MM Hunters don't use a pet by default
+  - Exception: if you have the Unbreakable Bond talent, Call Pet buttons show as normal
+- Call Pet buttons now show your stored pet's actual name as the label instead of "Pet 1", "Pet 2", etc.
+- Fixed Lightning Shield and Water Shield not being detected as active in M+ (Midnight 12.0 protects certain stance/shield auras so the normal API returns nothing — the addon now falls back to a full aura scan and compares spell IDs directly)
+- Fixed Lightning Shield button showing even when Water Shield was already active (and vice versa) — both spells share the same buff slot so if either one is up, neither button shows
+- Fixed text clipping in the Profiles section of the Settings tab — increased spacing between the section header and the description text, and widened the text area to prevent wrapping onto too many lines
+
+V1.38
+- Update toc for 12.0.5
+
+V1.37
+- Minor Bug Fixes
+
+V1.36
+- Fixed a Lua error when opening addon settings in combat (a protected WoW function was being called from a script, which isn't allowed mid-fight)
+- Added a channel dropdown for Feast Announce — choose where the message goes: Party, Instance, Raid, Raid Warning, Say, or Yell (defaults to Party)
+
+V1.35
+- Fixed continuous memory growth and periodic stuttering caused by named WoW frames being allocated on every UpdateButtons call and never being freed (WoW cannot GC frames that have a global name). All action buttons are now anonymous and reused via a pool (SQ_BUTTON_POOL) — frames are returned to the pool on each UpdateButtons call and reconfigured when needed rather than reallocated.
+- Fixed excessive UpdateButtons calls in a group: UNIT_AURA fires for every party member's every aura change; added a 0.2s debounce so all aura events within a window collapse into a single rebuild instead of one per event.
+- Added Feast Announce: when anyone in the party places a feast, the addon sends "Fresh off the barbie, no crocs were harmed in the making of this <feast name>… I think." to instance/party chat
+- Toggle in Reminders tab under "Feast Announce"
+- Feast spell IDs are resolved automatically from known feast item IDs at login; manual overrides available in SQ_FEAST_SPELL_OVERRIDES if a feast is missed
+- Fixed Paladin aura alert sound going off on every resurrection in a raid — the addon was briefly unable to read your aura while you were dead and thought it was missing, causing a false alert the moment you stood back up
+- Fixed the same false alert while in ghost form
+
+V1.33
+- Fixed Paladin aura buttons playing their alert sound after every loading screen even when the aura was already active (WoW restores aura state after PLAYER_ENTERING_WORLD fires, causing a false "buff missing" detection on the first update pass — sounds are now suppressed for 3 seconds after each loading screen)
+- Paladin aura buttons are now hidden during active M+ keystones — auras cannot be swapped mid-key so the buttons served no purpose and were causing confusion
+- Holy Paladin special case for 2+ paladin groups: Devotion Aura button is always shown even when another paladin already has it covered, so the Holy Paladin can activate it for Aura Mastery
+- Holy Paladin with Devotion Aura already active: all other aura buttons are hidden (committed to Devotion Aura)
+- Non-Holy Paladins: behaviour unchanged (hide all buttons as soon as any aura is active)
+
+V1.31
+- Fixed Paladin aura buttons staying visible in M+ even when the paladin already had an aura active (switched from GetPlayerAuraBySpellID to GetUnitAuraBySpellID — the former uses a filtered API that does not track passive toggle auras like Devotion Aura in M+)
+- Fixed the button frame resetting to the centre of the screen on every reload
+
+V1.30
+- Added a new "Sounds" tab to the addon settings where you can manage all sound alerts
+- Added two built-in sound effects (Ducky and Move Ya Drongo) that are always available in every sound dropdown
+- Added the ability to register your own .ogg sound files — place them in the Media\Sounds folder, give them a name, and they'll appear in every sound dropdown
+- All sounds added through this addon are automatically prefixed with "Squizzumables:" so they're easy to identify in the list
+- Class buff rows (with their sound dropdowns) have been moved out of the Items tab into their own dedicated "Class Buffs" tab
+- Tab order is now: Settings, Items, Class Buffs, Raid Tools, Reminders, Interrupts, Cooldowns, Sounds
+- Fixed sound dropdown menus being too narrow — they now automatically widen to fit the longest sound name in the list
+
+V1.29
+- Fixed a recurring Lua error in Blizzard's inspect UI (InspectPVPFrame) that could fire hundreds of times per session when using the interrupt tracker alongside other addons that also inspect party members
+- Fixed interrupt tracker crashing on reload while already inside a raid group
+- Fixed interrupt tracker wasting inspect attempts on players it had already scanned
+- Interrupt tracker now benefits from inspects done by other addons — if another addon already inspected a party member, Squizzumables reads that data instead of firing its own inspect request
+- Interrupt tracker now waits briefly before starting its own inspect pass, reducing clashes with other addons inspecting the same players at the same time
+- Fixed Beacon of Virtue talent not suppressing the Beacon reminder for some Holy Paladins
+
+V1.28
+- Cooldown Manager locked groups now show spell tooltips on hover while still being fully click-through
+- Fixed an error that occurred when the Cooldown Manager tried to update frames during combat
+- Raid marker buttons now only appear when you are in a party or raid group
+- Flask buttons now correctly show silver or gold quality pips (all four Midnight flask types)
+
+V1.27
+- Cooldown Manager locked groups are now truly click-through: you can click, target, and interact with the game world through them while still seeing spell tooltips on hover
+- Added individual enable/disable checkboxes for each text reminder (Beacon, Earth Shield, Symbiotic Relationship, Food, Flask, Oil)
+- Added Food, Flask, and Oil reminders that show everywhere outside of combat, not just inside instances
+- Removed the drag handle rectangles from all reminder frames — you can now drag any reminder from anywhere on the frame
+- Fixed repair reminder and Battle Res counter staying visible after closing Preview Mode
+
+V1.26
+- Interrupt tracker now inspects party members to detect their spec and talents
+  - Automatically corrects wrong spec assumptions (e.g. Shadow Priest initially flagged as healer)
+  - Swaps interrupt spells based on spec (e.g. Feral Druid gets Skull Bash instead of Solar Beam)
+  - Scans talents that reduce interrupt cooldowns (Hunter Lone Survivor, Evoker Interwoven Threads)
+  - Scans on-kick cooldown reduction talents (e.g. Resounding Protection, Quick Decision)
+  - Works in M+ where addon messaging is blocked — uses Blizzard inspect API instead
+  - Retries inspects automatically if they fail (up to 3 times per player)
+- Added character profile system for the whole addon
+  - Each character can use its own profile or share one with others
+  - Default profile serves as a template for new profiles
+  - New Profile: copies current settings into a named profile
+  - Delete Profile: removes a profile, reassigns characters to Default
+  - Copy to Default: updates the Default template from your current settings
+  - Reset from Default: reloads Default profile settings for the current character
+  - All addon settings, item preferences, and frame positions are stored per-profile
+- Cooldown Manager uses cross-character spec profiles
+  - CDM layouts are keyed by class + spec (e.g. all Paladins share Prot/Ret/Holy setups)
+  - Spec profile indicator shown in the Cooldowns tab header
+- Fixed proxy frame border covering spell icons (BackdropTemplate edge-only border)
+- Added Cooldown Manager module: creates proxy overlay icons driven by Blizzard's CDM spell data (taint-free)
+  - Create named groups, assign any known cooldown, set icon size and per-row layout
+  - Free Position mode lets you drag individual cooldown icons anywhere on screen
+  - Groups are draggable from anywhere on the frame; locking makes them click-through
+  - Per-spec saved data (separate layouts for each specialization)
+  - Proxy frame architecture: never touches Blizzard CDM frames, avoids all taint
+  - Combat-safe: queues mutations during combat, flushes on combat end
+  - Integrates with Preview Mode, Lock All, and Reset Positions
+  - Full per-group settings inspired by ArcUI:
+    - Icon Size, Spacing, Per Row, Opacity sliders
+    - Horizontal/Vertical orientation
+    - Growth direction (Right/Left + Down/Up)
+    - Sort by Assignment Order, Spell Name, or Cooldown Remaining
+    - Show/Hide Border, Cooldown Text, Tooltip on Hover
+    - Desaturate icons when ready (greyscale off-cooldown)
+    - Glow effect when ability comes off cooldown
+    - Hide Out of Combat (auto-fade groups outside combat)
+    - Lock (click-through) per group
+
+V1.25
+- Rebuilt Battle Res Counter from scratch 
+
+V1.24
+- Fixed ADDON_ACTION_FORBIDDEN taint from brez event unregistration firing outside M+ on every combat end
+
+v1.23
+- Added Symbiotic Relationship Reminder: shows green "SYMBIOTIC RELATIONSHIP" text when the player is missing the buff
+  - Druid only, auto-detects the talent via IsSpellKnown
+  - Movable, scalable, lockable via Text Reminders settings tab
+- Added Symbiotic Relationship Button: auto-casts on the correct target based on spec
+  - Guardian Druid: targets the healer
+  - Restoration Druid: targets the tank
+- Added Battle Res Counter: shows remaining shared battle res charges and cooldown timer during M+ keystones
+  - Uses direct spell charge data when player has a brez spell, falls back to timer-based calculation for other classes
+  - Color-coded: green (2+ charges), orange (1 charge), red (0 charges)
+  - Stays visible during combat (unlike other reminders)
+  - Movable, scalable, lockable via Text Reminders settings tab
+- Added Repair Reminder: shows "REPAIR" text when any equipped item's durability drops below a configurable threshold (Default: 50%)
+  - Threshold slider (0-100%), scale slider, lock checkbox in settings
+
+v1.22
+- Removed Bloodlust sound alert feature (too many false positives due to M+ aura taint restrictions; not reliably fixable)
+
+v1.21
+- Fixed Bloodlust sound false positives outside M+: Sated debuff no longer triggers the sound (only the actual lust buff does), and lustSoundPlayed stays locked while Sated is active to prevent re-triggers from transient aura scan failures
+- Bloodlust sound now uses built-in PlaySound (sound kit 10030) instead of bundled .ogg file for CurseForge compatibility
+- Haste-based detection (M+ fallback) uses multiplicative ratio threshold (1.28x), only runs inside active M+ keystones
+- Fixed interrupt tracker bar order flickering: added stable name-based tiebreaker to sort so players with equal cooldowns no longer swap positions every frame
+- Fixed Mistweaver Monk incorrectly showing on interrupt tracker: healer role data can load after initial registration, so tracker now removes players whose role resolves to healer after they were already added
+- Fixed interrupt tracker "estimated — no addon" tooltip: tracks confirmed status when a player's interrupt is detected, clearing the estimated label after first use
+
+v1.19
+- Added Bloodlust sound alert: plays a custom sound when any party member casts a Bloodlust variant
+- Detects Bloodlust, Heroism, Time Warp, Primal Rage, Fury of the Aspects, Ancient Hysteria
+- Toggle in Reminders tab under "Bloodlust Sound Alert"
+- Added instance sound alert: plays sound 46004 when entering Skyreach on Mythic difficulty
+- Toggle in Reminders tab under "Instance Sound Alerts"
+- Added Raid Tools markers layout settings: horizontal/vertical layout, grow direction (left/right, up/down)
+- Added party interrupt cooldown tracker (new "Interrupts" tab in options panel), inspired by Loxx Interrupt Tracker by Loxxar
+- Tracks your interrupt and party members' interrupts with class-colored bars
+- Shows ready/cooldown status with countdown timers and alert band summary
+- Auto-detects party members' interrupt spells by class and spec
+- Supports spec overrides (e.g. Survival Hunter Muzzle, Feral Druid Skull Bash)
+- Detects healer specs that lose their interrupt (Holy Paladin, Disc/Holy Priest, etc.)
+- Visibility options: show in dungeons, arenas, open world; hide out of combat
+- Customizable scale, width, opacity, and bar height
+- Lockable and movable frame with drag handle
+- Test mode via /sq interrupts
+- Integrated with preview mode overlay and Lock All / Reset Positions
+
+v1.17
+- Drag handle position now auto-derives from grow direction (removed separate Handle Position dropdown)
+- Removed "Outward" from vertical layout grow direction options
+- Preview mode now unlocks all frames for repositioning (restores lock state when preview closes)
+- Preview mode shows green overlay on all frames including main consumables frame
+- Added beacon reminder for Holy Paladins: shows "REMEMBER YOUR BEACON" text when beacons are missing
+- Beacon reminder detects Beacon of Faith talent (requires 2 beacons) vs Beacon of Light (1 beacon); Beacon of Virtue skips reminder entirely
+- Beacon reminder frame is movable, scalable, and lockable with its own drag handle
+- New "Reminders" tab in options panel with beacon reminder scale slider and lock checkbox
+- Beacon reminder follows the same visibility rules as the main frame (instance-only, hidden in combat/M+)
+- Lock All in preview mode now includes beacon reminder frame
+
+v1.16
+- Redesigned options panel: new built-in UI with custom dark theme, gold accents, tabbed layout, styled sliders/dropdowns/checkboxes — no longer requires Abstract Framework
+- Added min duration support for Rogue poisons (shows button when poison buff is about to expire)
+- Added Raid Tools module: movable frame with Ready Check, Pull Timer, World Markers, and Target Markers
+- Raid Tools frame only visible when you are group leader or assistant
+- New "Raid Tools" tab in options panel with enable/disable toggle, section visibility, pull timer duration, and frame lock
+- Use /sq raidtools to toggle the frame, or right-click world markers to clear them
+- Added min duration support for Earth Shield (tank buff) — shows reminder when tank's buff is about to expire
+- Added min duration support for Shaman weapon imbues (Windfury, Flametongue, Earthliving)
+
+v1.15
+- Removed tea support (WoW changed how teas work)
+
+v1.14
+- Fixed multi-shaman Earth Shield buttons still showing after you've applied all your Earth Shields (now counts how many ES auras you've sourced and hides buttons once all slots are filled — 2 with Elemental Orbit, 1 without)
+
+v1.13
+- Added multi-shaman Earth Shield support: when 2+ shamans are in the group, shows an Earth Shield button for every party/raid member missing the buff (header shows "Tank" for tanks, "Self" for yourself, and the player's name for everyone else)
+- When only 1 shaman is in the group, Earth Shield buttons remain as before (Tank + Self only)
+
+v1.12
+- Fixed Earth Shield not detecting the aura on tanks (added base spell ID 974 alongside talent variant 383648 to buff checks)
+
+v1.11
+- Added Shaman weapon imbue buttons (Windfury, Flametongue, Earthliving) - shows when known but not active
+- Added Shaman Shields (Earth Shield shows 2 buttons: one for tank, one for self; Water Shield and Lightning Shield as self-buffs)
+- Added vertical layout option (Settings > Layout Direction)
+- Added grow direction filtering based on layout (vertical: Up/Down/Outward, horizontal: Left/Right/Outward)
+- Added anchor point options (Top, Left, Center, Right, Bottom)
+- Added drag handle position setting (Top or Bottom)
+- Fixed draggable area not updating position when anchor or grow direction changes
+- Vertical layout now shows label text to the right of the icon
+
+v1.10
+- Added Rogue poison buttons (Lethal and Non-Lethal, only shows when missing)
+- Added Warlock pet summon buttons
+- Added Hunter Call Pet buttons (all 5 slots, only shows slots with a stored pet)
+
+v1.9
+- Fixed Paladin aura buttons not reappearing after clicking off your aura in raid (was counting received auras as self-cast)
+- Fixed Arcane Intellect button staying visible when buff was already active (player buff check now uses reliable API)
+- Fixed class buff buttons showing for NPC companions in delves and follower dungeons (now only checks real players)
+- Fixed out-of-range or phased raid members causing buff buttons to persist (skipped when not visible)
+- Added Summon Water Elemental button for Frost Mages (shows when talented but pet is not out)

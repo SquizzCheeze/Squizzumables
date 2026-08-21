@@ -8,6 +8,11 @@ package-as: Squizzumables
 
 # Hand-written, so use it verbatim instead of letting the packager synthesise a
 # changelog from commit subjects. markup-type text keeps it as plain text.
+#
+# "Verbatim" is the whole file, so changelog.txt holds only the version being
+# built -- anything older lives in CHANGELOG-ARCHIVE.txt. Leaving the history in
+# place made every CurseForge release repost the entire backlog as that
+# version's release notes.
 manual-changelog:
   filename: changelog.txt
   markup-type: text
@@ -20,5 +25,6 @@ ignore:
   - .luarc.json
   - .pkgmeta
   - CLAUDE.md
+  - CHANGELOG-ARCHIVE.txt
   - NOTES.md
   - README.md

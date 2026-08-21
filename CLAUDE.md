@@ -60,9 +60,12 @@ without a fundamentally different detection approach that doesn't depend on read
   believing any of it. It is only trustworthy for files edited through the editor itself, so the
   four checks above are the real gate.
 
-- `changelog.txt` is maintained by hand; check it for recent behavioral history/root-cause notes
-  before assuming something is a fresh bug — many past fixes have detailed root-cause writeups
-  there worth reading first.
+- `changelog.txt` is maintained by hand and holds **only the version currently being built** —
+  the packager ships it verbatim, so anything older in it gets reposted to CurseForge as the new
+  version's release notes. Shipped versions move to `CHANGELOG-ARCHIVE.txt`, which is in the
+  `.pkgmeta` ignore list and never ships. **Grep the archive, not `changelog.txt`**, for recent
+  behavioral history/root-cause notes before assuming something is a fresh bug — many past fixes
+  have detailed root-cause writeups there worth reading first.
 - Useful in-game slash commands while developing: `/sq config` (options panel), `/sq reset` (reset
   main frame position), `/sq reload` (recompute buttons), `/sq unlock` (toggle unlock mode),
   `/sq raidtools`, `/sq notes` (reopen the release notes), and the diagnostic dumps `/sq feast`,
@@ -119,6 +122,21 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
+
+**A tagged version is closed.** Nothing more goes onto that version number, and the `.toc`,
+`changelog.txt` and `RELEASE_NOTES` all stay at the shipped number until there is real work to
+ship — do not pre-bump after a release. The *next* change opens the next version, as its first
+step:
+
+1. move the shipped section out of `changelog.txt` into the top of `CHANGELOG-ARCHIVE.txt`, so
+   `changelog.txt` holds only the version being built (the packager ships it verbatim)
+2. bump `## Version` in `Squizzumables.toc`
+3. start the new `changelog.txt` section
+4. add the matching `RELEASE_NOTES` key in `Core/Welcome.lua` — it is keyed on the `.toc`
+   Version string, so a bump without one means an empty update popup
+
+Then make the change. `git tag -l` tells you which state you are in: if the `.toc` version is
+already tagged, it is closed and step 1 applies.
 
 **Dry-run first via `workflow_dispatch`** (Actions -> Package and release -> Run workflow). It
 passes `-d`, so nothing can reach CurseForge, and it attaches the built zip as an artifact for
@@ -394,5 +412,5 @@ alert quiet rather than spurious — see the absence-guard note above for why th
 
 **Consumable data churn**: item/spell IDs in `Squizzumables_Config.lua` (`consumables.food`,
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard
-rotates seasonal items — check `changelog.txt` for the most recent update pattern before adding
-new IDs.
+rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
+adding new IDs.
