@@ -2072,9 +2072,22 @@ local function OnCooldownSetChanged(debounce, force)
     -- live spec), so leaving it up after a spec change shows the previous
     -- spec's configuration. It was only ever rebuilt by its own controls.
     if BH.RebuildCDMTabContent then
-        C_Timer.After(0.3, function()
+        -- Deliberately after the reconcile rather than on a fixed short delay.
+        -- SPEC_CHANGE_DEBOUNCE is 1.0 because the client keeps reporting the
+        -- outgoing spec's category set for a moment after
+        -- PLAYER_SPECIALIZATION_CHANGED; rebuilding the grid before that
+        -- redraws it from the spec being left behind, which looks identical to
+        -- not rebuilding it at all.
+        C_Timer.After((debounce or SPEC_CHANGE_DEBOUNCE) + 0.2, function()
             if InCombatLockdown() then return end
             BH:RebuildCDMTabContent()
+            -- PopulateCDMSoundsLeft draws the spell icon grid, and it ran only
+            -- when the tab was first built. Rebuilding just the right-hand pane
+            -- refreshed the details of a selection while the list beside it
+            -- still showed the previous spec's spells -- which is precisely the
+            -- "spec changed and nothing updated" report, since the grid is the
+            -- part you look at.
+            if BH.PopulateCDMSoundsLeft then BH:PopulateCDMSoundsLeft() end
             if BH.RebuildCDMSoundsRight then BH:RebuildCDMSoundsRight() end
         end)
     end
@@ -2864,6 +2877,24 @@ end
 function BH:PopulateCDMSoundsLeft()
     local content = cdmSoundsState.leftContent
     if not content then return end
+
+    -- Drop a selection the new spell set no longer contains.
+    --
+    -- The selection is a cooldownID, and a spec or talent change can retire it
+    -- entirely. Leaving it set meant the right-hand pane kept rendering the
+    -- details of a spell that is no longer in the list on the left, with no
+    -- icon highlighted to explain where it came from.
+    local stillPresent = false
+    local selected = cdmSoundsState.selectedCooldownID
+    if selected and BH.cdm and BH.cdm.GetAvailableCooldowns then
+        for _, cdInfo in ipairs(BH.cdm:GetAvailableCooldowns() or {}) do
+            if cdInfo.cooldownID == selected then stillPresent = true break end
+        end
+    end
+    if selected and not stillPresent then
+        cdmSoundsState.selectedCooldownID = nil
+        cdmSoundsState.selectedCDInfo     = nil
+    end
 
     -- Clear existing children and regions
     cdmSoundsState.iconButtons = {}
