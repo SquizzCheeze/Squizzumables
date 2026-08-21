@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.61"] = {
+        "The per-item \"Min\" minutes box now saves when you click away, not only when you press Enter.",
+    },
     ["1.60"] = {
         "Cooldown Manager sound alerts now work in combat, including \"when available\".",
         "Death Knights and augment runes are now tracked; healthstones too.",

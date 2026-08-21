@@ -4642,15 +4642,34 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
     minEdit:SetNumeric(true)
     minEdit:SetMaxLetters(2)
     minEdit:SetText(tostring(self:GetMinDuration(itemID)))
-    minEdit:SetScript("OnEnterPressed", function(self)
-        local value = tonumber(self:GetText()) or 0
-        value = math.max(0, math.min(60, value))
-        self:SetText(tostring(value))
+    -- Commit on focus lost as well as on Enter. Every other edit box in the
+    -- addon saves without Enter (OnTextChanged here, an explicit
+    -- OnEditFocusLost in the Kelerts tab), so an Enter-only box reads as
+    -- broken: typing 20 and clicking away discarded it, and the next row.Sync
+    -- repainted the stored value -- reported as "it won't save, it keeps
+    -- reverting to 30".
+    local function CommitMin(box)
+        local text = box:GetText()
+        if text == "" then
+            -- Cleared and clicked away. Treat that as "no change" rather than
+            -- as 0, which is a real setting ("only show when missing") and not
+            -- what an empty box means.
+            box:SetText(tostring(BH:GetMinDuration(itemID)))
+            return
+        end
+        local value = math.max(0, math.min(60, tonumber(text) or 0))
+        box:SetText(tostring(value))
         BH:SetMinDuration(itemID, value)
         BH:SaveSettings()
         BH:UpdateButtons()
+    end
+    minEdit:SetScript("OnEnterPressed", function(self)
+        CommitMin(self)
         self:ClearFocus()
     end)
+    -- Also fires from the ClearFocus() calls above and below; re-committing the
+    -- value that is already stored is a no-op either way.
+    minEdit:SetScript("OnEditFocusLost", CommitMin)
     minEdit:SetScript("OnEscapePressed", function(self)
         self:SetText(tostring(BH:GetMinDuration(itemID)))
         self:ClearFocus()
@@ -5136,14 +5155,24 @@ function BH:RefreshItemList()
         coachMinEdit:SetNumeric(true)
         coachMinEdit:SetMaxLetters(2)
         coachMinEdit:SetText(tostring(BH:GetMinDuration(COACH_WHISTLE_ITEM_ID)))
-        coachMinEdit:SetScript("OnEnterPressed", function(self)
-            local v = math.max(0, math.min(60, tonumber(self:GetText()) or 0))
-            self:SetText(tostring(v))
+        -- Same commit-on-focus-lost contract as the per-item Min boxes above.
+        local function CommitCoachMin(box)
+            local text = box:GetText()
+            if text == "" then
+                box:SetText(tostring(BH:GetMinDuration(COACH_WHISTLE_ITEM_ID)))
+                return
+            end
+            local v = math.max(0, math.min(60, tonumber(text) or 0))
+            box:SetText(tostring(v))
             BH:SetMinDuration(COACH_WHISTLE_ITEM_ID, v)
             BH:SaveSettings()
             BH:UpdateButtons()
+        end
+        coachMinEdit:SetScript("OnEnterPressed", function(self)
+            CommitCoachMin(self)
             self:ClearFocus()
         end)
+        coachMinEdit:SetScript("OnEditFocusLost", CommitCoachMin)
         coachMinEdit:SetScript("OnEscapePressed", function(self)
             self:SetText(tostring(BH:GetMinDuration(COACH_WHISTLE_ITEM_ID)))
             self:ClearFocus()
