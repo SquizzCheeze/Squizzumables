@@ -149,11 +149,11 @@ local function ShowAlert(alert)
     local snd = PickRandomSound(alert) or (alert and alert.sound) or "None"
     local ch  = (alert and alert.soundChannel) or "Master"
     if alertSoundTicker then alertSoundTicker:Cancel(); alertSoundTicker = nil end
-    -- Skip our own playback when the client is already handling this alert's
-    -- sound (see the aura-sound section below). Otherwise every readable
-    -- application would play it twice: once from the client's registration and
-    -- once from here.
-    if BH.PlaySound and not (alert and BH.AlertHasClientSound and BH.AlertHasClientSound(alert)) then BH:PlaySound(snd, ch) end
+    -- Played by us, not by the client. Only the lust alert reaches here, and it
+    -- is watchable the old way because its debuffs stay readable in combat --
+    -- which is also why it can still have an image. Buff sounds are a separate
+    -- mechanism entirely; see the buff sounds section below.
+    if BH.PlaySound then BH:PlaySound(snd, ch) end
     if alert and alert.soundLoop and snd ~= "None" then
         local loopInterval = math.max(0.5, tonumber(alert.soundLoopInterval) or 2.0)
         alertSoundTicker = C_Timer.NewTicker(loopInterval, function()
@@ -297,122 +297,443 @@ end
 BH.AlertTriggerActive = TriggerActive
 
 -- ============================================================================
--- Client-side aura sounds  (C_UnitAuras.AddAuraSound, 12.1)
+-- Buff sounds  (C_UnitAuras.AddAuraSound, 12.1)
 --
--- The trigger check above cannot see a secret aura, and in 12.1 nearly every
--- aura is secret in combat -- only a very short allowlist (the lust debuffs
--- among them) stays readable. So an alert on an ordinary buff fires happily in
--- a city and goes silent in the pull it was made for. Nothing addon-side fixes
--- that: the value genuinely is not readable.
+-- Since 12.1 the client hides nearly every aura from addons in combat -- only a
+-- very short allowlist (the lust debuffs among them) stays readable. So any
+-- alert built on reading an aura fires out in the world and goes silent in the
+-- pull it was made for, and no amount of addon-side wiring changes that.
 --
--- AddAuraSound sidesteps it completely by inverting who does the watching. We
--- hand the client a spellID and a sound file up front; the client plays it when
--- the aura is applied. No value ever crosses into addon code, so there is
--- nothing for secrecy to withhold. Verified on retail against Tyr's
--- Deliverance (200654) -- secret, unreadable, and the sound still played in
--- combat.
+-- AddAuraSound inverts who does the watching. We hand the client a spell ID and
+-- a sound file up front; it plays the sound when the aura is applied or
+-- removed. No value ever crosses into addon code, so there is nothing for
+-- secrecy to withhold. Verified on retail against Tyr's Deliverance (200654):
+-- secret, unreadable, sound still played in combat.
 --
--- What it costs: the client plays a sound and tells us nothing. There is no
--- callback, so an alert delivered this way gets no full-screen image -- we
--- never learn it happened. Sound is the part that survives combat; the image
--- still depends on the aura being readable.
+-- What it costs is the image. The client plays the sound and reports nothing
+-- back, so there is no moment at which we could draw anything -- which is why
+-- these are "buff sounds" and not alerts, and why the lust alert (readable, so
+-- still watchable the old way) keeps its picture and lives elsewhere.
 --
--- Which alerts qualify is decided here rather than exposed as a setting,
--- because the constraint is the API's, not a preference:
---   * one fixed sound. A random pool would have to be resolved now, at
---     registration, which would pick once and then repeat the same file
---     forever -- the opposite of what the pool is for.
---   * no sound loop. The client plays the file once per application.
---   * a real file path. The __builtin_* sounds are sound kit IDs, and
---     soundFileName wants a file.
---   * a single spell ID, which excludes the built-in lust alert -- it watches
---     five debuffs at once, and they are on the readable allowlist anyway, so
---     it already works in combat and has nothing to gain here.
+-- Two constraints come from the API rather than from preference:
+--   * one fixed sound per trigger. There is nothing to re-roll at play time; a
+--     random pool would be resolved once here and then repeat forever.
+--   * a real file path. The __builtin_* sounds are sound kit IDs and
+--     soundFileName wants a file, so those cannot be delegated.
 -- ============================================================================
 
--- [alertID] = auraSoundID handed back by the client, needed to unregister.
+-- [spellID .. ":" .. trigger] = auraSoundID handed back by the client.
 local registeredAuraSounds = {}
-
--- Which alert tables the client is playing the sound for. Keyed by the alert
--- table itself rather than flagged on the record: settings.alerts is saved to
--- SavedVariables, and a runtime-only marker written in there would persist as
--- junk and outlive the registration that justified it.
-local clientSoundAlerts = {}
-
--- ShowAlert has the alert table but not its id, which is why this is keyed by
--- table identity.
-function BH.AlertHasClientSound(alert)
-    return clientSoundAlerts[alert] == true
-end
 
 local function AuraSoundsAvailable()
     return C_UnitAuras and C_UnitAuras.AddAuraSound and C_UnitAuras.RemoveAuraSound
         and Enum and Enum.UnitAuraSoundTrigger
 end
+BH.AuraSoundsAvailable = AuraSoundsAvailable
 
--- The sound this alert would delegate, or nil if it does not qualify.
-local function DelegatableSound(alert)
-    if type(alert) ~= "table" or alert.enabled == false then return nil end
-    if alert.soundLoop then return nil end
-    local t = alert.trigger or {}
-    if t.type ~= nil and t.type ~= "aura" then return nil end
-    if not tonumber(t.spellID) then return nil end
-    -- A pool with anything in it means the sound is meant to vary per firing.
-    local pool = alert.randomSounds
-    if type(pool) == "table" then
-        for _, checked in pairs(pool) do
-            if checked then return nil end
-        end
-    end
-    return BH.ResolveSoundPath and BH:ResolveSoundPath(alert.sound)
+-- The player's configured buff sounds: { [spellID] = { added, removed, channel } }
+local function BuffSounds()
+    if not BH.settings then return {} end
+    BH.settings.buffSounds = BH.settings.buffSounds or {}
+    return BH.settings.buffSounds
 end
+BH.BuffSounds = BuffSounds
 
 local function ClearAuraSoundRegistrations()
     if not AuraSoundsAvailable() then return end
-    for id, soundID in pairs(registeredAuraSounds) do
+    for key, soundID in pairs(registeredAuraSounds) do
         pcall(C_UnitAuras.RemoveAuraSound, soundID)
-        registeredAuraSounds[id] = nil
+        registeredAuraSounds[key] = nil
     end
-    wipe(clientSoundAlerts)
 end
 
 -- Rebuild every registration from current settings.
 --
--- Wholesale rather than incremental on purpose: an alert's spell, sound, pool
--- and enabled flag can all change from several places in the tab, and a stale
--- registration is worse than a missing one -- it plays the wrong sound, or one
--- for a spell the player has stopped caring about, with no UI showing why.
+-- Wholesale rather than incremental on purpose: a spell's sounds can change
+-- from several places, and a stale registration is worse than a missing one --
+-- it plays a sound the player has stopped asking for, with nothing on screen
+-- explaining where it came from.
 function BH:RefreshAuraSoundRegistrations()
     if not AuraSoundsAvailable() then return end
     ClearAuraSoundRegistrations()
     if not self.settings then return end
 
-    local added = Enum.UnitAuraSoundTrigger.Added
-    for id, alert in pairs(AllAlerts()) do
-        local path = DelegatableSound(alert)
-        if path then
-            local ok, soundID = pcall(C_UnitAuras.AddAuraSound, added, {
-                unitToken     = "player",
-                spellID       = tonumber(alert.trigger.spellID),
-                soundFileName = path,
-                outputChannel = alert.soundChannel or "Master",
-            })
-            -- A nil ID means the client declined it (AddAuraSound is flagged
-            -- HasRestrictions). Leave the alert on the normal path rather than
-            -- marking it delegated, or it would go silent everywhere instead of
-            -- only in combat.
-            if ok and soundID then
-                registeredAuraSounds[id] = soundID
-                clientSoundAlerts[alert] = true
+    local triggers = {
+        added   = Enum.UnitAuraSoundTrigger.Added,
+        removed = Enum.UnitAuraSoundTrigger.Removed,
+    }
+
+    for spellID, entry in pairs(BuffSounds()) do
+        local id = tonumber(spellID)
+        if id and type(entry) == "table" then
+            for field, trigger in pairs(triggers) do
+                local path = self.ResolveSoundPath and self:ResolveSoundPath(entry[field])
+                if path then
+                    local ok, soundID = pcall(C_UnitAuras.AddAuraSound, trigger, {
+                        unitToken     = "player",
+                        spellID       = id,
+                        soundFileName = path,
+                        outputChannel = entry.channel or "Master",
+                    })
+                    -- A nil ID means the client declined it (AddAuraSound is
+                    -- flagged HasRestrictions). Nothing to fall back to -- there
+                    -- is no addon-side path that works in combat -- so leave it
+                    -- unregistered and let the tab show it as inactive.
+                    if ok and soundID then
+                        registeredAuraSounds[id .. ":" .. field] = soundID
+                    end
+                end
             end
         end
     end
 end
 
--- Is this alert's sound being played by the client? Read by the settings tab so
--- it can say so, since it changes what the alert does in combat.
-function BH.AlertUsesClientSound(id)
-    return registeredAuraSounds[id] ~= nil
+-- Did the client accept this spell's registration? Read by the tab, so a
+-- refusal is visible rather than silently doing nothing.
+function BH.BuffSoundRegistered(spellID, field)
+    return registeredAuraSounds[tonumber(spellID) .. ":" .. field] ~= nil
+end
+
+-- ============================================================================
+-- The player's own buffs, from the spellbook
+--
+-- Built from the spellbook rather than from Blizzard's Cooldown Manager
+-- categories, which is what frees this from the CDM entirely: AddAuraSound
+-- takes a raw spell ID and does not care whether Blizzard filed the spell in a
+-- viewer. isOffSpec is exactly "not in the spec and talents you have selected",
+-- so the list maintains itself across every respec with nothing hardcoded.
+--
+-- IsSelfBuff narrows it to spells that put an aura on the player, which is what
+-- an aura sound can actually fire on. It is not perfect -- a spell whose cast ID
+-- differs from the ID of the aura it applies will register a sound that never
+-- plays (Blessing of Freedom is 61107 to cast and 92824 as the buff) -- which is
+-- why the tab also takes a spell ID by hand.
+-- ============================================================================
+
+-- Spells the walk below misses, added by hand.
+--
+-- IsSelfBuff is the filter, and it does not agree that everything which puts an
+-- aura on you is a self-buff. Tyr's Deliverance (200654) is the case that found
+-- this: a Holy Paladin cooldown that visibly buffs the paladin, absent from
+-- IsSelfBuff and absent from all four of Blizzard's cooldown categories even
+-- with allowUnlearned. There is no data source that knows about it, so the list
+-- is the honest answer rather than a workaround for one.
+--
+-- Gated on class, not on IsSpellKnown. These are *aura* IDs, and an aura is not
+-- a known spell -- IsSpellKnown answers about things you can cast, so it can
+-- return false for an ID you visibly have on you, which is what kept this list
+-- from showing up at all on the first attempt.
+--
+-- Add entries when a buff that should obviously be in the grid is not.
+local BUFF_SOUND_EXTRAS = {
+    { spellID = 200654, class = "PALADIN" },  -- Tyr's Deliverance
+}
+
+function BH.GetKnownBuffSpells()
+    local out = {}
+    if not (C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines) then return out end
+
+    local seen = {}
+    local bank = Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+    local numLines = C_SpellBook.GetNumSpellBookSkillLines() or 0
+
+    for lineIndex = 1, numLines do
+        local lineInfo = C_SpellBook.GetSpellBookSkillLineInfo(lineIndex)
+        if lineInfo and lineInfo.numSpellBookItems then
+            local first = (lineInfo.itemIndexOffset or 0) + 1
+            local last  = (lineInfo.itemIndexOffset or 0) + lineInfo.numSpellBookItems
+            for slot = first, last do
+                local info = C_SpellBook.GetSpellBookItemInfo(slot, bank)
+                -- isOffSpec covers the whole "current spec and talents" question.
+                -- Passives cannot be alerted on usefully, and a flyout is a
+                -- container rather than a spell.
+                if info and not info.isPassive and not info.isOffSpec then
+                    local spellID = info.spellID or info.actionID
+                    if spellID and not seen[spellID] then
+                        local isBuff = C_Spell.IsSelfBuff and C_Spell.IsSelfBuff(spellID)
+                        if isBuff then
+                            seen[spellID] = true
+                            out[#out + 1] = {
+                                spellID = spellID,
+                                name    = info.name or C_Spell.GetSpellName(spellID),
+                                icon    = info.iconID or C_Spell.GetSpellTexture(spellID),
+                            }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local _, playerClass = UnitClass("player")
+    for _, extra in ipairs(BUFF_SOUND_EXTRAS) do
+        if not seen[extra.spellID] and (not extra.class or extra.class == playerClass) then
+            seen[extra.spellID] = true
+            out[#out + 1] = {
+                spellID = extra.spellID,
+                name    = C_Spell.GetSpellName(extra.spellID) or ("Spell " .. extra.spellID),
+                icon    = C_Spell.GetSpellTexture(extra.spellID),
+            }
+        end
+    end
+
+    table.sort(out, function(a, b)
+        return (a.name or ""):lower() < (b.name or ""):lower()
+    end)
+    return out
+end
+
+-- ============================================================================
+-- Buff sounds UI
+-- ============================================================================
+
+-- Which icon the editor below the grid is editing.
+local selectedBuffSpellID
+
+function BH.SelectBuffSpell(spellID)
+    selectedBuffSpellID = tonumber(spellID)
+end
+
+-- Every spell the grid should show: this spec's own buffs, plus anything
+-- already configured that is not among them.
+--
+-- The second half matters because a spell ID added by hand -- or one kept from
+-- a spec you have since left -- would otherwise vanish from the UI while its
+-- sound carried on playing, which is the worst of both.
+local function BuffGridEntries()
+    local entries = BH.GetKnownBuffSpells()
+    local seen = {}
+    for _, e in ipairs(entries) do seen[e.spellID] = true end
+
+    local extra = {}
+    for spellID in pairs(BH.BuffSounds()) do
+        local id = tonumber(spellID)
+        if id and not seen[id] then
+            extra[#extra + 1] = {
+                spellID = id,
+                name    = C_Spell.GetSpellName(id) or ("Spell " .. id),
+                icon    = C_Spell.GetSpellTexture(id),
+                manual  = true,
+            }
+        end
+    end
+    table.sort(extra, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    for _, e in ipairs(extra) do entries[#entries + 1] = e end
+    return entries
+end
+
+local BUFF_ICON_SIZE = 30
+local BUFF_ICON_GAP  = 4
+local BUFF_PER_ROW   = 10
+
+function BH:RebuildBuffSoundGrid()
+    local grid = self.kelBuffGrid
+    if not grid then return end
+
+    for _, child in ipairs({ grid:GetChildren() }) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    for _, region in ipairs({ grid:GetRegions() }) do
+        region:Hide()
+        region:SetParent(nil)
+    end
+
+    local entries = BuffGridEntries()
+    if #entries == 0 then
+        local none = grid:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        none:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, 0)
+        none:SetText("No self-buffs found for this spec.")
+        none:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        grid:SetHeight(20)
+        return
+    end
+
+    -- Drop a selection this spec no longer offers, so the editor below never
+    -- describes a spell missing from the grid above it.
+    local stillPresent = false
+    for _, e in ipairs(entries) do
+        if e.spellID == selectedBuffSpellID then stillPresent = true break end
+    end
+    if not stillPresent then selectedBuffSpellID = entries[1].spellID end
+
+    local store = BH.BuffSounds()
+    local rows = 0
+    for i, entry in ipairs(entries) do
+        local col = (i - 1) % BUFF_PER_ROW
+        local row = math.floor((i - 1) / BUFF_PER_ROW)
+        rows = row + 1
+
+        local btn = CreateFrame("Button", nil, grid, "BackdropTemplate")
+        btn:SetSize(BUFF_ICON_SIZE, BUFF_ICON_SIZE)
+        btn:SetPoint("TOPLEFT", grid, "TOPLEFT",
+            col * (BUFF_ICON_SIZE + BUFF_ICON_GAP),
+            -row * (BUFF_ICON_SIZE + BUFF_ICON_GAP))
+
+        local icon = btn:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        icon:SetTexture(entry.icon)
+        icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+        ns.ApplySQBackdrop(btn, { 0, 0, 0, 0 }, SQ_COLORS.border)
+
+        -- Three states worth telling apart at a glance: selected, has a sound,
+        -- and neither. A configured spell keeps an accent border once the
+        -- selection moves on, or there is no way to see what is already set up
+        -- without clicking every icon in turn.
+        local configured = store[entry.spellID] ~= nil
+        if entry.spellID == selectedBuffSpellID then
+            local r, g, b = ns.GetAccentColor()
+            btn:SetBackdropBorderColor(r, g, b, 1)
+        elseif configured then
+            local r, g, b = ns.GetAccentColor("dim")
+            btn:SetBackdropBorderColor(r, g, b, 0.8)
+        else
+            btn:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2],
+                                       SQ_COLORS.border[3], 1)
+            icon:SetDesaturated(true)
+            icon:SetAlpha(0.7)
+        end
+
+        btn:SetScript("OnClick", function()
+            BH.SelectBuffSpell(entry.spellID)
+            BH:RebuildBuffSoundGrid()
+            BH:RebuildBuffSoundEditor()
+        end)
+        btn:SetScript("OnEnter", function(s)
+            GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+            GameTooltip:SetText(entry.name or ("Spell " .. entry.spellID))
+            GameTooltip:AddLine("Spell ID " .. entry.spellID, 0.7, 0.7, 0.7, false)
+            if entry.manual then
+                GameTooltip:AddLine("Added by spell ID.", 0.7, 0.7, 0.7, true)
+            end
+            if configured then
+                GameTooltip:AddLine("Has a sound.", 0.7, 0.7, 0.7, true)
+            end
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+
+    grid:SetHeight(rows * (BUFF_ICON_SIZE + BUFF_ICON_GAP))
+end
+
+function BH:RebuildBuffSoundEditor()
+    local editor = self.kelBuffEditor
+    if not editor then return end
+
+    for _, child in ipairs({ editor:GetChildren() }) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    for _, region in ipairs({ editor:GetRegions() }) do
+        region:Hide()
+        region:SetParent(nil)
+    end
+
+    local spellID = selectedBuffSpellID
+    if not spellID then editor:SetHeight(1) return end
+
+    local store = BH.BuffSounds()
+    local entry = store[spellID]
+    local name  = C_Spell.GetSpellName(spellID) or ("Spell " .. spellID)
+    local y     = 0
+
+    local title = editor:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+    title:SetText(tostring(BH.Secrets.SafeString(name, "?")) .. "  (" .. spellID .. ")")
+    ns.ApplyAccent(title, "text")
+    y = y - 22
+
+    -- Two triggers, one row each. Choosing "None" clears that half rather than
+    -- needing its own delete; the Remove button clears the spell outright.
+    local function SoundRow(label, field, tooltip)
+        local lbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        lbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+        lbl:SetWidth(60)
+        lbl:SetJustifyH("LEFT")
+        lbl:SetText(label)
+        lbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+        local drop = CreateSQDropdown(editor, "", 200, BH:BuildSoundDropdownItems(), function(val)
+            local s = BH.BuffSounds()
+            s[spellID] = s[spellID] or { channel = "Master" }
+            s[spellID][field] = (val ~= "None") and val or nil
+            BH:SaveSettings()
+            BH:RefreshAuraSoundRegistrations()
+            BH:RebuildBuffSoundGrid()
+            BH:RebuildBuffSoundEditor()
+        end)
+        drop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+        drop:SetSelectedValue((entry and entry[field]) or "None")
+        ns.Rows.AddTooltip(drop, label, tooltip)
+
+        local test = CreateSQButton(editor, "Test", 46, 22)
+        test:SetPoint("LEFT", drop.btn, "RIGHT", 6, 0)
+        test:SetScript("OnClick", function()
+            local e = BH.BuffSounds()[spellID]
+            BH:PlaySound(e and e[field] or "None", (e and e.channel) or "Master")
+        end)
+
+        -- Whether the client took the registration. A refusal is otherwise
+        -- indistinguishable from a sound that simply has not fired yet.
+        if entry and entry[field] then
+            local state = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            state:SetPoint("LEFT", test, "RIGHT", 6, 0)
+            if BH.BuffSoundRegistered(spellID, field) then
+                state:SetText("active")
+                state:SetTextColor(0.4, 0.8, 0.4)
+            else
+                state:SetText("not registered")
+                state:SetTextColor(SQ_COLORS.danger[1], SQ_COLORS.danger[2], SQ_COLORS.danger[3])
+            end
+        end
+        y = y - 28
+    end
+
+    SoundRow("Applied:", "added",
+        "Played when this buff lands on you. The game plays it, which is why it still works in combat.")
+    SoundRow("Removed:", "removed",
+        "Played when this buff drops off you. Also played by the game, which is the only reliable way to know an aura has ended.")
+
+    local chanLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    chanLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+    chanLbl:SetText("Channel:")
+    chanLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+    local chanDrop = CreateSQDropdown(editor, "", 130, {
+        { text = "Master",   value = "Master"   },
+        { text = "SFX",      value = "SFX"      },
+        { text = "Music",    value = "Music"    },
+        { text = "Ambience", value = "Ambience" },
+        { text = "Dialog",   value = "Dialog"   },
+    }, function(val)
+        local s = BH.BuffSounds()
+        s[spellID] = s[spellID] or {}
+        s[spellID].channel = val
+        BH:SaveSettings()
+        BH:RefreshAuraSoundRegistrations()
+    end)
+    chanDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+    chanDrop:SetSelectedValue((entry and entry.channel) or "Master")
+    ns.Rows.AddTooltip(chanDrop, "Sound channel",
+        "Which audio channel these play on. Master ignores your in-game sound sliders.")
+
+    if entry then
+        local rm = CreateSQButton(editor, "Remove", 68, 22, SQ_COLORS.danger)
+        rm:SetPoint("LEFT", chanDrop.btn, "RIGHT", 8, 0)
+        rm:SetScript("OnClick", function()
+            BH.BuffSounds()[spellID] = nil
+            BH:SaveSettings()
+            BH:RefreshAuraSoundRegistrations()
+            BH:RebuildBuffSoundGrid()
+            BH:RebuildBuffSoundEditor()
+        end)
+        ns.Rows.AddTooltip(rm, "Remove", "Clear both sounds for this spell.")
+    end
+    y = y - 30
+
+    editor:SetHeight(math.abs(y) + 4)
 end
 
 -- Previous trigger state, per alert id, for edge detection.
@@ -435,12 +756,18 @@ local function GetOrCreateRandomSoundsTable()
 end
 
 
+-- Edge-detect the image alerts.
+--
+-- Only built-ins reach here now. A user-made alert on an arbitrary aura used to
+-- run through this too, and could not work: the trigger reads the aura, and the
+-- client hides nearly every aura in combat. Those became buff sounds, which the
+-- client plays without us reading anything. What is left is the lust alert,
+-- watchable the old way because its debuffs stay readable -- and therefore the
+-- only alert that can still carry an image.
 function BH:CheckKelAlerts(unit)
     if unit ~= "player" then return end
     if not self.settings then return end
 
-    -- Edge-detect every alert, not just the built-in one. State is kept per
-    -- alert id so adding one cannot disturb another's.
     for id, alert in pairs(AllAlerts()) do
         if type(alert) == "table" and alert.enabled ~= false then
             local now = TriggerActive(alert)
@@ -460,61 +787,6 @@ end
 
 
 
-
--- ============================================================================
--- Alert list management
--- ============================================================================
-
---- Dropdown entries for every configured alert, built-ins first.
----
---- Sorted by name rather than by id so the list reads naturally, and built-ins
---- pinned to the top so the Lust alert stays where players expect it.
-local function AlertItems()
-    local all = AllAlerts()
-    local ids = {}
-    for id in pairs(all) do
-        if type(all[id]) == "table" then ids[#ids + 1] = id end
-    end
-    table.sort(ids, function(a, b)
-        local ab = all[a].builtin and 0 or 1
-        local bb = all[b].builtin and 0 or 1
-        if ab ~= bb then return ab < bb end
-        return (all[a].name or a):lower() < (all[b].name or b):lower()
-    end)
-    local items = {}
-    for _, id in ipairs(ids) do
-        items[#items + 1] = { text = all[id].name or id, value = id }
-    end
-    return items
-end
-
---- A key not already in use. Ids are internal and never shown; the display name
---- is a separate field the player can edit freely (and duplicate).
-local function NextAlertID()
-    local all = AllAlerts()
-    local n = 1
-    while all["custom" .. n] do n = n + 1 end
-    return "custom" .. n
-end
-
-StaticPopupDialogs["SQUIZZUMABLES_DELETE_ALERT"] = {
-    text = "Delete the alert '%s'?",
-    button1 = "Delete",
-    button2 = "Cancel",
-    OnAccept = function(self, data)
-        local all = AllAlerts()
-        if all[data] and not all[data].builtin then
-            all[data] = nil
-            BH.SelectAlert(next(all) or "lust")
-            BH:SaveSettings()
-            BH:RefreshJustForKelTab()
-        end
-    end,
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
 
 -- ============================================================================
 -- Settings tab: "Just For Kel"
@@ -544,105 +816,9 @@ function BH:BuildJustForKelTab(parent)
     lustNote:SetWidth(372)
     lustNote:SetJustifyH("LEFT")
     lustNote:SetWordWrap(true)
-    lustNote:SetText("A full-screen image and a sound when an aura lands on you. Pick an alert to edit it, or add your own for any buff or debuff.")
+    lustNote:SetText("A full-screen image and a sound when any lust effect wears off. For a sound on your own buffs, see Buff Sounds below.")
     lustNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 40
-
-    -- Which alert every control below is editing.
-    local alertDrop = CreateSQDropdown(content, "Alert:", 170, AlertItems(), function(val)
-        BH.SelectAlert(val)
-        BH:RefreshJustForKelTab()
-    end)
-    alertDrop:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelAlertDrop = alertDrop
-    ns.Rows.AddTooltip(alertDrop, "Alert", "Which alert the settings below apply to. Each alert keeps its own image, sound and trigger.")
-
-    local newBtn = CreateSQButton(content, "New", 52, 24)
-    newBtn:SetPoint("LEFT", alertDrop.btn, "RIGHT", 8, 0)
-    newBtn:SetScript("OnClick", function()
-        local id = NextAlertID()
-        -- Start from the lust alert's defaults so a new alert already has a
-        -- working image, sound and timing; only the trigger has to be filled in.
-        local a = CopyTable(BH.defaultSettings.alerts.lust)
-        a.builtin = nil
-        a.name    = "New Alert"
-        a.enabled = false
-        a.trigger = { type = "aura", harmful = false }
-        AllAlerts()[id] = a
-        BH.SelectAlert(id)
-        BH:SaveSettings()
-        BH:RefreshJustForKelTab()
-    end)
-    ns.Rows.AddTooltip(newBtn, "New alert", "Add an alert. It starts as a copy of the lust alert's image and sound, switched off, with no spell set yet.")
-
-    local delBtn = CreateSQButton(content, "Delete", 62, 24, SQ_COLORS.danger)
-    delBtn:SetPoint("LEFT", newBtn, "RIGHT", 6, 0)
-    delBtn:SetScript("OnClick", function()
-        local a = CurrentAlert()
-        if a.builtin then return end
-        StaticPopup_Show("SQUIZZUMABLES_DELETE_ALERT", a.name or BH.SelectedAlertID(), nil, BH.SelectedAlertID())
-    end)
-    self.kelAlertDelBtn = delBtn
-    ns.Rows.AddTooltip(delBtn, "Delete alert", "Remove the selected alert. The built-in lust alert cannot be deleted; turn it off instead.")
-    yOffset = yOffset - 50
-
-    -- Name and trigger spell
-    local nameLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    nameLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    nameLbl:SetText("Name:")
-    nameLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-
-    local nameEdit = CreateSQEditBox(content, 140, 20, { maxLetters = 40 })
-    nameEdit:SetPoint("LEFT", nameLbl, "RIGHT", 4, 0)
-    local function SaveAlertName(box)
-        local a = CurrentAlert()
-        if a.builtin then return end
-        local text = strtrim(box:GetText() or "")
-        a.name = (text ~= "") and text or "Unnamed Alert"
-        BH:SaveSettings()
-        BH:RefreshJustForKelTab()
-    end
-    nameEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveAlertName(box) end)
-    nameEdit.onFocusLost = SaveAlertName
-    self.kelAlertNameEdit = nameEdit
-    ns.Rows.AddTooltip(nameEdit, "Alert name", "What this alert is called in the list above. The built-in lust alert cannot be renamed.")
-
-    local spellLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    spellLbl:SetPoint("LEFT", nameEdit, "RIGHT", 10, 0)
-    spellLbl:SetText("Spell ID:")
-    spellLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-
-    local spellEdit = CreateSQEditBox(content, 70, 20, { numeric = true, maxLetters = 9 })
-    spellEdit:SetPoint("LEFT", spellLbl, "RIGHT", 4, 0)
-    local function SaveAlertSpell(box)
-        local a = CurrentAlert()
-        if a.builtin then return end
-        a.trigger = a.trigger or {}
-        a.trigger.type = "aura"
-        a.trigger.spellID = tonumber(box:GetText())
-        BH:SaveSettings()
-        BH:RefreshJustForKelTab()
-    end
-    spellEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveAlertSpell(box) end)
-    spellEdit.onFocusLost = SaveAlertSpell
-    self.kelAlertSpellEdit = spellEdit
-    ns.Rows.AddTooltip(spellEdit, "Trigger spell ID", "The aura that fires this alert, taken from the spell's Wowhead URL. The built-in lust alert watches every lust debuff at once (Sated, Exhaustion, Temporal Displacement, Insanity, Fatigued), so it has no single ID.")
-    yOffset = yOffset - 26
-
-    -- Buff or debuff. Kept separate from the ID because an aura lookup searches
-    -- one list or the other, never both, so a wrong guess would simply never fire.
-    local harmfulCb = CreateSQCheckbox(content, "Trigger is a debuff", function(val)
-        local a = CurrentAlert()
-        if a.builtin then return end
-        a.trigger = a.trigger or {}
-        a.trigger.type = "aura"
-        a.trigger.harmful = val
-        BH:SaveSettings()
-    end)
-    harmfulCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelAlertHarmfulCb = harmfulCb
-    ns.Rows.AddTooltip(harmfulCb, "Trigger is a debuff", "Tick this if the spell above is a debuff; leave it clear for a buff. It has to match, or the alert never fires.")
-    yOffset = yOffset - 26
+    yOffset = yOffset - 34
 
     -- Alert enable
     local lustEnableCb = CreateSQCheckbox(content, "Enable this alert", function(val)
@@ -926,6 +1102,90 @@ function BH:BuildJustForKelTab(parent)
     ns.Rows.AddTooltip(lockCb, "Lock alert image position", "Stops the alert image being dragged.")
     yOffset = yOffset - 28
 
+    -- ── BUFF SOUNDS ───────────────────────────────────────────────────────
+    --
+    -- A sound when one of your own buffs lands or drops, with no image. That is
+    -- not a design choice -- see the buff sounds section at the top of this
+    -- file. The client plays these, which is the only way they can fire in
+    -- combat, and it reports nothing back for us to draw from.
+    do
+        local bsHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        bsHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        bsHdr:SetText("BUFF SOUNDS")
+        ns.ApplyAccent(bsHdr, "text")
+        yOffset = yOffset - 20
+
+        local bsNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        bsNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        bsNote:SetWidth(372)
+        bsNote:SetJustifyH("LEFT")
+        bsNote:SetWordWrap(true)
+        bsNote:SetText("Your spec's buffs. Click one to give it a sound when it lands or drops. These play in combat, where the game hides auras from addons \226\128\148 so they are sound only, no image.")
+        bsNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        yOffset = yOffset - 44
+
+        if not BH.AuraSoundsAvailable() then
+            local nope = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            nope:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+            nope:SetWidth(372)
+            nope:SetJustifyH("LEFT")
+            nope:SetWordWrap(true)
+            nope:SetText("This client has no C_UnitAuras.AddAuraSound, so buff sounds are unavailable.")
+            nope:SetTextColor(SQ_COLORS.danger[1], SQ_COLORS.danger[2], SQ_COLORS.danger[3])
+            yOffset = yOffset - 30
+        else
+            -- The icon grid. Held in a container so the whole thing can be
+            -- rebuilt on a spec or talent change without disturbing the rest of
+            -- the tab's layout -- which is exactly the bug the CDM sounds tab
+            -- had, where the grid was drawn once and never again.
+            local grid = CreateFrame("Frame", nil, content)
+            grid:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+            grid:SetSize(372, 40)
+            self.kelBuffGrid = grid
+            self:RebuildBuffSoundGrid()
+            yOffset = yOffset - (grid:GetHeight() + 10)
+
+            -- Manual entry, because the grid is built from cast spell IDs and
+            -- AddAuraSound wants the ID of the aura that lands. They usually
+            -- match for a self-buff and sometimes do not (Blessing of Freedom
+            -- casts as 61107 and applies 92824), so there has to be a way to
+            -- name the aura directly rather than discovering it does not work.
+            local manLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            manLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+            manLbl:SetText("Add by spell ID:")
+            manLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+            local manEdit = CreateSQEditBox(content, 80, 20, { numeric = true, maxLetters = 9 })
+            manEdit:SetPoint("LEFT", manLbl, "RIGHT", 6, 0)
+            self.kelBuffManualEdit = manEdit
+            ns.Rows.AddTooltip(manEdit, "Add by spell ID",
+                "The spell ID of the aura itself, from its Wowhead URL. Use this for a buff that is not in the list above, or one whose cast and aura have different IDs.")
+
+            local manBtn = CreateSQButton(content, "Add", 50, 22)
+            manBtn:SetPoint("LEFT", manEdit, "RIGHT", 6, 0)
+            manBtn:SetScript("OnClick", function()
+                local id = tonumber(manEdit:GetText())
+                if not id then return end
+                local store = BH.BuffSounds()
+                store[id] = store[id] or { channel = "Master" }
+                manEdit:SetText("")
+                manEdit:ClearFocus()
+                BH.SelectBuffSpell(id)
+                BH:SaveSettings()
+                BH:RefreshJustForKelTab()
+            end)
+            yOffset = yOffset - 30
+
+            -- Editor for whichever icon is selected.
+            local editor = CreateFrame("Frame", nil, content)
+            editor:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+            editor:SetSize(372, 40)
+            self.kelBuffEditor = editor
+            self:RebuildBuffSoundEditor()
+            yOffset = yOffset - (editor:GetHeight() + 12)
+        end
+    end
+
     -- ── M+ DEATH TALLY ────────────────────────────────────────────────────
     do
         local div = CreateSQDivider(content, yOffset)
@@ -1024,52 +1284,25 @@ function BH:BuildJustForKelTab(parent)
 end
 
 function BH:RefreshJustForKelTab()
-    -- Every edit in this tab routes back through here -- spell, sound, pool,
-    -- enable, add, delete -- so this is the one place that catches all of them.
-    -- Deliberately ahead of the early return: the registrations must follow the
-    -- settings even when the tab has never been built.
+    -- Every edit in this tab routes back through here, so this is the one place
+    -- that catches all of them. Deliberately ahead of the early return: the
+    -- registrations must follow the settings even when the tab has never been
+    -- built.
     self:RefreshAuraSoundRegistrations()
 
     local content = self.kelTabContent
     if not content then return end
 
-    -- Alert selector. Rebuilt on every refresh because adding, deleting and
-    -- renaming all change the list, and all three route back through here.
-    if self.kelAlertDrop then
-        self.kelAlertDrop:SetItems(AlertItems())
-        self.kelAlertDrop:SetSelectedValue(BH.SelectedAlertID())
-    end
+    -- The buff grid is spec- and talent-derived, so it has to be redrawn rather
+    -- than left as it was built. This is the mistake the CDM sounds tab made:
+    -- its grid was populated once at construction and never again, so a spec
+    -- change left it showing spells the player no longer had.
+    self:RebuildBuffSoundGrid()
+    self:RebuildBuffSoundEditor()
 
-    -- Per-alert controls
+    -- The lust alert is the only one left, so CurrentAlert() always resolves to
+    -- it and there is no selector, name or trigger to keep in sync.
     local la = (BH.settings and CurrentAlert()) or {}
-    local builtin = la.builtin and true or false
-    local trig = la.trigger or {}
-
-    -- The built-in alert's identity and trigger are fixed, so those three
-    -- controls grey out rather than disappearing -- the layout stays put when
-    -- switching between it and a custom alert.
-    local function SetEditEnabled(box, on)
-        if on then box:Enable() else box:Disable() end
-        box:SetAlpha(on and 1 or 0.35)
-    end
-
-    if self.kelAlertNameEdit then
-        self.kelAlertNameEdit:SetText(la.name or BH.SelectedAlertID() or "")
-        SetEditEnabled(self.kelAlertNameEdit, not builtin)
-    end
-    if self.kelAlertSpellEdit then
-        self.kelAlertSpellEdit:SetText(builtin and "" or tostring(trig.spellID or ""))
-        SetEditEnabled(self.kelAlertSpellEdit, not builtin)
-    end
-    if self.kelAlertHarmfulCb then
-        self.kelAlertHarmfulCb:SetChecked(builtin or (trig.harmful and true or false))
-        self.kelAlertHarmfulCb:SetAlpha(builtin and 0.35 or 1)
-        self.kelAlertHarmfulCb.checkbox:SetEnabled(not builtin)
-    end
-    if self.kelAlertDelBtn then
-        self.kelAlertDelBtn:SetAlpha(builtin and 0.35 or 1)
-        self.kelAlertDelBtn:SetEnabled(not builtin)
-    end
 
     if self.kelLustEnableCb   then self.kelLustEnableCb:SetChecked(la.enabled ~= false) end
     if self.kelLustTexEdit    then self.kelLustTexEdit:SetText(la.texture or "") end

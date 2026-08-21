@@ -27,3 +27,12 @@ V1.62
   addon can see. Sound is the part that now always works
 - The lust alert is unchanged -- image and sound both. It watches five debuffs at once, and those
   are among the few the game still lets addons see, so it never had this problem
+- The Kelerts tab is now two things. The lust alert stays exactly as it was, image and all. Below
+  it is Buff Sounds: a grid of your spec's own buffs, built from your spellbook, so it follows
+  every talent and spec change on its own with nothing to keep updated. Click one to give it a
+  sound when it lands, when it drops, or both
+- Your existing custom Kelerts have moved into that grid, keeping their sounds. Their images are
+  gone, because there is no way to keep them -- the game plays these sounds itself and never tells
+  the addon it did, which is the same reason they now work in combat at all
+- Buffs the grid does not list can still be added by spell ID. Worth knowing for the handful of
+  spells whose cast and buff have different IDs

@@ -22,7 +22,8 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
     ["1.62"] = {
-        "Kelerts now fire in combat, where the game hides most auras from addons. Sound only \226\128\148 the image still needs an aura the addon can see.",
+        "New Buff Sounds grid under Kelerts: your spec's own buffs, a sound when each lands or drops \226\128\148 and these fire in combat.",
+        "The lust alert is unchanged. Your other Kelerts moved into the grid, keeping their sounds.",
         "Cooldown Manager sound alerts now follow spec and talent changes without a reload.",
         "The Cooldowns settings tab rebuilds on a spec change instead of showing the old spec.",
     },

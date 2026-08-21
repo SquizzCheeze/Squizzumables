@@ -164,13 +164,28 @@ BH.defaultSettings = {
     -- Kelerts: spell alert frame
     kelAlertScale    = 1.0,
     kelAlertLocked   = false,
-    -- Kelerts: lust alert
-    -- Custom spell alerts ("Kelerts"): a full-screen image and sound when a
-    -- chosen aura appears.
+
+    -- Buff sounds: a sound when one of the player's own auras is applied or
+    -- removed, keyed by aura spell ID.
     --
-    -- The lust alert is an entry in this table rather than a special case, so
-    -- the same editor drives it and anything the player adds. `builtin` only
-    -- stops it being deleted.
+    --   [spellID] = { added = <sound name>, removed = <sound name>,
+    --                 channel = "Master" }
+    --
+    -- Separate from `alerts` below because it is a different mechanism, not a
+    -- variant of one. These are handed to C_UnitAuras.AddAuraSound and played
+    -- by the client, which is the only way to alert on an aura that is secret
+    -- in combat -- and the reason there is no image: the client plays the sound
+    -- and reports nothing back, so there is no moment at which we could draw
+    -- anything. See Squizzumables_SpellAlerts.lua.
+    buffSounds = {},
+
+    -- Kelerts: the lust alert.
+    --
+    -- Once a general "alert on any aura you name" system; that half is gone,
+    -- replaced by buffSounds above, because an image alert cannot fire on a
+    -- secret aura no matter how it is wired. What remains is the lust alert,
+    -- which still works precisely because the lust debuffs are among the few
+    -- auras the client keeps readable in combat.
     alerts = {
         lust = {
             name    = "Lust / Exhaustion",
@@ -791,7 +806,7 @@ BH.ApplyDefaults = ApplyDefaults
 -- Each receives (db, settings). They only ever repair existing data: a fresh
 -- install is stamped at DB_VERSION and skips all of them, so it cannot be
 -- retroactively "fixed" into defaults that no longer apply.
-local DB_VERSION = 5
+local DB_VERSION = 6
 
 local MIGRATIONS = {
     -- v1: the lust alert shipped with enabled = false by mistake.
@@ -860,6 +875,51 @@ local MIGRATIONS = {
             s.feastAnnounceChannel.party    = old
             s.feastAnnounceChannel.instance = old
             s.feastAnnounceChannel.raid     = old
+        end
+    end,
+
+    -- v6: user-made Kelerts become buff sounds.
+    --
+    -- They could never fire in combat. A Kelert trigger reads the aura, and
+    -- since 12.1 the client hides nearly every aura from addons in combat --
+    -- so an alert on an ordinary buff worked in a city and was silent in the
+    -- pull it was made for. C_UnitAuras.AddAuraSound plays a sound without any
+    -- value reaching addon code, which is the only way through, and it cannot
+    -- carry an image because the client reports nothing back.
+    --
+    -- So the sound survives the move and the image does not. Nothing is
+    -- announced to the player: an alert that has never once fired when it
+    -- mattered is not a feature worth writing a notice about.
+    --
+    -- The lust alert stays where it is. It has no trigger.spellID (it watches
+    -- five debuffs at once) and those debuffs are among the few the client
+    -- leaves readable, so it works in combat today, image and all.
+    [6] = function(db, s)
+        local function MoveAlerts(t)
+            if type(t) ~= "table" or type(t.alerts) ~= "table" then return end
+            t.buffSounds = type(t.buffSounds) == "table" and t.buffSounds or {}
+            for id, alert in pairs(t.alerts) do
+                local spellID = type(alert) == "table" and not alert.builtin
+                                and tonumber(alert.trigger and alert.trigger.spellID)
+                if spellID then
+                    -- Only when the sound is one the client can be handed. A
+                    -- Kelert set to "None" carried its whole meaning in the
+                    -- image, so there is nothing to migrate and nothing to keep.
+                    local sound = alert.sound
+                    if sound and sound ~= "None" then
+                        t.buffSounds[spellID] = {
+                            added   = sound,
+                            channel = alert.soundChannel or "Master",
+                        }
+                    end
+                    t.alerts[id] = nil
+                end
+            end
+        end
+
+        MoveAlerts(s)
+        for _, profile in pairs(db.profiles or {}) do
+            MoveAlerts(profile.settings)
         end
     end,
 }
@@ -10087,6 +10147,38 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             print(string.format("    spellID readable: %s, expiration readable: %s",
                 tostring(BH.Secrets.SafeAuraSpellID(aura) ~= nil),
                 tostring(BH.Secrets.SafeAuraExpiration(aura) ~= nil)))
+        end
+        -- Whether Blizzard's own cooldown data knows this spell, and under
+        -- which category.
+        --
+        -- Categories 2 and 3 are the tracked-*buff* viewers, and the addon has
+        -- never enumerated them -- CDM_VIEWERS in Squizzumables_CDM.lua is
+        -- Essential and Utility only. So "it is not in the CDM" can mean either
+        -- "Blizzard does not track it" or "we only ever looked at the cooldown
+        -- half", and those lead to different conclusions about whether the
+        -- tracked-buff set is worth reading as a source of aura IDs.
+        --
+        -- allowUnlearned so the whole spec set is searched, not just what is
+        -- currently talented. linkedSpellIDs is reported because that is where
+        -- a cast/aura pair lives when the two IDs differ.
+        if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet then
+            local found = false
+            for category = 0, 3 do
+                local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, category, true)
+                for _, cdID in ipairs((ok and ids) or {}) do
+                    local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
+                    if info and info.spellID == spellID then
+                        found = true
+                        print(string.format(
+                            "  in CDM category %d: isKnown %s, hasAura %s, selfAura %s, linked %d",
+                            category, tostring(info.isKnown), tostring(info.hasAura),
+                            tostring(info.selfAura), #(info.linkedSpellIDs or {})))
+                    end
+                end
+            end
+            if not found then
+                print("  not in any CDM category (0-3), even allowing unlearned")
+            end
         end
         print("  Run this again with the buff up in combat and compare the two.")
     elseif msg == 'auras' then
