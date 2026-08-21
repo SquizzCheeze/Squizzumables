@@ -9,6 +9,7 @@ local BH = ns.BH
 -- before this file.
 local SQ_COLORS        = ns.SQ_COLORS
 local CreateSQButton   = ns.CreateSQButton
+local CreateSQEditBox  = ns.CreateSQEditBox
 local CreateSQSlider   = ns.CreateSQSlider
 local CreateSQCheckbox = ns.CreateSQCheckbox
 local CreateSQDropdown = ns.CreateSQDropdown
@@ -466,11 +467,8 @@ function BH:BuildJustForKelTab(parent)
     nameLbl:SetText("Name:")
     nameLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local nameEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    nameEdit:SetSize(140, 20)
+    local nameEdit = CreateSQEditBox(content, 140, 20, { maxLetters = 40 })
     nameEdit:SetPoint("LEFT", nameLbl, "RIGHT", 4, 0)
-    nameEdit:SetAutoFocus(false)
-    nameEdit:SetMaxLetters(40)
     local function SaveAlertName(box)
         local a = CurrentAlert()
         if a.builtin then return end
@@ -480,7 +478,7 @@ function BH:BuildJustForKelTab(parent)
         BH:RefreshJustForKelTab()
     end
     nameEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveAlertName(box) end)
-    nameEdit:SetScript("OnEditFocusLost", SaveAlertName)
+    nameEdit.onFocusLost = SaveAlertName
     self.kelAlertNameEdit = nameEdit
     ns.Rows.AddTooltip(nameEdit, "Alert name", "What this alert is called in the list above. The built-in lust alert cannot be renamed.")
 
@@ -489,12 +487,8 @@ function BH:BuildJustForKelTab(parent)
     spellLbl:SetText("Spell ID:")
     spellLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local spellEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    spellEdit:SetSize(70, 20)
+    local spellEdit = CreateSQEditBox(content, 70, 20, { numeric = true, maxLetters = 9 })
     spellEdit:SetPoint("LEFT", spellLbl, "RIGHT", 4, 0)
-    spellEdit:SetAutoFocus(false)
-    spellEdit:SetNumeric(true)
-    spellEdit:SetMaxLetters(9)
     local function SaveAlertSpell(box)
         local a = CurrentAlert()
         if a.builtin then return end
@@ -505,7 +499,7 @@ function BH:BuildJustForKelTab(parent)
         BH:RefreshJustForKelTab()
     end
     spellEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveAlertSpell(box) end)
-    spellEdit:SetScript("OnEditFocusLost", SaveAlertSpell)
+    spellEdit.onFocusLost = SaveAlertSpell
     self.kelAlertSpellEdit = spellEdit
     ns.Rows.AddTooltip(spellEdit, "Trigger spell ID", "The aura that fires this alert, taken from the spell's Wowhead URL. The built-in lust alert watches every lust debuff at once (Sated, Exhaustion, Temporal Displacement, Insanity, Fatigued), so it has no single ID.")
     yOffset = yOffset - 26
@@ -541,17 +535,14 @@ function BH:BuildJustForKelTab(parent)
     lTexLbl:SetText("Texture:")
     lTexLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local lTexEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    lTexEdit:SetSize(120, 20)
+    local lTexEdit = CreateSQEditBox(content, 120, 20, { maxLetters = 128 })
     lTexEdit:SetPoint("LEFT", lTexLbl, "RIGHT", 4, 0)
-    lTexEdit:SetAutoFocus(false)
-    lTexEdit:SetMaxLetters(128)
     local function SaveLustTex(self)
         CurrentAlert().texture = self:GetText()
         BH:SaveSettings()
     end
     lTexEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustTex(self) end)
-    lTexEdit:SetScript("OnEditFocusLost", SaveLustTex)
+    lTexEdit.onFocusLost = SaveLustTex
     self.kelLustTexEdit = lTexEdit
     ns.Rows.AddTooltip(lTexEdit, "Alert image", "Base file name of the image in the addon Media folder, without the extension. For an animated sequence use the base name shared by the numbered frames.")
 
@@ -560,17 +551,14 @@ function BH:BuildJustForKelTab(parent)
     lFramesLbl:SetText("Frames:")
     lFramesLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local lFramesEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    lFramesEdit:SetSize(34, 20)
+    local lFramesEdit = CreateSQEditBox(content, 34, 20, { numeric = true, justifyH = "CENTER" })
     lFramesEdit:SetPoint("LEFT", lFramesLbl, "RIGHT", 4, 0)
-    lFramesEdit:SetAutoFocus(false)
-    lFramesEdit:SetNumeric(true)
     local function SaveLustFrames(self)
         CurrentAlert().frameCount = math.max(0, tonumber(self:GetText()) or 0)
         BH:SaveSettings()
     end
     lFramesEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustFrames(self) end)
-    lFramesEdit:SetScript("OnEditFocusLost", SaveLustFrames)
+    lFramesEdit.onFocusLost = SaveLustFrames
     self.kelLustFramesEdit = lFramesEdit
     ns.Rows.AddTooltip(lFramesEdit, "Frame count", "How many numbered image files make up the animation. Leave at 1 for a still image.")
 
@@ -579,17 +567,14 @@ function BH:BuildJustForKelTab(parent)
     lFpsLbl:SetText("FPS:")
     lFpsLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local lFpsEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    lFpsEdit:SetSize(28, 20)
+    local lFpsEdit = CreateSQEditBox(content, 28, 20, { numeric = true, justifyH = "CENTER" })
     lFpsEdit:SetPoint("LEFT", lFpsLbl, "RIGHT", 4, 0)
-    lFpsEdit:SetAutoFocus(false)
-    lFpsEdit:SetNumeric(true)
     local function SaveLustFPS(self)
         CurrentAlert().fps = math.max(1, tonumber(self:GetText()) or 10)
         BH:SaveSettings()
     end
     lFpsEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustFPS(self) end)
-    lFpsEdit:SetScript("OnEditFocusLost", SaveLustFPS)
+    lFpsEdit.onFocusLost = SaveLustFPS
     self.kelLustFpsEdit = lFpsEdit
     ns.Rows.AddTooltip(lFpsEdit, "Frames per second", "Playback speed of the animation.")
     yOffset = yOffset - 28
@@ -600,17 +585,14 @@ function BH:BuildJustForKelTab(parent)
     lDurLbl:SetText("Dur(s):")
     lDurLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local lDurEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    lDurEdit:SetSize(34, 20)
+    local lDurEdit = CreateSQEditBox(content, 34, 20, { numeric = true, justifyH = "CENTER" })
     lDurEdit:SetPoint("LEFT", lDurLbl, "RIGHT", 4, 0)
-    lDurEdit:SetAutoFocus(false)
-    lDurEdit:SetNumeric(true)
     local function SaveLustDur(self)
         CurrentAlert().duration = math.max(1, tonumber(self:GetText()) or 5)
         BH:SaveSettings()
     end
     lDurEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustDur(self) end)
-    lDurEdit:SetScript("OnEditFocusLost", SaveLustDur)
+    lDurEdit.onFocusLost = SaveLustDur
     self.kelLustDurEdit = lDurEdit
     ns.Rows.AddTooltip(lDurEdit, "Duration", "How many seconds the alert stays on screen.")
 
@@ -637,16 +619,14 @@ function BH:BuildJustForKelTab(parent)
     lSndLoopIntervalLbl:SetText("every:")
     lSndLoopIntervalLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local lSndLoopIntervalEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    lSndLoopIntervalEdit:SetSize(34, 20)
+    local lSndLoopIntervalEdit = CreateSQEditBox(content, 34, 20, { justifyH = "CENTER" })
     lSndLoopIntervalEdit:SetPoint("LEFT", lSndLoopIntervalLbl, "RIGHT", 4, 0)
-    lSndLoopIntervalEdit:SetAutoFocus(false)
     local function SaveLustSndInterval(self)
         CurrentAlert().soundLoopInterval = math.max(0.5, tonumber(self:GetText()) or 2.0)
         BH:SaveSettings()
     end
     lSndLoopIntervalEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus(); SaveLustSndInterval(self) end)
-    lSndLoopIntervalEdit:SetScript("OnEditFocusLost", SaveLustSndInterval)
+    lSndLoopIntervalEdit.onFocusLost = SaveLustSndInterval
     self.kelLustSndLoopIntervalEdit = lSndLoopIntervalEdit
     ns.Rows.AddTooltip(lSndLoopIntervalEdit, "Sound loop interval", "Seconds between repeats of the looped sound.")
 

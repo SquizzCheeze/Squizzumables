@@ -10,6 +10,12 @@ V1.61
   flask, oil, augment rune, custom items, self-buff spells and the Coach's Whistle), not just
   food. Escape still discards, and clearing the box and clicking away now leaves the value alone
   rather than reading as 0
+- The "Min" boxes now take the mouse wheel: click into one and scroll to nudge it a minute at a
+  time, or hold Shift for five. Only while the box has focus, so scrolling the item list with the
+  cursor over a box still scrolls the list instead of quietly rewriting a threshold
+- Every text box in the settings panel is now drawn in the addon's own style -- square 1px
+  borders matching the checkboxes, buttons and sliders, instead of Blizzard's rounded gold search
+  border. They light up in the accent colour when focused, and preview it on hover
 
 
 V1.60

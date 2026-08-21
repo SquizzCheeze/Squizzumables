@@ -199,6 +199,97 @@ local function IndexForSearch(widget, labelText)
     return widget
 end
 
+-- Helper: styled edit box
+--
+-- Replaces Blizzard's InputBoxTemplate. That template draws its border from
+-- the "common-search-border" atlas -- rounded, slightly gold, and the last
+-- piece of stock art left in an otherwise flat, squared panel. This draws the
+-- same 1px WHITE8X8 border every other control in the kit uses, and lights it
+-- with the accent colour while focused.
+--
+-- Returns the EditBox itself rather than a container, so call sites keep using
+-- SetText/SetNumeric/SetScript exactly as they did with the template.
+--
+-- InputBoxTemplate also inherited InputBoxScriptTemplate, which carried four
+-- behaviours that disappear along with it. They are reinstated here: tab
+-- cycles focus, escape clears it, and gaining focus selects the existing text
+-- (losing it drops the selection).
+--
+-- The two focus scripts are ours and are meant to stay ours -- they own the
+-- border colour. A call site that needs to react to focus sets
+-- `box.onFocusGained` / `box.onFocusLost` instead of SetScript-ing over them.
+-- Clobbering them costs only the focus highlight, but there is no reason to.
+local function CreateSQEditBox(parent, width, height, opts)
+    opts = opts or {}
+
+    local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
+    box:SetSize(width, height or 20)
+    box:SetAutoFocus(false)
+    box:EnableMouse(true)
+    box:SetFontObject(opts.fontObject or ChatFontNormal)
+    box:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3], 1)
+    if opts.justifyH then box:SetJustifyH(opts.justifyH) end
+
+    -- Keep the text clear of the border. The narrow two-digit boxes need a
+    -- tighter inset than the wide ones or the caret has nowhere to sit.
+    local inset = opts.insets or (width <= 48 and 4 or 6)
+    box:SetTextInsets(inset, inset, 0, 0)
+
+    ApplySQBackdrop(box, SQ_COLORS.control, SQ_COLORS.border)
+
+    if opts.numeric    then box:SetNumeric(true) end
+    if opts.maxLetters then box:SetMaxLetters(opts.maxLetters) end
+    if opts.multiLine  then box:SetMultiLine(true) end
+
+    local function SetFocusVisual(focused)
+        if focused then
+            local ar, ag, ab = ns.GetAccentColor()
+            box:SetBackdropBorderColor(ar, ag, ab, 0.9)
+            box:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2],
+                                 SQ_COLORS.controlHi[3], 1)
+        else
+            box:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2],
+                                       SQ_COLORS.border[3], 1)
+            box:SetBackdropColor(SQ_COLORS.control[1], SQ_COLORS.control[2],
+                                 SQ_COLORS.control[3], 1)
+        end
+    end
+
+    box:SetScript("OnEditFocusGained", function(self)
+        SetFocusVisual(true)
+        self:HighlightText()
+        if self.onFocusGained then self.onFocusGained(self) end
+    end)
+    box:SetScript("OnEditFocusLost", function(self)
+        SetFocusVisual(false)
+        self:HighlightText(0, 0)
+        if self.onFocusLost then self.onFocusLost(self) end
+    end)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    box:SetScript("OnTabPressed", function(self)
+        if EditBox_OnTabPressed then EditBox_OnTabPressed(self) end
+    end)
+
+    -- Hovering an unfocused box previews the accent, the same as the
+    -- checkboxes and buttons do.
+    -- Same field convention as the focus scripts, for the same reason: several
+    -- of these boxes want a tooltip on hover, and a plain SetScript would take
+    -- the border preview with it.
+    box:SetScript("OnEnter", function(self)
+        if not self:HasFocus() then
+            local ar, ag, ab = ns.GetAccentColor()
+            self:SetBackdropBorderColor(ar, ag, ab, 0.5)
+        end
+        if self.onEnter then self.onEnter(self) end
+    end)
+    box:SetScript("OnLeave", function(self)
+        if not self:HasFocus() then SetFocusVisual(false) end
+        if self.onLeave then self.onLeave(self) end
+    end)
+
+    return box
+end
+
 -- Helper: styled slider
 local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
     local container = CreateFrame("Frame", nil, parent)
@@ -535,6 +626,7 @@ ns.SQ_COLORS           = SQ_COLORS
 ns.ApplySQBackdrop     = ApplySQBackdrop
 ns.SQ_GetClickEdge     = SQ_GetClickEdge
 ns.CreateSQButton      = CreateSQButton
+ns.CreateSQEditBox     = CreateSQEditBox
 ns.CreateSQSlider      = CreateSQSlider
 ns.CreateSQCheckbox    = CreateSQCheckbox
 ns.CreateSQColorPicker = CreateSQColorPicker

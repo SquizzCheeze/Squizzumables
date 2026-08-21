@@ -17,6 +17,7 @@ local SQ_COLORS           = ns.SQ_COLORS
 local ApplySQBackdrop     = ns.ApplySQBackdrop
 local SQ_GetClickEdge     = ns.SQ_GetClickEdge
 local CreateSQButton      = ns.CreateSQButton
+local CreateSQEditBox     = ns.CreateSQEditBox
 local CreateSQSlider      = ns.CreateSQSlider
 local CreateSQCheckbox    = ns.CreateSQCheckbox
 local CreateSQColorPicker = ns.CreateSQColorPicker
@@ -1365,12 +1366,8 @@ function BH:CreateOptionsPanel()
         .. "Also available as /sq unlock.")
     self.unlockBtn = unlockBtn
 
-    local searchBox = CreateFrame("EditBox", nil, titleBar, "InputBoxTemplate")
-    searchBox:SetSize(180, 20)
+    local searchBox = CreateSQEditBox(titleBar, 180, 20, { maxLetters = 40 })
     searchBox:SetPoint("RIGHT", closeBtn, "LEFT", -8, 0)
-    searchBox:SetAutoFocus(false)
-    searchBox:SetMaxLetters(40)
-    searchBox:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
 
     local searchHint = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     searchHint:SetPoint("LEFT", searchBox, "LEFT", 4, 0)
@@ -1451,10 +1448,10 @@ function BH:CreateOptionsPanel()
         searchHint:SetShown(text == "")
         ShowResults(text)
     end)
-    searchBox:SetScript("OnEditFocusGained", function() searchHint:Hide() end)
-    searchBox:SetScript("OnEditFocusLost", function(box)
+    searchBox.onFocusGained = function() searchHint:Hide() end
+    searchBox.onFocusLost = function(box)
         searchHint:SetShown(box:GetText() == "")
-    end)
+    end
     searchBox:SetScript("OnEscapePressed", function(box)
         box:SetText("")
         box:ClearFocus()
@@ -3462,15 +3459,13 @@ function BH:BuildTextRemindersTab(parent)
     feastTextLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 20
 
-    local feastTextEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    feastTextEdit:SetSize(360, 20)
+    local feastTextEdit = CreateSQEditBox(content, 360, 20, { maxLetters = 255 })
     feastTextEdit:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    feastTextEdit:SetAutoFocus(false)
-    feastTextEdit:SetMaxLetters(255)
     feastTextEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    feastTextEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     feastTextEdit.placeholder = feastTextEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    feastTextEdit.placeholder:SetPoint("LEFT", feastTextEdit, "LEFT", 4, 0)
+    -- 6 to match the widget's text inset for a box this wide, so the
+    -- placeholder sits exactly where the real text will.
+    feastTextEdit.placeholder:SetPoint("LEFT", feastTextEdit, "LEFT", 6, 0)
     feastTextEdit.placeholder:SetText("Fresh off the barbie, no crocs were harmed\226\128\166")
     feastTextEdit.placeholder:SetTextColor(0.4, 0.4, 0.4)
     feastTextEdit:SetScript("OnTextChanged", function(self)
@@ -3746,15 +3741,11 @@ function BH:BuildSoundsTab(parent)
     yOffset = yOffset - 8
 
     -- Add row: name input + file input + Add button
-    local csNameEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    csNameEdit:SetSize(150, 20)
+    local csNameEdit = CreateSQEditBox(content, 150, 20, { maxLetters = 64 })
     csNameEdit:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    csNameEdit:SetAutoFocus(false)
-    csNameEdit:SetMaxLetters(64)
     csNameEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    csNameEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     csNameEdit.placeholder = csNameEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    csNameEdit.placeholder:SetPoint("LEFT", csNameEdit, "LEFT", 4, 0)
+    csNameEdit.placeholder:SetPoint("LEFT", csNameEdit, "LEFT", 6, 0)
     csNameEdit.placeholder:SetText("e.g. My Alert")
     csNameEdit.placeholder:SetTextColor(0.4, 0.4, 0.4)
     csNameEdit:SetScript("OnTextChanged", function(self)
@@ -3764,15 +3755,11 @@ function BH:BuildSoundsTab(parent)
         csNameEdit.placeholder:SetShown(self:GetText() == "")
     end)
 
-    local csFileEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-    csFileEdit:SetSize(160, 20)
+    local csFileEdit = CreateSQEditBox(content, 160, 20, { maxLetters = 128 })
     csFileEdit:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 158, yOffset)
-    csFileEdit:SetAutoFocus(false)
-    csFileEdit:SetMaxLetters(128)
     csFileEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    csFileEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     csFileEdit.placeholder = csFileEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    csFileEdit.placeholder:SetPoint("LEFT", csFileEdit, "LEFT", 4, 0)
+    csFileEdit.placeholder:SetPoint("LEFT", csFileEdit, "LEFT", 6, 0)
     csFileEdit.placeholder:SetText("mysound.ogg")
     csFileEdit.placeholder:SetTextColor(0.4, 0.4, 0.4)
     csFileEdit:SetScript("OnTextChanged", function(self)
@@ -4321,14 +4308,11 @@ function BH:RefreshCalloutsTab()
             rowFrame:SetSize(W, 56)
 
             -- Row 1: [Label 86px] [Message 256px] [× 22px]
-            local labelEdit = CreateFrame("EditBox", nil, rowFrame, "InputBoxTemplate")
-            labelEdit:SetSize(86, 20)
+            local labelEdit = CreateSQEditBox(rowFrame, 86, 20, { maxLetters = 32 })
             labelEdit:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", 0, 0)
-            labelEdit:SetAutoFocus(false)
-            labelEdit:SetMaxLetters(32)
             labelEdit:SetText(callout.label or "")
             local labelPH = labelEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            labelPH:SetPoint("LEFT", labelEdit, "LEFT", 4, 0)
+            labelPH:SetPoint("LEFT", labelEdit, "LEFT", 6, 0)
             labelPH:SetText("Label")
             labelPH:SetTextColor(0.4, 0.4, 0.4)
             labelPH:SetShown(labelEdit:GetText() == "")
@@ -4341,14 +4325,11 @@ function BH:RefreshCalloutsTab()
             labelEdit:SetScript("OnEscapePressed", function(s) s:ClearFocus() end)
             labelEdit:SetScript("OnShow", function(s) labelPH:SetShown(s:GetText() == "") end)
 
-            local msgEdit = CreateFrame("EditBox", nil, rowFrame, "InputBoxTemplate")
-            msgEdit:SetSize(256, 20)
+            local msgEdit = CreateSQEditBox(rowFrame, 256, 20, { maxLetters = 200 })
             msgEdit:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", 92, 0)
-            msgEdit:SetAutoFocus(false)
-            msgEdit:SetMaxLetters(200)
             msgEdit:SetText(callout.message or "")
             local msgPH = msgEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            msgPH:SetPoint("LEFT", msgEdit, "LEFT", 4, 0)
+            msgPH:SetPoint("LEFT", msgEdit, "LEFT", 6, 0)
             msgPH:SetText("Chat message text")
             msgPH:SetTextColor(0.4, 0.4, 0.4)
             msgPH:SetShown(msgEdit:GetText() == "")
@@ -4635,12 +4616,10 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
     minLabel:SetText("Min:")
     minLabel:SetTextColor(0.7, 0.7, 0.7)
     
-    local minEdit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+    local minEdit = CreateSQEditBox(row, 32, 18, {
+        numeric = true, maxLetters = 2, justifyH = "CENTER",
+    })
     minEdit:SetPoint("LEFT", minLabel, "RIGHT", 2, 0)
-    minEdit:SetSize(30, 18)
-    minEdit:SetAutoFocus(false)
-    minEdit:SetNumeric(true)
-    minEdit:SetMaxLetters(2)
     minEdit:SetText(tostring(self:GetMinDuration(itemID)))
     -- Commit on focus lost as well as on Enter. Every other edit box in the
     -- addon saves without Enter (OnTextChanged here, an explicit
@@ -4667,21 +4646,42 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
         CommitMin(self)
         self:ClearFocus()
     end)
-    -- Also fires from the ClearFocus() calls above and below; re-committing the
-    -- value that is already stored is a no-op either way.
-    minEdit:SetScript("OnEditFocusLost", CommitMin)
     minEdit:SetScript("OnEscapePressed", function(self)
         self:SetText(tostring(BH:GetMinDuration(itemID)))
         self:ClearFocus()
     end)
-    minEdit:SetScript("OnEnter", function(self)
+
+    -- Scroll to nudge the value, but only while the box has focus.
+    --
+    -- These rows live in a scrolling list, and a frame with EnableMouseWheel
+    -- swallows the wheel rather than passing it up -- so a box that listened
+    -- all the time would silently rewrite a threshold whenever someone scrolled
+    -- the list with the cursor over it. Requiring focus first makes the wheel
+    -- something you opt into by clicking in, and leaves list scrolling alone
+    -- everywhere else.
+    minEdit:SetScript("OnMouseWheel", function(self, delta)
+        local step = IsShiftKeyDown() and 5 or 1
+        local current = tonumber(self:GetText()) or BH:GetMinDuration(itemID)
+        self:SetText(tostring(math.max(0, math.min(60, current + delta * step))))
+        CommitMin(self)
+    end)
+
+    -- onFocusLost/onFocusGained rather than SetScript: the widget's own focus
+    -- scripts own the border colour. See CreateSQEditBox.
+    minEdit.onFocusGained = function(self) self:EnableMouseWheel(true) end
+    minEdit.onFocusLost = function(self)
+        self:EnableMouseWheel(false)
+        CommitMin(self)
+    end
+    minEdit.onEnter = function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Min minutes remaining")
         GameTooltip:AddLine("Show button when buff has less than this many minutes left.", 1, 1, 1, true)
         GameTooltip:AddLine("0 = only show when buff is missing", 0.7, 0.7, 0.7, true)
+        GameTooltip:AddLine("Click in, then scroll to adjust (Shift for 5).", 0.7, 0.7, 0.7, true)
         GameTooltip:Show()
-    end)
-    minEdit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+    minEdit.onLeave = function() GameTooltip:Hide() end
     
     local minSuffix = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     minSuffix:SetPoint("LEFT", minEdit, "RIGHT", 2, 0)
@@ -5148,12 +5148,10 @@ function BH:RefreshItemList()
         coachMinLbl:SetText("Min remaining (0–60 min):")
         coachMinLbl:SetTextColor(0.7, 0.7, 0.7)
 
-        local coachMinEdit = CreateFrame("EditBox", nil, coachMinRow, "InputBoxTemplate")
+        local coachMinEdit = CreateSQEditBox(coachMinRow, 32, 18, {
+            numeric = true, maxLetters = 2, justifyH = "CENTER",
+        })
         coachMinEdit:SetPoint("LEFT", coachMinLbl, "RIGHT", 4, 0)
-        coachMinEdit:SetSize(30, 18)
-        coachMinEdit:SetAutoFocus(false)
-        coachMinEdit:SetNumeric(true)
-        coachMinEdit:SetMaxLetters(2)
         coachMinEdit:SetText(tostring(BH:GetMinDuration(COACH_WHISTLE_ITEM_ID)))
         -- Same commit-on-focus-lost contract as the per-item Min boxes above.
         local function CommitCoachMin(box)
@@ -5172,19 +5170,31 @@ function BH:RefreshItemList()
             CommitCoachMin(self)
             self:ClearFocus()
         end)
-        coachMinEdit:SetScript("OnEditFocusLost", CommitCoachMin)
         coachMinEdit:SetScript("OnEscapePressed", function(self)
             self:SetText(tostring(BH:GetMinDuration(COACH_WHISTLE_ITEM_ID)))
             self:ClearFocus()
         end)
-        coachMinEdit:SetScript("OnEnter", function(self)
+        -- Wheel only while focused, for the same reason as the item rows.
+        coachMinEdit:SetScript("OnMouseWheel", function(self, delta)
+            local step = IsShiftKeyDown() and 5 or 1
+            local current = tonumber(self:GetText()) or BH:GetMinDuration(COACH_WHISTLE_ITEM_ID)
+            self:SetText(tostring(math.max(0, math.min(60, current + delta * step))))
+            CommitCoachMin(self)
+        end)
+        coachMinEdit.onFocusGained = function(self) self:EnableMouseWheel(true) end
+        coachMinEdit.onFocusLost = function(self)
+            self:EnableMouseWheel(false)
+            CommitCoachMin(self)
+        end
+        coachMinEdit.onEnter = function(self)
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText("Min minutes remaining")
             GameTooltip:AddLine("Re-show the button when the Coached buff has less than this many minutes left.", 1, 1, 1, true)
             GameTooltip:AddLine("0 = only show when no ally is coached yet", 0.7, 0.7, 0.7, true)
+            GameTooltip:AddLine("Click in, then scroll to adjust (Shift for 5).", 0.7, 0.7, 0.7, true)
             GameTooltip:Show()
-        end)
-        coachMinEdit:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
+        coachMinEdit.onLeave = function() GameTooltip:Hide() end
         self.itemsCoachMinEdit = coachMinEdit
 
         local coachMinSfx = coachMinRow:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")

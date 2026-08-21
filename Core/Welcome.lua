@@ -23,6 +23,8 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.61"] = {
         "The per-item \"Min\" minutes box now saves when you click away, not only when you press Enter.",
+        "Click into a \"Min\" box and scroll to adjust it (Shift for 5 at a time).",
+        "Every settings text box redrawn in the addon's own square-bordered style.",
     },
     ["1.60"] = {
         "Cooldown Manager sound alerts now work in combat, including \"when available\".",

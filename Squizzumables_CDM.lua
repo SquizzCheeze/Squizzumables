@@ -21,6 +21,7 @@ local BH = ns.BH
 
 -- Shared UI constructors, defined in Squizzumables.lua which loads before this.
 local CreateSQButton   = ns.CreateSQButton
+local CreateSQEditBox  = ns.CreateSQEditBox
 local CreateSQSlider   = ns.CreateSQSlider
 local CreateSQCheckbox = ns.CreateSQCheckbox
 local CreateSQDropdown = ns.CreateSQDropdown
@@ -2226,29 +2227,20 @@ function BH:RebuildCDMTabContent()
     groupHeader:SetText("GROUPS")
     yOffset = yOffset - 22
 
-    -- New Group input row
-    local inputBG = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    inputBG:SetSize(220, 24)
-    inputBG:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    inputBG:SetBackdrop({
-        bgFile = "Interface\\BUTTONS\\WHITE8X8",
-        edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-        edgeSize = 1,
+    -- New Group input row.
+    --
+    -- This used to be a hand-rolled backdrop frame with a borderless EditBox
+    -- floated inside it, repeating the kit's control/border colours as literals.
+    -- CreateSQEditBox draws exactly that, so it is one widget now and picks up
+    -- the focus highlight the rest of the panel has.
+    local inputBox = CreateSQEditBox(content, 220, 24, {
+        maxLetters = 20, fontObject = GameFontNormal,
     })
-    inputBG:SetBackdropColor(0.14, 0.14, 0.17, 1)
-    inputBG:SetBackdropBorderColor(0.25, 0.25, 0.30, 1)
-
-    local inputBox = CreateFrame("EditBox", nil, inputBG)
-    inputBox:SetPoint("TOPLEFT", 6, -4)
-    inputBox:SetPoint("BOTTOMRIGHT", -6, 4)
-    inputBox:SetFontObject(GameFontNormal)
-    inputBox:SetTextColor(TEXT_R, TEXT_G, TEXT_B)
-    inputBox:SetAutoFocus(false)
-    inputBox:SetMaxLetters(20)
+    inputBox:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
 
     -- Placeholder text
-    local placeholder = inputBG:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    placeholder:SetPoint("LEFT", inputBox, "LEFT", 0, 0)
+    local placeholder = inputBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    placeholder:SetPoint("LEFT", inputBox, "LEFT", 6, 0)
     placeholder:SetText("Group name...")
     placeholder:SetTextColor(DIM_R, DIM_G, DIM_B, 0.6)
 
@@ -2259,10 +2251,9 @@ function BH:RebuildCDMTabContent()
             placeholder:Show()
         end
     end)
-    inputBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
     local addBtn = CreateSQButton(content, "Create", 80, 24)
-    addBtn:SetPoint("LEFT", inputBG, "RIGHT", 6, 0)
+    addBtn:SetPoint("LEFT", inputBox, "RIGHT", 6, 0)
     addBtn:SetScript("OnClick", function()
         local name = strtrim(inputBox:GetText())
         if name == "" then return end
