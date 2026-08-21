@@ -734,11 +734,17 @@ function BH:OnSpecChanged()
     self:ApplyAllFrameScales()
     self:UpdateFrameLock()
     self:UpdateButtons()
+    -- Outside the panel check: the new profile has its own alerts, so the
+    -- client-side aura sound registrations have to follow it whether or not the
+    -- options panel happens to be open. Leaving them would keep playing the
+    -- previous profile's sounds with nothing on screen explaining why.
+    if self.RefreshAuraSoundRegistrations then self:RefreshAuraSoundRegistrations() end
     if self.optionsPanel and self.optionsPanel:IsShown() then
         self:RefreshSettingsTab()
         self:RefreshItemList()
         self:RefreshRaidToolsTab()
         self:RefreshTextRemindersTab()
+        if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
     end
 end
 
@@ -2914,6 +2920,20 @@ end
 -- Public wrapper so other files (e.g. Squizzumables_SpellAlerts.lua) can play sounds.
 function BH:PlaySound(name, channel)
     PlaySQSound(name, channel)
+end
+
+-- The file path behind a media name, without playing it.
+--
+-- C_UnitAuras.AddAuraSound hands the file to the client to play later, so it
+-- needs the path up front rather than a LibSharedMedia name. Returns nil for
+-- "None" and for the __builtin_* entries, which are sound kit IDs rather than
+-- files and so cannot be registered that way.
+function BH:ResolveSoundPath(name)
+    if not name or name == "None" then return nil end
+    if name:match("^__builtin_") then return nil end
+    local lsm = GetLSM()
+    if not lsm then return nil end
+    return lsm:Fetch("sound", name)
 end
 
 -- Sounds that ship with the addon — always available regardless of other addons.
@@ -9682,6 +9702,9 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         BH:LoadSettings()
         -- Register user custom sounds into LSM before any UI is built
         RegisterCustomSoundsWithLSM()
+        -- Must follow the LSM registration: the client-side aura sounds need a
+        -- resolved file path, and LSM is what resolves a media name to one.
+        if BH.RefreshAuraSoundRegistrations then BH:RefreshAuraSoundRegistrations() end
         BH:CreateRaidToolsFrame()
         BH:LoadAllFramePositions()
         BH:ApplyAllFrameScales()
@@ -10013,6 +10036,59 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": Encounter timeline module not loaded.")
         end
+    elseif msg:match("^auras%s+%d+$") then
+        -- Per-spell aura secrecy report: /sq auras <spellID>
+        --
+        -- Exists to answer one question that cannot be answered by reading the
+        -- code: when a Kelert fires out of combat but not in combat, is the
+        -- aura genuinely unreadable, or is the addon failing to look?
+        --
+        -- Blizzard's secrecy is per-spell (C_Secrets.ShouldSpellAuraBeSecret),
+        -- not a single global switch, so "auras are secret" being false does not
+        -- mean this particular aura is readable. Run it twice with the buff
+        -- actually up -- once out of combat, once in -- and compare.
+        local spellID = tonumber(msg:match("(%d+)"))
+        local name = C_Spell.GetSpellName(spellID)
+        local _, instanceType = IsInInstance()
+        -- `cond and predicate() or "unavailable"` cannot report these, because a
+        -- predicate that correctly answers false collapses through the `or` and
+        -- comes out as "unavailable" -- which is exactly what the first run of
+        -- this command printed out of combat for a spell that simply was not
+        -- secret. Distinguish "the predicate does not exist" from "it said no".
+        local function Describe(value)
+            if value == nil then return "predicate unavailable" end
+            return tostring(value)
+        end
+        print(addonName .. string.format(" aura secrecy for %s (%d):",
+            tostring(BH.Secrets.SafeString(name, "unknown spell")), spellID))
+        print(string.format("  in combat: %s, instance: %s",
+            tostring(InCombatLockdown()), tostring(instanceType)))
+        print(string.format("  client has secret restrictions: %s",
+            tostring(C_Secrets and C_Secrets.HasSecretRestrictions
+                and C_Secrets.HasSecretRestrictions())))
+        print(string.format("  auras secret generally: %s",
+            tostring(BH.Secrets.AurasAreSecret())))
+        print(string.format("  THIS spell's aura secret: %s",
+            Describe(C_Secrets and C_Secrets.ShouldSpellAuraBeSecret
+                and C_Secrets.ShouldSpellAuraBeSecret(spellID))))
+        -- Whether the *cast* is readable, which is a separate permission from
+        -- the aura and the basis of the only workaround for a secret buff:
+        -- trigger on "I cast this" rather than on "I have this".
+        print(string.format("  THIS spell's cast secret: %s",
+            Describe(C_Secrets and C_Secrets.ShouldUnitSpellCastBeSecret
+                and C_Secrets.ShouldUnitSpellCastBeSecret("player", spellID))))
+        -- The presence check a Kelert trigger actually performs. If this says
+        -- NO while the buff is visibly on you, that is the whole bug.
+        local aura = BH.Secrets.GetAuraBySpellID("player", spellID)
+        print(string.format("  GetUnitAuraBySpellID found it: %s", aura and "YES" or "NO"))
+        if aura then
+            print(string.format("    table has secret fields: %s",
+                tostring(BH.Secrets.HasAnySecret(aura))))
+            print(string.format("    spellID readable: %s, expiration readable: %s",
+                tostring(BH.Secrets.SafeAuraSpellID(aura) ~= nil),
+                tostring(BH.Secrets.SafeAuraExpiration(aura) ~= nil)))
+        end
+        print("  Run this again with the buff up in combat and compare the two.")
     elseif msg == 'auras' then
         -- Paladin aura diagnostics: which auras the addon can actually see on you.
         -- If an aura you have active reads "detected: NO" here, the problem is the

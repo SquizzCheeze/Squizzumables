@@ -8,6 +8,23 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.61
+
+- Fixed the per-item "Min" minutes box not saving. It only committed when you pressed Enter, so
+  typing a number and clicking away threw it out and the box redrew at the stored value -- which
+  looked like the setting reverting to 30 on its own. It now saves when you click away, tab off
+  or close the panel, the same as every other box in the addon. Affected every Min box (food,
+  flask, oil, augment rune, custom items, self-buff spells and the Coach's Whistle), not just
+  food. Escape still discards, and clearing the box and clicking away now leaves the value alone
+  rather than reading as 0
+- The "Min" boxes now take the mouse wheel: click into one and scroll to nudge it a minute at a
+  time, or hold Shift for five. Only while the box has focus, so scrolling the item list with the
+  cursor over a box still scrolls the list instead of quietly rewriting a threshold
+- Every text box in the settings panel is now drawn in the addon's own style -- square 1px
+  borders matching the checkboxes, buttons and sliders, instead of Blizzard's rounded gold search
+  border. They light up in the accent colour when focused, and preview it on hover
+
+
 V1.60
 
 - Reminder buttons now glow, so they catch your eye without being looked at directly. Colour,

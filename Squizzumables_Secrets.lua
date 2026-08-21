@@ -158,11 +158,21 @@ end
 
 -- Direct lookup by spell ID. Does not throw the way GetAuraDataByIndex does,
 -- so this is always preferable when the spell ID is known up front.
--- filter defaults to "HELPFUL".
-function Secrets.GetAuraBySpellID(unit, spellID, filter)
+--
+-- There is no filter. C_UnitAuras.GetUnitAuraBySpellID takes (unit, spellID)
+-- and nothing else -- every other aura function that accepts an AuraFilters
+-- argument declares one, and this is not among them. A third argument was being
+-- passed here and silently discarded by the client, so callers that thought
+-- they were restricting the search to HELPFUL or HARMFUL never were.
+--
+-- Nothing was actually broken by that, which is why it went unnoticed: a given
+-- spellID is either a buff or a debuff, so searching both finds the same single
+-- aura either way. The parameter is dropped rather than emulated, so no future
+-- caller writes a filter that looks like it works.
+function Secrets.GetAuraBySpellID(unit, spellID)
     if not unit or not spellID then return nil end
     if not (C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID) then return nil end
-    local ok, aura = pcall(C_UnitAuras.GetUnitAuraBySpellID, unit, spellID, filter)
+    local ok, aura = pcall(C_UnitAuras.GetUnitAuraBySpellID, unit, spellID)
     if not ok then return nil end
     return aura
 end

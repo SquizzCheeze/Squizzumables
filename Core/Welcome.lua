@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.62"] = {
+        "Kelerts now fire in combat, where the game hides most auras from addons. Sound only \226\128\148 the image still needs an aura the addon can see.",
+        "Cooldown Manager sound alerts now follow spec and talent changes without a reload.",
+        "The Cooldowns settings tab rebuilds on a spec change instead of showing the old spec.",
+    },
     ["1.61"] = {
         "The per-item \"Min\" minutes box now saves when you click away, not only when you press Enter.",
         "Click into a \"Min\" box and scroll to adjust it (Shift for 5 at a time).",

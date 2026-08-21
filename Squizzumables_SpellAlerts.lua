@@ -149,7 +149,11 @@ local function ShowAlert(alert)
     local snd = PickRandomSound(alert) or (alert and alert.sound) or "None"
     local ch  = (alert and alert.soundChannel) or "Master"
     if alertSoundTicker then alertSoundTicker:Cancel(); alertSoundTicker = nil end
-    if BH.PlaySound then BH:PlaySound(snd, ch) end
+    -- Skip our own playback when the client is already handling this alert's
+    -- sound (see the aura-sound section below). Otherwise every readable
+    -- application would play it twice: once from the client's registration and
+    -- once from here.
+    if BH.PlaySound and not (alert and BH.AlertHasClientSound and BH.AlertHasClientSound(alert)) then BH:PlaySound(snd, ch) end
     if alert and alert.soundLoop and snd ~= "None" then
         local loopInterval = math.max(0.5, tonumber(alert.soundLoopInterval) or 2.0)
         alertSoundTicker = C_Timer.NewTicker(loopInterval, function()
@@ -251,7 +255,7 @@ local function HasLustDebuff()
         for spellID in pairs(LUST_DEBUFF_IDS) do
             -- Presence check only — nothing is read off the returned table, so
             -- there is no secret field to trip over.
-            if BH.Secrets.GetAuraBySpellID("player", spellID, "HARMFUL") then
+            if BH.Secrets.GetAuraBySpellID("player", spellID) then
                 return true
             end
         end
@@ -284,11 +288,132 @@ local function TriggerActive(alert)
 
     local spellID = tonumber(t.spellID)
     if not spellID then return false end
-    local filter = t.harmful and "HARMFUL" or "HELPFUL"
+    -- No filter: the lookup is by spell ID, and a spell ID is either a buff or a
+    -- debuff, so there is nothing for a HELPFUL/HARMFUL split to disambiguate.
+    -- t.harmful is still stored on the trigger, but only the UI reads it.
     -- Presence check only, so there is no secret field to read off the result.
-    return BH.Secrets.GetAuraBySpellID("player", spellID, filter) ~= nil
+    return BH.Secrets.GetAuraBySpellID("player", spellID) ~= nil
 end
 BH.AlertTriggerActive = TriggerActive
+
+-- ============================================================================
+-- Client-side aura sounds  (C_UnitAuras.AddAuraSound, 12.1)
+--
+-- The trigger check above cannot see a secret aura, and in 12.1 nearly every
+-- aura is secret in combat -- only a very short allowlist (the lust debuffs
+-- among them) stays readable. So an alert on an ordinary buff fires happily in
+-- a city and goes silent in the pull it was made for. Nothing addon-side fixes
+-- that: the value genuinely is not readable.
+--
+-- AddAuraSound sidesteps it completely by inverting who does the watching. We
+-- hand the client a spellID and a sound file up front; the client plays it when
+-- the aura is applied. No value ever crosses into addon code, so there is
+-- nothing for secrecy to withhold. Verified on retail against Tyr's
+-- Deliverance (200654) -- secret, unreadable, and the sound still played in
+-- combat.
+--
+-- What it costs: the client plays a sound and tells us nothing. There is no
+-- callback, so an alert delivered this way gets no full-screen image -- we
+-- never learn it happened. Sound is the part that survives combat; the image
+-- still depends on the aura being readable.
+--
+-- Which alerts qualify is decided here rather than exposed as a setting,
+-- because the constraint is the API's, not a preference:
+--   * one fixed sound. A random pool would have to be resolved now, at
+--     registration, which would pick once and then repeat the same file
+--     forever -- the opposite of what the pool is for.
+--   * no sound loop. The client plays the file once per application.
+--   * a real file path. The __builtin_* sounds are sound kit IDs, and
+--     soundFileName wants a file.
+--   * a single spell ID, which excludes the built-in lust alert -- it watches
+--     five debuffs at once, and they are on the readable allowlist anyway, so
+--     it already works in combat and has nothing to gain here.
+-- ============================================================================
+
+-- [alertID] = auraSoundID handed back by the client, needed to unregister.
+local registeredAuraSounds = {}
+
+-- Which alert tables the client is playing the sound for. Keyed by the alert
+-- table itself rather than flagged on the record: settings.alerts is saved to
+-- SavedVariables, and a runtime-only marker written in there would persist as
+-- junk and outlive the registration that justified it.
+local clientSoundAlerts = {}
+
+-- ShowAlert has the alert table but not its id, which is why this is keyed by
+-- table identity.
+function BH.AlertHasClientSound(alert)
+    return clientSoundAlerts[alert] == true
+end
+
+local function AuraSoundsAvailable()
+    return C_UnitAuras and C_UnitAuras.AddAuraSound and C_UnitAuras.RemoveAuraSound
+        and Enum and Enum.UnitAuraSoundTrigger
+end
+
+-- The sound this alert would delegate, or nil if it does not qualify.
+local function DelegatableSound(alert)
+    if type(alert) ~= "table" or alert.enabled == false then return nil end
+    if alert.soundLoop then return nil end
+    local t = alert.trigger or {}
+    if t.type ~= nil and t.type ~= "aura" then return nil end
+    if not tonumber(t.spellID) then return nil end
+    -- A pool with anything in it means the sound is meant to vary per firing.
+    local pool = alert.randomSounds
+    if type(pool) == "table" then
+        for _, checked in pairs(pool) do
+            if checked then return nil end
+        end
+    end
+    return BH.ResolveSoundPath and BH:ResolveSoundPath(alert.sound)
+end
+
+local function ClearAuraSoundRegistrations()
+    if not AuraSoundsAvailable() then return end
+    for id, soundID in pairs(registeredAuraSounds) do
+        pcall(C_UnitAuras.RemoveAuraSound, soundID)
+        registeredAuraSounds[id] = nil
+    end
+    wipe(clientSoundAlerts)
+end
+
+-- Rebuild every registration from current settings.
+--
+-- Wholesale rather than incremental on purpose: an alert's spell, sound, pool
+-- and enabled flag can all change from several places in the tab, and a stale
+-- registration is worse than a missing one -- it plays the wrong sound, or one
+-- for a spell the player has stopped caring about, with no UI showing why.
+function BH:RefreshAuraSoundRegistrations()
+    if not AuraSoundsAvailable() then return end
+    ClearAuraSoundRegistrations()
+    if not self.settings then return end
+
+    local added = Enum.UnitAuraSoundTrigger.Added
+    for id, alert in pairs(AllAlerts()) do
+        local path = DelegatableSound(alert)
+        if path then
+            local ok, soundID = pcall(C_UnitAuras.AddAuraSound, added, {
+                unitToken     = "player",
+                spellID       = tonumber(alert.trigger.spellID),
+                soundFileName = path,
+                outputChannel = alert.soundChannel or "Master",
+            })
+            -- A nil ID means the client declined it (AddAuraSound is flagged
+            -- HasRestrictions). Leave the alert on the normal path rather than
+            -- marking it delegated, or it would go silent everywhere instead of
+            -- only in combat.
+            if ok and soundID then
+                registeredAuraSounds[id] = soundID
+                clientSoundAlerts[alert] = true
+            end
+        end
+    end
+end
+
+-- Is this alert's sound being played by the client? Read by the settings tab so
+-- it can say so, since it changes what the alert does in combat.
+function BH.AlertUsesClientSound(id)
+    return registeredAuraSounds[id] ~= nil
+end
 
 -- Previous trigger state, per alert id, for edge detection.
 local alertWasActive = {}
@@ -899,6 +1024,12 @@ function BH:BuildJustForKelTab(parent)
 end
 
 function BH:RefreshJustForKelTab()
+    -- Every edit in this tab routes back through here -- spell, sound, pool,
+    -- enable, add, delete -- so this is the one place that catches all of them.
+    -- Deliberately ahead of the early return: the registrations must follow the
+    -- settings even when the tab has never been built.
+    self:RefreshAuraSoundRegistrations()
+
     local content = self.kelTabContent
     if not content then return end
 

@@ -69,7 +69,9 @@ without a fundamentally different detection approach that doesn't depend on read
 - Useful in-game slash commands while developing: `/sq config` (options panel), `/sq reset` (reset
   main frame position), `/sq reload` (recompute buttons), `/sq unlock` (toggle unlock mode),
   `/sq raidtools`, `/sq notes` (reopen the release notes), and the diagnostic dumps `/sq feast`,
-  `/sq debug`, `/sq dk`, `/sq timeline`, `/sq auras` (aura secrecy state) and `/sq cdm` (CDM
+  `/sq debug`, `/sq dk`, `/sq timeline`, `/sq auras` (aura secrecy state),
+  `/sq auras <spellID>` (per-spell secrecy: run it with the aura up, once out of combat and once
+  in, when an alert fires in one and not the other) and `/sq cdm` (CDM
   sound wiring). `/squizz` opens config directly and `/squizz <TabID>` jumps to a named page.
   `/ginvite <name>` is the guild invite helper.
 
@@ -409,6 +411,42 @@ because it watches all of `LUST_DEBUFF_IDS` at once. Everything else in the tabl
 `CurrentAlert()` is the tab's cursor and deliberately falls back rather than returning nil.
 Triggers are *presence* checks through `BH.Secrets.GetAuraBySpellID`, so secret auras make an
 alert quiet rather than spurious — see the absence-guard note above for why that direction matters.
+
+**Know the real limit of this feature before promising anything from it.** Aura secrecy is
+per-spell, not a global combat switch, and Blizzard keeps only a *very short allowlist* of auras
+readable in combat. The lust debuffs (`LUST_DEBUFF_IDS`) are on it, which is why the built-in
+alert works in a real pull. Almost nothing else is: measured on retail 2026-08-21, Tyr's
+Deliverance (200654) reported `ShouldSpellAuraBeSecret` false out of combat and **true** the
+moment combat started, with `GetUnitAuraBySpellID` returning nil while the buff was visibly up —
+in the open world, no instance required.
+
+So a user-added Kelert on an arbitrary buff cannot *see* its aura in combat. Don't debug that as
+if it were a wiring problem — `/sq auras <spellID>`, run twice with the aura up (once out of
+combat, once in), settles it in one step. Note the predicate is context-dependent, so it cannot
+be usefully checked when the player configures the alert: out of combat it answers false for
+spells that are secret in combat.
+
+**The sound half of that is solved; the image half is not.** `C_UnitAuras.AddAuraSound(trigger,
+sound)` (12.1, and the replacement for the now-removed `AddPrivateAuraAppliedSound`) inverts who
+does the watching: hand the client a spellID and a **file path** up front, and it plays the sound
+on application. No value crosses into addon code, so secrecy has nothing to withhold. Verified on
+retail against Tyr's Deliverance — secret, unreadable, sound still played in combat, from the
+addon's own `Media\Sounds\` file. `Enum.UnitAuraSoundTrigger` is `Added = 0`,
+`ApplicationsIncreased = 1`, `Removed = 2`; `RemoveAuraSound(auraSoundID)` unregisters.
+
+`BH:RefreshAuraSoundRegistrations` (in `Squizzumables_SpellAlerts.lua`) rebuilds every
+registration wholesale from settings, and is called at login (after the LSM registration, which is
+what resolves a media name to a path), from `BH:RefreshJustForKelTab` (every edit routes through
+it), and on profile switch. An alert qualifies only with a single spell ID, one fixed sound, no
+random pool and no sound loop — the reasons are in the comment there, and they are the API's
+constraints rather than preferences. The built-in lust alert is excluded automatically because it
+has no `trigger.spellID`.
+
+**What it does not buy is the image.** The client plays a sound and reports nothing back, so a
+delegated alert has no callback and cannot show the full-screen texture. Sound survives combat;
+the picture still needs a readable aura. `Removed = 2` is also worth remembering as the one
+trustworthy source of aura-*removal* alerts — the absence-guard problem above exists because
+unreadable and absent look identical to us, and they do not look identical to the client.
 
 **Consumable data churn**: item/spell IDs in `Squizzumables_Config.lua` (`consumables.food`,
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard

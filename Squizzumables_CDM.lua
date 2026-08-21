@@ -492,6 +492,43 @@ local function HookBlizzardAlertEvents()
     end
 end
 
+-- Forget everything we worked out about which cooldownID belongs to which
+-- spell, and about which item frame holds it.
+--
+-- These maps are caches over Blizzard's viewer pool, and every one of them goes
+-- stale the moment the pool is rebuilt for a different set of cooldowns -- a
+-- spec change, a talent swap, a loadout swap. They were only ever added to:
+-- HookBlizzardAlertEvents refreshes the entries for frames that currently
+-- exist, so the *new* spec's spells appear within a sweep, but the previous
+-- spec's entries are never removed.
+--
+-- That is what made the sound alerts need a reload. A stale
+-- cooldownForSpell[spellID] hands FireCDSounds a cooldownID the viewer has
+-- since recycled onto some other spell, so the assignment lookup and the
+-- viewer-item cooldown read both answer for the wrong cooldown. The entry looks
+-- perfectly valid; it is just describing the spec you are no longer in.
+--
+-- Deliberately does NOT clear the _sqzAlertHooked / _sqzBuffHooked frame tags.
+-- hooksecurefunc cannot be undone, so a frame that has been hooked stays hooked
+-- for the session; clearing the tag would hook it a second time and play every
+-- sound twice. The hooks read cooldownID off the item at call time precisely so
+-- that recycling is safe.
+--
+-- soundTrackers goes too. It holds the previous on/off state per alert, and
+-- carrying the old spec's state into the new one makes the next readable pass
+-- treat a spell that never moved as a fresh transition -- the same spurious
+-- edge the absence guards elsewhere exist to prevent.
+function cdmModule:ResetResolutionMaps()
+    wipe(self.cooldownForSpell)
+    wipe(self.buffItemForSpell)
+    wipe(self.viewerItems)
+    wipe(self.hookDrivenCooldowns)
+    wipe(self.hookDrivenSpellIDs)
+    wipe(self.activeBuffCooldowns)
+    wipe(self.knownBuffCooldowns)
+    wipe(self.soundTrackers)
+end
+
 -- Hook Blizzard CDM buff frames (both viewers) to track active state changes
 local function HookBlizzardBuffFrames()
     for _, viewerName in ipairs(BUFF_VIEWERS) do
@@ -1591,6 +1628,13 @@ function cdmModule:Reconcile()
         cdmModule.alertHookTicker = C_Timer.NewTicker(2, function()
             if BH.settings and BH.settings.cdmEnabled ~= false then
                 HookBlizzardAlertEvents()
+                -- Same argument as the sweep itself, applied to the cooldown
+                -- set rather than the frame pool: rather than trusting that we
+                -- named every event that can change which cooldowns exist, look
+                -- at the set and notice. Events only make the response quicker.
+                if cdmModule.CheckCooldownSetChanged then
+                    cdmModule.CheckCooldownSetChanged()
+                end
             end
         end)
     end
@@ -1954,6 +1998,107 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("UNIT_AURA")
 
+-- Talent and loadout changes.
+--
+-- PLAYER_SPECIALIZATION_CHANGED does not fire for a talent swap inside the same
+-- spec, which is why changing talents needed a reload before the sound alerts
+-- matched the new build. TRAIT_CONFIG_UPDATED is the event Blizzard's own
+-- CooldownViewerSettingsDataProvider listens to for exactly this
+-- (SwitchToBestLayoutForSpec + SaveLayouts), and it covers spec changes too,
+-- since switching spec activates a different trait config.
+eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+eventFrame:RegisterEvent("PLAYER_PVP_TALENT_UPDATE")
+
+-- A fingerprint of which cooldowns exist right now, across all four categories.
+--
+-- This exists because the signals that say "the cooldown data changed" are far
+-- noisier than the thing they describe. Blizzard's data provider fires
+-- CooldownViewerSettings.OnDataChanged from SPELLS_CHANGED, which goes off
+-- repeatedly during ordinary combat -- an aura that grants a spell is enough.
+-- Resetting on every one of those is not merely wasteful: it wipes
+-- soundTrackers, which is where the previous on/off state per alert lives, so
+-- the next pass re-baselines against current state and detects no transition.
+-- The alerts then go silent for as long as the spam continues, which is exactly
+-- "plays out of combat, never in combat".
+--
+-- Comparing the actual set instead makes the noise harmless. The frequent
+-- signals still arrive; they just do not reset anything unless the set really
+-- moved, which is what a spec change, a talent swap or a loadout change does.
+local function CooldownSetSignature()
+    if not (C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet) then
+        return nil
+    end
+    local parts = {}
+    -- 0 Essential, 1 Utility, 2 TrackedBuff, 3 TrackedBar.
+    for category = 0, 3 do
+        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, category)
+        if ok and ids then
+            local sorted = {}
+            for i = 1, #ids do sorted[i] = ids[i] end
+            table.sort(sorted)
+            parts[#parts + 1] = category .. ":" .. table.concat(sorted, ",")
+        end
+    end
+    if #parts == 0 then return nil end
+    return table.concat(parts, "|")
+end
+
+local lastCooldownSignature
+
+-- The cooldown set has changed and everything cached about it is now suspect.
+--
+-- Ordering matters. The maps have to be emptied before the sweep repopulates
+-- them, or a stale entry that the new spec happens not to overwrite survives
+-- and keeps answering for a cooldown that no longer exists.
+local function OnCooldownSetChanged(debounce, force)
+    local signature = CooldownSetSignature()
+    -- No signature means the API is unavailable; fall through and reset rather
+    -- than never resetting at all.
+    if not force and signature and signature == lastCooldownSignature then return end
+    lastCooldownSignature = signature
+
+    cdmModule:ResetResolutionMaps()
+    cdmModule:ScheduleReconcile(debounce or SPEC_CHANGE_DEBOUNCE)
+
+    -- Blizzard repopulates its viewer pool on its own schedule, so one sweep
+    -- right now catches whatever already exists and the standing 2s alert-hook
+    -- ticker picks up the rest as the pool fills.
+    HookBlizzardBuffFrames()
+    HookBlizzardAlertEvents()
+    ScanBlizzardBuffState()
+
+    -- The Cooldowns tab is built per-spec (groups, assignments and the sound
+    -- alert list all come from GetSpecData/GetCDMSoundAlerts, both keyed on the
+    -- live spec), so leaving it up after a spec change shows the previous
+    -- spec's configuration. It was only ever rebuilt by its own controls.
+    if BH.RebuildCDMTabContent then
+        C_Timer.After(0.3, function()
+            if InCombatLockdown() then return end
+            BH:RebuildCDMTabContent()
+            if BH.RebuildCDMSoundsRight then BH:RebuildCDMSoundsRight() end
+        end)
+    end
+end
+
+-- Published for the alert-hook ticker, which is installed further up the file
+-- and so cannot see the local above.
+function cdmModule.CheckCooldownSetChanged()
+    OnCooldownSetChanged(RECONCILE_DEBOUNCE)
+end
+
+-- Blizzard's own "the cooldown data changed, relayout" signal: its viewers
+-- rebuild from this callback (CooldownViewerMixin:OnShow registers it to call
+-- RefreshLayout), and its data provider fires it on COOLDOWN_VIEWER_TABLE_HOTFIXED,
+-- PLAYER_PVP_TALENT_UPDATE and SPELLS_CHANGED. Hooking the same signal means we
+-- rebuild when the viewers do rather than guessing at the game events behind it.
+if EventRegistry and EventRegistry.RegisterCallback then
+    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+        if BH.settings and BH.settings.cdmEnabled ~= false then
+            OnCooldownSetChanged(RECONCILE_DEBOUNCE)
+        end
+    end, cdmModule)
+end
+
 -- Update combat visibility for all groups
 local function UpdateCombatVisibility()
     local specData = GetSpecData()
@@ -1985,9 +2130,19 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "SPELLS_CHANGED" then
         cdmModule:ScheduleReconcile(RECONCILE_DEBOUNCE)
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        -- Spec changed â€” release all, reload for new spec
+        -- Spec changed - release all, reload for new spec.
+        -- Forced: the category sets can still report the outgoing spec at the
+        -- moment this fires, so a signature comparison would see no change and
+        -- skip. The ticker's comparison catches the real set a moment later.
         cdmModule:ReleaseAll()
-        cdmModule:ScheduleReconcile(SPEC_CHANGE_DEBOUNCE)
+        OnCooldownSetChanged(SPEC_CHANGE_DEBOUNCE, true)
+    elseif event == "TRAIT_CONFIG_UPDATED" or event == "PLAYER_PVP_TALENT_UPDATE" then
+        -- A talent or loadout swap keeps the spec but can change which spells
+        -- exist and which cooldownIDs the viewer uses for them, so the caches
+        -- are just as stale as after a spec change. The proxies are left alone:
+        -- Reconcile re-derives them, and ReleaseAll would make every icon
+        -- visibly flicker on a change that often alters nothing on screen.
+        OnCooldownSetChanged(SPEC_CHANGE_DEBOUNCE)
     elseif event == "PLAYER_REGEN_DISABLED" then
         isInCombat = true
         UpdateCombatVisibility()
