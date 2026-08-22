@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.63"] = {
+        "Dungeon callouts now use a dropdown \226\128\148 pick a dungeon, see only its callouts.",
+        "This season's Mythic+ dungeons are listed already, so you can write callouts without travelling.",
+        "Raids and older dungeons join the list the first time you zone into them.",
+    },
     ["1.62"] = {
         "New Buff Sounds grid under Kelerts: your spec's own buffs, a sound when each lands or drops \226\128\148 and these fire in combat.",
         "The lust alert is unchanged. Your other Kelerts moved into the grid, keeping their sounds.",

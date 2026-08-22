@@ -4277,6 +4277,78 @@ function BH:UpdateCalloutsButtonFrame()
     f:Show()
 end
 
+function BH:RememberVisitedInstance()
+    local name, instanceType, _, _, _, _, _, instanceID = GetInstanceInfo()
+    if not instanceID or instanceID == 0 then return end
+    -- Skip the open world and battlegrounds; callouts are for content you
+    -- run repeatedly with the same pulls.
+    if instanceType ~= "party" and instanceType ~= "raid" and instanceType ~= "scenario" then
+        return
+    end
+    SquizzumablesDB.visitedInstances = SquizzumablesDB.visitedInstances or {}
+    -- Re-recorded every visit rather than only when new: an instance can be
+    -- renamed between patches, and the stored name is what the dropdown
+    -- shows.
+    SquizzumablesDB.visitedInstances[instanceID] = name
+end
+
+-- Every dungeon worth offering, deduped by instanceID.
+--
+-- Three sources. The season's Mythic+ list comes from
+-- C_ChallengeMode.GetMapTable(), which is live data -- so this refreshes
+-- itself when the season rotates and there is nothing to hardcode. The 6th
+-- return of GetMapUIInfo is the same number GetInstanceInfo reports as its
+-- instanceID, which is what callouts match on (verified in game: Murder Row
+-- is challenge map 587, mapID 2813, and standing inside it GetInstanceInfo
+-- also says 2813).
+--
+-- Then anything already configured, so a dungeon keeps its entry after the
+-- season moves on, and finally whatever instance the player is standing in,
+-- which is the only route for raids and non-seasonal dungeons.
+local function CalloutDungeonList()
+    local list, seen = {}, {}
+
+    local function Add(instanceID, name, tag)
+        if not instanceID or instanceID == 0 or seen[instanceID] then return end
+        seen[instanceID] = true
+        list[#list + 1] = { instanceID = instanceID, name = name or ("Instance " .. instanceID), tag = tag }
+    end
+
+    for _, group in ipairs(BH.settings and BH.settings.dungeonCallouts or {}) do
+        Add(group.instanceID, group.name, "saved")
+    end
+
+    if C_ChallengeMode and C_ChallengeMode.GetMapTable then
+        local ok, maps = pcall(C_ChallengeMode.GetMapTable)
+        for _, mapChallengeModeID in ipairs((ok and maps) or {}) do
+            local mapName, _, _, _, _, instanceID = C_ChallengeMode.GetMapUIInfo(mapChallengeModeID)
+            Add(instanceID, mapName, "season")
+        end
+    end
+
+    for instanceID, name in pairs(SquizzumablesDB and SquizzumablesDB.visitedInstances or {}) do
+        Add(instanceID, name, "visited")
+    end
+
+    local hereName, _, _, _, _, _, _, hereID = GetInstanceInfo()
+    Add(hereID, hereName, "here")
+
+    table.sort(list, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
+    return list
+end
+BH.CalloutDungeonList = CalloutDungeonList
+
+-- The stored group for a dungeon, or nil. Selecting a dungeon deliberately
+-- does not create one: browsing the dropdown would otherwise fill the saved
+-- settings with empty entries for every dungeon merely looked at. The group
+-- is created on the first callout added to it.
+function BH.CalloutGroupFor(instanceID)
+    for _, group in ipairs(BH.settings and BH.settings.dungeonCallouts or {}) do
+        if group.instanceID == instanceID then return group end
+    end
+    return nil
+end
+
 function BH:BuildCalloutsTab(parent)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
@@ -4302,30 +4374,100 @@ function BH:BuildCalloutsTab(parent)
     note:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 36
 
-    local addBtn = CreateSQButton(content, "+ Add Current Dungeon", 190, 24)
-    addBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    addBtn:SetScript("OnClick", function()
-        local dName, _, _, _, _, _, _, iID = GetInstanceInfo()
-        if not iID or iID == 0 then return end
-        BH.settings.dungeonCallouts = BH.settings.dungeonCallouts or {}
-        for _, g in ipairs(BH.settings.dungeonCallouts) do
-            if g.instanceID == iID then return end
+    local dungeonDrop
+    local function DungeonDropItems()
+        local items = {}
+        for _, entry in ipairs(CalloutDungeonList()) do
+            local group = BH.CalloutGroupFor(entry.instanceID)
+            local count = group and #(group.buttons or {}) or 0
+            -- The count is the whole point of the marker: it separates "set up"
+            -- from "offered but empty" without opening each one.
+            local suffix = (count > 0) and ("  |cff888888(" .. count .. ")|r") or ""
+            if entry.tag == "here" then suffix = suffix .. "  |cff888888[here]|r" end
+            items[#items + 1] = { text = (entry.name or "?") .. suffix, value = entry.instanceID }
         end
-        table.insert(BH.settings.dungeonCallouts, { instanceID = iID, name = dName, buttons = {} })
-        BH:SaveSettings()
+        return items
+    end
+    BH.CalloutDungeonDropItems = DungeonDropItems
+
+    dungeonDrop = CreateSQDropdown(content, "Dungeon:", 250, DungeonDropItems(), function(val)
+        BH.selectedCalloutInstanceID = val
         BH:RefreshCalloutsTab()
     end)
-    addBtn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    dungeonDrop:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    self.calloutsDungeonDrop = dungeonDrop
+    ns.Rows.AddTooltip(dungeonDrop, "Dungeon",
+        "This season's Mythic+ dungeons, plus any you have already set up and whatever you are standing in. The number is how many callouts it has.")
+    yOffset = yOffset - 46
+
+    local addCalloutBtn = CreateSQButton(content, "+ Add Callout", 120, 24)
+    addCalloutBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    addCalloutBtn:SetScript("OnClick", function()
+        local instanceID = BH.selectedCalloutInstanceID
+        if not instanceID then return end
+        BH.settings.dungeonCallouts = BH.settings.dungeonCallouts or {}
+        local group = BH.CalloutGroupFor(instanceID)
+        if not group then
+            -- Created here rather than on selection, so the saved list only
+            -- ever holds dungeons actually in use.
+            local name
+            for _, entry in ipairs(CalloutDungeonList()) do
+                if entry.instanceID == instanceID then name = entry.name break end
+            end
+            group = { instanceID = instanceID, name = name, buttons = {} }
+            table.insert(BH.settings.dungeonCallouts, group)
+        end
+        table.insert(group.buttons, { label = "", message = "", channel = "INSTANCE", sound = "None" })
+        BH:SaveSettings()
+        BH:UpdateCalloutsButtonFrame()
+        BH:RefreshCalloutsTab()
+    end)
+    self.calloutsAddBtn = addCalloutBtn
+
+    local delDungeonBtn = CreateSQButton(content, "Delete Dungeon", 120, 24, SQ_COLORS.danger)
+    delDungeonBtn:SetPoint("LEFT", addCalloutBtn, "RIGHT", 8, 0)
+    delDungeonBtn:SetScript("OnClick", function()
+        local instanceID = BH.selectedCalloutInstanceID
+        for i, group in ipairs(BH.settings.dungeonCallouts or {}) do
+            if group.instanceID == instanceID then
+                table.remove(BH.settings.dungeonCallouts, i)
+                break
+            end
+        end
+        BH:SaveSettings()
+        BH:UpdateCalloutsButtonFrame()
+        BH:RefreshCalloutsTab()
+    end)
+    self.calloutsDelDungeonBtn = delDungeonBtn
+    ns.Rows.AddTooltip(delDungeonBtn, "Delete dungeon",
+        "Remove every callout for this dungeon. It stays in the list above if the season still includes it.")
+    yOffset = yOffset - 32
+
+    -- The dungeon you are standing in is already in the dropdown, tagged
+    -- [here]. This jumps straight to it, which is the common case while
+    -- actually running the place and wanting a callout for the pull you just
+    -- wiped on.
+    local hereBtn = CreateSQButton(content, "+ Add Current Dungeon", 190, 24)
+    hereBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    hereBtn:SetScript("OnClick", function()
+        local _, _, _, _, _, _, _, iID = GetInstanceInfo()
+        if not iID or iID == 0 then return end
+        BH.selectedCalloutInstanceID = iID
+        BH:RefreshCalloutsTab()
+    end)
+    hereBtn:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
         local dName, _, _, _, _, _, _, iID = GetInstanceInfo()
         if iID and iID ~= 0 then
-            GameTooltip:SetText("Current: " .. (dName or "?") .. " (ID: " .. tostring(iID) .. ")")
+            GameTooltip:SetText("Select: " .. (dName or "?") .. " (ID: " .. tostring(iID) .. ")")
+            GameTooltip:AddLine("Nothing is saved until you add a callout.", 0.7, 0.7, 0.7, true)
         else
-            GameTooltip:SetText("Must be inside a dungeon or raid to add it.")
+            GameTooltip:SetText("Must be inside a dungeon or raid.")
         end
         GameTooltip:Show()
     end)
-    addBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    hereBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.calloutsHereBtn = hereBtn
     yOffset = yOffset - 32
 
     -- Dynamic dungeon list (rebuilt by RefreshCalloutsTab)
@@ -4351,35 +4493,66 @@ function BH:RefreshCalloutsTab()
     local leftPad = 14
     local W = 372
     local yOffset = 0
-    local callouts = self.settings and self.settings.dungeonCallouts or {}
 
-    for gIdx, group in ipairs(callouts) do
+    -- Default the selection rather than showing nothing on first open: the
+    -- instance you are standing in if it is one, else the first entry offered.
+    local dungeons = BH.CalloutDungeonList and BH.CalloutDungeonList() or {}
+    local selected = BH.selectedCalloutInstanceID
+    local valid = false
+    for _, entry in ipairs(dungeons) do
+        if entry.instanceID == selected then valid = true break end
+    end
+    if not valid then
+        local _, _, _, _, _, _, _, hereID = GetInstanceInfo()
+        selected = (hereID and hereID ~= 0) and hereID or (dungeons[1] and dungeons[1].instanceID)
+        BH.selectedCalloutInstanceID = selected
+    end
+
+    if self.calloutsDungeonDrop and BH.CalloutDungeonDropItems then
+        self.calloutsDungeonDrop:SetItems(BH.CalloutDungeonDropItems())
+        self.calloutsDungeonDrop:SetSelectedValue(selected)
+    end
+
+    -- Only the selected dungeon is rendered. Every configured dungeon used to
+    -- be stacked into this one scroll, which grew without bound; now the tab is
+    -- a fixed height whatever the player has set up.
+    local group = selected and BH.CalloutGroupFor and BH.CalloutGroupFor(selected) or nil
+
+    -- Delete only means something once a group exists.
+    if self.calloutsDelDungeonBtn then
+        self.calloutsDelDungeonBtn:SetAlpha(group and 1 or 0.35)
+        self.calloutsDelDungeonBtn:SetEnabled(group and true or false)
+    end
+
+    if not selected then
+        local none = listFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        none:SetPoint("TOPLEFT", listFrame, "TOPLEFT", leftPad, yOffset)
+        none:SetText("No dungeons available. Enter one, or wait for the season list to load.")
+        none:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        listFrame:SetHeight(24)
+        content:SetHeight((self.calloutsTabStaticHeight or 0) + 24 + 20)
+        return
+    end
+
+    if not group or #(group.buttons or {}) == 0 then
+        local none = listFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        none:SetPoint("TOPLEFT", listFrame, "TOPLEFT", leftPad, yOffset)
+        none:SetText("No callouts here yet. Add one above.")
+        none:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        listFrame:SetHeight(24)
+        content:SetHeight((self.calloutsTabStaticHeight or 0) + 24 + 20)
+        return
+    end
+
+    do
         local groupFrame = CreateFrame("Frame", nil, listFrame)
         groupFrame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, yOffset)
         groupFrame:SetWidth(400)
         local gy = 0
 
-        -- Divider
         local div = CreateSQDivider(groupFrame, gy)
         div:SetPoint("TOPLEFT", groupFrame, "TOPLEFT", leftPad, gy)
         gy = gy - 18
-
-        -- Group header + delete button
-        local gLabel = groupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        gLabel:SetPoint("TOPLEFT", groupFrame, "TOPLEFT", leftPad, gy)
-        gLabel:SetText((group.name or "Unknown") .. "  |cff888888(ID: " .. tostring(group.instanceID or "?") .. ")|r")
-        gLabel:SetTextColor(SQ_COLORS.textBright[1], SQ_COLORS.textBright[2], SQ_COLORS.textBright[3])
-
-        local delGrpBtn = CreateSQButton(groupFrame, "Delete", 70, 20, SQ_COLORS.danger)
-        delGrpBtn:SetPoint("TOPLEFT", groupFrame, "TOPLEFT", leftPad + W - 70, gy)
-        local capturedGIdx = gIdx
-        delGrpBtn:SetScript("OnClick", function()
-            table.remove(BH.settings.dungeonCallouts, capturedGIdx)
-            BH:SaveSettings()
-            BH:UpdateCalloutsButtonFrame()
-            BH:RefreshCalloutsTab()
-        end)
-        gy = gy - 26
 
         -- Per-callout rows
         for bIdx, callout in ipairs(group.buttons) do
@@ -4424,9 +4597,12 @@ function BH:RefreshCalloutsTab()
 
             local delBtn = CreateSQButton(rowFrame, "×", 22, 20, SQ_COLORS.danger)
             delBtn:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", 354, 0)
-            local cg, cb = gIdx, bIdx
+            -- Captured against the group table rather than its index: only one
+            -- group is rendered now, and an index into dungeonCallouts would be
+            -- wrong the moment another dungeon is deleted from under it.
+            local cb = bIdx
             delBtn:SetScript("OnClick", function()
-                table.remove(BH.settings.dungeonCallouts[cg].buttons, cb)
+                table.remove(group.buttons, cb)
                 BH:SaveSettings(); BH:UpdateCalloutsButtonFrame(); BH:RefreshCalloutsTab()
             end)
 
@@ -4459,18 +4635,8 @@ function BH:RefreshCalloutsTab()
             gy = gy - 62
         end
 
-        -- "Add Callout" button
-        local addCBtn = CreateSQButton(groupFrame, "+ Add Callout", 120, 22)
-        addCBtn:SetPoint("TOPLEFT", groupFrame, "TOPLEFT", leftPad, gy)
-        local cgIdx = gIdx
-        addCBtn:SetScript("OnClick", function()
-            table.insert(BH.settings.dungeonCallouts[cgIdx].buttons, {
-                label = "Callout", message = "", channel = "INSTANCE", sound = "None",
-            })
-            BH:SaveSettings(); BH:RefreshCalloutsTab()
-        end)
-        gy = gy - 30
-
+        -- No "Add Callout" here any more: there is one in the header, which is
+        -- always on screen rather than below however many rows this dungeon has.
         groupFrame:SetHeight(math.abs(gy))
         yOffset = yOffset + gy
     end
@@ -9869,6 +10035,21 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         -- re-apply and would otherwise trigger a false lust alert.
         BH.playerZoning = true
         C_Timer.After(3, function() BH.playerZoning = false end)
+
+        -- Remember every instance visited, for the callouts dungeon list.
+        --
+        -- The season's Mythic+ maps come from C_ChallengeMode, but nothing
+        -- equivalent exists for raids: the Encounter Journal numbers its
+        -- instances in a different space entirely (measured -- the current
+        -- tier's raids report 1312/1317/1320 while GetInstanceInfo says 3004
+        -- standing inside one), and no reliable bridge between them turned up.
+        --
+        -- Recording the pair as we see it sidesteps the whole mapping problem
+        -- and covers more than raids: old dungeons, scenarios, anything. The
+        -- cost is having been there once, which is not really a cost -- nobody
+        -- writes callouts for a place they have never been.
+        BH:RememberVisitedInstance()
+
         -- Zone change - check instance type and reset M+ state if not in dungeon
         local inInstance = IsInInstance()
         if not inInstance then

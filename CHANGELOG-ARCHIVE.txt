@@ -8,6 +8,43 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.62
+
+- Cooldown Manager sound alerts now follow spec and talent changes without a reload. Two things
+  were wrong. Talent swaps were not being noticed at all -- the module only watched
+  PLAYER_SPECIALIZATION_CHANGED, which does not fire when you change talents inside the same
+  spec, so it now also watches TRAIT_CONFIG_UPDATED and PLAYER_PVP_TALENT_UPDATE, the same
+  events Blizzard's own Cooldown Manager uses, plus its "cooldown data changed" callback
+- And the addon's memory of which spell belongs to which cooldown was never cleared. Those
+  lookups are a cache over Blizzard's viewer frames, and the entries for the spec you left stayed
+  behind pointing at cooldowns that had since been recycled onto other spells -- so an alert
+  could end up reading the wrong spell's state. They are now emptied and rebuilt whenever the
+  cooldown set changes
+- The Cooldowns settings tab now rebuilds on a spec or talent change too. Groups, assignments and
+  the sound alert list are all per-spec, so leaving the panel open across a spec change showed
+  the previous spec's setup until something else happened to refresh it
+- Kelerts can now fire in combat. Since 12.1 the game hides almost every aura from addons while
+  you are in combat -- which is exactly when your alert was supposed to go off -- so an alert on,
+  say, a healing cooldown worked in a city and stayed silent in the pull you made it for. The
+  addon now hands the spell and the sound to the game up front and lets it play the sound itself,
+  so there is nothing left for it to hide. Alerts with a single spell, one sound and no sound
+  loop switch to this automatically; nothing to turn on
+- The catch, and it is worth knowing: the game plays the sound and tells the addon nothing, so an
+  alert delivered this way cannot show its image in combat. The picture still needs an aura the
+  addon can see. Sound is the part that now always works
+- The lust alert is unchanged -- image and sound both. It watches five debuffs at once, and those
+  are among the few the game still lets addons see, so it never had this problem
+- The Kelerts tab is now two things. The lust alert stays exactly as it was, image and all. Below
+  it is Buff Sounds: a grid of your spec's own buffs, built from your spellbook, so it follows
+  every talent and spec change on its own with nothing to keep updated. Click one to give it a
+  sound when it lands, when it drops, or both
+- Your existing custom Kelerts have moved into that grid, keeping their sounds. Their images are
+  gone, because there is no way to keep them -- the game plays these sounds itself and never tells
+  the addon it did, which is the same reason they now work in combat at all
+- Buffs the grid does not list can still be added by spell ID. Worth knowing for the handful of
+  spells whose cast and buff have different IDs
+
+
 V1.61
 
 - Fixed the per-item "Min" minutes box not saving. It only committed when you pressed Enter, so
