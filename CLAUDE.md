@@ -252,12 +252,24 @@ tainted depends on what else has run first. Three things learned the hard way:
   the unregister ran, the re-register was blocked, and every buff sound stayed off until relog.
   If a `pcall` wraps something protected, make the failure *visible* in the UI rather than
   swallowing it.
-- **Running a macro from `SecureActionButtonTemplate` is a protected action**, so addon-created
-  macro buttons stop working in M+. Dungeon callouts used one to send chat and silently did
-  nothing there. `SendChatMessage` is *not* protected and works in combat — prefer it, and reach
-  for a secure button only for things that genuinely require one (the raid tools' markers and
-  pull timer do). Note Blizzard blocks addon-initiated `SAY`/`YELL` inside instances, which is
-  why callouts no longer offer them.
+- **A `SecureActionButtonTemplate` is the fix for taint, not a victim of it. Do not "simplify" one
+  away.** 1.64 replaced the dungeon callouts' secure macro button with a plain Button calling
+  `SendChatMessage`, on the reasoning that removing the secure button removed the protected
+  surface. Exactly backwards, and it shipped a regression: `SendChatMessage` carries
+  `HasRestrictions` too (plus `RestrictedForMacroChatMessages`), and from a plain `OnClick` in a
+  key it was refused — `ADDON_ACTION_BLOCKED` on a *real mouse click*, which normally permits a
+  protected call. Reverted in 1.65.
+
+  **Being blocked on a hardware click is the diagnostic**: it means the execution path is tainted,
+  and a secure button is the sanctioned way to act from a tainted addon. Reach for one when an
+  action is refused, do not remove one. Blizzard does block addon-initiated `SAY`/`YELL` inside
+  instances, which is a separate and real restriction, and why callouts no longer offer them.
+
+  Still unsolved: callout buttons do nothing in M+ on one player's client and work on another's.
+  Nothing about the addon distinguishes them, so the next step is a `taint.log` (`/console
+  taintLog 1`, reproduce, `/console taintLog 0`, read `Logs/taint.log`) from a client where it
+  reproduces — or an addons-disabled run to see whether something else is the taint source.
+  Do not attempt another mechanism change without that evidence; that is what caused 1.64.
 
 **Secret aura values (client 12.1.0+)**: as of 12.1.0, `C_UnitAuras.GetAuraDataByIndex` **throws**
 a taint error ("Auras cannot be accessed when secret") instead of returning `nil` when auras are
