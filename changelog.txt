@@ -1,20 +1,14 @@
 Squizzumables Changelog
 =======================
 
-V1.64
+V1.65
 
-- Fixed buff sounds silently switching themselves off when you opened the settings with a slash
-  command. Registering a buff sound is a protected call, and the game blocks those when the chain
-  starts at the chat box -- so typing /sq config cleared every registration and then could not put
-  them back, leaving you with no buff sounds until your next login. Opening the panel any other
-  way was unaffected, which is why it took a bug report to find. The registration now happens a
-  moment later, out of that chain, where the game allows it
-- Fixed dungeon callout buttons doing nothing when clicked in Mythic+. The buttons ran their
-  message as a macro, and running a macro from a button is something the game only allows addons
-  to do under conditions Mythic+ breaks -- so the button drew, moved and highlighted normally and
-  then quietly did nothing, with no message and no error. Outside a key it worked, which is why it
-  looked like it worked. They now send the message directly, the same way the feast announce
-  always has, which the game is happy with anywhere including mid-pull
-- Say and Yell are no longer offered for callouts. The game blocks addons from using those two
-  inside instances, which is the only place callouts appear, so they could never have worked.
-  Existing callouts set to Say or Yell have been moved to Instance
+- Reverted the callout button change from 1.64. That version changed how callout buttons send
+  their message, which was meant to fix them not firing in Mythic+ for one player -- instead it
+  broke them in Mythic+ for people they had been working for, including me. The old mechanism is
+  back. If callouts worked for you before 1.64, they work again
+- Say and Yell stay removed from callouts. That part of 1.64 was right for its own reasons: the
+  game blocks addons from using those two inside instances, which is the only place callouts
+  appear, so they could never have worked there
+- The original report -- callout buttons doing nothing in a key -- is still open. It affects some
+  setups and not others, and chasing it needs a log from a client where it actually happens

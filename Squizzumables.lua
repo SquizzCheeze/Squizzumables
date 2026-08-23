@@ -4155,21 +4155,21 @@ end
 -- DUNGEON CALLOUTS — in-game button frame + config tab
 -- ============================================================
 
--- Stored channel -> the channel string SendChatMessage wants.
+-- Stored channel -> the slash command the secure macro runs.
 --
--- These were slash commands ("/instance") while the buttons ran a macro
--- through a secure action button. They are chat channels now; see the button
--- construction in UpdateCalloutsButtonFrame for why that changed.
+-- The buttons send through a macro on a SecureActionButtonTemplate, which is
+-- what survives taint; see the button construction in
+-- UpdateCalloutsButtonFrame. 1.64 briefly swapped this for SendChatMessage and
+-- chat channel strings, which was wrong -- SendChatMessage is protected too.
 --
--- Say and Yell are gone. Blizzard restricts addon-initiated SAY and YELL
--- inside instances, so they would be the one pair that did not work through
--- SendChatMessage -- and a callout nobody in your group can hear was never
--- worth the second code path to keep.
-local CALLOUT_CHANNEL_MAP = {
-    INSTANCE     = "INSTANCE_CHAT",
-    PARTY        = "PARTY",
-    RAID         = "RAID",
-    RAID_WARNING = "RAID_WARNING",
+-- Say and Yell stay removed. That part of 1.64 was right for its own reasons:
+-- Blizzard restricts addon-initiated SAY and YELL inside instances, which is
+-- the only place callouts appear.
+local CALLOUT_SLASH_MAP = {
+    INSTANCE     = "/instance",
+    PARTY        = "/party",
+    RAID         = "/raid",
+    RAID_WARNING = "/rw",
 }
 local CALLOUT_CHANNEL_ITEMS = {
     { text = "Instance",     value = "INSTANCE"     },
@@ -4265,24 +4265,22 @@ function BH:UpdateCalloutsButtonFrame()
     local BTN_H, BTN_W, GAP, TITLE_H = 24, 144, 2, 14
     local yOfs = -(TITLE_H + GAP)
     for _, callout in ipairs(matchedGroup.buttons) do
-        -- A plain Button calling SendChatMessage, not a secure macro button.
+        -- SecureActionButtonTemplate running a macro, which is the mechanism
+        -- that survives taint -- that is what it is for.
         --
-        -- These used to be SecureActionButtonTemplate with type="macro" and a
-        -- "/instance <message>" macrotext. Running a macro from a secure button
-        -- is a *protected* action, and in Mythic+ the addon's execution is
-        -- tainted -- which is the whole point of the 12.1 secrets regime -- so
-        -- the client silently refused it. The buttons still drew and still
-        -- dragged, because that part is unprotected; clicking them did nothing
-        -- at all and put nothing in chat. Reported by a user on 1.63, and not
-        -- reproducible for everyone, since whether the execution path is
-        -- tainted depends on what else has run first.
+        -- 1.64 briefly replaced this with a plain Button calling
+        -- SendChatMessage, on the theory that dropping the secure button would
+        -- remove the protected surface. It does the opposite. SendChatMessage
+        -- carries HasRestrictions too, and from a plain OnClick in a key it is
+        -- refused -- ADDON_ACTION_BLOCKED, on a real mouse click, which would
+        -- normally be allowed. Being blocked anyway is the tell that the path
+        -- is tainted, and a secure button is precisely how you execute an
+        -- action from a tainted addon.
         --
-        -- SendChatMessage is not protected. This addon has always sent the
-        -- feast announce through it from ordinary Lua, in instances, without
-        -- trouble. Dropping the secure button removes the protected surface
-        -- rather than trying to stay untainted around it, and it keeps working
-        -- in combat because SendChatMessage always did.
-        local btn = CreateFrame("Button", nil, f)
+        -- HookScript("OnClick") appends an insecure hook that runs AFTER the
+        -- secure handler completes -- the documented safe pattern. (SetScript
+        -- replaces the handler and taints it.)
+        local btn = CreateFrame("Button", nil, f, "SecureActionButtonTemplate")
         btn:SetSize(BTN_W - 4, BTN_H)
         btn:SetPoint("TOPLEFT", f, "TOPLEFT", 2, yOfs)
         btn:RegisterForClicks(SQ_GetClickEdge())
@@ -4291,20 +4289,25 @@ function BH:UpdateCalloutsButtonFrame()
         bg:SetColorTexture(SQ_COLORS.control[1], SQ_COLORS.control[2], SQ_COLORS.control[3], 1)
         btn:SetHighlightTexture("Interface\\BUTTONS\\WHITE8X8")
         btn:GetHighlightTexture():SetVertexColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 0.4)
+        local slash = CALLOUT_SLASH_MAP[callout.channel] or "/instance"
+        btn:SetAttribute("type", "macro")
+        btn:SetAttribute("macrotext", slash .. " " .. (callout.message or ""))
         local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         lbl:SetAllPoints()
         lbl:SetText(callout.label or "Callout")
         ns.ApplyAccent(lbl, "text")
-        local sndName  = callout.sound or "None"
-        local chatChan = CALLOUT_CHANNEL_MAP[callout.channel] or "INSTANCE_CHAT"
-        local message  = callout.message or ""
-        -- One handler now rather than a secure action plus an appended hook:
-        -- there is no secure action left to append to, and the message and the
-        -- sound should travel together anyway.
-        btn:SetScript("OnClick", function()
-            if message ~= "" then
-                SendChatMessage(message, chatChan)
-            end
+        local sndName = callout.sound or "None"
+        -- Sound only. The message is sent by the secure macro attribute above,
+        -- because SendChatMessage is itself protected -- it carries the same
+        -- HasRestrictions flag as AddAuraSound, and calling it from here was
+        -- blocked in Mythic+ even on a real mouse click, which normally permits
+        -- a protected call. Being refused anyway means the path is tainted.
+        --
+        -- So the secure button is not the problem and removing it was a
+        -- mistake: it is the mechanism that survives taint, which is why it
+        -- exists. Something taints this addon during a key; that is the bug,
+        -- and this is not the place to work around it.
+        btn:HookScript("OnClick", function()
             if sndName ~= "None" then
                 PlaySQSound(sndName)
                 -- Broadcast sound to other addon users in the group

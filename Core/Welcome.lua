@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.65"] = {
+        "Reverted the 1.64 callout change \226\128\148 it broke callouts in Mythic+ for setups where they had been working.",
+    },
     ["1.64"] = {
         "Fixed dungeon callout buttons doing nothing when clicked in Mythic+.",
         "Fixed buff sounds switching themselves off when the settings were opened with /sq config.",
