@@ -239,6 +239,26 @@ model forbids addons from mutating protected/secure frames during combat:
 - When adding new features that touch frames, action buttons, or secure state, check
   `InCombatLockdown()` and queue mutations rather than assuming they'll succeed mid-combat.
 
+**Protected calls fail silently, differently per player, and mostly in M+.** Both 1.64 bugs were
+this, reported by a user and not reproducible locally, because whether an execution path is
+tainted depends on what else has run first. Three things learned the hard way:
+
+- **`HasRestrictions = true` in the API docs means *protected*.** `C_UnitAuras.AddAuraSound`
+  carries it. Calling it from a chain that began at the chat edit box — typing `/squizz`, which
+  runs `CreateOptionsPanel` → `RefreshJustForKelTab` → the registration — trips
+  `ADDON_ACTION_BLOCKED`. The fix is a `C_Timer.After(0)`, which runs with none of that lineage.
+  Check that flag before building on any new API.
+- **A `pcall` around a protected call hides the failure and makes it look cosmetic.** It was not:
+  the unregister ran, the re-register was blocked, and every buff sound stayed off until relog.
+  If a `pcall` wraps something protected, make the failure *visible* in the UI rather than
+  swallowing it.
+- **Running a macro from `SecureActionButtonTemplate` is a protected action**, so addon-created
+  macro buttons stop working in M+. Dungeon callouts used one to send chat and silently did
+  nothing there. `SendChatMessage` is *not* protected and works in combat — prefer it, and reach
+  for a secure button only for things that genuinely require one (the raid tools' markers and
+  pull timer do). Note Blizzard blocks addon-initiated `SAY`/`YELL` inside instances, which is
+  why callouts no longer offer them.
+
 **Secret aura values (client 12.1.0+)**: as of 12.1.0, `C_UnitAuras.GetAuraDataByIndex` **throws**
 a taint error ("Auras cannot be accessed when secret") instead of returning `nil` when auras are
 secret — which happens in combat, encounters, M+, and PvP, i.e. exactly when these reminders most
