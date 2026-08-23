@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.64"] = {
+        "Fixed buff sounds switching themselves off when the settings were opened with /sq config.",
+    },
     ["1.63"] = {
         "Dungeon callouts now use a dropdown \226\128\148 pick a dungeon, see only its callouts.",
         "This season's Mythic+ dungeons are listed already, so you can write callouts without travelling.",

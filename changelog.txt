@@ -1,18 +1,11 @@
 Squizzumables Changelog
 =======================
 
-V1.63
+V1.64
 
-- Dungeon callouts are now set up from a dropdown instead of one long stacked list. Pick a
-  dungeon and you see only its callouts, so the tab stays the same size no matter how many
-  dungeons you have set up
-- This season's Mythic+ dungeons are in that dropdown already. You no longer have to be standing
-  in a dungeon to write callouts for it -- do the lot from anywhere. The list comes from the
-  game itself, so it refreshes on its own when the season rotates
-- Anywhere else you have been -- raids, older dungeons, scenarios -- is remembered the first time
-  you zone in and stays in the dropdown from then on. Raids always worked, there was just no way
-  to reach them without being inside one
-- The number beside a dungeon is how many callouts it has, so you can see what is set up without
-  opening each one. Nothing is saved just by looking at a dungeon; the entry is created when you
-  add your first callout to it
-- "+ Add Current Dungeon" is still there and now jumps the dropdown to wherever you are standing
+- Fixed buff sounds silently switching themselves off when you opened the settings with a slash
+  command. Registering a buff sound is a protected call, and the game blocks those when the chain
+  starts at the chat box -- so typing /sq config cleared every registration and then could not put
+  them back, leaving you with no buff sounds until your next login. Opening the panel any other
+  way was unaffected, which is why it took a bug report to find. The registration now happens a
+  moment later, out of that chain, where the game allows it

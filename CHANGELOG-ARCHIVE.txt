@@ -8,6 +8,23 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.63
+
+- Dungeon callouts are now set up from a dropdown instead of one long stacked list. Pick a
+  dungeon and you see only its callouts, so the tab stays the same size no matter how many
+  dungeons you have set up
+- This season's Mythic+ dungeons are in that dropdown already. You no longer have to be standing
+  in a dungeon to write callouts for it -- do the lot from anywhere. The list comes from the
+  game itself, so it refreshes on its own when the season rotates
+- Anywhere else you have been -- raids, older dungeons, scenarios -- is remembered the first time
+  you zone in and stays in the dropdown from then on. Raids always worked, there was just no way
+  to reach them without being inside one
+- The number beside a dungeon is how many callouts it has, so you can see what is set up without
+  opening each one. Nothing is saved just by looking at a dungeon; the entry is created when you
+  add your first callout to it
+- "+ Add Current Dungeon" is still there and now jumps the dropdown to wherever you are standing
+
+
 V1.62
 
 - Cooldown Manager sound alerts now follow spec and talent changes without a reload. Two things

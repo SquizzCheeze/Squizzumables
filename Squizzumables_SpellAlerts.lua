@@ -353,7 +353,7 @@ end
 -- from several places, and a stale registration is worse than a missing one --
 -- it plays a sound the player has stopped asking for, with nothing on screen
 -- explaining where it came from.
-function BH:RefreshAuraSoundRegistrations()
+local function ApplyAuraSoundRegistrations(self)
     if not AuraSoundsAvailable() then return end
     ClearAuraSoundRegistrations()
     if not self.settings then return end
@@ -386,6 +386,41 @@ function BH:RefreshAuraSoundRegistrations()
             end
         end
     end
+end
+
+-- Public entry point, deliberately deferred onto a timer.
+--
+-- AddAuraSound is protected -- that is what HasRestrictions means on it -- and
+-- calling it from a chain that began at the chat edit box trips
+-- ADDON_ACTION_BLOCKED. Typing /sq config is exactly such a chain: SendText ->
+-- the slash handler -> CreateOptionsPanel -> RefreshJustForKelTab -> here.
+-- Reported by a user on 1.63.
+--
+-- The pcall meant no Lua error, which made it look cosmetic. It was not:
+-- ClearAuraSoundRegistrations runs first and succeeds, then every re-register
+-- is blocked, so opening the options by slash command silently unregistered
+-- every buff sound until the next login.
+--
+-- A C_Timer callback runs with none of that lineage, so the same call is
+-- allowed. Debounced with a flag because several refreshes arrive together
+-- while the panel is being built, and there is no point doing the work more
+-- than once per frame.
+local registrationPending = false
+function BH:RefreshAuraSoundRegistrations()
+    if not AuraSoundsAvailable() then return end
+    if registrationPending then return end
+    registrationPending = true
+    C_Timer.After(0, function()
+        registrationPending = false
+        ApplyAuraSoundRegistrations(BH)
+        -- The editor draws "active" / "not registered" from the results, so it
+        -- would otherwise show the state from before this ran. Only the editor
+        -- is redrawn, not the whole tab: RefreshJustForKelTab calls back into
+        -- this function and would loop.
+        if BH.kelBuffEditor and BH.RebuildBuffSoundEditor then
+            BH:RebuildBuffSoundEditor()
+        end
+    end)
 end
 
 -- Did the client accept this spell's registration? Read by the tab, so a
