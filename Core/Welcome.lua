@@ -22,7 +22,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
     ["1.64"] = {
+        "Fixed dungeon callout buttons doing nothing when clicked in Mythic+.",
         "Fixed buff sounds switching themselves off when the settings were opened with /sq config.",
+        "Say and Yell removed from callouts \226\128\148 the game blocks addons from using them in instances.",
     },
     ["1.63"] = {
         "Dungeon callouts now use a dropdown \226\128\148 pick a dungeon, see only its callouts.",
