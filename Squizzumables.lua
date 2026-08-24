@@ -3990,7 +3990,7 @@ function BH:RefreshClassBuffList()
                         AddSpellRow(auraInfo.spellID, false, CLASS_NAMES[playerClass] or playerClass)
                     end
                 end
-                -- Weapon imbues (e.g. Holy Paladin Rites from Lightsmith hero talents)
+                -- Weapon imbues (Paladin Lightsmith Rites; Holy and Protection both)
                 if info.weaponImbues then
                     for _, imbueInfo in ipairs(info.weaponImbues) do
                         if imbueInfo.spellID then
@@ -7586,30 +7586,32 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
             end
             end -- challengeModeActive else
 
-            -- Holy Paladin weapon imbue buttons (Rite of Sanctification / Rite of Adjuration)
-            -- Lightsmith hero talents; mutually exclusive; replace oils for Holy spec.
+            -- Lightsmith weapon imbue buttons (Rite of Sanctification / Rite of Adjuration)
+            -- Lightsmith is a Holy *and* Protection hero tree, and the two Rites are a
+            -- choice node inside it, so this gates on knowing the spell and never on
+            -- spec. The old `specID == 65` check hid the button from every Protection
+            -- Lightsmith paladin. The oil block below keys off the same two spell IDs
+            -- and must stay in agreement, or a Rite user gets an oil button competing
+            -- for the same main-hand slot.
             -- Not shown in M+ (can't be cast mid-key), not shown while dead.
             if not BH.challengeModeActive and not UnitIsDeadOrGhost("player") then
-                local riteSpecID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
-                if riteSpecID == 65 then  -- Holy Paladin
-                    local paladinRites = info.weaponImbues or {}
-                    for _, rite in ipairs(paladinRites) do
-                        if rite.spellID and BH.PlayerKnowsSpell(rite.spellID) and self:IsEnabled(rite.spellID) then
-                            local hasMH, mhExpiration = GetMainHandEnchantInfo()
-                            local needsRefresh = self:NeedsRefresh(rite.spellID, hasMH and mhExpiration or nil)
-                            if needsRefresh then
-                                local icon = GetSpellIcon(rite.spellID)
-                                local spellName = C_Spell.GetSpellName(rite.spellID)
-                                if icon and spellName then
-                                    -- Use a macro so the weapon enchant cursor auto-targets slot 16 (MH)
-                                    local macroText = "/cast " .. spellName .. "\n/use 16"
-                                    self.buttons[id] = CreateButton(id, icon, "Apply imbue", "macro", macroText, rite.label, nil, hasMH and mhExpiration or nil)
-                                    classBuff_spellIDs_this_pass[rite.spellID] = true
-                                    id = id + 1
-                                end
+                local paladinRites = info.weaponImbues or {}
+                for _, rite in ipairs(paladinRites) do
+                    if rite.spellID and BH.PlayerKnowsSpell(rite.spellID) and self:IsEnabled(rite.spellID) then
+                        local hasMH, mhExpiration = GetMainHandEnchantInfo()
+                        local needsRefresh = self:NeedsRefresh(rite.spellID, hasMH and mhExpiration or nil)
+                        if needsRefresh then
+                            local icon = GetSpellIcon(rite.spellID)
+                            local spellName = C_Spell.GetSpellName(rite.spellID)
+                            if icon and spellName then
+                                -- Use a macro so the weapon enchant cursor auto-targets slot 16 (MH)
+                                local macroText = "/cast " .. spellName .. "\n/use 16"
+                                self.buttons[id] = CreateButton(id, icon, "Apply imbue", "macro", macroText, rite.label, nil, hasMH and mhExpiration or nil)
+                                classBuff_spellIDs_this_pass[rite.spellID] = true
+                                id = id + 1
                             end
-                            break  -- only one Rite can be known at a time (mutually exclusive talents)
                         end
+                        break  -- only one Rite can be known at a time (choice node)
                     end
                 end
             end
@@ -7964,15 +7966,14 @@ function BH:CollectConsumableButtons(id, addedItems, class)
     end
 
     -- oil: check for specific item IDs in bags, separate MH and OH buttons
-    -- Skip oil buttons for Holy Paladins with a Lightsmith Rite talent (they use weapon imbues instead)
-    local holyPaladinHasRite = false
+    -- Skip oil buttons for any paladin with a Lightsmith Rite talent -- the Rite occupies
+    -- the same main-hand enchant slot an oil would, so offering both competes for one slot.
+    -- Gated on knowing the spell, not on spec: Lightsmith is Holy and Protection both.
+    local hasLightsmithRite = false
     if class == "PALADIN" then
-        local oilSpecID = PlayerUtil and PlayerUtil.GetCurrentSpecID and PlayerUtil.GetCurrentSpecID()
-        if oilSpecID == 65 then  -- Holy Paladin
-            holyPaladinHasRite = BH.PlayerKnowsSpell(433568) or BH.PlayerKnowsSpell(433583)
-        end
+        hasLightsmithRite = BH.PlayerKnowsSpell(433568) or BH.PlayerKnowsSpell(433583)
     end
-    if not holyPaladinHasRite and BH.consumables and BH.consumables.oil then
+    if not hasLightsmithRite and BH.consumables and BH.consumables.oil then
         local hasMH, mhExpiration = GetMainHandEnchantInfo()
         local hasOH, ohExpiration = GetOffHandEnchantInfo()
         local hasOHWeapon = HasOffHandWeapon()

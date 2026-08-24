@@ -4,7 +4,7 @@
 ## Author: Squizz
 ## X-License: MIT
 ## X-Curse-Project-ID: 1483099
-## Version: 1.66
+## Version: 1.67
 ## SavedVariables: SquizzumablesDB
 ## IconTexture: Interface\Icons\INV_Misc_Food_15
 ## AddonCompartmentFunc: Squizzumables_OnAddonCompartmentClick

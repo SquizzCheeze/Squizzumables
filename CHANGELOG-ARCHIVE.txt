@@ -8,6 +8,19 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.66
+
+- Fixed buff sounds not registering when the change happened during combat. Handing a sound to
+  the game is a protected call and combat refuses it, so an alert added, edited or switched on
+  mid-fight was dropped on the spot and stayed silent until you reloaded. Those registrations are
+  now held and applied the moment you leave combat. Sounds you already had registered were never
+  affected -- they kept playing throughout
+- The callout buttons doing nothing in Mythic+, open since 1.64, turned out not to be this addon
+  at all. Another addon had tainted the game's chat-send function, which blocks every addon's
+  secure macro from sending chat on that client -- ours was just one casualty. Removing that addon
+  fixed the callouts, with no change needed here. In the reported case it was GBankManager. If
+  your callouts do nothing in a key, the error traceback names whichever addon is responsible
+
 V1.65
 
 - Reverted the callout button change from 1.64. That version changed how callout buttons send
@@ -19,6 +32,7 @@ V1.65
   appear, so they could never have worked there
 - The original report -- callout buttons doing nothing in a key -- is still open. It affects some
   setups and not others, and chasing it needs a log from a client where it actually happens
+
 
 V1.64
 
@@ -378,12 +392,14 @@ V1.60
 - Added /sq auras — reports whether each configured aura is actually detectable on you, to
   tell a mis-configured spell ID apart from a show/hide bug
 
+
 V1.59
 
 - Guild Invite right-click: fixed the "Guild Invite" entry never appearing on unit frame menus
   (party/raid/target/focus/nameplate) while it worked fine from the Friends list — unit-based
   menus pass only a unit token in contextData, not name/server, so the name lookup came back
   empty and the option was skipped; the name/realm is now derived from the unit when absent
+
 
 V1.58
 
@@ -397,6 +413,7 @@ V1.58
   every such comparison is individually guarded (UnitHasBuff's fallback scan, NeedsRefresh, and
   the per-button timer countdown)
 
+
 V1.57
 
 - M+ Death Tally: fixed deaths never being detected — neither the plain UNIT_DIED game event
@@ -405,6 +422,7 @@ V1.57
   group member every 0.5s and edge-detects the transition instead
 - M+ Death Tally: added a close (X) button so the summary can be dismissed manually once you're
   done with M+; reappears fresh on the next key (CHALLENGE_MODE_START)
+
 
 V1.56
 
@@ -419,13 +437,16 @@ V1.56
   - Names can be class-colored (toggle) and can hide the realm suffix (toggle)
   - Title and row text each have their own font size slider
 
+
 V1.55
 
 - Added new ducky lust song
 
+
 V1.54
 
 - Update to 12.0.7
+
 
 V1.53
 
@@ -438,12 +459,15 @@ V1.53
   - Fixed invite call to use C_GuildInfo.Invite() (correct C_GuildInfo namespace)
   - Cross-realm support: correctly appends -Server for players on different realms
 
+
 V1.52
 
 - Added right-click "Guild Invite" option on unit frames (party, raid, target, focus, friends list, etc.)
 - Fixed healer CC alerts not properly detecting when healers are out of range or zoning into instances
 
+
 V1.51
+
 
 V1.50
 - Interrupt tracker: added failed kick detection — own interrupt bars flash red on a missed kick and green on a successful one
@@ -457,9 +481,11 @@ V1.50
 - Interrupt tracker: inspect is now queued for all registered party members regardless of class
   - Previously only DRUID/PALADIN/PRIEST/EVOKER/MONK were inspected; DEATHKNIGHT/HUNTER/MAGE/WARRIOR CDR talents were never applied
 
+
 V1.49
 - Feast announce: added per-context channel selection — separate dropdowns for Solo, Party, Instance, and Raid
   - defaults are NONE / PARTY / INSTANCE_CHAT / RAID
+
 
 V1.48
 - Added sound "Squizzumables: Ducky's Lust Attack" (DUCKYS_LUST_ATTACK.ogg) to all sound dropdowns
@@ -469,10 +495,12 @@ V1.48
 - Lust alert: added "Loop sound" checkbox and repeat interval (sec) field in the Just For Kel settings tab
   - When enabled, the alert sound repeats at the configured interval for the full duration of the alert
 
+
 V1.47
 - Lust alert: fixed false alert firing on zone transitions (entering/leaving dungeons, hearthing, portals)
   - Root cause: UNIT_AURA fires as auras re-apply after a zone change; if lustWasActive was false it would detect Sated and fire
   - Fix: dedicated playerZoning flag suppresses the lust alert for 3 seconds after any zone transition
+
 
 V1.46
 - Added "Just For Kel" tab in settings with configurable spell alerts
@@ -482,6 +510,7 @@ V1.46
   - Each alert can be individually enabled/disabled; a Test button previews the image and sound immediately
   - Alert image is draggable and lockable; scale adjustable via slider
   - Master enable/disable toggle for all spell alerts
+
 
 V1.45
 - Interrupt tracker: fixed own player bar showing wrong (too low) cooldown during combat
@@ -494,6 +523,7 @@ V1.45
 - Coach's Whistle reminder: fixed flashing on/off when enabling preview mode — added previewMode guard (shows immediately, bypasses group/buff checks)
 - Coach's Whistle settings: fixed Items tab section not appearing even when trinket is equipped — COACH_WHISTLE_ITEM_ID constant was declared after RefreshItemList, now moved before it
 - Coach's Whistle reminder: fixed reminder scale slider layout in Items tab (was anchored to label's right edge, now a proper full-width CreateSQSlider row)
+
 
 V1.44
 - Added Emerald Coach's Whistle (item 193718) trinket button detection
@@ -512,6 +542,7 @@ V1.44
 - Fixed own interrupt bar occasionally flashing READY immediately after casting — added a guard so engine cooldown reads can't overwrite a freshly-set cooldown end time
 - Added periodic party re-scan (every 5s) so members who joined with delayed role/spec data get registered without needing a roster update
 
+
 V1.43
 - Holy Paladins with Rite of Sanctification or Rite of Adjuration (Lightsmith hero talents) now get a weapon imbue button instead of oil buttons
   - The button auto-targets the main hand weapon slot on click — no weapon cursor interaction required
@@ -519,16 +550,20 @@ V1.43
   - Oil buttons and the "no oil in bags" reminder are suppressed for Holy Paladins with either Rite talented
 - Fixed incorrect spell ID for Rite of Sanctification (was pointing to an internal dev spell)
 
+
 V1.42
 - Rewrote interrupt tracker to be more reliable in combat
+
 
 V1.41
 - Fix feast announce 
 - Pet summon buttons (Call Pet, Summon Pet) are now available during active Mythic+ keys — previously they were hidden along with all other class buff buttons
 
+
 V1.40
 - Fixed shield buttons (Lightning Shield / Water Shield) reappearing at the start of a Mythic+ key — all class buff buttons are now correctly suppressed for the duration of an active key, not just Paladin aura buttons
 - Fixed Lua error "attempt to call a nil value" on line ~5054 — IsCurrentSpell does not exist in Midnight 12.0.5; the aura detection fallback now guards against the API being absent
+
 
 V1.39
 - Added spec-specific profiles: you can now assign a different profile to each of your specs and the addon will automatically swap to the right one whenever you change spec
@@ -542,15 +577,19 @@ V1.39
 - Fixed Lightning Shield button showing even when Water Shield was already active (and vice versa) — both spells share the same buff slot so if either one is up, neither button shows
 - Fixed text clipping in the Profiles section of the Settings tab — increased spacing between the section header and the description text, and widened the text area to prevent wrapping onto too many lines
 
+
 V1.38
 - Update toc for 12.0.5
+
 
 V1.37
 - Minor Bug Fixes
 
+
 V1.36
 - Fixed a Lua error when opening addon settings in combat (a protected WoW function was being called from a script, which isn't allowed mid-fight)
 - Added a channel dropdown for Feast Announce — choose where the message goes: Party, Instance, Raid, Raid Warning, Say, or Yell (defaults to Party)
+
 
 V1.35
 - Fixed continuous memory growth and periodic stuttering caused by named WoW frames being allocated on every UpdateButtons call and never being freed (WoW cannot GC frames that have a global name). All action buttons are now anonymous and reused via a pool (SQ_BUTTON_POOL) — frames are returned to the pool on each UpdateButtons call and reconfigured when needed rather than reallocated.
@@ -561,6 +600,7 @@ V1.35
 - Fixed Paladin aura alert sound going off on every resurrection in a raid — the addon was briefly unable to read your aura while you were dead and thought it was missing, causing a false alert the moment you stood back up
 - Fixed the same false alert while in ghost form
 
+
 V1.33
 - Fixed Paladin aura buttons playing their alert sound after every loading screen even when the aura was already active (WoW restores aura state after PLAYER_ENTERING_WORLD fires, causing a false "buff missing" detection on the first update pass — sounds are now suppressed for 3 seconds after each loading screen)
 - Paladin aura buttons are now hidden during active M+ keystones — auras cannot be swapped mid-key so the buttons served no purpose and were causing confusion
@@ -568,9 +608,11 @@ V1.33
 - Holy Paladin with Devotion Aura already active: all other aura buttons are hidden (committed to Devotion Aura)
 - Non-Holy Paladins: behaviour unchanged (hide all buttons as soon as any aura is active)
 
+
 V1.31
 - Fixed Paladin aura buttons staying visible in M+ even when the paladin already had an aura active (switched from GetPlayerAuraBySpellID to GetUnitAuraBySpellID — the former uses a filtered API that does not track passive toggle auras like Devotion Aura in M+)
 - Fixed the button frame resetting to the centre of the screen on every reload
+
 
 V1.30
 - Added a new "Sounds" tab to the addon settings where you can manage all sound alerts
@@ -581,6 +623,7 @@ V1.30
 - Tab order is now: Settings, Items, Class Buffs, Raid Tools, Reminders, Interrupts, Cooldowns, Sounds
 - Fixed sound dropdown menus being too narrow — they now automatically widen to fit the longest sound name in the list
 
+
 V1.29
 - Fixed a recurring Lua error in Blizzard's inspect UI (InspectPVPFrame) that could fire hundreds of times per session when using the interrupt tracker alongside other addons that also inspect party members
 - Fixed interrupt tracker crashing on reload while already inside a raid group
@@ -589,11 +632,13 @@ V1.29
 - Interrupt tracker now waits briefly before starting its own inspect pass, reducing clashes with other addons inspecting the same players at the same time
 - Fixed Beacon of Virtue talent not suppressing the Beacon reminder for some Holy Paladins
 
+
 V1.28
 - Cooldown Manager locked groups now show spell tooltips on hover while still being fully click-through
 - Fixed an error that occurred when the Cooldown Manager tried to update frames during combat
 - Raid marker buttons now only appear when you are in a party or raid group
 - Flask buttons now correctly show silver or gold quality pips (all four Midnight flask types)
+
 
 V1.27
 - Cooldown Manager locked groups are now truly click-through: you can click, target, and interact with the game world through them while still seeing spell tooltips on hover
@@ -601,6 +646,7 @@ V1.27
 - Added Food, Flask, and Oil reminders that show everywhere outside of combat, not just inside instances
 - Removed the drag handle rectangles from all reminder frames — you can now drag any reminder from anywhere on the frame
 - Fixed repair reminder and Battle Res counter staying visible after closing Preview Mode
+
 
 V1.26
 - Interrupt tracker now inspects party members to detect their spec and talents
@@ -641,8 +687,10 @@ V1.26
     - Hide Out of Combat (auto-fade groups outside combat)
     - Lock (click-through) per group
 
+
 V1.25
 - Rebuilt Battle Res Counter from scratch 
+
 
 V1.24
 - Fixed ADDON_ACTION_FORBIDDEN taint from brez event unregistration firing outside M+ on every combat end

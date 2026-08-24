@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.67"] = {
+        "Rite of Sanctification and Rite of Adjuration now show for Protection Paladins, not just Holy.",
+        "Weapon oil buttons step aside for any Lightsmith Rite, so the two no longer fight over the main-hand slot.",
+    },
     ["1.66"] = {
         "Buff sounds now register correctly when you add or change one during combat \226\128\148 those were being dropped until a reload.",
         "The Mythic+ callout bug turned out to be another addon tainting chat, not this one \226\128\148 removing it fixes them.",

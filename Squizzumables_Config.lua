@@ -162,8 +162,11 @@ BH.defaults = {
                 { spellID = 465 },      -- Devotion Aura
                 { spellID = 317920, label = "Conc Aura" },    -- Concentration Aura
             },
-            -- Weapon imbues for Holy Paladin (Lightsmith hero talents, mutually exclusive)
-            -- Only one can be known at a time; replaces oils for Holy spec.
+            -- Lightsmith Rites (hero talent choice node, so mutually exclusive).
+            -- Lightsmith is available to Holy *and* Protection -- do not gate these on
+            -- spec anywhere; knowing the spell is the only correct test.
+            -- These occupy the main-hand enchant slot, so they replace oils for anyone
+            -- who has one (see the oil block in Squizzumables.lua).
             weaponImbues = {
                 { spellID = 433568, label = "Rite of Sanctification" },  -- +5% armor, +2% primary stat (enchant 7143)
                 { spellID = 433583, label = "Rite of Adjuration" },       -- +3% Stamina, Holy Power burst heal (enchant 7144)
