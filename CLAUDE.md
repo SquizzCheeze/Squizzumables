@@ -29,17 +29,22 @@ without a fundamentally different detection approach that doesn't depend on read
 - No test framework exists. Verification is manual, in-game, via slash commands (see below) and
   observing behavior in a dungeon/raid/party context.
 - Linting is done via the **WoW Lua Language Server** (`tradeskillmaster.wowlua-ls`), which is what
-  actually produces the diagnostics in the editor — every message's `source` reads `wowlua_ls`. It
-  declares the Lua 5.1 runtime and the WoW API globals used across the addon; the `ketho.wow-api`
-  extension supplies full API types. `sumneko.lua` is also installed but is not the server serving
-  these results.
+  produces the diagnostics in the editor — every message's `source` reads `wowlua_ls`. It has the
+  WoW API stubbed in already, so no annotations extension is needed for the check to pass; the
+  `ketho.wow-api` extension is still worth having for hovers and for the FrameXML source it ships
+  (see "Researching the WoW API").
 
-  **Its config file is `.wowluarc.json`, not `.luarc.json`.** `.wowluarc.json` sets
-  `library: ["Libs/"]` (which is what excludes LibStub/LibSharedMedia from the check) and the
-  `globals.read` / `globals.write` allowlists. `.luarc.json` and `.vscode/settings.json` are
-  sumneko's and carry a parallel copy of the same globals; changing one does not change the other,
-  and only `.wowluarc.json` affects the real diagnostics. Verified by moving `.wowluarc.json`
-  aside: the check went from 12 files/0 warnings to 14 files/3 warnings.
+  **`.wowluarc.json` is the only lint config.** It sets `library: ["Libs/"]` (which is what excludes
+  LibStub/LibSharedMedia from the check) and the `globals.read` / `globals.write` allowlists. New
+  globals go there and nowhere else. Verified load-bearing by moving it aside: the check went from
+  12 files/0 warnings to 14 files/3 warnings.
+
+  `sumneko.lua` may also be installed. It is **not** the server serving these results, and it is
+  switched off for this workspace by the one `Lua.diagnostics.enable: false` line in
+  `.vscode/settings.json`. There used to be a `.luarc.json` plus a `Lua.*` block in that settings
+  file carrying a second copy of the globals list for sumneko; the two copies drifted, so both were
+  deleted. Do not reintroduce a second config — if sumneko diagnostics are wanted, they need their
+  own globals list and it will drift again.
 
 - **There IS a CLI lint. Use it — it is the real gate.** The extension ships a headless binary with
   a `check` subcommand:
