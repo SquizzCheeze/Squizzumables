@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.66"] = {
+        "Buff sounds now register correctly when you add or change one during combat \226\128\148 those were being dropped until a reload.",
+        "The Mythic+ callout bug turned out to be another addon tainting chat, not this one \226\128\148 removing it fixes them.",
+    },
     ["1.65"] = {
         "Reverted the 1.64 callout change \226\128\148 it broke callouts in Mythic+ for setups where they had been working.",
     },

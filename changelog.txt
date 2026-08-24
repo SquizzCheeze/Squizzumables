@@ -1,14 +1,15 @@
 Squizzumables Changelog
 =======================
 
-V1.65
+V1.66
 
-- Reverted the callout button change from 1.64. That version changed how callout buttons send
-  their message, which was meant to fix them not firing in Mythic+ for one player -- instead it
-  broke them in Mythic+ for people they had been working for, including me. The old mechanism is
-  back. If callouts worked for you before 1.64, they work again
-- Say and Yell stay removed from callouts. That part of 1.64 was right for its own reasons: the
-  game blocks addons from using those two inside instances, which is the only place callouts
-  appear, so they could never have worked there
-- The original report -- callout buttons doing nothing in a key -- is still open. It affects some
-  setups and not others, and chasing it needs a log from a client where it actually happens
+- Fixed buff sounds not registering when the change happened during combat. Handing a sound to
+  the game is a protected call and combat refuses it, so an alert added, edited or switched on
+  mid-fight was dropped on the spot and stayed silent until you reloaded. Those registrations are
+  now held and applied the moment you leave combat. Sounds you already had registered were never
+  affected -- they kept playing throughout
+- The callout buttons doing nothing in Mythic+, open since 1.64, turned out not to be this addon
+  at all. Another addon had tainted the game's chat-send function, which blocks every addon's
+  secure macro from sending chat on that client -- ours was just one casualty. Removing that addon
+  fixed the callouts, with no change needed here. In the reported case it was GBankManager. If
+  your callouts do nothing in a key, the error traceback names whichever addon is responsible

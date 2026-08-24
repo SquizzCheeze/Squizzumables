@@ -406,21 +406,49 @@ end
 -- while the panel is being built, and there is no point doing the work more
 -- than once per frame.
 local registrationPending = false
+local registrationQueued  = false
+
+local function RunRegistration()
+    -- Never in combat.
+    --
+    -- AddAuraSound is protected, and protected calls are refused in combat the
+    -- same way SetAttribute on a secure frame is -- registration succeeds at
+    -- login and is blocked mid-fight. The C_Timer.After below does not help
+    -- with this: the timer still fires in combat, which is why deferring alone
+    -- left ADDON_ACTION_BLOCKED tracebacks coming out of the timer callback.
+    --
+    -- Queued and flushed on PLAYER_REGEN_ENABLED, the same pattern the CDM
+    -- module uses for its container mutations. Nothing is lost by waiting:
+    -- these registrations only change when settings change, and settings do
+    -- not change mid-pull.
+    if InCombatLockdown() then
+        registrationQueued = true
+        return
+    end
+    registrationQueued = false
+    ApplyAuraSoundRegistrations(BH)
+    -- The editor draws "active" / "not registered" from the results, so it
+    -- would otherwise show the state from before this ran. Only the editor is
+    -- redrawn, not the whole tab: RefreshJustForKelTab calls back into this
+    -- and would loop.
+    if BH.kelBuffEditor and BH.RebuildBuffSoundEditor then
+        BH:RebuildBuffSoundEditor()
+    end
+end
+
 function BH:RefreshAuraSoundRegistrations()
     if not AuraSoundsAvailable() then return end
     if registrationPending then return end
     registrationPending = true
     C_Timer.After(0, function()
         registrationPending = false
-        ApplyAuraSoundRegistrations(BH)
-        -- The editor draws "active" / "not registered" from the results, so it
-        -- would otherwise show the state from before this ran. Only the editor
-        -- is redrawn, not the whole tab: RefreshJustForKelTab calls back into
-        -- this function and would loop.
-        if BH.kelBuffEditor and BH.RebuildBuffSoundEditor then
-            BH:RebuildBuffSoundEditor()
-        end
+        RunRegistration()
     end)
+end
+
+-- Flush a registration that combat postponed. Called from PLAYER_REGEN_ENABLED.
+function BH:FlushQueuedAuraSoundRegistrations()
+    if registrationQueued then RunRegistration() end
 end
 
 -- Did the client accept this spell's registration? Read by the tab, so a

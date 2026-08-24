@@ -248,6 +248,12 @@ tainted depends on what else has run first. Three things learned the hard way:
   runs `CreateOptionsPanel` → `RefreshJustForKelTab` → the registration — trips
   `ADDON_ACTION_BLOCKED`. The fix is a `C_Timer.After(0)`, which runs with none of that lineage.
   Check that flag before building on any new API.
+- **`C_Timer.After(0)` clears call-lineage taint, not combat lockdown.** The timer still fires in
+  combat, so a protected call inside it is still refused — which is how `AddAuraSound` kept
+  throwing `ADDON_ACTION_BLOCKED` from inside the deferral that was supposed to fix it (1.66).
+  Protected work triggered by a settings change must *also* be queued when `InCombatLockdown()`
+  and flushed on `PLAYER_REGEN_ENABLED`, the pattern the CDM module already uses
+  (`BH:FlushQueuedAuraSoundRegistrations`).
 - **A `pcall` around a protected call hides the failure and makes it look cosmetic.** It was not:
   the unregister ran, the re-register was blocked, and every buff sound stayed off until relog.
   If a `pcall` wraps something protected, make the failure *visible* in the UI rather than
@@ -265,11 +271,24 @@ tainted depends on what else has run first. Three things learned the hard way:
   action is refused, do not remove one. Blizzard does block addon-initiated `SAY`/`YELL` inside
   instances, which is a separate and real restriction, and why callouts no longer offer them.
 
-  Still unsolved: callout buttons do nothing in M+ on one player's client and work on another's.
-  Nothing about the addon distinguishes them, so the next step is a `taint.log` (`/console
-  taintLog 1`, reproduce, `/console taintLog 0`, read `Logs/taint.log`) from a client where it
-  reproduces — or an addons-disabled run to see whether something else is the taint source.
-  Do not attempt another mechanism change without that evidence; that is what caused 1.64.
+  **Resolved (2026-08-24): it was another addon.** Callout buttons doing nothing in M+ on one
+  player's client was **GBankManager** tainting the game's chat-send chain, fixed by that player
+  removing it. Nothing in this addon was at fault. Their BugGrabber stack read `SecureTemplates ->
+  RunMacroText -> SendText -> SendChatMessage -> blocked`, attributed to GBankManager — our
+  callout button's exact path. The button fired, the macro ran, the chat send at the end was
+  refused, and *every* addon's secure chat macro was broken on that client.
+
+  **Read the full traceback before theorising: taint blame names the addon that poisoned the
+  path, not the one walking down it.** This is also why 1.64 achieved nothing — it swapped the
+  secure macro for a direct `SendChatMessage`, but `SendChatMessage` was the poisoned endpoint, so
+  both routes ended at the same blocked call while breaking clients that had been working.
+
+  A `/sq taint` diagnostic written to chase this found nothing and was removed in 1.66. It ran
+  `issecurevariable` over variables the addon *owns*, which all report "tainted by Squizzumables"
+  — taint marks ownership, not corruption. If this is ever needed again, check the **protected
+  globals in the path** (`SendChatMessage`, `RunMacroText`) instead; that names the foreign addon
+  in one line. `/console taintLog 1` was a dead end: the CVar exists but writes nothing without a
+  full client restart.
 
 **Secret aura values (client 12.1.0+)**: as of 12.1.0, `C_UnitAuras.GetAuraDataByIndex` **throws**
 a taint error ("Auras cannot be accessed when secret") instead of returning `nil` when auras are
