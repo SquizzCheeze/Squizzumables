@@ -377,7 +377,7 @@ function Rows.Add(parent, y, spec)
     end
     -- A builder may report the height it actually needed -- text rows measure
     -- their own wrapping. Otherwise fall back to the table.
-    local _, measured = build(parent, y, spec)
+    local measured = select(2, build(parent, y, spec))
     if measured then return measured end
     return spec.height and (spec.height + 8) or (ROW_H[spec.type] or 30)
 end

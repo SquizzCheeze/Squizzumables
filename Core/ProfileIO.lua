@@ -45,6 +45,8 @@ local PREFIX = "SQ1!"
 
 local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
+---@param data string
+---@return string
 local function EncodeBase64(data)
     local out, len = {}, #data
     local i = 1
@@ -67,6 +69,8 @@ end
 local B64_INDEX = {}
 for i = 1, #B64 do B64_INDEX[B64:sub(i, i)] = i - 1 end
 
+---@param text string
+---@return string?
 local function DecodeBase64(text)
     text = text:gsub("[^%w%+/=]", "")     -- tolerate pasted line breaks and spaces
     local out = {}

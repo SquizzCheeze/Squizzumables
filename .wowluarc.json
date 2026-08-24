@@ -1,0 +1,21 @@
+{
+  "library": ["Libs/"],
+  "globals": {
+    "read": [
+      "ActionButtonSpellAlertManager",
+      "EditBox_OnTabPressed",
+      "Menu",
+      "UNKNOWNOBJECT",
+      "BACKPACK_CONTAINER",
+      "NUM_BAG_SLOTS",
+      "NUM_REAGENTBAG_SLOTS",
+      "ORDER_HALL_DEATHKNIGHT",
+      "DUNGEON_FLOOR_BROKENSHORE1",
+      "DUNGEON_FLOOR_ICECROWNCITADELDEATHKNIGHT1",
+      "DUNGEON_FLOOR_ICECROWNCITADELDEATHKNIGHT2"
+    ],
+    "write": [
+      "Squizzumables_OnAddonCompartment*"
+    ]
+  }
+}

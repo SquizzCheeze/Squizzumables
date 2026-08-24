@@ -28,12 +28,48 @@ without a fundamentally different detection approach that doesn't depend on read
   `/reload` (or a relog) in-game.
 - No test framework exists. Verification is manual, in-game, via slash commands (see below) and
   observing behavior in a dungeon/raid/party context.
-- Linting is done via the Lua Language Server (see `.luarc.json` and `.vscode/settings.json`),
-  which declares the Lua 5.1 runtime and the WoW API globals used across the addon (plus the
-  `ketho.wow-api` annotations extension for full API types). There is no CLI lint command — this
-  is editor-time diagnostics only.
+- Linting is done via the **WoW Lua Language Server** (`tradeskillmaster.wowlua-ls`), which is what
+  actually produces the diagnostics in the editor — every message's `source` reads `wowlua_ls`. It
+  declares the Lua 5.1 runtime and the WoW API globals used across the addon; the `ketho.wow-api`
+  extension supplies full API types. `sumneko.lua` is also installed but is not the server serving
+  these results.
+
+  **Its config file is `.wowluarc.json`, not `.luarc.json`.** `.wowluarc.json` sets
+  `library: ["Libs/"]` (which is what excludes LibStub/LibSharedMedia from the check) and the
+  `globals.read` / `globals.write` allowlists. `.luarc.json` and `.vscode/settings.json` are
+  sumneko's and carry a parallel copy of the same globals; changing one does not change the other,
+  and only `.wowluarc.json` affects the real diagnostics. Verified by moving `.wowluarc.json`
+  aside: the check went from 12 files/0 warnings to 14 files/3 warnings.
+
+- **There IS a CLI lint. Use it — it is the real gate.** The extension ships a headless binary with
+  a `check` subcommand:
+
+      "$HOME/.vscode/extensions/tradeskillmaster.wowlua-ls-<ver>/server/win32-x64/wowlua_ls.exe" \
+          check "C:/World of Warcraft/_retail_/Interface/AddOns/Squizzumables"
+
+  Several versions are usually installed side by side; take the highest. It checks the whole addon
+  in ~3s, defaults to `--severity warning`, and takes `--severity hint` for the full set (there are
+  ~85 hints, mostly `shadowed-local` on `self` and unused `addonName` locals — noise, not defects).
+  Other subcommands: `evaluate <file>` (tree + types + diagnostics for one file), `test-query`,
+  `doc`, `profile`.
+
+  **It reads the files from disk, so it is accurate immediately after a shell or tool edit** — no
+  window reload, none of the staleness described below.
+
+  Two gotchas found the hard way:
+  - **`---@cast` takes no trailing comment.** Unlike sumneko, this server parses the rest of the
+    line as the type name, so `---@cast x number  some note` yields
+    `undefined-doc-name: undefined type 'number  some note'` **and** silently fails to apply the
+    cast, so whatever `type-mismatch` it was meant to silence comes back. Put the comment on its
+    own line above. `---@param` on a local function is the other tool for these.
+  - Type-mismatch warnings here are usually inference, not bugs: a param whose type LLS widened
+    from a union (`number|string|table`) that the code narrows by testing a *different* variable
+    (e.g. `if actionType == "item" then` narrowing `actionValue`). LLS cannot follow that. Annotate
+    or cast; do not restructure working code to satisfy it.
+
 - There is no Lua interpreter here, so four standalone checks in `.claude/` stand in for the
-  parse the editor cannot run headlessly. Run all four after any bulk edit:
+  parse. They are much faster than the CLI and catch the corruption classes below that a type
+  checker passes happily; run all four after any bulk edit, then the CLI check:
 
       perl .claude/check-backslashes.pl <files>   # lone backslashes: "Fonts\FRIZQT__.TTF"
       perl .claude/check-strings.pl     <files>   # unterminated strings / mangled escapes
@@ -52,13 +88,17 @@ without a fundamentally different detection approach that doesn't depend on read
   can hit the test as easily as the code: bash `printf` and Perl both read `\226` as octal, so a
   control file has to be written with explicit `chr(92)` to contain a real backslash.
 
-  **Do not trust `mcp__ide__getDiagnostics` after editing files from the shell.** The Lua Language
-  Server serves a cached result and does not rescan on an external write, so it reports the
-  previous version of the file — including a clean bill of health for code that no longer exists.
-  `touch` does not invalidate it and neither does re-querying a single URI. The tell is that the
-  reported line numbers no longer land on the constructs named in the message; check one before
-  believing any of it. It is only trustworthy for files edited through the editor itself, so the
-  four checks above are the real gate.
+  **Do not trust `mcp__ide__getDiagnostics` after editing files from the shell** — or from Read /
+  Edit / Write, which are equally external to the editor. The language server serves a cached
+  result and does not rescan on an external write, so it reports the previous version of the file,
+  including a clean bill of health for code that no longer exists. `touch` does not invalidate it
+  and neither does re-querying a single URI; only the user reloading the VS Code window does. The
+  tell is that the reported line numbers no longer land on the constructs named in the message;
+  check one before believing any of it.
+
+  **Run `wowlua_ls.exe check` instead of asking the user to reload.** It is the same server reading
+  the same config off disk, it answers in seconds, and it is never stale. Reserve
+  `getDiagnostics` for files edited through the editor itself.
 
 - `changelog.txt` is maintained by hand and holds **only the version currently being built** —
   the packager ships it verbatim, so anything older in it gets reposted to CurseForge as the new

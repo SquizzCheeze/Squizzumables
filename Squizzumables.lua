@@ -215,16 +215,15 @@ BH.defaultSettings = {
 -- Shared helpers
 -- ============================================================================
 
--- Does the player know this spell?
+-- Does the player know this spell?  See BH.PlayerKnowsSpell below.
 --
--- Plain IsSpellKnown() returns false for spells granted by a talent, and for a
--- base spell that a talent has overridden — so using it alone means a reminder
--- can silently never fire for a given talent build. Check the modern API first
--- and fall back through the older ones, which cover different cases:
---   C_SpellBook.IsSpellKnown      — current API, authoritative when it answers
---   IsPlayerSpell                 — includes talent-granted spells
---   IsSpellKnownOrOverridesKnown  — includes spells replaced by an override
---   IsSpellKnown                  — base spellbook only
+-- This used to fall back through IsPlayerSpell / IsSpellKnownOrOverridesKnown /
+-- IsSpellKnown to cover talent-granted and override spells. All three are now
+-- deprecated aliases into C_SpellBook, and the fallbacks were dead code besides:
+-- C_SpellBook.IsSpellKnown always returns a boolean, so the check ahead of them
+-- returned on every call. If a base spell replaced by a talent override ever
+-- needs to count as known, C_SpellBook.IsSpellKnownOrInSpellBook(spellID) is the
+-- single modern call for it — but that is a behaviour change, not a cleanup.
 --
 -- Inclusive bag range to scan for consumables.
 --
@@ -277,6 +276,9 @@ function BH:RebuildBagCache()
                     cache[itemID] = {
                         count   = (info and info.stackCount) or 1,
                         link    = C_Container.GetContainerItemLink(bag, slot),
+                        -- craftingQuality is real on retail (it drives the quality border);
+                        -- the generated ContainerItemInfo annotation just lags behind it.
+                        ---@diagnostic disable-next-line: undefined-field
                         quality = info and info.craftingQuality,
                         bag     = bag,
                         slot    = slot,
@@ -360,13 +362,16 @@ end
 -- Use this instead of IsSpellKnown anywhere in the addon.
 function BH.PlayerKnowsSpell(spellID)
     if not spellID then return false end
+    -- The IsPlayerSpell / IsSpellKnownOrOverridesKnown / IsSpellKnown globals that
+    -- used to follow this check are all deprecated aliases into C_SpellBook, and
+    -- were unreachable anyway: IsSpellKnown always returns a boolean, so the
+    -- `known ~= nil` return above fired every time. See the note in the release
+    -- notes about C_SpellBook.IsSpellKnownOrInSpellBook if override spells ever
+    -- need to count as known.
     if C_SpellBook and C_SpellBook.IsSpellKnown then
         local known = C_SpellBook.IsSpellKnown(spellID)
         if known ~= nil then return known end
     end
-    if IsPlayerSpell and IsPlayerSpell(spellID) then return true end
-    if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(spellID) then return true end
-    if IsSpellKnown and IsSpellKnown(spellID, false) then return true end
     return false
 end
 
@@ -3965,6 +3970,9 @@ function BH:RefreshClassBuffList()
 
     -- Acquire (or build) the row for one class-buff spell. Keyed by spell ID:
     -- the arguments below are fixed for a given spell, so a cached row stays valid.
+    ---@param spellID number
+    ---@param showMinDuration boolean
+    ---@param className string
     local function AddSpellRow(spellID, showMinDuration, className)
         local row, isNew = self:AcquireWidget("classBuffRowCache", "spell:" .. spellID, function()
             return self:CreateItemRow(sc, yOffset, spellID, "spell", className, nil, showMinDuration, spellID)
@@ -4838,6 +4846,14 @@ local function GetConfigItemQuality(itemLink, craftingQuality)
 end
 
 -- Create a single item row with icon, name, checkbox, and min duration
+---@param parent table
+---@param yOffset number
+---@param itemID number|string  item IDs are numbers; spell rows pass the spell ID
+---@param itemType string  "item" or "spell"
+---@param className string?
+---@param category string?
+---@param showMinDuration boolean?
+---@param soundSpellID number?
 function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category, showMinDuration, soundSpellID)
     local rowHeight = soundSpellID and 56 or 30
     local row = CreateFrame("Frame", nil, parent)
@@ -5047,16 +5063,17 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
             -- Set temporary text showing item ID
             nameText:SetText("Item ID: " .. itemID)
             
-            -- Try GetItemInfo to trigger cache request (returns nil if not cached)
-            local name, _, _, _, _, _, _, _, _, itemTexture = GetItemInfo(itemID)
+            -- Try C_Item.GetItemInfo to trigger cache request (returns nil if not cached)
+            local name, _, _, _, _, _, _, _, _, itemTexture = C_Item.GetItemInfo(itemID)
             if name then
                 nameText:SetText(WithStatLabel(name))
                 if itemTexture then
                     icon:SetTexture(itemTexture)
                 end
             else
-                -- Request item data and use callback
-                local item = Item:CreateFromItemID(itemID)
+                -- Request item data and use callback. Item rows always carry a
+                -- numeric ID; the string half of itemID belongs to spell rows.
+                local item = Item:CreateFromItemID(tonumber(itemID) or 0)
                 if item and not item:IsItemEmpty() then
                     item:ContinueOnItemLoad(function()
                         local loadedName = item:GetItemName()
@@ -5301,6 +5318,8 @@ function BH:RefreshItemList()
     -- Acquire (or build) the row for one consumable, re-anchoring and re-syncing
     -- it rather than rebuilding. Keyed by category + itemID: within a category an
     -- item is always rendered the same way, so a cached row is always valid.
+    ---@param itemID number
+    ---@param category string
     local function AddItemRow(itemID, category)
         local row, isNew = self:AcquireWidget("itemRowCache", category .. ":" .. itemID, function()
             return self:CreateItemRow(self.scrollChild, yOffset, itemID, "item", nil, category)
@@ -5692,6 +5711,20 @@ local function PaintButtonTimer(btn)
     end
 end
 
+-- Annotated because the language server infers unannotated parameter types from call
+-- sites and had guessed `headerText` was a table, which then made every string call
+-- site read as a type mismatch. The types below are what the body actually requires.
+---@param id number
+---@param texture number|string
+---@param tooltip string
+---@param actionType string  "spell", "item", "macro" or "oil"
+---@param actionValue number|string|table  a table only for "oil": { itemID, slot }
+---@param labelText string?
+---@param headerText string?
+---@param expirationTime number?
+---@param itemLink string?
+---@param craftingQuality number?
+---@param bagCount number?
 local function CreateButton(id, texture, tooltip, actionType, actionValue, labelText, headerText, expirationTime, itemLink, craftingQuality, bagCount)
     -- Try to reuse a pooled button; only allocate a new frame when the pool is empty
     local btn = table.remove(SQ_BUTTON_POOL)
@@ -5790,6 +5823,8 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     btn.heartyBadge:SetPoint("TOPRIGHT", btn.icon, "TOPRIGHT", -1, -1)
     local isHearty = false
     if actionType == "item" then
+        -- only "oil" passes a table; "item" is always an item ID
+        ---@cast actionValue number
         if HEARTY_FOOD_IDS[actionValue] then
             isHearty = true
         else
@@ -5864,6 +5899,7 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
             btn.label:SetText(labelText)
         elseif actionType == "item" or actionType == "oil" then
             local itemID = (actionType == "oil") and actionValue.itemID or actionValue
+            ---@cast itemID number
             -- Use short stat label for consumables that have one (e.g. "Int", "Mast")
             local statLabel = CONSUMABLE_STAT_LABELS and CONSUMABLE_STAT_LABELS[itemID]
             if statLabel then
@@ -5886,6 +5922,7 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
                 end
             end
         elseif actionType == "spell" then
+            ---@cast actionValue number
             local spellName = C_Spell.GetSpellName(actionValue)
             btn.label:SetText(spellName or "Spell")
         elseif actionType == "macro" then
@@ -8325,7 +8362,10 @@ function BH:UpdateButtons()
         if self.unlockDummyBtns then
             for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
         end
-        self.unlockDummyBtns = {}
+        -- Held in a local as well as on self: the other branches of this function
+        -- clear self.unlockDummyBtns to nil, so only the local is known non-nil here.
+        local dummyBtns = {}
+        self.unlockDummyBtns = dummyBtns
         local labelHeight = showLabel and 14 or 0
         local btnHeight = size + labelHeight
         for i = 1, 3 do
@@ -8364,7 +8404,7 @@ function BH:UpdateButtons()
                 end
             end
             db:Show()
-            table.insert(self.unlockDummyBtns, db)
+            table.insert(dummyBtns, db)
         end
         if layout == "VERTICAL" then
             self.frame:SetSize(size, 3 * btnHeight + 2 * spacing)
@@ -9922,7 +9962,7 @@ function BH:OnFeastSpellcast(unit, castGUID, spellID)
     else
         msg = "Fresh off the Barbie, no Crocs were harmed in the making of this " .. feastName .. "... I think."
     end
-    SendChatMessage(msg, channel)
+    C_ChatInfo.SendChatMessage(msg, channel)
     -- Broadcast to other Squizzumables users so they can play a sound alert.
     -- The echo back to ourselves also triggers our own sound via CHAT_MSG_ADDON.
     C_ChatInfo.SendAddonMessage("SQ_FEAST", feastName, channel)
@@ -10456,6 +10496,9 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
                 if itemID then
                     local itemLink = C_Container.GetContainerItemLink(bag, slot)
                     local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
+                    -- See the note at the other craftingQuality read: the field exists,
+                    -- the annotation does not.
+                    ---@diagnostic disable-next-line: undefined-field
                     local craftingQuality = containerInfo and containerInfo.craftingQuality
                     local apiQuality = nil
                     if itemLink and C_TradeSkillUI and C_TradeSkillUI.GetItemCraftedQualityByItemInfo then
@@ -10535,6 +10578,7 @@ do
     end
 
     -- Check if a player (by name) is already in our guild
+    ---@param playerName string
     local function IsPlayerInOurGuild(playerName)
         if not IsInGuild() or not playerName then return false end
         local numMembers = GetNumGuildMembers and GetNumGuildMembers() or 0

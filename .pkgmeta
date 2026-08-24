@@ -23,6 +23,7 @@ ignore:
   - .github
   - .vscode
   - .luarc.json
+  - .wowluarc.json
   - .pkgmeta
   - CLAUDE.md
   - CHANGELOG-ARCHIVE.txt
