@@ -12,3 +12,10 @@ V1.67
 - Weapon oil buttons now correctly step aside for Protection Lightsmith Paladins too. A Rite
   occupies the same main-hand slot an oil would, so offering both was two buttons fighting
   over one slot. Holy already behaved this way
+- Buff sounds no longer switch themselves off for the rest of the session when the game
+  refuses to register them. Rebuilding the registrations clears the old ones first, so a
+  refusal used to leave you with no buff sounds at all until you relogged -- reported from
+  LFR, where combat, people leaving the group and the vote-kick popups all pile onto the
+  same protected code path. A refused rebuild is now retried automatically
+- Added /sq buffsounds, listing which buff sounds the game accepted, what it refused and
+  what asked for the last rebuild. Worth running if buff sounds go quiet

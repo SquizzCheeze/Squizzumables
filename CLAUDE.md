@@ -116,8 +116,10 @@ without a fundamentally different detection approach that doesn't depend on read
   `/sq raidtools`, `/sq notes` (reopen the release notes), and the diagnostic dumps `/sq feast`,
   `/sq debug`, `/sq dk`, `/sq timeline`, `/sq auras` (aura secrecy state),
   `/sq auras <spellID>` (per-spell secrecy: run it with the aura up, once out of combat and once
-  in, when an alert fires in one and not the other) and `/sq cdm` (CDM
-  sound wiring). `/squizz` opens config directly and `/squizz <TabID>` jumps to a named page.
+  in, when an alert fires in one and not the other), `/sq cdm` (CDM
+  sound wiring) and `/sq buffsounds` (which `AddAuraSound` registrations the client accepted, what
+  it refused, and which call site asked for the last rebuild — run this first on any
+  blocked-call report about buff sounds). `/squizz` opens config directly and `/squizz <TabID>` jumps to a named page.
   `/ginvite <name>` is the guild invite helper.
 
 ### Researching the WoW API
@@ -302,7 +304,27 @@ tainted depends on what else has run first. Three things learned the hard way:
 - **A `pcall` around a protected call hides the failure and makes it look cosmetic.** It was not:
   the unregister ran, the re-register was blocked, and every buff sound stayed off until relog.
   If a `pcall` wraps something protected, make the failure *visible* in the UI rather than
-  swallowing it.
+  swallowing it. Note the `pcall` does not even catch it: a refusal raises `ADDON_ACTION_BLOCKED`,
+  which is a client event and not a Lua error, so the `pcall` returns `ok == true` and only the
+  missing return value tells you anything.
+
+- **Neither guard is sufficient. Make the operation recoverable instead.** 1.67 took an
+  `ADDON_ACTION_BLOCKED` on `AddAuraSound` from inside the `C_Timer.After(0)` deferral, **out of
+  combat** — the traceback ran through `RunRegistration` past its `InCombatLockdown()` check, so
+  both the lineage fix (1.63) and the combat-queue fix (1.66) were in place and working, and the
+  call was refused anyway. Reported from LFR, with combat, mid-fight group churn and Blizzard's
+  vote-kick popups all active. No root cause was ever established, and chasing one is what burned
+  1.64.
+
+  What made it damaging was the sequencing, not the refusal: `ApplyAuraSoundRegistrations` tears
+  every registration down before rebuilding, so a refused rebuild left the player with **no buff
+  sounds until relog**. The fix is a bounded retry (5 attempts, 3s apart) so a transient refusal
+  recovers on its own, plus `BH.auraSoundRefusal` and `/sq buffsounds` to make it visible.
+
+  Generalise this: for anything protected that runs on a tear-down-then-rebuild shape, assume the
+  rebuild half can be refused for reasons you will not be able to explain, and make it retry.
+  **The traceback cannot tell you who asked for the work** — the stack ends at the `C_Timer`
+  closure — which is why the call sites now pass a trigger label that `/sq buffsounds` prints.
 - **A `SecureActionButtonTemplate` is the fix for taint, not a victim of it. Do not "simplify" one
   away.** 1.64 replaced the dungeon callouts' secure macro button with a plain Button calling
   `SendChatMessage`, on the reasoning that removing the secure button removed the protected

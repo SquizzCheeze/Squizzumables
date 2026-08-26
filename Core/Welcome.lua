@@ -24,6 +24,8 @@ local RELEASE_NOTES = {
     ["1.67"] = {
         "Rite of Sanctification and Rite of Adjuration now show for Protection Paladins, not just Holy.",
         "Weapon oil buttons step aside for any Lightsmith Rite, so the two no longer fight over the main-hand slot.",
+        "Buff sounds now retry when the game refuses to register them, instead of staying off until you relog.",
+        "New /sq buffsounds command showing which buff sounds the game accepted.",
     },
     ["1.66"] = {
         "Buff sounds now register correctly when you add or change one during combat \226\128\148 those were being dropped until a reload.",

@@ -758,7 +758,7 @@ function BH:OnSpecChanged()
     -- client-side aura sound registrations have to follow it whether or not the
     -- options panel happens to be open. Leaving them would keep playing the
     -- previous profile's sounds with nothing on screen explaining why.
-    if self.RefreshAuraSoundRegistrations then self:RefreshAuraSoundRegistrations() end
+    if self.RefreshAuraSoundRegistrations then self:RefreshAuraSoundRegistrations("profile load") end
     if self.optionsPanel and self.optionsPanel:IsShown() then
         self:RefreshSettingsTab()
         self:RefreshItemList()
@@ -10019,7 +10019,7 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         RegisterCustomSoundsWithLSM()
         -- Must follow the LSM registration: the client-side aura sounds need a
         -- resolved file path, and LSM is what resolves a media name to one.
-        if BH.RefreshAuraSoundRegistrations then BH:RefreshAuraSoundRegistrations() end
+        if BH.RefreshAuraSoundRegistrations then BH:RefreshAuraSoundRegistrations("login") end
         BH:CreateRaidToolsFrame()
         BH:LoadAllFramePositions()
         BH:ApplyAllFrameScales()
@@ -10315,6 +10315,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             BH.cdm:PrintSoundDiagnostics()
         else
             print(addonName .. ": Cooldown Manager module not loaded.")
+        end
+    elseif msg == "buffsounds" then
+        if BH.PrintBuffSoundDiagnostics then
+            BH:PrintBuffSoundDiagnostics()
+        else
+            print(addonName .. ": Spell alerts module not loaded.")
         end
     elseif msg == "notes" then
         if BH.ShowReleaseNotes then BH.ShowReleaseNotes() end

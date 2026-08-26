@@ -363,12 +363,14 @@ local function ApplyAuraSoundRegistrations(self)
         removed = Enum.UnitAuraSoundTrigger.Removed,
     }
 
+    local wanted, got = 0, 0
     for spellID, entry in pairs(BuffSounds()) do
         local id = tonumber(spellID)
         if id and type(entry) == "table" then
             for field, trigger in pairs(triggers) do
                 local path = self.ResolveSoundPath and self:ResolveSoundPath(entry[field])
                 if path then
+                    wanted = wanted + 1
                     local ok, soundID = pcall(C_UnitAuras.AddAuraSound, trigger, {
                         unitToken     = "player",
                         spellID       = id,
@@ -376,16 +378,19 @@ local function ApplyAuraSoundRegistrations(self)
                         outputChannel = entry.channel or "Master",
                     })
                     -- A nil ID means the client declined it (AddAuraSound is
-                    -- flagged HasRestrictions). Nothing to fall back to -- there
-                    -- is no addon-side path that works in combat -- so leave it
-                    -- unregistered and let the tab show it as inactive.
+                    -- flagged HasRestrictions). The pcall does not catch that:
+                    -- a refusal raises ADDON_ACTION_BLOCKED, which is a client
+                    -- event and not a Lua error, so `ok` is true either way.
+                    -- The missing ID is the only tell we get.
                     if ok and soundID then
+                        got = got + 1
                         registeredAuraSounds[id .. ":" .. field] = soundID
                     end
                 end
             end
         end
     end
+    return wanted, got
 end
 
 -- Public entry point, deliberately deferred onto a timer.
@@ -408,6 +413,33 @@ end
 local registrationPending = false
 local registrationQueued  = false
 
+-- A refusal is recoverable, and until 1.67 nothing recovered it.
+--
+-- ApplyAuraSoundRegistrations tears every registration down before building the
+-- new ones, on the reasoning that a stale sound is worse than a missing one.
+-- That holds, but it means a refused rebuild does not leave things as they were:
+-- the removals succeed, the adds are blocked, and the player is left with every
+-- buff sound off until something else happens to trigger a rebuild -- in
+-- practice, until relog. Reported from LFR on 1.67, out of combat and from
+-- inside the deferral, so neither of the two guards above explains it.
+--
+-- Rather than theorise about which protected path was poisoned, just retry: the
+-- refusals seen so far are transient, tied to whatever else the client was busy
+-- refusing at the time. Bounded, because a registration can also fail for
+-- reasons no amount of retrying fixes (a sound file that has gone missing), and
+-- a silent forever-loop is its own bug.
+local RETRY_LIMIT   = 5
+local RETRY_DELAY   = 3
+local retryCount    = 0
+local retryScheduled = false
+
+-- Last refusal, for /sq buffsounds. Nil once a rebuild fully succeeds.
+BH.auraSoundRefusal = nil
+-- What asked for the most recent rebuild. The traceback cannot show this: the
+-- stack ends at the C_Timer closure, so by the time the call fails the caller
+-- is long gone, which is exactly what made the 1.67 report hard to place.
+local lastTrigger = "startup"
+
 local function RunRegistration()
     -- Never in combat.
     --
@@ -426,7 +458,29 @@ local function RunRegistration()
         return
     end
     registrationQueued = false
-    ApplyAuraSoundRegistrations(BH)
+    local wanted, got = ApplyAuraSoundRegistrations(BH)
+
+    if wanted and got and got < wanted then
+        BH.auraSoundRefusal = {
+            wanted   = wanted,
+            got      = got,
+            attempt  = retryCount + 1,
+            trigger  = lastTrigger,
+            when     = GetTime(),
+        }
+        if retryCount < RETRY_LIMIT and not retryScheduled then
+            retryCount = retryCount + 1
+            retryScheduled = true
+            C_Timer.After(RETRY_DELAY, function()
+                retryScheduled = false
+                RunRegistration()
+            end)
+        end
+    else
+        BH.auraSoundRefusal = nil
+        retryCount = 0
+    end
+
     -- The editor draws "active" / "not registered" from the results, so it
     -- would otherwise show the state from before this ran. Only the editor is
     -- redrawn, not the whole tab: RefreshJustForKelTab calls back into this
@@ -436,8 +490,14 @@ local function RunRegistration()
     end
 end
 
-function BH:RefreshAuraSoundRegistrations()
+---@param trigger string? label for /sq buffsounds, naming what asked for this
+function BH:RefreshAuraSoundRegistrations(trigger)
     if not AuraSoundsAvailable() then return end
+    lastTrigger = trigger or "unknown"
+    -- A fresh request is a fresh budget: the retries below belong to the
+    -- rebuild that was refused, not to every rebuild for the rest of the
+    -- session.
+    retryCount = 0
     if registrationPending then return end
     registrationPending = true
     C_Timer.After(0, function()
@@ -455,6 +515,45 @@ end
 -- refusal is visible rather than silently doing nothing.
 function BH.BuffSoundRegistered(spellID, field)
     return registeredAuraSounds[tonumber(spellID) .. ":" .. field] ~= nil
+end
+
+-- /sq buffsounds -- what the client actually accepted, and what it refused.
+--
+-- Exists because the ADDON_ACTION_BLOCKED traceback cannot answer the two
+-- questions that matter: which call site asked for the rebuild, and whether the
+-- refusal stuck or a retry recovered it. Run it after a blocked-call report.
+function BH:PrintBuffSoundDiagnostics()
+    if not AuraSoundsAvailable() then
+        print("Squizzumables: AddAuraSound not available on this client.")
+        return
+    end
+    print("|cFF00FF00Squizzumables buff sounds|r")
+    print(("  last rebuild asked for by: %s"):format(lastTrigger))
+    print(("  in combat now: %s"):format(tostring(InCombatLockdown())))
+
+    local n = 0
+    for key, soundID in pairs(registeredAuraSounds) do
+        n = n + 1
+        local id, field = key:match("^(%d+):(.+)$")
+        -- Through Secrets: this command gets run in precisely the tainted
+        -- moments where a spell name comes back secret, and printing one
+        -- directly is how that turns a diagnostic into a second error report.
+        local name = id and C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(tonumber(id))
+        name = BH.Secrets and BH.Secrets.SafeString(name, "?") or "?"
+        print(("    %s (%s) %s -> auraSoundID %s"):format(
+            name, tostring(id), tostring(field), tostring(soundID)))
+    end
+    print(("  %d registration(s) active"):format(n))
+
+    local r = BH.auraSoundRefusal
+    if r then
+        print(("|cFFFF5555  REFUSED: %d of %d registered on attempt %d (trigger: %s, %.0fs ago)|r")
+            :format(r.got, r.wanted, r.attempt, tostring(r.trigger), GetTime() - (r.when or GetTime())))
+        print("|cFFFF5555  Retrying automatically. If this persists, another addon is likely")
+        print("  tainting the protected path -- check a BugGrabber traceback for the addon named.|r")
+    else
+        print("  no refusals since the last successful rebuild")
+    end
 end
 
 -- ============================================================================
@@ -723,7 +822,7 @@ function BH:RebuildBuffSoundEditor()
             s[spellID] = s[spellID] or { channel = "Master" }
             s[spellID][field] = (val ~= "None") and val or nil
             BH:SaveSettings()
-            BH:RefreshAuraSoundRegistrations()
+            BH:RefreshAuraSoundRegistrations("sound changed")
             BH:RebuildBuffSoundGrid()
             BH:RebuildBuffSoundEditor()
         end)
@@ -775,7 +874,7 @@ function BH:RebuildBuffSoundEditor()
         s[spellID] = s[spellID] or {}
         s[spellID].channel = val
         BH:SaveSettings()
-        BH:RefreshAuraSoundRegistrations()
+        BH:RefreshAuraSoundRegistrations("channel changed")
     end)
     chanDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
     chanDrop:SetSelectedValue((entry and entry.channel) or "Master")
@@ -788,7 +887,7 @@ function BH:RebuildBuffSoundEditor()
         rm:SetScript("OnClick", function()
             BH.BuffSounds()[spellID] = nil
             BH:SaveSettings()
-            BH:RefreshAuraSoundRegistrations()
+            BH:RefreshAuraSoundRegistrations("buff sound removed")
             BH:RebuildBuffSoundGrid()
             BH:RebuildBuffSoundEditor()
         end)
@@ -1351,7 +1450,7 @@ function BH:RefreshJustForKelTab()
     -- that catches all of them. Deliberately ahead of the early return: the
     -- registrations must follow the settings even when the tab has never been
     -- built.
-    self:RefreshAuraSoundRegistrations()
+    self:RefreshAuraSoundRegistrations("Kelerts tab refresh")
 
     local content = self.kelTabContent
     if not content then return end
