@@ -17,5 +17,3 @@ V1.67
   refusal used to leave you with no buff sounds at all until you relogged -- reported from
   LFR, where combat, people leaving the group and the vote-kick popups all pile onto the
   same protected code path. A refused rebuild is now retried automatically
-- Added /sq buffsounds, listing which buff sounds the game accepted, what it refused and
-  what asked for the last rebuild. Worth running if buff sounds go quiet

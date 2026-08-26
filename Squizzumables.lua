@@ -2736,7 +2736,7 @@ function BH:BuildRaidToolsTab(parent)
         label = "Show on encounter timeline",
         tooltip = "Adds the pull countdown to Blizzard's encounter timeline, alongside boss abilities. "
                .. "Works for a pull started by anyone in the group, not just your own button. "
-               .. "Needs the timeline to be turned on in Blizzard's settings; /sq timeline reports whether it is.",
+               .. "Needs the encounter timeline itself to be turned on in Blizzard's settings.",
         get = function() return BH.settings.timelinePullTimer ~= false end,
         set = function(v)
             BH.settings.timelinePullTimer = v
@@ -2749,7 +2749,7 @@ function BH:BuildRaidToolsTab(parent)
         type = "text",
         indent = 18,
         width = 370,
-        label = "The timeline may only draw during an encounter, in which case a pre-pull countdown will not appear. Run /sq timeline to check on your client.",
+        label = "The timeline may only draw during an encounter, in which case a pre-pull countdown will not appear.",
     })
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
@@ -10533,6 +10533,14 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             end
         end
     else
+        -- Only the commands a player has a reason to run.
+        --
+        -- The diagnostics -- feast, auras, cdm, timeline, dk, debug, buffsounds
+        -- -- are deliberately absent. They all still work; they are support
+        -- tools, and printing them here only invites people to run dumps they
+        -- have no way to read. Ask for one by name when a bug report needs it.
+        -- Keep this list in step when a *player-facing* command is added, and
+        -- see CLAUDE.md for the full set including the hidden ones.
         print(addonName.." commands:")
         print("  /sq config - open options")
         print("  /sq reset - reset frame position")
@@ -10540,12 +10548,6 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print("  /sq unlock - toggle Unlock Frames (drag everything into place)")
         print("  /sq reload - update buttons")
         print("  /sq notes - reopen the release notes for this version")
-        print("  /sq feast - feast announce diagnostics")
-        print("  /sq auras - paladin aura detection diagnostics")
-        print("  /sq cdm - cooldown manager sound alert diagnostics")
-        print("  /sq timeline - encounter timeline availability, and fire a test event")
-        print("  /sq dk - death knight runeforge diagnostics")
-        print("  /sq debug - show quality info")
         print("  /ginvite <name> - guild invite a player")
     end
 end

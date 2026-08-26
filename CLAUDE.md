@@ -111,9 +111,18 @@ without a fundamentally different detection approach that doesn't depend on read
   `.pkgmeta` ignore list and never ships. **Grep the archive, not `changelog.txt`**, for recent
   behavioral history/root-cause notes before assuming something is a fresh bug — many past fixes
   have detailed root-cause writeups there worth reading first.
+- **The diagnostics are unlisted, and CLAUDE.md is the only place they are written down.** The
+  `/sq` help output prints only the player-facing commands (`config`, `reset`, `raidtools`,
+  `unlock`, `reload`, `notes`, `/ginvite`). Every diagnostic below still works exactly as before —
+  it is just not advertised, because they are support tools and listing them invites players to
+  run dumps they cannot read. Ask for one by name when a bug report needs it. When adding a new
+  diagnostic, wire the handler and **do not** add it to the help block, the changelog or
+  `RELEASE_NOTES`; add it here instead.
+
 - Useful in-game slash commands while developing: `/sq config` (options panel), `/sq reset` (reset
   main frame position), `/sq reload` (recompute buttons), `/sq unlock` (toggle unlock mode),
-  `/sq raidtools`, `/sq notes` (reopen the release notes), and the diagnostic dumps `/sq feast`,
+  `/sq raidtools`, `/sq notes` (reopen the release notes), and the unlisted diagnostic dumps
+  `/sq welcome` (replay the first-run popup), `/sq feast`,
   `/sq debug`, `/sq dk`, `/sq timeline`, `/sq auras` (aura secrecy state),
   `/sq auras <spellID>` (per-spell secrecy: run it with the aura up, once out of combat and once
   in, when an alert fires in one and not the other), `/sq cdm` (CDM
