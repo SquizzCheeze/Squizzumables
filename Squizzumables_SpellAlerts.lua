@@ -34,14 +34,26 @@ local function EnsureAlertFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("HIGH")
+    -- Click-through except while positioning it.
+    --
+    -- This is a big image parked in the middle of the screen at the exact
+    -- moment the fight is busiest, so anything it swallows is swallowed at the
+    -- worst possible time. It used to take the mouse whenever "Lock alert image
+    -- position" was unticked, which was the default, so out of the box the
+    -- alert ate every click underneath it for as long as it was up.
+    --
+    -- Nothing is lost by never taking the mouse here. Outside Unlock Frames the
+    -- frame is hidden unless an alert is firing, so the only window in which it
+    -- could ever be dragged was during a real lust -- and Unlock Frames already
+    -- positions it properly, with a labelled placeholder at the same size and
+    -- anchor (BH:UpdateKelAlertUnlockState, which turns the mouse back on).
     f:EnableMouse(false)
     f:Hide()
 
     f:SetScript("OnMouseDown", function(self, btn)
-        -- Unlock Frames overrides the per-frame lock, so this can be positioned
-        -- alongside everything else without unticking its own checkbox first.
-        if btn == "LeftButton"
-            and (BH.unlockMode or not (BH.settings and BH.settings.kelAlertLocked)) then
+        -- Only reachable in Unlock Frames: nothing else enables the mouse on
+        -- this frame, so no lock check is needed here.
+        if btn == "LeftButton" then
             self:StartMoving()
         end
     end)
@@ -1254,15 +1266,13 @@ function BH:BuildJustForKelTab(parent)
     ns.Rows.AddTooltip(opacitySlider, "Alert Opacity %", "Transparency of the alert image.")
     yOffset = yOffset - 50
 
-    local lockCb = CreateSQCheckbox(content, "Lock alert image position", function(val)
-        BH.settings.kelAlertLocked = val
-        BH:SaveSettings()
-        if BH.kelAlertFrame then BH.kelAlertFrame:EnableMouse(not val) end
-    end)
-    lockCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelLockCb = lockCb
-    ns.Rows.AddTooltip(lockCb, "Lock alert image position", "Stops the alert image being dragged.")
-    yOffset = yOffset - 28
+    -- "Lock alert image position" used to live here. The alert is click-through
+    -- unconditionally now, so the checkbox had nothing left to control: it is
+    -- Unlock Frames that makes the image draggable, and it always did override
+    -- this setting anyway. Removed rather than left as a control that does
+    -- nothing, and settings.kelAlertLocked went with it. Old profiles may still
+    -- carry the key; nothing reads it, which is harmless, so there is nothing
+    -- for a migration to repair.
 
     -- ── BUFF SOUNDS ───────────────────────────────────────────────────────
     --
@@ -1490,10 +1500,6 @@ function BH:RefreshJustForKelTab()
     if self.kelOpacitySlider then
         self.kelOpacitySlider:SetValue(math.floor(((la.opacity) or 1.0) * 100 + 0.5))
     end
-    if self.kelLockCb then
-        self.kelLockCb:SetChecked(BH.settings and BH.settings.kelAlertLocked or false)
-    end
-
     -- M+ Death Tally controls
     if self.kelDeathTallyEnableCb then
         self.kelDeathTallyEnableCb:SetChecked(BH.settings and BH.settings.deathTallyEnabled ~= false)

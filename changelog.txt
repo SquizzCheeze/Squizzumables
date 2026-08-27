@@ -1,19 +1,15 @@
 Squizzumables Changelog
 =======================
 
-V1.67
+V1.68
 
-- Fixed Rite of Sanctification and Rite of Adjuration never showing a button for Protection
-  Paladins. The Rites are a Lightsmith choice node, and Lightsmith is a Holy and Protection
-  hero tree -- but the button was checking for Holy spec, so half the paladins who can take
-  the talent could never see it. It now checks whether you actually know the spell, which is
-  the only thing that ever mattered. The setting itself was always listed, which is why it
-  looked switched on and did nothing
-- Weapon oil buttons now correctly step aside for Protection Lightsmith Paladins too. A Rite
-  occupies the same main-hand slot an oil would, so offering both was two buttons fighting
-  over one slot. Holy already behaved this way
-- Buff sounds no longer switch themselves off for the rest of the session when the game
-  refuses to register them. Rebuilding the registrations clears the old ones first, so a
-  refusal used to leave you with no buff sounds at all until you relogged -- reported from
-  LFR, where combat, people leaving the group and the vote-kick popups all pile onto the
-  same protected code path. A refused rebuild is now retried automatically
+- The Just For Kel alert image no longer swallows mouse clicks. It sits in the middle of
+  the screen during Bloodlust, so anything it covered was unclickable for as long as it was
+  up -- and since the image only appears mid-pull, that was the worst possible moment for it.
+  It is now click-through at all times
+- Drag it into place with Unlock Frames, the same as every other frame. The "Lock alert
+  image position" checkbox has been removed: Unlock Frames always overrode it anyway, and
+  with the image click-through there was nothing left for it to do
+- Fixed the alert image becoming permanently undraggable after using "Lock all frames".
+  Locking cleared its movable flag and nothing ever put it back, so Unlock Frames could show
+  the image but not move it until you reloaded

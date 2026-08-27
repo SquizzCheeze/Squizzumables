@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.68"] = {
+        "The Just For Kel alert image is now click-through \226\128\148 it no longer swallows clicks while it is on screen.",
+        "Position it with Unlock Frames, like every other frame. The separate lock checkbox has been removed.",
+        "Fixed the alert image staying undraggable after using Lock All Frames.",
+    },
     ["1.67"] = {
         "Rite of Sanctification and Rite of Adjuration now show for Protection Paladins, not just Holy.",
         "Weapon oil buttons step aside for any Lightsmith Rite, so the two no longer fight over the main-hand slot.",

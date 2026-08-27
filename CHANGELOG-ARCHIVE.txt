@@ -8,6 +8,23 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.67
+
+- Fixed Rite of Sanctification and Rite of Adjuration never showing a button for Protection
+  Paladins. The Rites are a Lightsmith choice node, and Lightsmith is a Holy and Protection
+  hero tree -- but the button was checking for Holy spec, so half the paladins who can take
+  the talent could never see it. It now checks whether you actually know the spell, which is
+  the only thing that ever mattered. The setting itself was always listed, which is why it
+  looked switched on and did nothing
+- Weapon oil buttons now correctly step aside for Protection Lightsmith Paladins too. A Rite
+  occupies the same main-hand slot an oil would, so offering both was two buttons fighting
+  over one slot. Holy already behaved this way
+- Buff sounds no longer switch themselves off for the rest of the session when the game
+  refuses to register them. Rebuilding the registrations clears the old ones first, so a
+  refusal used to leave you with no buff sounds at all until you relogged -- reported from
+  LFR, where combat, people leaving the group and the vote-kick popups all pile onto the
+  same protected code path. A refused rebuild is now retried automatically
+
 V1.66
 
 - Fixed buff sounds not registering when the change happened during combat. Handing a sound to

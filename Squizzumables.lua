@@ -161,9 +161,9 @@ BH.defaultSettings = {
     buttonLabelOffsetX = 0,
     buttonLabelOffsetY = -2,
 
-    -- Kelerts: spell alert frame
+    -- Kelerts: spell alert frame. No lock key: the alert image is click-through
+    -- unconditionally, and Unlock Frames is what makes it draggable.
     kelAlertScale    = 1.0,
-    kelAlertLocked   = false,
 
     -- Buff sounds: a sound when one of the player's own auras is applied or
     -- removed, keyed by aura spell ID.
@@ -3311,11 +3311,20 @@ function BH:UpdateKelAlertUnlockState()
             f.unlockPlaceholder = ph
         end
         f.unlockPlaceholder:Show()
+        -- SetMovable as well as EnableMouse, because "Lock all frames" clears
+        -- it (SetAllFramesLocked) and nothing put it back: this frame is not in
+        -- MOVABLE_FRAMES, so it misses the SetMovable(true) that
+        -- SetAllFramesPreview does for everything else. One press of Lock all
+        -- frames used to leave the alert undraggable even here, for the rest of
+        -- the session. Preview overrides the lock; so does this.
+        f:SetMovable(true)
         f:EnableMouse(true)
         f:Show()
     else
         if f.unlockPlaceholder then f.unlockPlaceholder:Hide() end
-        f:EnableMouse(not (self.settings and self.settings.kelAlertLocked))
+        -- Always click-through outside Unlock Frames. See EnsureAlertFrame for
+        -- why the old per-frame lock setting is not consulted any more.
+        f:EnableMouse(false)
         f:Hide()
     end
 end
@@ -9810,7 +9819,11 @@ function BH:CreateRaidToolsFrame()
         BH.settings.raidToolsPullReadyLocked = true
         BH.settings.bresCounterLocked = true
         BH.settings.deathTallyLocked = true
-        BH.settings.kelAlertLocked = true
+        -- No kelAlertLocked here: the Kelert image has no lock setting any
+        -- more. It never takes the mouse outside Unlock Frames, so there is
+        -- nothing for Lock All to switch off. Do not reintroduce the key --
+        -- writing a setting nothing reads is how the bag reminder's toggle
+        -- went quietly dead.
         BH.settings.frameLocked = true
         BH:SaveSettings()
         -- Lock CDM groups
