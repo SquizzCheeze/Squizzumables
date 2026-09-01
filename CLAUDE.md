@@ -278,12 +278,28 @@ initialized `BH`. `perl .claude/check-toc.pl` verifies every listed path exists 
 13. `Squizzumables_SpellAlerts.lua` — "Kelerts", the user-defined spell alerts (full-screen image
     + sound on an aura), and the M+ Death Tally.
 
-All modules share a single global table `BH` (each file does `local BH = BH` or
-`if not BH then BH = {} end`) — this is the addon's namespace; there is no `require`/module
-system. Feature-specific submodules attach themselves as `BH.cdm`, etc. The per-addon private
-table is `ns` (the second vararg), used for `ns.Rows`, `ns.Glow`, `ns.SQ_COLORS` and the widget
-constructors. `SquizzumablesDB` is the single `SavedVariables` table (declared in the `.toc`),
-containing all persisted profiles.
+All modules share one table `BH`, the addon's namespace; there is no `require`/module system.
+
+**`BH` is NOT a global.** It lives on `ns`, the per-addon private table passed as the second
+vararg. Every file opens with:
+
+    local addonName, ns = ...
+    local BH = ns.BH
+
+`Squizzumables.lua` seeds it (`ns.BH = ns.BH or {}`); every later file just binds it. It used to
+be a global and was moved because a two-letter name in `_G` invites a collision — the comment at
+the top of `Squizzumables.lua` says so.
+
+**`local BH = BH` reads nil and the linter will not save you.** A file opening that way gets nil,
+falls through whatever `if not BH then return end` guard it has, and loads to no effect — no
+error, no output, the feature simply does not exist. `wowlua_ls` accepts bare `BH` as a defined
+global and reports nothing, verified by feeding it a file containing exactly that line (an
+unrelated made-up name *is* reported, so this is specific to `BH`). This is written down because
+this exact mistake shipped `/sqstackdiag` as a file that loaded and did nothing.
+
+Feature-specific submodules attach themselves as `BH.cdm`, etc. `ns` also carries `ns.Rows`,
+`ns.Glow`, `ns.SQ_COLORS` and the widget constructors. `SquizzumablesDB` is the single
+`SavedVariables` table (declared in the `.toc`), containing all persisted profiles.
 
 Files are large (`Squizzumables.lua` is ~10,000 lines); within a file, sections are marked with
 `-- ====...====` or `------...------` banner comments — use these (via grep) to jump to a feature

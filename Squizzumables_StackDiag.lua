@@ -37,7 +37,12 @@
 -- Squizzumables_CDM.lua once the question is settled. It earns its place only
 -- while that count is unexplained.
 
-local BH = BH
+-- `BH` is NOT a global -- it lives on the addon's private `ns` table (see the
+-- header of Squizzumables.lua). Reading a global BH here got nil and made this
+-- whole file return silently, which is a very quiet way for a diagnostic to
+-- not exist.
+local addonName, ns = ...
+local BH = ns and ns.BH
 if not BH then return end
 
 local Diag = {}
