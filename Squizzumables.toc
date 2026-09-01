@@ -24,3 +24,4 @@ Core\Minimap.lua
 Core\Welcome.lua
 Squizzumables_CDM.lua
 Squizzumables_SpellAlerts.lua
+Squizzumables_StackDiag.lua

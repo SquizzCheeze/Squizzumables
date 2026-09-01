@@ -1990,6 +1990,9 @@ end
 -- ============================================================================
 
 local eventFrame = CreateFrame("Frame")
+-- Exported only so Squizzumables_StackDiag.lua can wrap this handler from
+-- outside; nothing else reads it. Remove alongside that file.
+cdmModule.eventFrame = eventFrame
 
 eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("SPELLS_CHANGED")

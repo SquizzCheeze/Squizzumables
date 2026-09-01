@@ -111,6 +111,24 @@ without a fundamentally different detection approach that doesn't depend on read
   `.pkgmeta` ignore list and never ships. **Grep the archive, not `changelog.txt`**, for recent
   behavioral history/root-cause notes before assuming something is a fresh bug — many past fixes
   have detailed root-cause writeups there worth reading first.
+- **`/sqstackdiag` is a temporary diagnostic — delete it once the question is answered.**
+  `Squizzumables_StackDiag.lua` (2026-09-01) exists to attribute a BugSack entry reading
+  "8x C stack overflow" with no stack and an empty Locals block. That blankness is expected, not a
+  BugSack fault: `grabError` stores the error object *before* calling `GetErrorStack`, and
+  `debugstack()` needs stack space a C stack overflow has already consumed — so the message
+  survives and the attribution does not.
+
+  It answers "was our code on the stack" rather than "who errored", by wrapping every reachable
+  repeating entry point in `xpcall` and catching at our own boundary, where the label is still
+  known. `/sqstackdiag on | off | report | clear`; inert until switched on. `report` also lists
+  what it managed to wrap, because otherwise "caught nothing" cannot be told apart from "nothing
+  was being watched". Ported from the identical diagnostic written for SquizzFrames (2026-08-29),
+  which cleared *that* addon — both being cleared points at a shared third party, the same shape
+  as the GBankManager callout case.
+
+  Removing it means the file, its `.toc` line, **and** the `cdmModule.eventFrame` export in
+  `Squizzumables_CDM.lua`, which exists only so this can reach that handler.
+
 - **The diagnostics are unlisted, and CLAUDE.md is the only place they are written down.** The
   `/sq` help output prints only the player-facing commands (`config`, `reset`, `raidtools`,
   `unlock`, `reload`, `notes`, `/ginvite`). Every diagnostic below still works exactly as before —
