@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.69"] = {
+        "The Earth Shield reminder no longer fires in delves and follower dungeons, where your party is NPCs and there is nobody to shield.",
+        "The Earth Shield reminder now checks whether you actually have Elemental Orbit instead of guessing from your own shield.",
+    },
     ["1.68"] = {
         "The Just For Kel alert image is now click-through \226\128\148 it no longer swallows clicks while it is on screen.",
         "Position it with Unlock Frames, like every other frame. The separate lock checkbox has been removed.",

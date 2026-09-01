@@ -1,15 +1,16 @@
 Squizzumables Changelog
 =======================
 
-V1.68
+V1.69
 
-- The Just For Kel alert image no longer swallows mouse clicks. It sits in the middle of
-  the screen during Bloodlust, so anything it covered was unclickable for as long as it was
-  up -- and since the image only appears mid-pull, that was the worst possible moment for it.
-  It is now click-through at all times
-- Drag it into place with Unlock Frames, the same as every other frame. The "Lock alert
-  image position" checkbox has been removed: Unlock Frames always overrode it anyway, and
-  with the image click-through there was nothing left for it to do
-- Fixed the alert image becoming permanently undraggable after using "Lock all frames".
-  Locking cleared its movable flag and nothing ever put it back, so Unlock Frames could show
-  the image but not move it until you reloaded
+- Fixed the Earth Shield reminder nagging Shamans who were effectively solo. A delve
+  companion or a follower dungeon's NPCs fill your party, so the reminder counted that as
+  being in a group and asked you to place a second Earth Shield on someone who cannot take
+  one. It now requires a real player in the group, the same test the Coach's Whistle
+  reminder already used
+- Fixed the Earth Shield reminder guessing at Elemental Orbit instead of checking whether
+  you have the talent. It assumed that a shield on yourself meant you had Elemental Orbit,
+  which was wrong both ways round: shielding yourself without the talent left the reminder
+  up permanently, and having the talent with your only shield on someone else meant it
+  never reminded you to shield yourself. It now reads the talent, matching what the Earth
+  Shield buttons have always done

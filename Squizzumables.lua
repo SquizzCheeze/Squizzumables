@@ -6569,7 +6569,11 @@ BH.REMINDERS = {
     },
     {
         key = "earthShield", globalName = "SQUIZZUMABLESEarthShieldReminder",
-        gates = { "enabled", "class", "knows", "buffEnabled", "visible", "group" },
+        -- realGroup, not group: a delve companion or a follower dungeon's NPCs
+        -- fill the party, so `group` was true while there was nobody shieldable
+        -- in it. A solo shaman with Elemental Orbit got told to place a second
+        -- Earth Shield on Brann.
+        gates = { "enabled", "class", "knows", "buffEnabled", "visible", "realGroup" },
         class = "SHAMAN", knowsSpell = 974, buffEnabledSpell = 974,
         label = "Earth Shield Reminder (Shaman)",
         sectionHeader = "EARTH SHIELD REMINDER (SHAMAN)",
@@ -8850,7 +8854,6 @@ function BH:UpdateEarthShieldReminder()
     -- With Elemental Orbit the player can maintain ES on self + 1 other (max 2).
     -- Without Elemental Orbit the player can maintain 1 external ES (max 1).
     local myESCount = 0
-    local hasSelfES = false
     local esGUIDs = {}
 
     -- Auras go secret in combat, and an unreadable aura is indistinguishable
@@ -8871,12 +8874,11 @@ function BH:UpdateEarthShieldReminder()
         return
     end
 
-    -- Check if I have Earth Shield on myself (sourced by me = Elemental Orbit)
+    -- Check if I have Earth Shield on myself
     for _, checkID in ipairs(ES_AURA_IDS) do
         local auraData = C_UnitAuras.GetPlayerAuraBySpellID(checkID)
         if BH.Secrets.AuraIsFromPlayer(auraData) then
             myESCount = myESCount + 1
-            hasSelfES = true
             esGUIDs[#esGUIDs + 1] = UnitGUID("player")
             break
         end
@@ -8899,8 +8901,16 @@ function BH:UpdateEarthShieldReminder()
         end
     end
 
-    -- Max slots: 2 with Elemental Orbit (self ES detected), 1 without
-    local maxES = hasSelfES and 2 or 1
+    -- Max slots: 2 with Elemental Orbit, 1 without.
+    --
+    -- Read the talent, do not infer it from having a shield on yourself. That
+    -- inference was wrong in both directions: a shaman who simply shielded
+    -- themselves was credited with Elemental Orbit and told forever that a
+    -- second shield was missing, and a shaman who *has* Elemental Orbit but has
+    -- placed their only shield on someone else was scored 1-of-1 and never told
+    -- to shield themselves. The button logic has always read the talent
+    -- directly (see the Earth Shield button block); this now agrees with it.
+    local maxES = BH.PlayerKnowsSpell(ELEMENTAL_ORBIT_SPELL_ID) and 2 or 1
     self.esGUIDs      = esGUIDs
     self.esNeededLast = maxES
     self.esBelieved   = myESCount

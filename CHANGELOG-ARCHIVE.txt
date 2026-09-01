@@ -8,6 +8,19 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.68
+
+- The Just For Kel alert image no longer swallows mouse clicks. It sits in the middle of
+  the screen during Bloodlust, so anything it covered was unclickable for as long as it was
+  up -- and since the image only appears mid-pull, that was the worst possible moment for it.
+  It is now click-through at all times
+- Drag it into place with Unlock Frames, the same as every other frame. The "Lock alert
+  image position" checkbox has been removed: Unlock Frames always overrode it anyway, and
+  with the image click-through there was nothing left for it to do
+- Fixed the alert image becoming permanently undraggable after using "Lock all frames".
+  Locking cleared its movable flag and nothing ever put it back, so Unlock Frames could show
+  the image but not move it until you reloaded
+
 V1.67
 
 - Fixed Rite of Sanctification and Rite of Adjuration never showing a button for Protection
