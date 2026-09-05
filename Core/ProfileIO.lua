@@ -223,6 +223,7 @@ function ProfileIO.Export(profileName)
         minDuration = profile.minDuration,
         customItems = profile.customItems,
         positions   = profile.positions,
+        cdmGroups   = profile.cdmGroups,
     }
 
     local out = {}
@@ -277,6 +278,10 @@ function ProfileIO.Apply(data, profileName)
         customItems = type(data.customItems) == "table" and CopyTable(data.customItems)
                       or BH.NewCustomItemsTable(),
         positions   = type(data.positions) == "table" and CopyTable(data.positions) or {},
+        -- The Cooldown Manager layout, shared across every spec using this
+        -- profile. Absent from strings made before 1.70, which import as an
+        -- empty set and rebuild their built-in groups on first use.
+        cdmGroups   = type(data.cdmGroups) == "table" and CopyTable(data.cdmGroups) or {},
     }
     return true, profileName
 end

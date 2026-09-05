@@ -1,125 +1,60 @@
 Squizzumables Changelog
 =======================
 
-V1.69
+V1.70
 
-- Fixed the Earth Shield reminder nagging Shamans who were effectively solo. A delve
-  companion or a follower dungeon's NPCs fill your party, so the reminder counted that as
-  being in a group and asked you to place a second Earth Shield on someone who cannot take
-  one. It now requires a real player in the group, the same test the Coach's Whistle
-  reminder already used
-- Fixed the Earth Shield reminder guessing at Elemental Orbit instead of checking whether
-  you have the talent. It assumed that a shield on yourself meant you had Elemental Orbit,
-  which was wrong both ways round: shielding yourself without the talent left the reminder
-  up permanently, and having the talent with your only shield on someone else meant it
-  never reminded you to shield yourself. It now reads the talent, matching what the Earth
-  Shield buttons have always done
-- Fixed a Cooldown Manager crash that could fire in combat. Reading a buff's duration or
-  stack count directly throws an error when the game hides aura data, which it does in
-  combat, raids, Mythic+ and PvP -- exactly when the icons are being updated. The reads now
-  go through the same safe path the rest of the addon uses, and an unreadable buff falls
-  back to showing the spell's cooldown instead of erroring
-- Cooldown Manager groups can now be styled. Border thickness and colour (or your class
-  colour), how much of the icon art is cropped, and an optional coloured background behind
-  each icon. All of it is per group, so one group can be a chunky class-coloured row and
-  another a small plain one. The border was previously a fixed 1px black line you could
-  only switch on or off, and the icon crop was not adjustable at all
-- The icon background pairs with Hide Until Active: the group keeps a visible footprint
-  while its icons are hidden, so you can still see where it is
-- Essential, Utility and Buffs now exist as standard groups and fill themselves, mirroring
-  Blizzard's own Cooldown Manager categories. Previously every group was one you had to
-  make yourself and a spell showed nothing at all until you had assigned it by hand, so a
-  fresh setup had nothing on screen and nothing to style. Buff and proc cooldowns are also
-  picked up now; only Essential and Utility were before
-- Anything you assign to a group of your own still goes there. The standard groups are only
-  where a spell ends up when you have not said otherwise
-- New per-group "Enable Group" tick, so a standard group you do not want can be switched
-  off without unassigning anything
-- Cooldown Manager groups have new visibility conditions: hide while mounted, only show in
-  instances, hide in housing, hide without a target, and hide unless your target is an
-  enemy. These sit alongside the existing Hide Out of Combat and Hide Until Active
-- Groups can now be anchored to each other. Pick another group, a side and an offset, and
-  this group follows it -- so a stack of bars is positioned by moving only the top one. An
-  anchored group cannot be dragged, since it is placed by whatever it follows, and
-  anchoring two groups to each other is ignored rather than allowed to break the layout
-- Fixed a group set to Enable Group off reappearing as soon as combat ended. Two copies of
-  the visibility logic existed and only one of them knew about that tick; there is now one
-- Hide Until Active now closes the gaps. Hidden icons used to keep their slot, so the ones
-  that were showing stayed scattered across the group with holes between them. Only the
-  visible icons take a slot now, and the row re-packs as buffs come and go -- so with a
-  Centered growth direction they grow out from the middle, which is what tracked buffs
-  want. The three standard groups now default to Centered, matching Blizzard's own bars
-- Fixed the Buffs group showing duplicates of your Essential and Utility abilities. The game
-  lists an ability twice -- once for its cooldown and once for the buff it applies -- under
-  a different ID each time, so nothing keyed on an ID could spot the pair. They are matched
-  by name now, and the cooldown entry wins, since that is the one carrying cooldown data
-- Tracked buffs now show Blizzard's own icons rather than copies of them, so their cooldown
-  swipes, stack counts and timers keep working in combat. Copying them could never work:
-  the game hides a buff's remaining time from addons in combat, refuses to hand it over even
-  when asked for a specific aura, and hands out its icon frames on demand so there is no
-  reliable moment to catch the value in passing. Using Blizzard's frames sidesteps all of
-  it -- the game keeps drawing them, exactly as it does on its own bars
-- Your layout settings still apply to them: growth direction, spacing, icons per row and
-  icon size all work as before, and Hide Until Active now comes free because the game hides
-  an inactive tracked buff itself. The per-icon border, zoom and background do not apply to
-  buffs any more, since these are the game's own icons
-- Round icons, a group background panel, and a charge-number toggle round out the Cooldown
-  Manager styling. The group panel sits behind the whole row rather than each icon and
-  grows and shrinks with it, including as a Hide Until Active group packs down
-- The keybind, charge number and cooldown countdown can each be placed in any of nine
-  positions on the icon, with their own offsets and text size. Cooldown text defaults to
-  Centre, which leaves the game's own placement alone
-- Cooldown Manager icons can now show their keybind. Per group, with a colour and text size,
-  read from your action bars -- an ability that is not on a bar has no key to show. It
-  deliberately does not follow bar swaps from stealth, druid forms or dragonriding: a
-  keybind that rewrites itself every time you shapeshift is less use than a steady one, and
-  a talent that replaces a spell is followed so the key still appears
-- New "Always Show Buffs" option for the tracked buff group: keep a slot for every buff you
-  track, showing a dimmed placeholder while it is not up, rather than the row shrinking to
-  only the active ones. "Grey Out Inactive" and an opacity slider control how those look
-- Fixed tracked buffs showing no duration swipe. A tracked buff's aura is frequently a
-  different spell from the one its cooldown is listed under, and only that one was being
-  checked -- so the lookup found nothing and fell back to a spell cooldown those entries do
-  not have. All the spell IDs the game offers for a cooldown are checked now
-- Fixed most Cooldown Manager icons never refreshing between reconciles. The update pass
-  only recognised spells you had assigned to a group by hand, so everything relying on the
-  new standard groups was skipped -- desaturation, hide-until-active and the icon artwork
-  retry all stalled until something else forced a rebuild
-- New "Hide Blizzard's Cooldown Manager" option, so only these icons show. Blizzard's bars
-  are faded rather than hidden: the game stops updating a frame once it is hidden, and this
-  addon reads live buff state from those frames, so hiding them outright would stop your
-  own icons tracking buffs. Unticking brings them straight back, as does switching the
-  Cooldown Manager off. Edit Mode re-applies its own opacity to those bars whenever it
-  refreshes, which made them reappear a second after being faded, so the fade is now held
-  in place rather than set once. The fade also lifts while Edit Mode is open, so Blizzard's
-  bars stay visible and positionable there instead of leaving you an empty selection box
-  where the icons should be. They are moved off screen as well as faded, because an
-  invisible bar still catches the mouse and was showing Blizzard's cooldown tooltips over
-  empty screen, and they are hidden the instant you log in rather than half a second later,
-  which is what made them flash on screen at every reload
-- Fixed Cooldown Manager groups set to Centered growth having their drag area in the wrong
-  place. Icons were centred on the container's left edge instead of its middle, so the
-  group's move handle sat down and to the right of the icons it belonged to -- dragging it
-  moved icons that were nowhere near it, and clicking the icons did nothing. The four
-  corner growth directions were never affected
-- Cooldown Manager icons that had no artwork available when they were built now fill it in
-  afterwards, instead of staying blank forever and leaving what looked like an empty group
-- Every frame's green move box now says which frame it is while frames are unlocked. There
-  can be a dozen or more on screen at once and they were impossible to tell apart
-- Anchoring another addon to Blizzard's Essential Cooldowns (or Utility, or the buff bars)
-  now works even with Hide Blizzard's Cooldown Manager on. Each hidden Blizzard bar is
-  parked invisibly on top of the group that replaced it, matching its position and size, so
-  it stays exactly where the icons are and an anchor pointed at it still lands correctly --
-  it also follows when you drag the group. New "Keep Blizzard's frames on our groups" tick
-  next to the hide option turns this off if you would rather they went off screen
-- Other addons can also anchor to our own frames. Each group shows its frame name in the
-  Cooldowns tab -- SQZ_CDMGroup_Essential and so on -- which is what to give an addon that
-  anchors by frame name. From Lua there is also
-  Squizzumables_GetCDMGroupFrame("Essential") and the same for "Utility", "Buffs" or any
-  group you have made. The frames now last the whole session instead of being rebuilt when
-  you change spec or switch the Cooldown Manager off and on, which used to leave anything
-  anchored to them pointing at a dead frame
-- The Cooldowns tab is now just the Cooldown Manager: the master switch and the three
-  standard groups with their styling. Making your own groups and assigning individual
-  spells has moved to a new Custom Icons tab, so the settings you are most likely to want
-  are not buried under a group-creation form and a list of every spell you know
+- The Essential and Utility groups now follow your Blizzard Cooldown Manager filter. Hiding
+  a spell in Blizzard's own Cooldown Manager options, or dragging it between Essential and
+  Utility, now changes these groups to match. Previously they listed every cooldown your
+  class has, because the filtering does not live in the game's cooldown API at all -- it is
+  held in a saved layout, and only Blizzard's own bars were reading it. They are read
+  through the same call Blizzard's bars use now, so the two always agree
+- This also means spells the game hides by default no longer show. Those were appearing
+  before you had touched anything, which is why the groups looked busier than Blizzard's
+  bars on a fresh install
+- Groups also follow the order you arranged in Blizzard's Cooldown Manager, rather than an
+  internal ID order that matched nothing you could see. Only for the default "assignment"
+  sort; sorting by name or cooldown is unchanged
+- Editing Blizzard's Cooldown Manager now updates the groups straight away instead of
+  waiting for a reload or a spec change
+- Trinkets and other equipment cooldowns now work. Drag one into Essential or Utility in
+  Blizzard's Cooldown Manager and it appears here too, with its item icon and its cooldown.
+  These have no spell attached, so they were previously discarded
+- Fixed a crash that could take out the entire Cooldown Manager display. Equipment entries
+  carry no spell ID, and one was being used as a table key without checking -- which is not
+  a harmless no-op but a hard error, and it would have stopped every icon from being
+  discovered. It could not happen before this version, since those entries never got this
+  far, so nothing was broken in 1.69 by it
+- Cooldown icons now show the game's proc glow. When an ability lights up on your action
+  bar it lights up here too, with the same animation, on the same events the game's own
+  cooldown bars use. Per group, on by default
+- Cooldown icons are now coloured by whether you can actually cast them, exactly as
+  Blizzard's bars do it: dimmed when unusable, blue when you lack the power, and red when
+  your target is out of range. Per group, on by default, using the game's own colours
+- Both of these apply to cooldowns only, not tracked buffs -- Blizzard's buff icons do not
+  do either, and there is no "can you cast this" to colour a buff by
+- The Custom Icons assignment list still offers every cooldown, including ones you have
+  hidden on Blizzard's bars. Hiding something there is about Blizzard's display, and should
+  not take away your ability to put it in a group of your own
+- Cooldown Manager groups are now part of your profile, and shared across every spec and
+  character using it. Set the groups up once on Default and every spec gets that layout;
+  if you want something different for one spec, save a new profile and point that spec at
+  it. Previously the layout was stored per class and spec and sat outside profiles
+  entirely, so saving a profile did not capture it and every new spec started from nothing
+- This covers group names, positions, sizes, growth, spacing and every styling option.
+  Which spells you have assigned to which group stays per spec, because a cooldown's ID
+  means something different on each class -- but the groups themselves are shared, so an
+  assignment still points at the same group and a group with nothing assigned on a
+  particular spec just hides itself
+- Your existing layout is not lost: the first time each profile is used it takes the layout
+  from whichever spec you are on. If you had different layouts per spec, the others are
+  left untouched on disk rather than deleted, but they are no longer used
+- Profile export and import strings now carry the Cooldown Manager layout too, so a profile
+  you share sets up the other person's groups as well. Strings made before this version
+  still import; they simply arrive with the standard groups
+- Switching profile, changing spec, deleting a profile and "Reset from Default" all rebuild
+  the groups now instead of leaving the previous profile's on screen
+- /sq cdm now reports whether the Blizzard filter is being read, per bar, with a count of
+  how many cooldowns it is showing out of how many exist. A group listing more than
+  Blizzard's bar looks the same whether the filter is being ignored or simply has nothing
+  hidden in it, and this is what tells those apart

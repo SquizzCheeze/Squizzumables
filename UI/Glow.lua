@@ -98,7 +98,12 @@ end
 --- Passing anchorTo also forces the self-drawn glow: Blizzard's alert frames
 --- size themselves to the frame they are given and cannot be told to cover
 --- part of it.
-function Glow.Show(frame, anchorTo)
+---
+--- `skipBirth` suppresses the one-shot spawn animation and starts straight on
+--- the loop, which is what Blizzard does when it is re-syncing a glow that was
+--- already running rather than reacting to a fresh proc. Tier 1 only; the
+--- self-drawn fallback has no birth animation to skip.
+function Glow.Show(frame, anchorTo, skipBirth)
     if not frame or frame.sqGlowing then return end
     frame.sqGlowing = true
 
@@ -111,7 +116,8 @@ function Glow.Show(frame, anchorTo)
     end
 
     if ActionButtonSpellAlertManager and ActionButtonSpellAlertManager.ShowAlert then
-        local ok = pcall(ActionButtonSpellAlertManager.ShowAlert, ActionButtonSpellAlertManager, frame)
+        local ok = pcall(ActionButtonSpellAlertManager.ShowAlert, ActionButtonSpellAlertManager,
+                         frame, skipBirth)
         if ok then
             frame.sqGlowTier = 1
             return
@@ -156,6 +162,23 @@ function Glow.Hide(frame)
 end
 
 --- Show or hide in one call, which is what most callers actually want.
-function Glow.Set(frame, on, anchorTo)
-    if on then Glow.Show(frame, anchorTo) else Glow.Hide(frame) end
+function Glow.Set(frame, on, anchorTo, skipBirth)
+    if on then Glow.Show(frame, anchorTo, skipBirth) else Glow.Hide(frame) end
+end
+
+--- Re-size the tier 1 alert art to match the frame.
+---
+--- ActionButtonSpellAlertManager builds its alert frame once, at 1.4x whatever
+--- the button measured at that instant, and never revisits it -- Blizzard's
+--- action buttons are a fixed size, so nothing there ever needed it to. Our CDM
+--- icons resize from a slider, and without this the glow keeps the dimensions
+--- the icon had the first time it ever glowed.
+function Glow.Resize(frame)
+    if not frame then return end
+    local alert = frame.SpellActivationAlert
+    if not alert then return end
+    local w, h = frame:GetSize()
+    if w and h and w > 0 and h > 0 then
+        alert:SetSize(w * 1.4, h * 1.4)
+    end
 end

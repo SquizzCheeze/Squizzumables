@@ -21,6 +21,16 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.70"] = {
+        "The Essential and Utility groups now follow your Blizzard Cooldown Manager filter \226\128\148 hide or move a spell there and these groups match, instead of listing every cooldown your class has.",
+        "They follow the order you arranged there too, and update the moment you change it rather than waiting for a reload.",
+        "Trinkets and other equipment cooldowns now work: drag one into Essential or Utility in Blizzard's options and it shows up here as well.",
+        "Cooldown icons now show the game's own proc glow when an ability lights up, the same animation you get on your action bars.",
+        "Cooldown icons are now coloured by whether you can cast them \226\128\148 dimmed when unusable, blue when you lack the power, red when out of range \226\128\148 exactly as Blizzard's bars do it.",
+        "The Custom Icons list still offers every cooldown, including ones you have hidden on Blizzard's bars, so you can still put one in a group of your own.",
+        "Cooldown Manager groups are now part of your profile and shared across every spec and character using it \226\128\148 set them up once on Default, and make a new profile when you want a different layout.",
+        "Your existing layout carries over, and profile export strings now include it, so a shared profile sets up the other person's groups too.",
+    },
     ["1.69"] = {
         "The Cooldown Manager has had a big pass. Essential, Utility and Buffs are now standard groups that fill themselves \226\128\148 no need to build your own before anything appears.",
         "Style each group: border thickness and colour (or class colour), icon zoom, round or square icons, a panel behind the whole row, and keybind, charge and cooldown text you can place anywhere on the icon.",

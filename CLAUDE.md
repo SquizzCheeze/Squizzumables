@@ -155,40 +155,46 @@ without a fundamentally different detection approach that doesn't depend on read
 
 ### Researching the WoW API
 
-**Use the generated annotations as the source of truth, not the community wiki.**
+**Gethe/wow-ui-source `live` is the bible. Fetch it; do not answer from the local extension or
+from memory.**
 
-    https://github.com/Ketho/vscode-wow-api
-    Annotations/Core/Blizzard_APIDocumentationGenerated/<Namespace>Documentation.lua
+    https://github.com/Gethe/wow-ui-source        (branch: live)
+    https://raw.githubusercontent.com/Gethe/wow-ui-source/live/Interface/AddOns/<Blizzard_Addon>/<File>.lua
 
-Those files are produced from the client's own `Blizzard_APIDocumentation`, so they match what
-the game actually exposes. Raw fetch, for example:
+It is an automated mirror of the shipped client's own UI code and generated API documentation,
+committed per build — the commit messages are literally `12.1.0 (69587)`. So it is both the real
+client code *and* current to within days. Check the top commit on
+`https://github.com/Gethe/wow-ui-source/commits/live` when the answer depends on how recent the
+data is.
 
-    https://raw.githubusercontent.com/Ketho/vscode-wow-api/master/Annotations/Core/
-      Blizzard_APIDocumentationGenerated/EncounterTimelineDocumentation.lua
+The two paths worth knowing:
+
+    Interface/AddOns/Blizzard_APIDocumentationGenerated/<Namespace>Documentation.lua   -- signatures,
+        structures, and the restriction flags (HasRestrictions, SecretArguments, MayReturnNothing)
+    Interface/AddOns/Blizzard_<AddonName>/<File>.lua                                   -- the real
+        behaviour: which CVar gates a feature, when a frame shows itself, what a flat `false` means
+
+**The locally installed `ketho.wow-api` extension is a convenience, not a source of truth — it
+lags.** It is fine for editor hovers and for a fast first grep to find *which file* answers a
+question. Confirm anything load-bearing against Gethe before acting on it. Checked 2026-09-06, the
+installed 0.22.3 copy was wrong about `Blizzard_CooldownViewer` in four ways that each changed a
+conclusion: `Enum.CooldownViewerCategory` had 4 categories where live has 9, the hidden
+pseudo-categories were named `HiddenSpell`/`HiddenAura` where live has `HiddenActive = -1` /
+`HiddenPassive = -2`, `CooldownViewerCooldown.spellID` was non-nilable where live marks it
+nilable, and `CooldownViewerMixin:RefreshData` took no arguments where live takes
+`(cooldownIDs, forceSet)`.
 
 warcraft.wiki.gg is community-written and has been wrong here in ways that changed conclusions:
 for `C_EncounterTimeline` it listed 7 functions where the real API has 33, omitted the entire
 write side of the namespace, and claimed a structure field had been removed that still exists.
 Use it for prose explanation if helpful, never as the basis for a decision.
 
-Better still, when the question is about *behaviour* rather than a signature: the `ketho.wow-api`
-VS Code extension ships Blizzard's actual FrameXML Lua, installed locally at
-
-    C:\Users\<you>\.vscode\extensions\ketho.wow-api-<version>\Annotations\FrameXML\
-      Annotations\AddOns\<Blizzard_AddonName>\
-
-That is the real client code, so it answers questions the annotations cannot -- which CVar gates a
-feature, when a frame decides to show itself, what a flat `false` return actually means. It
-settled two encounter-timeline questions in one read (`Blizzard_EncounterTimeline/`,
-`Blizzard_SettingsDefinitions_Frame/AdvancedOptions.lua`). Grep it before guessing or asking the
-user to test something in-game.
-
-Second-best evidence is a *currently maintained* addon running on *current* content. Be careful
-which: an addon folder for a previous expansion is not evidence about this one. Reading
-`LittleWigs_TheWarWithin` (11.x modules, 11.x content) once led to the wrong conclusion that
-`COMBAT_LOG_EVENT_UNFILTERED` still worked, when the giveaway was that no Midnight pack existed
-at all. Check the `.toc` interface version before treating an addon as current.
-
+Last resort, and only for behaviour Gethe cannot show: a *currently maintained* addon running on
+*current* content. Be careful which — an addon folder for a previous expansion is not evidence
+about this one. Reading `LittleWigs_TheWarWithin` (11.x modules, 11.x content) once led to the
+wrong conclusion that `COMBAT_LOG_EVENT_UNFILTERED` still worked, when the giveaway was that no
+Midnight pack existed at all. Check the `.toc` interface version before treating an addon as
+current.
 
 ## Releasing
 
@@ -317,6 +323,35 @@ optional per-spec override (`specProfiles`). `BH:GetActiveProfile()` /
 `BH:SaveToProfile()` / `BH:LoadFromProfile()` move data between the active runtime settings and
 the profile store. Frame positions are tracked separately via `PROFILE_POSITION_KEYS` since each
 draggable frame persists its own anchor.
+
+**A profile does not hold everything, and the split is deliberate.** `SaveToProfile` copies exactly
+five things — `settings`, `disabled`, `minDuration`, `customItems`, and the
+`PROFILE_POSITION_KEYS` anchors. Anything else has to be added there, to `LoadFromProfile`, **and**
+to `Core/ProfileIO.lua`'s export/import payload, or it silently will not travel; the CDM layout was
+missing from all three until 1.70, so "save to profile" captured none of it.
+
+**CDM group layout lives ON the profile (`profile.cdmGroups`), not in a runtime copy.** That is
+different from everything else here: `LoadFromProfile` copies settings *out* of the profile into
+`SquizzumablesDB`, but groups are read live through `BH:GetActiveProfile().cdmGroups`, so
+`SaveToProfile`/`LoadFromProfile` need no group plumbing at all and a switch takes effect by
+itself. Groups are shared across every spec and character on that profile — one layout, styled
+once, with a second profile being how you get a different one.
+
+Assignments and free icons stay per spec in `SquizzumablesDB.cdmData[classID_specIndex]` and
+**cannot** move onto the profile: both are keyed by `cooldownID`, which is a per-class, per-spec
+number, so sharing them would map one class's spells onto whatever shared an ID on another. Group
+*names* are the thing that crosses over. `GetSpecData()` returns a cached **view** stitching the
+two together, which is what lets the ~35 `specData.groups[...]` call sites stay untouched; it is
+keyed on table identity, so never give it a name-string key "for clarity" — that reintroduces a
+per-call string allocation on the reconcile ticker.
+
+Per-spec CDM **sound alerts** are still outside profiles. Keyed by spellID, so they *could* move
+without the cooldownID problem; nobody has asked yet.
+
+Any new profile-switch path must call `BH.cdm:OnProfileChanged()` — it invalidates that view,
+rebuilds, and refreshes the settings tab, whose rows hold direct references to the old group
+tables and would otherwise write into the profile just left. Four paths call it today:
+`SwitchProfile`, the spec-change handler, profile delete, and "Reset from Default".
 
 **Options panel**: hand-rolled (no Ace3/Blizzard `Settings` framework abstraction beyond basic
 registration) — see the "Options Panel" / "Main Options Panel" / per-feature "Settings Tab"

@@ -675,6 +675,11 @@ function BH:SwitchToProfile(profileName)
     self.minDuration = SquizzumablesDB.minDuration
     self.customItems = SquizzumablesDB.customItems
 
+    -- The Cooldown Manager layout is part of the profile as of 1.70, so it has
+    -- to be rebuilt here rather than left showing the old profile's groups.
+    -- After the BH references above, since the rebuild reads cdmEnabled.
+    if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
+
     return true
 end
 
@@ -759,6 +764,11 @@ function BH:OnSpecChanged()
     self:ApplyAllFrameScales()
     self:UpdateFrameLock()
     self:UpdateButtons()
+    -- A spec change can also change which profile is active (specProfiles), and
+    -- the group layout belongs to the profile as of 1.70. The per-spec half of
+    -- the CDM data -- assignments and free icons -- changes here too, so the
+    -- cached view is stale either way.
+    if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     -- Outside the panel check: the new profile has its own alerts, so the
     -- client-side aura sound registrations have to follow it whether or not the
     -- options panel happens to be open. Leaving them would keep playing the
@@ -1906,6 +1916,8 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             BH:ApplyAllFrameScales()
             BH:UpdateFrameLock()
             BH:UpdateButtons()
+            -- Default's Cooldown Manager layout, not the deleted profile's.
+            if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
             BH:RefreshSettingsTab()
             print("Squizzumables: Deleted profile '" .. data .. "', switched to Default.")
         end
@@ -2161,6 +2173,9 @@ function BH:BuildSettingsTab(parent)
         BH:ApplyAllFrameScales()
         BH:UpdateFrameLock()
         BH:UpdateButtons()
+        -- Default's Cooldown Manager layout came across with the CopyTable
+        -- above, since it lives on the profile as of 1.70. Rebuild so it shows.
+        if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
         BH:RefreshSettingsTab()
         BH:RefreshItemList()
         BH:RefreshRaidToolsTab()
@@ -3243,6 +3258,31 @@ end
 function BH:SetUnlockMode(on)
     on = on and true or false
     if self.unlockMode == on then return end
+
+    -- Not during combat lockdown.
+    --
+    -- SetAllFramesPreview calls EnableMouse on BH.frame (SQUIZZUMABLESFrame),
+    -- which parents the SecureActionButtonTemplate consumable buttons. In
+    -- combat that is refused with ADDON_ACTION_BLOCKED naming this addon.
+    -- ADDON_ACTION_BLOCKED is a client event, not a Lua error, so nothing
+    -- aborts: the call silently does nothing and the frames come up unlocked
+    -- but not actually mouse-enabled -- boxes you can see and cannot drag.
+    --
+    -- The flag is set AFTER this check on purpose. It used to be set first, so
+    -- a failure part-way left unlockMode true with nothing on screen, and the
+    -- `if self.unlockMode == on then return end` above then made every later
+    -- attempt a silent no-op until a reload.
+    --
+    -- Only entering is blocked. Leaving has to work in combat whatever else is
+    -- true: zoning into an instance force-locks, and that can land mid-pull --
+    -- refusing there would strand the player in unlock mode inside content.
+    -- SetAllFramesPreview guards its own mouse calls for that direction.
+    if on and InCombatLockdown() then
+        print("|cffff6666Squizzumables:|r frames cannot be unlocked during combat. "
+            .. "Try again when you leave combat.")
+        return
+    end
+
     self.unlockMode = on
 
     if on then
@@ -6881,7 +6921,19 @@ local function FrameEnabledForPreview(def, settings)
 end
 
 --- Put every movable frame into (or out of) preview.
+---
+--- Mouse state is skipped entirely during combat lockdown. Several of these
+--- frames parent SecureActionButtonTemplate buttons (the consumable buttons,
+--- the markers and the pull/ready buttons), and EnableMouse on those is refused
+--- in combat with ADDON_ACTION_BLOCKED naming this addon. That refusal is a
+--- client event rather than a Lua error, so nothing aborts and the failure is
+--- invisible except in BugSack -- the frames come up looking unlocked but not
+--- actually draggable. Entering preview is blocked in combat by SetUnlockMode;
+--- LEAVING it still has to run here (zoning into an instance force-locks, which
+--- can happen mid-pull), so the guard is on the mouse calls rather than on the
+--- whole function.
 function BH:SetAllFramesPreview(on)
+    local canTouchMouse = not InCombatLockdown()
     for _, def in ipairs(MOVABLE_FRAMES) do
         local frame = self[def.field]
         if frame then
@@ -6889,7 +6941,7 @@ function BH:SetAllFramesPreview(on)
                 -- Unconditionally movable and mouse-enabled: preview exists to
                 -- override the lock, not to respect it.
                 frame:SetMovable(true)
-                frame:EnableMouse(true)
+                if canTouchMouse then frame:EnableMouse(true) end
                 frame:SetClampedToScreen(true)
                 SetPreviewOverlay(frame, true, def.label)
                 if def.muteChildren then MuteFrameChildren(frame, true) end
@@ -6904,7 +6956,13 @@ function BH:SetAllFramesPreview(on)
 
     -- The buttons frame only takes the mouse while being positioned. Left on,
     -- it would sit over its own secure buttons and eat their clicks.
-    if self.frame then self.frame:EnableMouse(on and true or false) end
+    --
+    -- This is the exact call the ADDON_ACTION_BLOCKED report named
+    -- (SQUIZZUMABLESFrame:EnableMouse), since this frame parents the secure
+    -- consumable buttons.
+    if self.frame and canTouchMouse then
+        self.frame:EnableMouse(on and true or false)
+    end
 end
 
 -- === Battle Res Counter (Inspired by BigWigs BattleRes) ===
@@ -9350,9 +9408,21 @@ function BH:UpdateRaidToolsVisibility()
         self:UpdateDeathTallyDisplay()
         if self.UpdateBresCounter then self:UpdateBresCounter() end
 
-        -- Show CDM group previews
+        -- Show CDM group previews.
+        --
+        -- pcall because the unlock control is shown immediately below, and it
+        -- is the only way back out of unlock mode: an error raised here would
+        -- skip it, leaving the player unlocked with no Done button and no
+        -- visible cause. SetUnlockMode has already set self.unlockMode = true by
+        -- this point, so its own `if self.unlockMode == on then return end`
+        -- guard makes a second attempt a no-op -- the mode sticks until a
+        -- reload. Losing the green boxes for one group beats losing the exit.
         if self.cdm and self.cdm.ShowPreview then
-            self.cdm:ShowPreview()
+            local ok, err = pcall(self.cdm.ShowPreview, self.cdm)
+            if not ok then
+                print("|cffff6666Squizzumables:|r could not draw the Cooldown Manager "
+                    .. "drag regions: " .. tostring(err))
+            end
         end
 
         -- Show the unlock control. It is free-floating and remembers where it

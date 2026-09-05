@@ -117,21 +117,121 @@ end
 -- Saved Data Access
 -- ============================================================================
 
--- Get or create the CDM saved data for the current spec
+-- Where the CDM layout lives, and why it is split in two.
+--
+-- Groups -- their names, positions, sizes and every styling option -- belong to
+-- the PROFILE, and are shared by every spec and every character using that
+-- profile. That is what makes "set it up once on Default, and make a new
+-- profile when you want something different" work. Before 1.70 they were keyed
+-- by class and spec instead and lived outside profiles entirely, so saving a
+-- profile did not capture the Cooldown Manager layout at all and every spec
+-- started from nothing.
+--
+-- Assignments and free icons stay per spec, and cannot sensibly do otherwise:
+-- both are keyed by cooldownID, which is a per-class, per-spec number. Sharing
+-- them across a Paladin and a Shaman would map one class's spells onto whatever
+-- happened to share an ID on the other. Group NAMES are what crosses over, so
+-- an assignment made on one spec still points at the same shared group -- a
+-- custom group simply sits empty on a spec that has assigned nothing to it, and
+-- an empty group hides itself.
+local function GetProfileGroups()
+    -- Every one of these guards is load order, not paranoia.
+    --
+    -- This module's event frame registers SPELLS_CHANGED at file scope, and that
+    -- fires BEFORE PLAYER_LOGIN -- so a reconcile can reach here before the
+    -- profile system has been set up. `BH:GetActiveProfile` walks
+    -- GetActiveProfileName -> GetCharKey, which builds `name .. "-" .. realm`
+    -- from `UnitName("player")`; that is nil that early and the concatenation is
+    -- a hard error, not a nil return. Before 1.70 GetSpecData touched no profile
+    -- code at all, so this path did not exist.
+    if not (SquizzumablesDB and SquizzumablesDB.profiles) then return nil end
+    if not UnitName("player") then return nil end
+    if type(BH.GetActiveProfile) ~= "function" then return nil end
+
+    local ok, profile = pcall(BH.GetActiveProfile, BH)
+    if not ok or type(profile) ~= "table" then return nil end
+
+    if not profile.cdmGroups then
+        profile.cdmGroups = {}
+
+        -- Seed from the pre-1.70 per-spec store, so an existing layout survives
+        -- the move rather than the player finding their groups gone.
+        --
+        -- The current spec supplies the seed: it is the layout they are looking
+        -- at, and it has to be one of them now that there is a single shared
+        -- set. The other specs' old tables are deliberately left on disk rather
+        -- than deleted -- they are no longer read, but collapsing several
+        -- per-spec layouts into one is not something to do destructively.
+        local legacy = SquizzumablesDB and SquizzumablesDB.cdmData
+            and SquizzumablesDB.cdmData[GetSpecKey()]
+        if legacy and type(legacy.groups) == "table" and next(legacy.groups) then
+            profile.cdmGroups = CopyTable(legacy.groups)
+        end
+    end
+
+    return profile.cdmGroups
+end
+
+-- Get or create the CDM saved data for the current spec.
+--
+-- Returns a view, not a stored table: `groups` is the profile's shared table
+-- while `assignments` and `freeIcons` are this spec's. Every field is handed
+-- over by reference, so the ~35 existing `specData.groups[...] = x` call sites
+-- keep working untouched and write straight through to the profile.
+--
+-- The view is cached rather than rebuilt per call because this runs from the
+-- reconcile pass and from every settings row. It is rebuilt whenever the spec
+-- or the active profile changes, which is exactly when the underlying tables
+-- become different objects.
+local specDataView
 local function GetSpecData()
     if not SquizzumablesDB then return nil end
     if not SquizzumablesDB.cdmData then
         SquizzumablesDB.cdmData = {}
     end
     local key = GetSpecKey()
-    if not SquizzumablesDB.cdmData[key] then
-        SquizzumablesDB.cdmData[key] = {
-            groups = {},            -- { [groupName] = { cooldownIDs = {}, position = {x,y}, iconSize = 36, perRow = 8, locked = false } }
+    local perSpec = SquizzumablesDB.cdmData[key]
+    if not perSpec then
+        perSpec = {
             freeIcons = {},         -- { [cooldownID] = { x, y, iconSize } }
             assignments = {},       -- { [cooldownID] = groupName or "FREE" }
         }
+        SquizzumablesDB.cdmData[key] = perSpec
     end
-    return SquizzumablesDB.cdmData[key]
+    perSpec.assignments = perSpec.assignments or {}
+    perSpec.freeIcons = perSpec.freeIcons or {}
+
+    -- Nil rather than a scratch table when profiles are not up yet (very early
+    -- login). Every caller already guards on nil, and handing back a throwaway
+    -- table would silently accept edits that could never be saved.
+    local groups = GetProfileGroups()
+    if not groups then return nil end
+
+    -- Keyed on table identity rather than on a spec/profile name string.
+    --
+    -- It is exactly as precise and allocates nothing: a different profile has a
+    -- different `cdmGroups` table and a different spec a different
+    -- `assignments` table, so comparing the two references catches every case a
+    -- composite name key would, without building a string on a path that runs
+    -- from the reconcile ticker.
+    if not specDataView
+       or specDataView.groups ~= groups
+       or specDataView.assignments ~= perSpec.assignments
+       or specDataView.freeIcons ~= perSpec.freeIcons then
+        specDataView = {
+            groups = groups,
+            assignments = perSpec.assignments,
+            freeIcons = perSpec.freeIcons,
+        }
+    end
+    return specDataView
+end
+
+-- Drop the cached view. Called on a profile switch, where the profile's group
+-- table is a different object and anything still holding the old view would go
+-- on writing into the profile the player just left.
+function cdmModule:InvalidateSpecData()
+    specDataView = nil
 end
 
 -- Get or create the per-spec CDM per-spell sound alerts table.
@@ -140,7 +240,9 @@ local function GetCDMSoundAlerts()
     if not SquizzumablesDB.cdmData then SquizzumablesDB.cdmData = {} end
     local key = GetSpecKey()
     if not SquizzumablesDB.cdmData[key] then
-        SquizzumablesDB.cdmData[key] = { groups = {}, freeIcons = {}, assignments = {} }
+        -- No `groups` here: those live on the profile as of 1.70, and seeding a
+        -- second empty one would leave a dead table on disk that looks live.
+        SquizzumablesDB.cdmData[key] = { freeIcons = {}, assignments = {} }
     end
     local sd = SquizzumablesDB.cdmData[key]
     if not sd.soundAlerts then sd.soundAlerts = {} end
@@ -989,11 +1091,98 @@ end
 -- tracked bars (procs like Beast Cleave), and Blizzard splits them across two
 -- viewers while this addon treats them as one group.
 local DISCOVER_CATEGORIES = {
-    { category = 0, viewerType = "cooldown" },
-    { category = 1, viewerType = "utility"  },
-    { category = 2, viewerType = "buff"     },
-    { category = 3, viewerType = "buff"     },
+    { category = 0, viewerType = "cooldown", viewer = "EssentialCooldownViewer" },
+    { category = 1, viewerType = "utility",  viewer = "UtilityCooldownViewer"   },
+    { category = 2, viewerType = "buff",     viewer = "BuffIconCooldownViewer"  },
+    { category = 3, viewerType = "buff",     viewer = "BuffBarCooldownViewer"   },
 }
+
+-- Blizzard's OWN list for a category: filtered by the player's Cooldown Manager
+-- settings, and in the order they arranged it.
+--
+-- This is the difference between mirroring Blizzard's bars and merely listing
+-- the same class's spells. `C_CooldownViewer.GetCooldownViewerCategorySet` --
+-- which is all this module used before 1.70 -- returns the raw default set for
+-- a category. It knows nothing about what the player hid, moved or reordered in
+-- the Cooldown Manager options, because none of that lives in the C API: it is
+-- held in a saved *layout*, and the settings data provider applies it by
+-- rewriting each entry's `category`. Anything hidden is moved to the
+-- pseudo-categories `HiddenActive` (-1) / `HiddenPassive` (-2) and so drops out
+-- of Essential/Utility. Entries flagged `HideByDefault` go the same way before
+-- the player has touched anything, which is why our groups listed more than
+-- Blizzard's bars did even on a fresh install.
+--
+-- The viewer frames read through that layout (`CooldownViewerMixin:GetCooldownIDs`
+-- calls `GetOrderedCooldownIDsForCategory`), so asking the frame is asking the
+-- same question Blizzard answers when it draws its own bar. Verified against
+-- Gethe/wow-ui-source live, 12.1.0 build 69587.
+--
+-- This is also the only route by which the four categories that have no viewer
+-- of their own can appear at all -- GroupBuff, SpecAgnostic* and EquipSlot*
+-- (trinkets). They reach a bar only when the player drags one into Essential or
+-- Utility, at which point the layout reassigns its category and it comes back
+-- from this call. Walking the raw category sets for them instead would show
+-- them whether or not the player asked for them.
+--
+-- pcall: this reaches into another addon's frame, and `CooldownViewerSettings`
+-- is nil until Blizzard_CooldownViewer has loaded. A nil return falls back to
+-- the raw set, which is the pre-1.70 behaviour and never worse than nothing.
+--
+-- On taint, and on the wrong turn taken while debugging 1.70.
+--
+-- A mid-development `ADDON_ACTION_BLOCKED` on `SQUIZZUMABLESFrame:EnableMouse()`
+-- was read as evidence that this call had tainted the path -- reasoning from
+-- CLAUDE.md's rule that a refusal on a HARDWARE CLICK means taint rather than
+-- lockdown. That rule is about blocks seen OUT of combat. The player had
+-- reloaded mid-combat, and a hardware click does not lift combat lockdown, so
+-- the block was ordinary lockdown on a frame that parents secure buttons.
+-- Nothing implicated this call. It was briefly replaced with a scan of the
+-- viewer's child frames, reading `cooldownID` off each shown item frame.
+--
+-- That replacement was worse and is why this note exists. Blizzard hides an
+-- item frame when its own "hide when inactive" is on and the cooldown is not
+-- active (`CooldownViewerItemMixin:ShouldBeShown` returns false), so a
+-- shown-frames scan silently DROPS every inactive cooldown -- the groups would
+-- lose most of their icons for anyone using that Blizzard setting, and only for
+-- them. Reading the list Blizzard reads has no such hole.
+--
+-- The residual taint consideration is real but unevidenced: this executes
+-- `CooldownViewerSettings:GetDataProvider()`, and `CheckBuildDisplayData` can
+-- run on our stack inside the Edit Mode system. No blocked call has ever been
+-- traced to it. If one ever is, the fix is NOT the shown-frames scan above --
+-- it is to read `viewer.itemFramePool` entries regardless of shown state, which
+-- keeps the inactive ones.
+-- An EMPTY list counts as "no answer", not as "the player hid everything".
+--
+-- Defensive rather than a fix for an observed bug -- worth saying, because the
+-- note that used to be here claimed this caused a blank screen during 1.70
+-- development and that was a misdiagnosis; the real cause was reloading in
+-- combat, where Reconcile bails by design. The concern is still real though:
+-- the data provider can answer before its display data is populated, and a
+-- valid `{}` would sail past a plain `if not catIDs` guard, discover nothing,
+-- and leave every group empty -- which also hides their containers, and with
+-- them the unlock-mode drag handles.
+--
+-- The trade is deliberate: a player who has genuinely hidden every cooldown in
+-- one category gets that category unfiltered instead of empty. Rare, visible
+-- and self-correcting, against the alternative of a silently blank group.
+-- `CooldownSetSignature` uses this same helper, so the moment a real list
+-- arrives the change registers and a reconcile follows.
+local function BlizzardFilteredIDs(viewerGlobal)
+    local viewer = viewerGlobal and _G[viewerGlobal]
+    if type(viewer) ~= "table" or type(viewer.GetCooldownIDs) ~= "function" then
+        return nil
+    end
+    local ok, ids = pcall(viewer.GetCooldownIDs, viewer)
+    if ok and type(ids) == "table" and #ids > 0 then return ids end
+    return nil
+end
+
+-- Whether the last discovery pass managed to read Blizzard's filtered lists.
+-- Reported by /sq cdm: "our groups show more than Blizzard's bars" and "the
+-- filter is being honoured but the player hid nothing" look identical on
+-- screen, and only this tells them apart.
+cdmModule.usedBlizzardFilter = {}
 
 local function DiscoverCooldowns()
     local discovered = {}
@@ -1022,19 +1211,45 @@ local function DiscoverCooldowns()
     local seenCdSpell, seenCdName = {}, {}
     for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
         local isCooldownType = (viewerInfo.viewerType ~= "buff")
-        local catIDs = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
-            and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
+
+        -- Blizzard's filtered list first; the raw category set only if the
+        -- viewer frame cannot answer.
+        local catIDs = BlizzardFilteredIDs(viewerInfo.viewer)
+        cdmModule.usedBlizzardFilter[viewerInfo.viewer] = (catIDs ~= nil)
+        if not catIDs then
+            catIDs = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
+                and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
+        end
+
         if catIDs then
-            for _, cdID in ipairs(catIDs) do
+            for orderIndex, cdID in ipairs(catIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
                 if info and info.isKnown then
-                    local name = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
+                    -- spellID is nilable as of 12.1 and really is absent on the
+                    -- equip-slot entries (a trinket is identified by its
+                    -- inventory slot, not a spell), which the filtered list can
+                    -- now hand us. Every use of it below is guarded because
+                    -- `seenCdSpell[nil] = true` is not a silent no-op -- it is
+                    -- a hard "table index is nil" error that would take the
+                    -- whole discovery pass down.
+                    local spellID   = info.spellID
+                    -- equipSlot is real on 12.1 (Blizzard's own item mixin
+                    -- drives a trinket's entire cooldown off it) but the
+                    -- language server's bundled annotations predate it, the
+                    -- same lag that makes them wrong about spellID being
+                    -- non-nilable. Confirmed in Blizzard's generated docs on
+                    -- Gethe/wow-ui-source live, 12.1.0 build 69587.
+                    ---@diagnostic disable-next-line: undefined-field
+                    local equipSlot = info.equipSlot
+                    local name = spellID and C_Spell.GetSpellName
+                        and C_Spell.GetSpellName(spellID)
                     name = BH.Secrets.SafeString(name, nil)
                     local isDuplicate = (not isCooldownType)
-                        and (seenCdSpell[info.spellID] or (name and seenCdName[name]))
+                        and ((spellID and seenCdSpell[spellID])
+                             or (name and seenCdName[name]))
                     if not isDuplicate then
                         if isCooldownType then
-                            seenCdSpell[info.spellID] = true
+                            if spellID then seenCdSpell[spellID] = true end
                             if name then seenCdName[name] = true end
                         end
 
@@ -1046,10 +1261,19 @@ local function DiscoverCooldowns()
                         -- icons drew no duration swipe -- the aura lookup missed
                         -- and it fell through to a spell cooldown that a
                         -- buff-only entry does not have.
-                        local auraIDs = { info.spellID }
+                        local auraIDs = {}
+                        if spellID then auraIDs[#auraIDs + 1] = spellID end
                         if info.overrideSpellID then
                             auraIDs[#auraIDs + 1] = info.overrideSpellID
                         end
+                        -- overrideTooltipSpellID deliberately NOT added here.
+                        -- Blizzard's GetSpellID prefers it, but this list is
+                        -- also what the tracked-buff duration lookup walks, and
+                        -- a tooltip override is a display alias rather than a
+                        -- promise that an aura exists under that ID. Widening
+                        -- it risks the 1.69 buff swipe binding to the wrong
+                        -- aura, for no gain: the override and linked IDs below
+                        -- already cover the forms a proc actually fires on.
                         if type(info.linkedSpellIDs) == "table" then
                             for _, lid in ipairs(info.linkedSpellIDs) do
                                 auraIDs[#auraIDs + 1] = lid
@@ -1058,10 +1282,15 @@ local function DiscoverCooldowns()
 
                         discovered[cdID] = {
                             cooldownID = cdID,
-                            spellID = info.spellID,
+                            spellID = spellID,
+                            equipSlot = equipSlot,
                             viewerType = viewerInfo.viewerType,
                             auraIDs = auraIDs,
                             hasAura = info.hasAura,
+                            -- Blizzard's own ordering, so the default
+                            -- "assignment" sort lays a group out the way the
+                            -- player arranged the matching Blizzard bar.
+                            order = orderIndex,
                         }
                     end
                 end
@@ -1076,11 +1305,31 @@ end
 -- We NEVER write to Blizzard's CDM frame tables to avoid taint.
 -- ============================================================================
 
-local function CreateProxyIcon(cooldownID, spellID, iconSize)
+-- The icon art for a proxy, spell or trinket.
+--
+-- An equip-slot entry has no spellID to ask, so it goes through ItemUtil the
+-- way Blizzard's own item frame does (`CooldownViewerItemDataMixin:GetSpellTexture`
+-- prefers the equip-slot texture over any spell texture). Returns nil rather
+-- than a placeholder when nothing is available yet, so the existing retry in
+-- ApplyProxyVisuals keeps working.
+local function ResolveProxyTexture(spellID, equipSlot)
+    if equipSlot and ItemUtil and ItemUtil.GetEquipSlotTexture then
+        local tex = ItemUtil.GetEquipSlotTexture(equipSlot)
+        if tex and not BH.Secrets.IsSecret(tex) then return tex end
+    end
+    if spellID and C_Spell.GetSpellTexture then
+        local tex = C_Spell.GetSpellTexture(spellID)
+        if tex and not BH.Secrets.IsSecret(tex) then return tex end
+    end
+    return nil
+end
+
+local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     local proxy = CreateFrame("Frame", nil, UIParent)
     proxy:SetSize(iconSize, iconSize)
     proxy:SetFrameStrata("MEDIUM")
     proxy.spellID = spellID
+    proxy.equipSlot = equipSlot
     proxy.cooldownID = cooldownID
 
     -- Background, behind the icon. Shows through wherever the icon does not
@@ -1096,8 +1345,8 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize)
     -- Icon texture
     local iconTex = proxy:CreateTexture(nil, "ARTWORK")
     iconTex:SetAllPoints()
-    local texture = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
-    if texture and not BH.Secrets.IsSecret(texture) then
+    local texture = ResolveProxyTexture(spellID, equipSlot)
+    if texture then
         iconTex:SetTexture(texture)
         proxy._iconSet = true
     end
@@ -1140,11 +1389,200 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize)
     proxy.GlowFrame = glow
     proxy._glowShowing = false
 
+    -- Proc glow, on its own frame rather than sharing GlowFrame.
+    --
+    -- ActionButtonSpellAlertManager keys its active-alert table by frame, so
+    -- two features glowing the same frame share one entry: whichever finished
+    -- first would call HideAlert and take the other's glow down with it. The
+    -- "glow when the cooldown comes up" option is ours and times out after two
+    -- seconds; the proc glow is Blizzard's and lasts as long as the proc. They
+    -- overlap rarely, but when they do neither should cancel the other.
+    local procGlow = CreateFrame("Frame", nil, proxy)
+    procGlow:SetAllPoints()
+    proxy.ProcGlow = procGlow
+
+    -- Default on, so a free-positioned icon -- which never goes through
+    -- ApplyProxyVisuals, having no group to read settings from -- still behaves
+    -- the way Blizzard's own icons do rather than silently missing both.
+    -- viewerType is not known yet at this point; the caller sets it immediately
+    -- after, and ApplyProxyVisuals re-derives both flags for grouped icons.
+    proxy._procGlowAllowed = true
+    proxy._usableTintAllowed = true
+
     return proxy
 end
 
+-- ============================================================================
+-- Blizzard parity for cooldown icons: proc glow, usable tint, range tint.
+--
+-- Everything here mirrors CooldownViewerCooldownItemMixin, which is what
+-- Blizzard's Essential and Utility bars run. Ours are proxy frames rather than
+-- Blizzard's item frames, so none of it comes for free the way the tracked-buff
+-- swipes do -- each piece has to be driven from the same events Blizzard
+-- listens to. Verified against Gethe/wow-ui-source live, 12.1.0 build 69587.
+--
+-- None of these APIs is protected: C_SpellActivationOverlay.IsSpellOverlayed
+-- and C_Spell.IsSpellUsable both carry only SecretArguments in the generated
+-- docs, no HasRestrictions, so there is no combat-queue or lineage problem
+-- here of the kind AddAuraSound has.
+-- ============================================================================
+
+-- Blizzard's exact colours, from CooldownViewerConstants.
+local TINT_USABLE      = { 1.0,  1.0,  1.0  }
+local TINT_NO_MANA     = { 0.5,  0.5,  1.0  }
+local TINT_UNUSABLE    = { 0.4,  0.4,  0.4  }
+local TINT_OUT_OF_RANGE= { 0.64, 0.15, 0.15 }
+
+-- Cheap enough to call from the update pass: it only reaches the widget when
+-- the icon has actually been resized since the last time.
+local function ResizeSpellAlert(proxy)
+    if not proxy then return end
+    local w = proxy:GetWidth()
+    if not w or w <= 0 or proxy._alertSizedFor == w then return end
+    proxy._alertSizedFor = w
+    if proxy.ProcGlow then ns.Glow.Resize(proxy.ProcGlow) end
+    if proxy.GlowFrame then ns.Glow.Resize(proxy.GlowFrame) end
+end
+
+-- Does this proxy answer to `spellID` for proc purposes?
+--
+-- Blizzard compares the event's spellID against the item's resolved GetSpellID,
+-- which prefers the override and aura IDs over the base spell. We already
+-- collect exactly that set as auraSpellIDs (base + override + overrideTooltip +
+-- linked), so a proc reported against an overridden form of the spell still
+-- finds its icon.
+local function ProxyMatchesSpell(proxy, spellID)
+    if not proxy or not spellID then return false end
+    if proxy.spellID == spellID then return true end
+    for _, sid in ipairs(proxy.auraSpellIDs or {}) do
+        if sid == spellID then return true end
+    end
+    return false
+end
+
+-- Is this spell lit up by a proc right now?
+--
+-- Secret probe before the truthiness test, never after: a bare `if value` on a
+-- secret is a hard error in its own right, which is the rule that took the buff
+-- scan down in 1.69. Unreadable counts as "not procced" -- the quiet direction,
+-- a missing glow rather than one stuck on.
+--
+-- A file-local rather than a closure inside the caller: this runs per spell ID,
+-- per icon, per update pass, and allocating a function at each of those is the
+-- exact cost that got the old per-comparison pcall wrappers removed.
+local function SpellIsOverlayed(spellID)
+    if not spellID then return false end
+    if not (C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed) then
+        return false
+    end
+    local v = C_SpellActivationOverlay.IsSpellOverlayed(spellID)
+    if BH.Secrets.IsSecret(v) then return false end
+    return v and true or false
+end
+
+local function SetProcGlow(proxy, on, skipBirth)
+    if not proxy or not proxy.ProcGlow then return end
+    on = on and true or false
+    if on == (proxy._procGlowing or false) then return end
+    proxy._procGlowing = on
+    if on then
+        ResizeSpellAlert(proxy)
+        ns.Glow.Show(proxy.ProcGlow, nil, skipBirth)
+    else
+        ns.Glow.Hide(proxy.ProcGlow)
+    end
+end
+
+-- Ask the client whether this spell is currently procced, rather than waiting
+-- for the next event.
+--
+-- Needed because the events are edge-triggered: a proc that lit up before the
+-- icon existed (a reload mid-fight, a group being switched on, a spec change)
+-- would never be reflected otherwise. Blizzard does the same thing from
+-- RefreshOverlayGlow whenever it rebuilds an item, and passes skipBirth so a
+-- glow that was already running does not replay its spawn animation.
+local function SyncProcGlow(proxy, allowed)
+    if not proxy or not proxy.ProcGlow then return end
+    if not allowed then
+        SetProcGlow(proxy, false)
+        return
+    end
+    local overlayed = false
+    if C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed then
+        for _, sid in ipairs(proxy.auraSpellIDs or {}) do
+            if SpellIsOverlayed(sid) then
+                overlayed = true
+                break
+            end
+        end
+        if not overlayed and SpellIsOverlayed(proxy.spellID) then
+            overlayed = true
+        end
+    end
+    local skipBirth = true
+    SetProcGlow(proxy, overlayed, skipBirth)
+end
+
+-- Usable / out-of-range tint, Blizzard's RefreshIconColor.
+--
+-- Kept off the desaturation path deliberately: SetDesaturated and
+-- SetVertexColor are independent, and the group's own "grey out when ready"
+-- option means something different from Blizzard's "grey out while unusable".
+-- Both can apply at once, exactly as they do on Blizzard's own icons.
+--
+-- The last colour applied is cached because this runs on every update pass for
+-- every icon, and SetVertexColor on an unchanged colour is still work.
+local function ApplyUsableTint(proxy, enabled)
+    if not proxy or not proxy.Icon then return end
+
+    local tint = TINT_USABLE
+    if enabled and proxy.spellID then
+        if proxy._outOfRange then
+            tint = TINT_OUT_OF_RANGE
+        elseif C_Spell.IsSpellUsable then
+            local usable, noMana = C_Spell.IsSpellUsable(proxy.spellID)
+            -- Secret probe first: a bare truthiness test on a secret is a hard
+            -- error, so these cannot simply be believed. Unreadable falls
+            -- through to "looks usable", which is the quiet direction -- an
+            -- icon at full colour, never a spuriously greyed one.
+            if not BH.Secrets.HasAnySecret(usable, noMana) then
+                if usable then
+                    tint = TINT_USABLE
+                elseif noMana then
+                    tint = TINT_NO_MANA
+                else
+                    tint = TINT_UNUSABLE
+                end
+            end
+        end
+    end
+
+    if proxy._tint ~= tint then
+        proxy._tint = tint
+        proxy.Icon:SetVertexColor(tint[1], tint[2], tint[3])
+    end
+end
+
 local function UpdateProxyCooldown(proxy)
-    if not proxy or not proxy.spellID or not proxy.Cooldown then return end
+    if not proxy or not proxy.Cooldown then return end
+
+    -- Trinkets and the like: no spell, so the cooldown comes off the inventory
+    -- slot. Blizzard reads it exactly this way in
+    -- CheckCacheCooldownValuesFromEquippedItem. Through SafeNumber because
+    -- these are ordinary numbers that go secret in combat like any other, and
+    -- `start + duration` on a secret throws rather than misbehaving.
+    if not proxy.spellID then
+        if proxy.equipSlot and GetInventoryItemCooldown then
+            local start, duration = GetInventoryItemCooldown("player", proxy.equipSlot)
+            start = BH.Secrets.SafeNumber(start, nil)
+            duration = BH.Secrets.SafeNumber(duration, nil)
+            if start and duration then
+                proxy.Cooldown:SetReverse(false)
+                proxy.Cooldown:SetCooldown(start, duration)
+            end
+        end
+        return
+    end
 
     -- Buff duration, the only way that survives combat.
     --
@@ -1491,13 +1929,34 @@ local function ApplyProxyVisuals(proxy, groupData)
     -- empty box floating next to the groups that did render. The buff
     -- categories are the ones that hit this, being discovered earlier in login
     -- than their spell data settles.
-    if not proxy._iconSet and proxy.Icon and proxy.spellID then
-        local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(proxy.spellID)
-        if tex and not BH.Secrets.IsSecret(tex) then
+    if not proxy._iconSet and proxy.Icon and (proxy.spellID or proxy.equipSlot) then
+        local tex = ResolveProxyTexture(proxy.spellID, proxy.equipSlot)
+        if tex then
             proxy.Icon:SetTexture(tex)
             proxy._iconSet = true
         end
     end
+
+    -- Blizzard parity: proc glow and the usable/range tint, both per group.
+    --
+    -- Cached on the proxy as well as applied, because the glow events arrive
+    -- outside any layout pass and the handler has no group in hand -- resolving
+    -- one there would mean repeating the assignment fallback for every icon on
+    -- every proc.
+    -- Cooldown-type entries only. Both of these live on
+    -- CooldownViewerCooldownItemMixin, which is Essential and Utility;
+    -- Blizzard's buff items inherit neither, so applying them to a tracked buff
+    -- would not be parity but invention -- and a buff has no meaningful "can
+    -- you cast this right now" to colour by in the first place.
+    local isCooldownType = (proxy.viewerType ~= "buff")
+
+    local procGlowOn = isCooldownType and (groupData.procGlow ~= false)
+    proxy._procGlowAllowed = procGlowOn
+    ResizeSpellAlert(proxy)
+    SyncProcGlow(proxy, procGlowOn)
+
+    proxy._usableTintAllowed = isCooldownType and (groupData.usableTint ~= false)
+    ApplyUsableTint(proxy, proxy._usableTintAllowed)
 
     -- Alpha
     local alpha = groupData.alpha or DEFAULT_ALPHA
@@ -1879,6 +2338,28 @@ function cdmModule:PrintSoundDiagnostics()
     print("  CDM enabled:", tostring(BH.settings and BH.settings.cdmEnabled))
     print("  auras secret right now:", tostring(BH.Secrets.AurasAreSecret()))
     print("  in combat:", tostring(InCombatLockdown()))
+
+    -- Whether Blizzard's own filtering is being honoured, per viewer.
+    --
+    -- "our groups list more than Blizzard's bars" has two completely different
+    -- causes -- the filter not being read at all, or being read correctly by a
+    -- player who has hidden nothing -- and they look identical on screen. This
+    -- is the only thing that separates them, so it is the first question on any
+    -- report that a group is showing too much.
+    do
+        print("  Blizzard CDM filter (false = falling back to the raw category set):")
+        for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
+            local used = cdmModule.usedBlizzardFilter[viewerInfo.viewer]
+            local filtered = BlizzardFilteredIDs(viewerInfo.viewer)
+            local raw = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
+                and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
+            print(string.format("      %-24s honoured=%-5s shows %s of %s",
+                viewerInfo.viewer, tostring(used and true or false),
+                filtered and tostring(#filtered) or "?",
+                raw and tostring(#raw) or "?"))
+        end
+    end
+
     do
         local hooked = 0
         for _ in pairs(cdmModule.hookDrivenCooldowns) do hooked = hooked + 1 end
@@ -2063,16 +2544,17 @@ UpdateAllProxyCooldowns = function()
     FireCDSounds()
 end
 
-local function GetOrCreateProxy(cooldownID, spellID, iconSize)
+local function GetOrCreateProxy(cooldownID, spellID, iconSize, equipSlot)
     local proxy = cdmModule.proxyFrames[cooldownID]
     if proxy then
         proxy:SetSize(iconSize, iconSize)
         proxy.Icon:SetAllPoints()
         proxy.Cooldown:SetAllPoints()
+        ResizeSpellAlert(proxy)
         proxy:Show()
         return proxy
     end
-    proxy = CreateProxyIcon(cooldownID, spellID, iconSize)
+    proxy = CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     cdmModule.proxyFrames[cooldownID] = proxy
     UpdateProxyCooldown(proxy)
     return proxy
@@ -2081,6 +2563,19 @@ end
 local function DestroyProxy(cooldownID)
     local proxy = cdmModule.proxyFrames[cooldownID]
     if proxy then
+        -- Stop the glows before letting go of the frame.
+        --
+        -- ActionButtonSpellAlertManager holds the glowing frame in its own
+        -- activeAlerts table, keyed by frame. Dropping our last reference does
+        -- not remove it from there -- WoW cannot destroy a frame, so the entry
+        -- and its pooled alert art would simply leak, and a cooldownID recycled
+        -- onto a fresh proxy later would leave the old one glowing invisibly
+        -- forever.
+        SetProcGlow(proxy, false)
+        if proxy._glowShowing then
+            ns.Glow.Hide(proxy.GlowFrame or proxy)
+            proxy._glowShowing = false
+        end
         proxy:Hide()
         proxy:SetParent(nil)
         cdmModule.proxyFrames[cooldownID] = nil
@@ -2291,8 +2786,25 @@ function cdmModule:LayoutGroup(groupName)
             return remA > remB  -- Longest CD first
         end)
     else
-        -- "assignment" = order by cooldownID (stable)
-        table.sort(members, function(a, b) return a.cdID < b.cdID end)
+        -- "assignment" = Blizzard's own order, falling back to cooldownID.
+        --
+        -- Discovery records the index each cooldown had in the list Blizzard
+        -- handed over, which is the order the player arranged in the Cooldown
+        -- Manager options. Using it means a group that mirrors one of Blizzard's
+        -- bars lays out the same way round, rather than in cooldownID order --
+        -- an internal number that has nothing to do with anything the player
+        -- can see. cooldownID still breaks ties and still orders anything with
+        -- no recorded index, so the sort stays total and stable.
+        table.sort(members, function(a, b)
+            local ea = cdmModule.registry[a.cdID]
+            local eb = cdmModule.registry[b.cdID]
+            local oa = ea and ea.order
+            local ob = eb and eb.order
+            if oa and ob and oa ~= ob then return oa < ob end
+            if oa and not ob then return true end
+            if ob and not oa then return false end
+            return a.cdID < b.cdID
+        end)
     end
 
     -- Determine growth multipliers from growDirection
@@ -2542,14 +3054,33 @@ end
 local reconcileTimer = nil
 
 function cdmModule:Reconcile()
-    -- SetPassThroughButtons (and other protected calls) are banned in combat
+    -- SetPassThroughButtons (and other protected calls) are banned in combat.
+    --
+    -- One timer a second, not one per frame. This used to reschedule with a 0
+    -- delay, which fires on the very next frame, bails again, and reschedules --
+    -- a timer allocated every frame for the entire fight, achieving nothing,
+    -- because nothing here can succeed until lockdown ends.
+    --
+    -- PLAYER_REGEN_ENABLED already schedules a reconcile, so that is the real
+    -- path back; this is only a backstop for the case where combat ends without
+    -- that event being useful. Reloading mid-combat lands here, which is why the
+    -- Cooldown Manager stays absent until the fight ends -- expected, not a bug,
+    -- and the first thing to rule out on any "nothing is showing" report.
     if InCombatLockdown() then
-        self:ScheduleReconcile(0)  -- will re-fire, but next check will bail until combat ends
+        self:ScheduleReconcile(1.0)
         return
     end
 
     local specData = GetSpecData()
-    if not specData then return end
+    if not specData then
+        -- Retry rather than give up. This is nil only while the profile system
+        -- is not up yet, which is a transient early-login state -- but a plain
+        -- `return` here meant the module sat dead until something unrelated
+        -- happened to schedule another reconcile, which on a quiet login is
+        -- never. Nothing on screen and no drag handles is the result.
+        self:ScheduleReconcile(0.5)
+        return
+    end
 
     if not BH.settings or not BH.settings.cdmEnabled then
         self:ReleaseAll()
@@ -2583,16 +3114,20 @@ function cdmModule:Reconcile()
         local existing = self.registry[cdID]
         if existing then
             existing.spellID = cdData.spellID
+            existing.equipSlot = cdData.equipSlot
             existing.viewerType = cdData.viewerType
             existing.auraIDs = cdData.auraIDs
             existing.hasAura = cdData.hasAura
+            existing.order = cdData.order
         else
             self.registry[cdID] = {
                 spellID = cdData.spellID,
+                equipSlot = cdData.equipSlot,
                 cooldownID = cdID,
                 viewerType = cdData.viewerType,
                 auraIDs = cdData.auraIDs,
                 hasAura = cdData.hasAura,
+                order = cdData.order,
                 managed = false,
             }
         end
@@ -2630,11 +3165,16 @@ function cdmModule:Reconcile()
             entry.managed = true
             local group = self.groups[assignment]
             if group then group.usesBlizzardIcons = true end
-        elseif assignment and entry.spellID then
+        -- equipSlot as well as spellID: an equip-slot entry (a trinket) carries
+        -- no spellID at all, and reaches a group only because the player
+        -- dragged it into Essential or Utility in Blizzard's own settings.
+        -- Requiring a spellID here dropped it on the floor, so honouring the
+        -- filter would have shown the player one fewer icon than Blizzard does.
+        elseif assignment and (entry.spellID or entry.equipSlot) then
             entry.managed = true
 
             if assignment == "FREE" then
-                local proxy = GetOrCreateProxy(cdID, entry.spellID, DEFAULT_ICON_SIZE)
+                local proxy = GetOrCreateProxy(cdID, entry.spellID, DEFAULT_ICON_SIZE, entry.equipSlot)
                 proxy.auraSpellIDs = entry.auraIDs
                 proxy.viewerType = entry.viewerType
                 self.freeIcons[cdID] = proxy
@@ -2645,7 +3185,7 @@ function cdmModule:Reconcile()
                 if group then
                     local groupData = specData.groups[assignment]
                     local iconSize = groupData and groupData.iconSize or DEFAULT_ICON_SIZE
-                    local proxy = GetOrCreateProxy(cdID, entry.spellID, iconSize)
+                    local proxy = GetOrCreateProxy(cdID, entry.spellID, iconSize, entry.equipSlot)
                     proxy.auraSpellIDs = entry.auraIDs
                     proxy.viewerType = entry.viewerType
                     group.members[cdID] = proxy
@@ -3215,6 +3755,37 @@ function cdmModule:ReleaseAll()
     self:ApplyBlizzardVisibility()
 end
 
+-- The active profile changed, so the group layout did too.
+--
+-- Groups live on the profile as of 1.70, which means switching profile swaps
+-- the whole set for a different table -- different names, positions and
+-- styling. The cached view has to go first, or the rebuild would read the
+-- profile that was just left and write the new layout back into it.
+--
+-- Containers are NOT destroyed by ReleaseAll, and must not be: they are created
+-- once per session and reused, because other addons anchor to them by name and
+-- WoW cannot destroy a frame. A group present in one profile and absent from
+-- the next simply keeps a hidden, empty container.
+function cdmModule:OnProfileChanged()
+    self:InvalidateSpecData()
+
+    -- Tear down either way: the profile being loaded may have the module off,
+    -- and leaving the previous profile's icons on screen would look like the
+    -- setting had not applied.
+    self:ReleaseAll()
+
+    if BH.settings and BH.settings.cdmEnabled then
+        self:EnsureBuiltinGroups()
+        self:ScheduleReconcile(RECONCILE_DEBOUNCE)
+    end
+
+    -- The settings panel is built once and refreshed in place, so an open
+    -- Cooldowns tab would otherwise keep listing the previous profile's groups
+    -- -- and worse, its rows hold a direct reference to the old group tables,
+    -- so editing one would write into the profile just left.
+    if BH.RebuildCDMTabContent then BH:RebuildCDMTabContent() end
+end
+
 -- ============================================================================
 -- Group Management API â€” Used by settings UI
 -- ============================================================================
@@ -3273,6 +3844,11 @@ function cdmModule:CreateGroup(groupName)
         desaturateReady = false,
         glowOnReady = false,
         hideOutOfCombat = false,
+        -- Blizzard parity, on by default: these are things the Cooldown Manager
+        -- already does on its own bars, so a group that replaces one should do
+        -- them too rather than needing to be switched on to catch up.
+        procGlow = true,
+        usableTint = true,
         -- Icon look. Absent on groups made before 1.69, which is why every
         -- read is `or DEFAULT_x` rather than assuming these exist.
         borderThickness = DEFAULT_BORDER_THICKNESS,
@@ -3466,25 +4042,34 @@ function cdmModule:GetAvailableCooldowns()
             for _, cdID in ipairs(catIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
                 if info and info.isKnown then
-                    -- Skip if we already have this spellID from another category
-                    local spellName = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
-                    if not seenSpells[info.spellID] and not (spellName and seenNames[spellName]) then
-                        seenSpells[info.spellID] = true
+                    -- The raw set on purpose, not Blizzard's filtered list.
+                    -- This is the assignment page: a spell you have hidden on
+                    -- Blizzard's bars is exactly the sort of thing you might
+                    -- want in a custom group of your own, so hiding it here
+                    -- would take away the only way to ask for it.
+                    --
+                    -- spellID is nilable (equip-slot entries have none), and
+                    -- `seenSpells[nil] = true` is a hard error rather than a
+                    -- no-op, so every use of it is guarded.
+                    local spellID = info.spellID
+                    ---@diagnostic disable-next-line: undefined-field
+                    local equipSlot = info.equipSlot
+                    local spellName = spellID and C_Spell.GetSpellName
+                        and C_Spell.GetSpellName(spellID)
+                    if spellName and BH.Secrets.IsSecret(spellName) then
+                        spellName = nil
+                    end
+                    local dupe = (spellID and seenSpells[spellID])
+                        or (spellName and seenNames[spellName])
+                    if not dupe then
+                        if spellID then seenSpells[spellID] = true end
                         if spellName then seenNames[spellName] = true end
-                        local spellName = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
-                        local spellIcon = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(info.spellID)
-                        -- Guard against secrets
-                        if spellName and BH.Secrets.IsSecret(spellName) then
-                            spellName = "Spell " .. cdID
-                        end
-                        if spellIcon and BH.Secrets.IsSecret(spellIcon) then
-                            spellIcon = nil
-                        end
                         cooldowns[cdID] = {
                             cooldownID = cdID,
-                            spellID = info.spellID,
+                            spellID = spellID,
+                            equipSlot = equipSlot,
                             name = spellName or ("Spell " .. cdID),
-                            icon = spellIcon,
+                            icon = ResolveProxyTexture(spellID, equipSlot),
                             viewerType = viewerInfo.viewerType,
                             category = info.category,
                         }
@@ -3514,18 +4099,26 @@ function cdmModule:GetAvailableBuffCooldowns()
         for _, cdID in ipairs(catIDs) do
             local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
             if info and info.isKnown then
-                local spellName = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
-                if not seenSpells[info.spellID] and not (spellName and seenNames[spellName]) then
-                    seenSpells[info.spellID] = true
+                -- spellID is nilable as of 12.1; indexing a table with nil
+                -- reads fine but assigning to it is a hard error, so both
+                -- seen-tables are only written through a guard.
+                local spellID = info.spellID
+                ---@diagnostic disable-next-line: undefined-field
+                local equipSlot = info.equipSlot
+                local spellName = spellID and C_Spell.GetSpellName
+                    and C_Spell.GetSpellName(spellID)
+                if spellName and BH.Secrets.IsSecret(spellName) then spellName = nil end
+                local dupe = (spellID and seenSpells[spellID])
+                    or (spellName and seenNames[spellName])
+                if not dupe then
+                    if spellID then seenSpells[spellID] = true end
                     if spellName then seenNames[spellName] = true end
-                    local spellIcon = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(info.spellID)
-                    if spellName and BH.Secrets.IsSecret(spellName) then spellName = "Buff " .. cdID end
-                    if spellIcon and BH.Secrets.IsSecret(spellIcon) then spellIcon = nil end
                     buffs[cdID] = {
                         cooldownID = cdID,
-                        spellID    = info.spellID,
+                        spellID    = spellID,
+                        equipSlot  = equipSlot,
                         name       = spellName or ("Buff " .. cdID),
-                        icon       = spellIcon,
+                        icon       = ResolveProxyTexture(spellID, equipSlot),
                         viewerType = "buff",
                     }
                 end
@@ -3606,6 +4199,29 @@ eventFrame:RegisterEvent("PLAYER_PVP_TALENT_UPDATE")
 -- rewrites itself every time you shapeshift is worse than a stable one.
 eventFrame:RegisterEvent("UPDATE_BINDINGS")
 eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+-- Blizzard parity for the cooldown groups. Same five the Essential and Utility
+-- viewers register in CooldownViewerCooldownMixin:OnShow, minus
+-- SPELL_UPDATE_COOLDOWN which is already above.
+eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+eventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
+eventFrame:RegisterEvent("SPELL_RANGE_CHECK_UPDATE")
+eventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
+eventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
+
+-- The player editing Blizzard's Cooldown Manager settings.
+--
+-- Now that the groups follow Blizzard's filter, hiding a spell there has to
+-- take a spell off our bar too, and no game event fires for it -- the layout
+-- manager announces it on the EventRegistry instead, which is how Blizzard's
+-- own viewers hear about it (CooldownViewerMixin registers the same callback).
+-- Without this the change would not land until the next spec change or reload,
+-- which reads exactly like the filter being ignored again.
+if EventRegistry and EventRegistry.RegisterCallback then
+    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+        cdmModule:ScheduleReconcile(RECONCILE_DEBOUNCE)
+    end, cdmModule)
+end
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -3632,13 +4248,25 @@ local function CooldownSetSignature()
     end
     local parts = {}
     -- 0 Essential, 1 Utility, 2 TrackedBuff, 3 TrackedBar.
-    for category = 0, 3 do
-        local ok, ids = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, category)
-        if ok and ids then
-            local sorted = {}
-            for i = 1, #ids do sorted[i] = ids[i] end
-            table.sort(sorted)
-            parts[#parts + 1] = category .. ":" .. table.concat(sorted, ",")
+    --
+    -- Blizzard's filtered list where it can be had, matching what discovery
+    -- actually walks -- otherwise a change the player makes in the Cooldown
+    -- Manager options leaves the raw sets identical, the signature unchanged,
+    -- and the reconcile skipped. Left unsorted for the same reason: the order
+    -- is the player's arrangement and now drives our layout, so a pure reorder
+    -- has to register as a change.
+    for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
+        local ids = BlizzardFilteredIDs(viewerInfo.viewer)
+        if not ids then
+            local ok, raw = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, viewerInfo.category)
+            if ok and raw then
+                ids = {}
+                for i = 1, #raw do ids[i] = raw[i] end
+                table.sort(ids)
+            end
+        end
+        if ids then
+            parts[#parts + 1] = viewerInfo.category .. ":" .. table.concat(ids, ",")
         end
     end
     if #parts == 0 then return nil end
@@ -3726,6 +4354,45 @@ local function UpdateCombatVisibility()
 end
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
+    -- Proc glow. Edge-triggered by the client, so these are the whole story
+    -- while an icon exists; SyncProcGlow covers the icons that did not.
+    if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW"
+       or event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" then
+        local spellID = ...
+        if BH.Secrets.IsSecret(spellID) then return end
+        local show = (event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
+        for _, proxy in pairs(cdmModule.proxyFrames) do
+            if proxy._procGlowAllowed and ProxyMatchesSpell(proxy, spellID) then
+                -- skipBirth false: this IS the fresh proc, so the spawn
+                -- animation is the point. Blizzard makes the same distinction
+                -- between its event path and its refresh path.
+                SetProcGlow(proxy, show, false)
+            end
+        end
+        return
+    end
+    if event == "SPELL_UPDATE_USABLE" then
+        for _, proxy in pairs(cdmModule.proxyFrames) do
+            ApplyUsableTint(proxy, proxy._usableTintAllowed)
+        end
+        return
+    end
+    if event == "SPELL_RANGE_CHECK_UPDATE" then
+        local spellID, inRange, checksRange = ...
+        if BH.Secrets.HasAnySecret(spellID, inRange, checksRange) then return end
+        for _, proxy in pairs(cdmModule.proxyFrames) do
+            if ProxyMatchesSpell(proxy, spellID) then
+                proxy._outOfRange = (checksRange == true and inRange == false)
+                ApplyUsableTint(proxy, proxy._usableTintAllowed)
+            end
+        end
+        return
+    end
+    if event == "BAG_UPDATE_COOLDOWN" then
+        -- Trinkets: nothing else reports an equip-slot cooldown starting.
+        UpdateAllProxyCooldowns()
+        return
+    end
     if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_SLOT_CHANGED" then
         cdmModule.InvalidateKeybinds()
         UpdateAllProxyCooldowns()
@@ -3748,7 +4415,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             HookBlizzardAlertEvents()
             UpdateAllProxyCooldowns()
         end
-    elseif event == "SPELLS_CHANGED" then
+    elseif event == "SPELLS_CHANGED" or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
         cdmModule:ScheduleReconcile(RECONCILE_DEBOUNCE)
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         -- Spec changed - release all, reload for new spec.
@@ -4545,6 +5212,25 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
     ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
     glowCB:SetChecked(groupData.glowOnReady)
+    yOffset = yOffset - 24
+
+    local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)
+        groupData.procGlow = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    procCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(procCB, "Proc Glow",
+        "Show the game's own proc highlight on an icon when the ability lights up, the same animation you get on an action bar and on Blizzard's own cooldown bars.")
+    procCB:SetChecked(groupData.procGlow ~= false)
+
+    local usableCB = CreateSQCheckbox(content, "Dim When Unusable", function(checked)
+        groupData.usableTint = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    usableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(usableCB, "Dim When Unusable",
+        "Colour the icon by whether you can cast it right now, exactly as Blizzard's own bars do: dimmed when it is unusable, blue when you lack the power for it, and red when the target is out of range.")
+    usableCB:SetChecked(groupData.usableTint ~= false)
     yOffset = yOffset - 24
 
     local enableCB = CreateSQCheckbox(content, "Enable Group", function(checked)
