@@ -1508,7 +1508,6 @@ local function ApplyProxyVisuals(proxy, groupData)
     if proxy.Border then proxy.Border:SetShown(showBorder) end
 
     ApplyKeybindText(proxy, proxy.spellID, groupData)
-    ApplyIconShape(proxy, groupData.iconShape)
 
     -- Charge count: visibility and placement.
     if proxy.Count then
@@ -1540,13 +1539,28 @@ local function ApplyProxyVisuals(proxy, groupData)
     local bg        = groupData.bgColor or DEFAULT_BG_COLOR
     local bgOn      = groupData.bgEnabled and true or false
     local classCol  = groupData.borderClassColor and true or false
+    local shape     = groupData.iconShape or "none"
 
+    -- Appended after format, not built into the format string: a value
+    -- containing a % would otherwise be read as a directive.
     local sig = ("%d|%.3f|%.2f,%.2f,%.2f,%.2f|%s|%.2f,%.2f,%.2f,%.2f|%s"):format(
         thickness, zoom, bc[1], bc[2], bc[3], bc[4],
         tostring(classCol), bg[1], bg[2], bg[3], bg[4], tostring(bgOn))
+        .. "|" .. shape
 
     if proxy._styleSig ~= sig then
         proxy._styleSig = sig
+
+        -- Shape before the SetTexCoord below, and both inside this block.
+        --
+        -- Removing a mask registers but does not repaint on its own: the icon
+        -- kept rendering round until something else touched the texture. That
+        -- is why switching back to square appeared to change only one icon
+        -- until an unrelated slider (border opacity) was nudged -- that changed
+        -- the signature, which re-ran SetTexCoord, which forced the repaint.
+        -- Running the mask change here means the SetTexCoord immediately after
+        -- is the repaint.
+        ApplyIconShape(proxy, shape)
 
         if proxy.Icon then
             proxy.Icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
