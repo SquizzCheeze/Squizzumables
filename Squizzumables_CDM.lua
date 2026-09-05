@@ -639,6 +639,57 @@ end
 --
 -- Re-applied from the poll, because Blizzard re-anchors these on its own layout
 -- pass and would otherwise pull them back to its bar.
+-- A stand-in icon for a tracked buff that is not currently up.
+--
+-- Ours, not Blizzard's: Blizzard's frame is hidden because it has no aura bound
+-- to it, so showing it would draw whatever stale state it last held. One per
+-- cooldownID, kept on the group and reused.
+function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
+    group.placeholders = group.placeholders or {}
+    local ph = group.placeholders[cdID]
+    if not ph then
+        ph = CreateFrame("Frame", nil, group.container)
+        ph:SetFrameStrata("MEDIUM")
+        ph.isPlaceholder = true
+        ph.cooldownID = cdID
+        local tex = ph:CreateTexture(nil, "ARTWORK")
+        tex:SetAllPoints()
+        ph.Icon = tex
+        group.placeholders[cdID] = ph
+    end
+
+    -- Texture resolved lazily and remembered: it can be unavailable or secret
+    -- early in a login, the same way proxy icons could come up blank.
+    if not ph._iconSet then
+        local sid = SpellIDForCooldown(cdID)
+        local t = sid and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)
+        if t and not BH.Secrets.IsSecret(t) then
+            ph.Icon:SetTexture(t)
+            ph._iconSet = true
+        end
+    end
+
+    local zoom = groupData.iconZoom or DEFAULT_ICON_ZOOM
+    ph.Icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
+    ph.Icon:SetDesaturated(groupData.desaturateInactiveBuffs ~= false)
+    ph:SetAlpha(groupData.inactiveBuffAlpha or 0.45)
+    ph:Show()
+    return ph
+end
+
+-- Hide any placeholder not used by this pass: a buff that has just come up, or
+-- the whole set when Always Show Buffs is switched off.
+function cdmModule:ReleaseUnusedPlaceholders(group, slots)
+    if not group.placeholders then return end
+    local used = {}
+    for _, f in ipairs(slots) do
+        if f.isPlaceholder then used[f.cooldownID] = true end
+    end
+    for cdID, ph in pairs(group.placeholders) do
+        if not used[cdID] then ph:Hide() end
+    end
+end
+
 function cdmModule:LayoutBorrowedBuffIcons(groupName)
     local group = self.groups[groupName]
     local specData = GetSpecData()
@@ -650,24 +701,50 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     local perRow   = groupData.perRow or DEFAULT_PER_ROW
     local growDir  = groupData.growDirection or DEFAULT_GROW_DIRECTION
 
-    -- Only frames Blizzard is currently showing. It hides an inactive tracked
-    -- buff itself, so the row packs down to what is really up without needing
-    -- our own active-state logic -- which is the part that kept breaking.
-    local shown = {}
+    -- Blizzard hides an inactive tracked buff itself, so the row packs down to
+    -- what is really up without any active-state logic of ours -- which is the
+    -- part that kept breaking before buffs were borrowed.
+    --
+    -- "Always Show Buffs" wants the opposite: a slot held for every tracked
+    -- buff whether or not it is up. That cannot be done by un-hiding Blizzard's
+    -- frame -- it is hidden precisely because it has no aura bound, so it would
+    -- draw whatever stale state it last held. So an inactive buff gets a
+    -- placeholder of OURS in the slot instead, which is also how EllesmereUI
+    -- does it.
+    local showInactive = groupData.showInactiveBuffs and true or false
+    local shown, inactive = {}, {}
     for _, viewerName in ipairs(BUFF_VIEWERS) do
         local viewer = _G[viewerName]
         if viewer then
             local ok, children = pcall(function() return { viewer:GetChildren() } end)
             if ok and children then
                 for _, child in ipairs(children) do
-                    if child and child.cooldownID and child:IsShown() then
-                        shown[#shown + 1] = child
+                    if child and child.cooldownID then
+                        if child:IsShown() then
+                            shown[#shown + 1] = child
+                        elseif showInactive then
+                            inactive[#inactive + 1] = child.cooldownID
+                        end
                     end
                 end
             end
         end
     end
     table.sort(shown, function(a, b) return a.cooldownID < b.cooldownID end)
+    table.sort(inactive)
+
+    -- Active first, then the placeholders, each in a stable order. Keeping the
+    -- live ones together stops an icon jumping across the row every time an
+    -- unrelated buff further along expires.
+    local slots = {}
+    for _, child in ipairs(shown) do slots[#slots + 1] = child end
+    if showInactive then
+        for _, cdID in ipairs(inactive) do
+            slots[#slots + 1] = self:GetBuffPlaceholder(group, cdID, groupData)
+        end
+    end
+    self:ReleaseUnusedPlaceholders(group, slots)
+    shown = slots
 
     local centered   = (growDir == "centereddown" or growDir == "centeredup")
     local centeredUp = (growDir == "centeredup")
@@ -2971,6 +3048,10 @@ function cdmModule:CreateGroup(groupName)
         anchorPoint = "below",
         anchorX = 0,
         anchorY = -4,
+        -- Tracked buffs only: hold a slot for a buff that is not up.
+        showInactiveBuffs = false,
+        desaturateInactiveBuffs = true,
+        inactiveBuffAlpha = 0.45,
     }
 
     self:ScheduleReconcile()
@@ -4274,6 +4355,45 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     bgColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
     ns.Rows.AddTooltip(bgColorPicker, "Background Colour", "Colour and opacity of the icon background.")
     yOffset = yOffset - 28
+
+    -- Tracked-buff options. Only meaningful for a group holding buffs, so they
+    -- are only offered on one: on any other group they would be dead controls.
+    local grp = BH.cdm.groups[groupName]
+    local holdsBuffs = (grp and grp.usesBlizzardIcons)
+        or groupName == BUILTIN_FOR_VIEWERTYPE["buff"]
+    if holdsBuffs then
+        local alwaysCB = CreateSQCheckbox(content, "Always Show Buffs", function(checked)
+            groupData.showInactiveBuffs = checked
+            BH.cdm:ScheduleReconcile()
+        end)
+        alwaysCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(alwaysCB, "Always Show Buffs",
+            "Keep a slot for every tracked buff, showing a dimmed placeholder while it is not up, "
+         .. "instead of the row shrinking to only the active ones.")
+        alwaysCB:SetChecked(groupData.showInactiveBuffs)
+
+        local desatBuffCB = CreateSQCheckbox(content, "Grey Out Inactive", function(checked)
+            groupData.desaturateInactiveBuffs = checked
+            BH.cdm:ScheduleReconcile()
+        end)
+        desatBuffCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+        ns.Rows.AddTooltip(desatBuffCB, "Grey Out Inactive",
+            "Draw those placeholders in greyscale. Untick to keep them in colour and rely on the "
+         .. "dimming alone.")
+        desatBuffCB:SetChecked(groupData.desaturateInactiveBuffs ~= false)
+        yOffset = yOffset - 24
+
+        local phAlpha = CreateSQSlider(content, "Inactive Buff Opacity %", 220, 5, 100, 5)
+        phAlpha:SetValue(math.floor(((groupData.inactiveBuffAlpha or 0.45) * 100) + 0.5))
+        phAlpha:SetAfterValueChanged(function(value)
+            groupData.inactiveBuffAlpha = value / 100
+            BH.cdm:ScheduleReconcile()
+        end)
+        phAlpha:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(phAlpha, "Inactive Buff Opacity %",
+            "How visible the placeholder for a buff that is not up should be.")
+        yOffset = yOffset - 46
+    end
 
     -- Visibility conditions. All default off, so a group shows everywhere
     -- unless told otherwise.

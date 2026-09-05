@@ -63,6 +63,9 @@ V1.69
   icon size all work as before, and Hide Until Active now comes free because the game hides
   an inactive tracked buff itself. The per-icon border, zoom and background do not apply to
   buffs any more, since these are the game's own icons
+- New "Always Show Buffs" option for the tracked buff group: keep a slot for every buff you
+  track, showing a dimmed placeholder while it is not up, rather than the row shrinking to
+  only the active ones. "Grey Out Inactive" and an opacity slider control how those look
 - Fixed tracked buffs showing no duration swipe. A tracked buff's aura is frequently a
   different spell from the one its cooldown is listed under, and only that one was being
   checked -- so the lookup found nothing and fell back to a spell cooldown those entries do
