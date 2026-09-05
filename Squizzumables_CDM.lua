@@ -898,10 +898,17 @@ local function UpdateProxyCooldown(proxy)
     -- No active buff â€” show normal spell cooldown
     proxy.Cooldown:SetReverse(false)
     if proxy.Count then
-        -- Show spell charges if applicable
+        -- Show spell charges if applicable.
+        --
+        -- Through Secrets: these fields go secret in combat like any other, and
+        -- `maxCharges > 1` on a secret value throws rather than misbehaving --
+        -- the same crash class as the aura reads above. Unreadable means no
+        -- number rather than an error.
         local spellCharges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(proxy.spellID)
-        if spellCharges and spellCharges.maxCharges > 1 then
-            proxy.Count:SetText(spellCharges.currentCharges)
+        local maxCharges = spellCharges and BH.Secrets.SafeNumber(spellCharges.maxCharges, nil)
+        local curCharges = spellCharges and BH.Secrets.SafeNumber(spellCharges.currentCharges, nil)
+        if maxCharges and curCharges and maxCharges > 1 then
+            proxy.Count:SetText(curCharges)
         else
             proxy.Count:SetText("")
         end
@@ -1003,13 +1010,25 @@ local function ApplyProxyVisuals(proxy, groupData)
         local onCD = false
         local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(proxy.spellID)
         if cdInfo then
-            -- cdInfo fields may be secret
             local start = cdInfo.startTime
             local dur = cdInfo.duration
             if start and dur then
-                local startOK = not BH.Secrets.IsSecret(start)
-                local durOK = not BH.Secrets.IsSecret(dur)
-                if startOK and durOK and dur > 1.5 then
+                -- SECRET MEANS ON COOLDOWN. It is not "unreadable, give up".
+                --
+                -- These fields are only secret while there is something to
+                -- derive them from; a ready spell has nothing secret to hide
+                -- and reads as a plain value. This module already relies on
+                -- that for the CDM available alert -- see the note there, and
+                -- in CLAUDE.md, about the SECRET -> false transition being
+                -- exactly "now available".
+                --
+                -- Treating secret as "not on cooldown" made isActive false for
+                -- everything the moment combat started, so with Hide Until
+                -- Active every icon vanished on the pull and came back when
+                -- combat dropped, and desaturation inverted at the same time.
+                if BH.Secrets.IsSecret(start) or BH.Secrets.IsSecret(dur) then
+                    onCD = true
+                elseif dur > 1.5 then
                     onCD = true
                 end
             end
