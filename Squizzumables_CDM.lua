@@ -565,6 +565,61 @@ function cdmModule:ResetResolutionMaps()
     wipe(self.soundTrackers)
 end
 
+-- Mirror Blizzard's own duration object onto our matching proxy icon.
+--
+-- A buff's remaining time cannot be FETCHED in combat. /sq cdmbuff settled
+-- that: with a perfectly readable auraInstanceID (1583) and unit ("player"),
+-- C_UnitAuras.GetAuraDuration still THREW once auras went secret, because the
+-- instance-id APIs hard-error on a restricted unit. There is no lookup route.
+--
+-- But Blizzard hands its OWN Cooldown widget a duration object every time it
+-- refreshes one, and that object is opaque -- nothing has to be read out of it.
+-- Catching it on the way past and passing the same object to our widget
+-- reproduces the sweep exactly, with no value entering Lua. EllesmereUI hooks
+-- these same two setters for the same reason.
+--
+-- Separate from the buff-state hooks below, and re-tried on every sweep,
+-- because these frames are pooled and Blizzard builds their regions on its own
+-- schedule: child.Cooldown is frequently absent the first time a frame is seen.
+-- Installing this inside the one-shot _sqzBuffHooked gate meant such a frame
+-- was tagged as hooked, skipped, and never given another chance -- which is
+-- why the swipes were still missing after the first attempt. Idempotent via its
+-- own tag, so repeating it is free.
+local function MirrorBlizzardCooldown(child)
+    local cdw = child.Cooldown or (child.GetCooldownFrame and child:GetCooldownFrame())
+    if not cdw or cdw._sqMirrorHooked then return end
+    cdw._sqMirrorHooked = true
+
+    -- cooldownID is read at call time rather than closed over: these frames are
+    -- pooled and get recycled onto other cooldowns.
+    local function MirrorTo(fn)
+        return function(_, ...)
+            local id = child.cooldownID
+            local p = id and cdmModule.proxyFrames[id]
+            if p and p.Cooldown then fn(p.Cooldown, ...) end
+        end
+    end
+
+    if cdw.SetCooldownFromDurationObject then
+        hooksecurefunc(cdw, "SetCooldownFromDurationObject",
+            MirrorTo(function(target, durObj, ...)
+                if durObj and target.SetCooldownFromDurationObject then
+                    target:SetReverse(true)
+                    target:SetCooldownFromDurationObject(durObj, ...)
+                end
+            end))
+    end
+
+    hooksecurefunc(cdw, "SetCooldown",
+        MirrorTo(function(target, start, duration, ...)
+            -- Passed straight through: widget setters accept secret values,
+            -- and it is comparing or doing arithmetic on them that throws.
+            target:SetReverse(true)
+            target:SetCooldown(start, duration, ...)
+        end))
+end
+cdmModule.MirrorBlizzardCooldown = MirrorBlizzardCooldown
+
 -- Hook Blizzard CDM buff frames (both viewers) to track active state changes
 local function HookBlizzardBuffFrames()
     for _, viewerName in ipairs(BUFF_VIEWERS) do
@@ -573,69 +628,24 @@ local function HookBlizzardBuffFrames()
             local ok, children = pcall(function() return { viewer:GetChildren() } end)
             if ok and children then
                 for _, child in ipairs(children) do
-                    if child and child.cooldownID and not child._sqzBuffHooked then
-                        child._sqzBuffHooked = true
-                        local function OnBuffStateChanged()
-                            ScanBlizzardBuffState()
-                            UpdateAllProxyCooldowns()
-                        end
-                        if child.OnActiveStateChanged then
-                            hooksecurefunc(child, "OnActiveStateChanged", OnBuffStateChanged)
-                        end
-                        if child.OnUnitAuraAddedEvent then
-                            hooksecurefunc(child, "OnUnitAuraAddedEvent", OnBuffStateChanged)
-                        end
-                        if child.OnUnitAuraRemovedEvent then
-                            hooksecurefunc(child, "OnUnitAuraRemovedEvent", OnBuffStateChanged)
-                        end
-
-                        -- Mirror Blizzard's own duration object onto our icon.
-                        --
-                        -- A buff's remaining time cannot be fetched in combat.
-                        -- /sq cdmbuff settled it: with a perfectly readable
-                        -- auraInstanceID (1583) and unit ("player"),
-                        -- C_UnitAuras.GetAuraDuration still THREW once auras
-                        -- went secret. The instance-id APIs hard-error on a
-                        -- restricted unit, so there is no fetching route at all.
-                        --
-                        -- But Blizzard already hands its own Cooldown widget a
-                        -- duration object every time it updates one, and that
-                        -- object is opaque -- nothing has to be read out of it.
-                        -- Catching it on the way past and passing the same
-                        -- object to our widget gives an identical sweep with no
-                        -- value ever entering Lua. This is what EllesmereUI
-                        -- hooks for the same reason.
-                        local cdw = child.Cooldown or child.cooldown
-                        if cdw and not cdw._sqMirrorHooked then
-                            cdw._sqMirrorHooked = true
-                            -- cooldownID read at call time, not closed over:
-                            -- these frames are pooled and get recycled onto
-                            -- other cooldowns.
-                            local function MirrorTo(fn)
-                                return function(_, ...)
-                                    local id = child.cooldownID
-                                    local p = id and cdmModule.proxyFrames[id]
-                                    if p and p.Cooldown then fn(p.Cooldown, ...) end
-                                end
+                    if child and child.cooldownID then
+                        if not child._sqzBuffHooked then
+                            child._sqzBuffHooked = true
+                            local function OnBuffStateChanged()
+                                ScanBlizzardBuffState()
+                                UpdateAllProxyCooldowns()
                             end
-                            if cdw.SetCooldownFromDurationObject then
-                                hooksecurefunc(cdw, "SetCooldownFromDurationObject",
-                                    MirrorTo(function(target, durObj, ...)
-                                        if durObj and target.SetCooldownFromDurationObject then
-                                            target:SetReverse(true)
-                                            target:SetCooldownFromDurationObject(durObj, ...)
-                                        end
-                                    end))
+                            if child.OnActiveStateChanged then
+                                hooksecurefunc(child, "OnActiveStateChanged", OnBuffStateChanged)
                             end
-                            hooksecurefunc(cdw, "SetCooldown",
-                                MirrorTo(function(target, start, duration, ...)
-                                    -- Passed through untouched: widget setters
-                                    -- accept secret values, and comparing or
-                                    -- doing arithmetic on these is what throws.
-                                    target:SetReverse(true)
-                                    target:SetCooldown(start, duration, ...)
-                                end))
+                            if child.OnUnitAuraAddedEvent then
+                                hooksecurefunc(child, "OnUnitAuraAddedEvent", OnBuffStateChanged)
+                            end
+                            if child.OnUnitAuraRemovedEvent then
+                                hooksecurefunc(child, "OnUnitAuraRemovedEvent", OnBuffStateChanged)
+                            end
                         end
+                        MirrorBlizzardCooldown(child)
                     end
                 end
             end
@@ -2533,11 +2543,22 @@ function cdmModule:PrintBuffDiagnostics()
                             durTxt = (dok and dobj) and "|cFF33FF33object|r" or (dok and "nil" or "threw")
                         end
 
-                        print(("    %s (cd %s, spell %s) IsActive=%s auraInstanceID=%s unit=%s dur=%s tracked=%s"):format(
+                        -- Is the swipe mirror actually installed on this frame,
+                        -- and is there one of our icons for it to drive?
+                        local cdw = child.Cooldown
+                            or (child.GetCooldownFrame and child:GetCooldownFrame())
+                        local mirrorTxt
+                        if not cdw then mirrorTxt = "|cFFFF5555no Cooldown widget|r"
+                        elseif cdw._sqMirrorHooked then mirrorTxt = "|cFF33FF33hooked|r"
+                        else mirrorTxt = "|cFFFF5555NOT hooked|r" end
+                        local proxyTxt = cdmModule.proxyFrames[cdID] and "yes" or "|cFFFF5555none|r"
+
+                        print(("    %s (cd %s, spell %s) IsActive=%s auraInstanceID=%s unit=%s dur=%s tracked=%s mirror=%s proxy=%s"):format(
                             name, tostring(cdID), tostring(sid), activeTxt, iidTxt,
                             tostring(child.auraDataUnit),
                             durTxt,
-                            tostring(sid and cdmModule.buffItemForSpell[sid] ~= nil)))
+                            tostring(sid and cdmModule.buffItemForSpell[sid] ~= nil),
+                            mirrorTxt, proxyTxt))
                     end
                 end
             end
