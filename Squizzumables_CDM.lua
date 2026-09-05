@@ -620,6 +620,29 @@ local function MirrorBlizzardCooldown(child)
 end
 cdmModule.MirrorBlizzardCooldown = MirrorBlizzardCooldown
 
+-- Install the mirror on every buff item frame that currently exists.
+--
+-- Deliberately separate from HookBlizzardBuffFrames and much cheaper: it only
+-- walks children and tags, with no closures created for already-hooked frames.
+-- Driven from the 0.2s poll so a frame the viewer acquires mid-fight is picked
+-- up within a fifth of a second, rather than waiting for a reconcile that will
+-- not happen until combat ends.
+local function MirrorAllBuffCooldowns()
+    for _, viewerName in ipairs(BUFF_VIEWERS) do
+        local viewer = _G[viewerName]
+        if viewer then
+            local ok, children = pcall(function() return { viewer:GetChildren() } end)
+            if ok and children then
+                for _, child in ipairs(children) do
+                    if child and child.cooldownID then
+                        MirrorBlizzardCooldown(child)
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- Hook Blizzard CDM buff frames (both viewers) to track active state changes
 local function HookBlizzardBuffFrames()
     for _, viewerName in ipairs(BUFF_VIEWERS) do
@@ -2258,6 +2281,19 @@ function cdmModule:Reconcile()
         cdmModule.soundPollTicker = C_Timer.NewTicker(0.2, function()
             if BH.settings and BH.settings.cdmEnabled ~= false then
                 FireCDSounds()
+                -- Catch item frames Blizzard has only just acquired.
+                --
+                -- The viewers pool their item frames and take one out when a
+                -- buff needs it, so a buff applied DURING a fight lands on a
+                -- frame that has never been seen before. The buff hooks and the
+                -- swipe mirror were installed only from reconcile, which does
+                -- not run mid-fight -- so exactly those buffs got no sweep,
+                -- while ones already up before the pull kept theirs. That is
+                -- the "no swipe on anything applied in combat" report.
+                --
+                -- Idempotent per frame, and only walks the two buff viewers'
+                -- children, so running it at poll rate is cheap.
+                MirrorAllBuffCooldowns()
             end
         end)
     end
