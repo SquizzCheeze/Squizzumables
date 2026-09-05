@@ -1343,15 +1343,37 @@ UpdateAllProxyCooldowns = function()
     -- Also update visuals (desaturation state changes with cooldown)
     local specData = GetSpecData()
     if not specData then return end
+
+    local repack = {}
     for cdID, proxy in pairs(cdmModule.proxyFrames) do
+        -- Resolve the group the same way reconcile does. Reading
+        -- specData.assignments alone stopped being enough when the built-in
+        -- groups arrived: a spell with no explicit assignment falls back to the
+        -- group for its viewer type, so most proxies had no assignment entry
+        -- and silently never had their visuals refreshed outside a layout pass
+        -- -- desaturation, hide-until-active and the icon retry all stalled.
+        local entry = cdmModule.registry[cdID]
         local assignment = specData.assignments[cdID]
+            or (entry and BUILTIN_FOR_VIEWERTYPE[entry.viewerType])
         if assignment and assignment ~= "FREE" then
             local groupData = specData.groups[assignment]
             if groupData then
+                local wasShown = proxy:IsShown()
                 ApplyProxyVisuals(proxy, groupData)
+                if groupData.hideUntilActive and proxy:IsShown() ~= wasShown then
+                    repack[assignment] = true
+                end
             end
         end
     end
+
+    -- Re-pack a group whose visible set just changed, so Hide Until Active
+    -- closes the gap as buffs come and go instead of waiting for the next
+    -- reconcile and leaving a newly shown icon at a stale slot.
+    for groupName in pairs(repack) do
+        cdmModule:LayoutGroup(groupName)
+    end
+
     FireCDSounds()
 end
 
@@ -1589,6 +1611,31 @@ function cdmModule:LayoutGroup(groupName)
         elseif growDir == "rightup" then colMul, rowMul = 1, 1
         elseif growDir == "leftup" then colMul, rowMul = -1, 1
         end
+    end
+
+    -- Hide Until Active packs the row: only the icons actually showing take a
+    -- slot, so they sit together instead of being stranded at fixed positions
+    -- with gaps where the inactive ones would be. With a Centered growth
+    -- direction that means they grow out from the middle, which is the point.
+    --
+    -- ApplyProxyVisuals is what decides shown/hidden, so it has to run for
+    -- every member BEFORE anything is measured or placed -- it used to run
+    -- after each icon was positioned, which is why the slot stayed reserved.
+    if groupData.hideUntilActive then
+        for _, member in ipairs(members) do
+            if member.proxy then
+                member.proxy:SetParent(group.container)
+                member.proxy:SetSize(iconSize, iconSize)
+                ApplyProxyVisuals(member.proxy, groupData)
+            end
+        end
+        local shown = {}
+        for _, member in ipairs(members) do
+            if member.proxy and member.proxy:IsShown() then
+                shown[#shown + 1] = member
+            end
+        end
+        members = shown
     end
 
     -- Pre-calculate container dimensions for centered mode
@@ -2352,6 +2399,12 @@ function cdmModule:EnsureBuiltinGroups(specData)
             if gd then
                 gd.builtin = true
                 gd.position = { x = 0, y = b.defaultY }
+                -- Centred, like Blizzard's own bars. It also matters more here
+                -- than for a custom group: with Hide Until Active the row packs
+                -- down to whatever is active, and centred growth keeps that
+                -- shrinking row anchored in place instead of having it crawl
+                -- sideways as buffs come and go.
+                gd.growDirection = "centereddown"
             end
         else
             -- Re-stamp the flag: groups made before 1.69 could share a name

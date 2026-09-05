@@ -44,6 +44,15 @@ V1.69
   anchoring two groups to each other is ignored rather than allowed to break the layout
 - Fixed a group set to Enable Group off reappearing as soon as combat ended. Two copies of
   the visibility logic existed and only one of them knew about that tick; there is now one
+- Hide Until Active now closes the gaps. Hidden icons used to keep their slot, so the ones
+  that were showing stayed scattered across the group with holes between them. Only the
+  visible icons take a slot now, and the row re-packs as buffs come and go -- so with a
+  Centered growth direction they grow out from the middle, which is what tracked buffs
+  want. The three standard groups now default to Centered, matching Blizzard's own bars
+- Fixed most Cooldown Manager icons never refreshing between reconciles. The update pass
+  only recognised spells you had assigned to a group by hand, so everything relying on the
+  new standard groups was skipped -- desaturation, hide-until-active and the icon artwork
+  retry all stalled until something else forced a rebuild
 - New "Hide Blizzard's Cooldown Manager" option, so only these icons show. Blizzard's bars
   are faded rather than hidden: the game stops updating a frame once it is hidden, and this
   addon reads live buff state from those frames, so hiding them outright would stop your
