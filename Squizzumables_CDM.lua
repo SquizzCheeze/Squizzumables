@@ -186,12 +186,20 @@ local function ScanBlizzardBuffState()
                 for _, child in ipairs(children) do
                     if child and child.cooldownID then
                         cdmModule.knownBuffCooldowns[child.cooldownID] = true
-                        local active
+                        -- SECRET PROBE FIRST. Not just comparisons: a plain
+                        -- truthiness test on a secret is a hard error too, so
+                        -- `gotState and state or false` threw the moment
+                        -- IsActive went secret -- which is in combat, and takes
+                        -- the whole scan down with it. That is why tracked
+                        -- buffs only appeared once combat ended.
+                        local active = false
                         if child.IsActive then
                             local gotState, state = pcall(child.IsActive, child)
-                            active = gotState and state or false
+                            if gotState and not BH.Secrets.IsSecret(state) then
+                                active = state and true or false
+                            end
                         else
-                            active = child:IsShown() or false
+                            active = child:IsShown() and true or false
                         end
                         if active then
                             cdmModule.activeBuffCooldowns[child.cooldownID] = true
@@ -580,6 +588,54 @@ local function HookBlizzardBuffFrames()
                         if child.OnUnitAuraRemovedEvent then
                             hooksecurefunc(child, "OnUnitAuraRemovedEvent", OnBuffStateChanged)
                         end
+
+                        -- Mirror Blizzard's own duration object onto our icon.
+                        --
+                        -- A buff's remaining time cannot be fetched in combat.
+                        -- /sq cdmbuff settled it: with a perfectly readable
+                        -- auraInstanceID (1583) and unit ("player"),
+                        -- C_UnitAuras.GetAuraDuration still THREW once auras
+                        -- went secret. The instance-id APIs hard-error on a
+                        -- restricted unit, so there is no fetching route at all.
+                        --
+                        -- But Blizzard already hands its own Cooldown widget a
+                        -- duration object every time it updates one, and that
+                        -- object is opaque -- nothing has to be read out of it.
+                        -- Catching it on the way past and passing the same
+                        -- object to our widget gives an identical sweep with no
+                        -- value ever entering Lua. This is what EllesmereUI
+                        -- hooks for the same reason.
+                        local cdw = child.Cooldown or child.cooldown
+                        if cdw and not cdw._sqMirrorHooked then
+                            cdw._sqMirrorHooked = true
+                            -- cooldownID read at call time, not closed over:
+                            -- these frames are pooled and get recycled onto
+                            -- other cooldowns.
+                            local function MirrorTo(fn)
+                                return function(_, ...)
+                                    local id = child.cooldownID
+                                    local p = id and cdmModule.proxyFrames[id]
+                                    if p and p.Cooldown then fn(p.Cooldown, ...) end
+                                end
+                            end
+                            if cdw.SetCooldownFromDurationObject then
+                                hooksecurefunc(cdw, "SetCooldownFromDurationObject",
+                                    MirrorTo(function(target, durObj, ...)
+                                        if durObj and target.SetCooldownFromDurationObject then
+                                            target:SetReverse(true)
+                                            target:SetCooldownFromDurationObject(durObj, ...)
+                                        end
+                                    end))
+                            end
+                            hooksecurefunc(cdw, "SetCooldown",
+                                MirrorTo(function(target, start, duration, ...)
+                                    -- Passed through untouched: widget setters
+                                    -- accept secret values, and comparing or
+                                    -- doing arithmetic on these is what throws.
+                                    target:SetReverse(true)
+                                    target:SetCooldown(start, duration, ...)
+                                end))
+                        end
                     end
                 end
             end
@@ -676,8 +732,11 @@ local function CooldownAuraActive(cdID, spellID)
     local sid = spellID or (cdID and SpellIDForCooldown(cdID))
     local buffItem = sid and cdmModule.buffItemForSpell[sid]
     if buffItem and buffItem.IsActive then
+        -- IsSecret before `~= nil`, not after: testing a secret against nil is
+        -- itself a hard error, so the old order threw in exactly the case the
+        -- guard was written to handle.
         local ok, active = pcall(buffItem.IsActive, buffItem)
-        if ok and active ~= nil and not BH.Secrets.IsSecret(active) then
+        if ok and not BH.Secrets.IsSecret(active) and active ~= nil then
             -- Blizzard tracks these on "player" and "target", so this covers a
             -- buff placed on the current target as well as on the player.
             return active and true or false, true
@@ -730,8 +789,17 @@ local function DiscoverCooldowns()
     -- entry wins and the buff duplicate is dropped: the cooldown item is the
     -- one that carries the cooldown fields, and a buff item leaves them nil
     -- forever.
-    local seenSpell, seenName = {}, {}
+    -- Only across the cooldown/buff divide, NEVER within a category.
+    --
+    -- A spec legitimately tracks several variants of one ability under the same
+    -- name: a hunter has four separate "Howl of the Pack Leader" buff entries
+    -- (cooldownIDs 9712, 9713, 9714, 169029). Deduplicating on name across the
+    -- board collapsed all four into one and silently dropped most of the buffs
+    -- the player was tracking. Only a buff entry that duplicates a
+    -- cooldown-type entry is a real duplicate.
+    local seenCdSpell, seenCdName = {}, {}
     for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
+        local isCooldownType = (viewerInfo.viewerType ~= "buff")
         local catIDs = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
             and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
         if catIDs then
@@ -740,9 +808,13 @@ local function DiscoverCooldowns()
                 if info and info.isKnown then
                     local name = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
                     name = BH.Secrets.SafeString(name, nil)
-                    if not seenSpell[info.spellID] and not (name and seenName[name]) then
-                        seenSpell[info.spellID] = true
-                        if name then seenName[name] = true end
+                    local isDuplicate = (not isCooldownType)
+                        and (seenCdSpell[info.spellID] or (name and seenCdName[name]))
+                    if not isDuplicate then
+                        if isCooldownType then
+                            seenCdSpell[info.spellID] = true
+                            if name then seenCdName[name] = true end
+                        end
 
                         -- Which spell IDs might carry this cooldown's aura.
                         --
@@ -1072,7 +1144,7 @@ local function ApplyProxyVisuals(proxy, groupData)
                 -- and is what EllesmereUI reads in four separate places, which
                 -- is the evidence it works on a live 12.1 client. The old
                 -- derivation is kept as a fallback for a client without it.
-                if cdInfo.isActive ~= nil and not BH.Secrets.IsSecret(cdInfo.isActive) then
+                if not BH.Secrets.IsSecret(cdInfo.isActive) and cdInfo.isActive ~= nil then
                     onCD = cdInfo.isActive and not cdInfo.isOnGCD
                 elseif BH.Secrets.IsSecret(start) or BH.Secrets.IsSecret(dur) then
                     -- Secret means on cooldown, not "unreadable, give up": these

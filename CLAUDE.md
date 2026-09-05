@@ -409,6 +409,30 @@ it (`-`, `+`) throws — `attempt to compare field 'spellId' (a secret number va
 tainted by 'Squizzumables')`. That was a live user crash on retail (v1.58, `UnitHasBuff`'s
 `auraData.spellId == id` fallback scan).
 
+**The secret probe must come FIRST — before *any* other test on the value.** It is not only `==`,
+`<`, `>` and arithmetic that throw. **A bare truthiness test or a `~= nil` comparison on a secret
+is a hard error too**, so this is wrong:
+
+    if ok and active ~= nil and not BH.Secrets.IsSecret(active) then   -- throws on a secret
+    active = gotState and state or false                              -- throws on a secret
+
+and this is right:
+
+    if ok and not BH.Secrets.IsSecret(active) and active ~= nil then
+
+Both of those wrong forms were live in `Squizzumables_CDM.lua`, in `ScanBlizzardBuffState` and
+`CooldownAuraActive` — the guard threw in exactly the case it was written to handle, taking the
+whole buff scan down with it, which is why tracked buffs only appeared once combat ended.
+`type(v)` is safe to call first; nothing else is. Confirmed against EllesmereUI, whose code
+carries the same rule as a comment: *"Secret probes come FIRST everywhere: even a boolean or
+`~= nil` test on a secret is a hard error."*
+
+**Widget setters take secrets natively — pass them through instead of resolving them.**
+`FontString:SetText`, `StatusBar:SetValue` and the `Cooldown` setters all accept a secret value
+without complaint. The `Safe*` accessors return `nil` for a secret, which is correct when the
+value is about to be *compared*, and wrong when it is only being handed to a widget: that turns a
+displayable value into a blank. Resolve for logic, pass through for display.
+
 **Always go through `BH.Secrets` (`Squizzumables_Secrets.lua`). Never read an aura field directly,
 and do not reach for `pcall`.**
   - `BH.Secrets.GetAuraBySpellID(unit, spellID, filter)` — direct lookup, preferred whenever the
