@@ -159,10 +159,14 @@ end
 
 -- Forward declarations (defined later in the file)
 local UpdateAllProxyCooldowns
--- Forward-declared: LayoutBorrowedBuffIcons calls this well above the point
--- where it is defined, and a plain `local function` further down would be nil
--- there rather than an error at load.
+-- Forward-declared: LayoutBorrowedBuffIcons calls these well above the point
+-- where they are defined, and a plain `local function` further down would be
+-- nil there rather than an error at load. That is not something the linter can
+-- catch -- a nil upvalue is valid Lua until it is called -- so anything used by
+-- the borrowed-buff layout belongs in this list.
 local GroupAlpha
+local ApplyBarBackground
+local ApplyKeybindText
 
 -- The two buff-type CDM viewers: category 2 = buff icons, category 3 = tracked bars
 local BUFF_VIEWERS = { "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
@@ -791,6 +795,7 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
         group.container:SetSize(fullW, fullH)
     end
     group.container:SetShown(#shown > 0)
+    ApplyBarBackground(group, groupData)
     group.container:SetAlpha(GroupAlpha(groupData))
 end
 
@@ -1270,6 +1275,99 @@ local function UpdateProxyCooldown(proxy)
 end
 
 -- ============================================================================
+-- Text placement, shared by the keybind, the charge count and the cooldown
+-- countdown so all three offer the same nine positions and the same offsets.
+-- ============================================================================
+
+local TEXT_POSITION_ITEMS = {
+    { text = "Top Left",      value = "TOPLEFT" },
+    { text = "Top",           value = "TOP" },
+    { text = "Top Right",     value = "TOPRIGHT" },
+    { text = "Left",          value = "LEFT" },
+    { text = "Centre",        value = "CENTER" },
+    { text = "Right",         value = "RIGHT" },
+    { text = "Bottom Left",   value = "BOTTOMLEFT" },
+    { text = "Bottom",        value = "BOTTOM" },
+    { text = "Bottom Right",  value = "BOTTOMRIGHT" },
+}
+
+-- A backdrop behind the whole group, distinct from the per-icon background.
+--
+-- Sized to the container plus padding, so it grows and shrinks with the row --
+-- including as a Hide Until Active group packs down.
+ApplyBarBackground = function(group, groupData)
+    if not group or not group.container then return end
+    local on = groupData.barBgEnabled and true or false
+    if not on then
+        if group.barBg then group.barBg:Hide() end
+        return
+    end
+    if not group.barBg then
+        local t = group.container:CreateTexture(nil, "BACKGROUND", nil, -1)
+        group.barBg = t
+    end
+    local c = groupData.barBgColor or { 0, 0, 0, 0.4 }
+    local pad = groupData.barBgPadding or 2
+    group.barBg:ClearAllPoints()
+    group.barBg:SetPoint("TOPLEFT", group.container, "TOPLEFT", -pad, pad)
+    group.barBg:SetPoint("BOTTOMRIGHT", group.container, "BOTTOMRIGHT", pad, -pad)
+    group.barBg:SetColorTexture(c[1], c[2], c[3], c[4])
+    group.barBg:Show()
+end
+
+-- Anchor point to itself, so a corner tucks into that corner and the offsets
+-- read the same way whichever corner is chosen.
+local function PlaceText(region, frame, point, ox, oy)
+    if not region then return end
+    region:ClearAllPoints()
+    region:SetPoint(point or "CENTER", frame, point or "CENTER", ox or 0, oy or 0)
+end
+
+-- Blizzard's countdown numbers live on a font string the C widget creates, with
+-- no accessor for it, so it has to be found among the regions. Cached per
+-- widget; best-effort by nature, and the position option simply does nothing if
+-- a future build stops exposing it rather than erroring.
+local function CooldownCountdownText(cd)
+    if not cd then return nil end
+    if cd._sqCountdownFS ~= nil then return cd._sqCountdownFS or nil end
+    local found = false
+    for _, region in ipairs({ cd:GetRegions() }) do
+        if region:GetObjectType() == "FontString" then
+            cd._sqCountdownFS = region
+            found = true
+            break
+        end
+    end
+    if not found then cd._sqCountdownFS = false end
+    return cd._sqCountdownFS or nil
+end
+
+-- Round icons. Blizzard's portrait alpha mask is the usual circular mask and
+-- ships with the client, so this needs no art of our own.
+local ICON_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+
+local function ApplyIconShape(proxy, shape)
+    local wantRound = (shape == "round")
+    if wantRound then
+        if not proxy._sqMask then
+            local m = proxy:CreateMaskTexture()
+            m:SetAllPoints(proxy.Icon)
+            m:SetTexture(ICON_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            proxy._sqMask = m
+            proxy.Icon:AddMaskTexture(m)
+        end
+        proxy._sqMask:Show()
+    elseif proxy._sqMask then
+        -- RemoveMaskTexture rather than just hiding it: a hidden mask still
+        -- clips on some builds, which showed up as icons staying round after
+        -- the option was switched back off.
+        proxy.Icon:RemoveMaskTexture(proxy._sqMask)
+        proxy._sqMask:Hide()
+        proxy._sqMask = nil
+    end
+end
+
+-- ============================================================================
 -- Keybind text
 --
 -- Which key casts this spell. Harder than it sounds, and the reason this was
@@ -1358,7 +1456,7 @@ cdmModule.InvalidateKeybinds = function() keybindMapBuilt = false end
 
 -- One reusable font string per icon, for a proxy or a borrowed Blizzard frame
 -- alike. Created on demand and remembered on the frame.
-local function ApplyKeybindText(frame, spellID, groupData)
+ApplyKeybindText = function(frame, spellID, groupData)
     if not frame then return end
     local want = groupData and groupData.showKeybind
     if not want then
@@ -1372,8 +1470,7 @@ local function ApplyKeybindText(frame, spellID, groupData)
         frame._sqKeybind = fs
     end
     fs:SetFont("Fonts\\FRIZQT__.TTF", groupData.keybindSize or 10, "OUTLINE")
-    fs:ClearAllPoints()
-    fs:SetPoint("TOPRIGHT", frame, "TOPRIGHT",
+    PlaceText(fs, frame, groupData.keybindPosition or "TOPRIGHT",
         groupData.keybindOffsetX or -1, groupData.keybindOffsetY or -1)
     local c = groupData.keybindColor or { 1, 1, 1, 0.9 }
     fs:SetTextColor(c[1], c[2], c[3], c[4])
@@ -1411,6 +1508,23 @@ local function ApplyProxyVisuals(proxy, groupData)
     if proxy.Border then proxy.Border:SetShown(showBorder) end
 
     ApplyKeybindText(proxy, proxy.spellID, groupData)
+    ApplyIconShape(proxy, groupData.iconShape)
+
+    -- Charge count: visibility and placement.
+    if proxy.Count then
+        proxy.Count:SetShown(groupData.showCount ~= false)
+        proxy.Count:SetFont("Fonts\\FRIZQT__.TTF", groupData.countSize or 12, "OUTLINE")
+        PlaceText(proxy.Count, proxy, groupData.countPosition or "BOTTOMRIGHT",
+            groupData.countOffsetX or -1, groupData.countOffsetY or 1)
+    end
+
+    -- Cooldown countdown placement, when the widget exposes its font string.
+    if proxy.Cooldown and groupData.cooldownTextPosition
+       and groupData.cooldownTextPosition ~= "CENTER" then
+        PlaceText(CooldownCountdownText(proxy.Cooldown), proxy,
+            groupData.cooldownTextPosition,
+            groupData.cooldownTextOffsetX or 0, groupData.cooldownTextOffsetY or 0)
+    end
 
     -- Border thickness/colour, icon zoom and background.
     --
@@ -2346,6 +2460,7 @@ function cdmModule:LayoutGroup(groupName)
     -- anything to it, and that is no longer possible for Essential/Utility/
     -- Buffs. Alpha rather than Hide, matching hideOutOfCombat, so the container
     -- is never shown or hidden during combat lockdown.
+    ApplyBarBackground(group, groupData)
     group.container:SetAlpha(GroupAlpha(groupData))
 end
 
@@ -3172,9 +3287,27 @@ function cdmModule:CreateGroup(groupName)
         -- Keybind text
         showKeybind = false,
         keybindSize = 10,
+        keybindPosition = "TOPRIGHT",
         keybindOffsetX = -1,
         keybindOffsetY = -1,
         keybindColor = { 1, 1, 1, 0.9 },
+        -- Charge / stack count
+        showCount = true,
+        countSize = 12,
+        countPosition = "BOTTOMRIGHT",
+        countOffsetX = -1,
+        countOffsetY = 1,
+        -- Cooldown countdown placement. CENTER means "leave Blizzard's own
+        -- placement alone", which is why it is the default.
+        cooldownTextPosition = "CENTER",
+        cooldownTextOffsetX = 0,
+        cooldownTextOffsetY = 0,
+        -- Whole-group backdrop, distinct from the per-icon background
+        barBgEnabled = false,
+        barBgColor = { 0, 0, 0, 0.4 },
+        barBgPadding = 2,
+        -- "none" or "round"
+        iconShape = "none",
     }
 
     self:ScheduleReconcile()
@@ -4490,6 +4623,103 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     ns.Rows.AddTooltip(bgColorPicker, "Background Colour", "Colour and opacity of the icon background.")
     yOffset = yOffset - 28
 
+    -- Icon shape and the whole-group backdrop.
+    local shapeDD = CreateSQDropdown(content, "Icon Shape", 160, {
+        { text = "Square", value = "none" },
+        { text = "Round",  value = "round" },
+    }, function(val)
+        groupData.iconShape = val
+        BH.cdm:ScheduleReconcile()
+    end)
+    shapeDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    shapeDD:SetSelectedValue(groupData.iconShape or "none")
+    ns.Rows.AddTooltip(shapeDD, "Icon Shape",
+        "Round crops each icon to a circle. Does not apply to tracked buffs, which are the game's own icons.")
+    yOffset = yOffset - 50
+
+    local barBgCB = CreateSQCheckbox(content, "Group Background", function(checked)
+        groupData.barBgEnabled = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    barBgCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(barBgCB, "Group Background",
+        "A panel behind the whole group rather than behind each icon. It grows and shrinks with the row, "
+     .. "including as a Hide Until Active group packs down.")
+    barBgCB:SetChecked(groupData.barBgEnabled)
+
+    local barBgInit = groupData.barBgColor or { 0, 0, 0, 0.4 }
+    local barBgPicker = CreateSQColorPicker(content, "Group Background Colour",
+        barBgInit[1], barBgInit[2], barBgInit[3], barBgInit[4], function(r, g, b, a)
+            groupData.barBgColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    barBgPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(barBgPicker, "Group Background Colour", "Colour and opacity of the group panel.")
+    yOffset = yOffset - 28
+
+    local barBgPad = CreateSQSlider(content, "Group Background Padding", 220, 0, 20, 1)
+    barBgPad:SetValue(groupData.barBgPadding or 2)
+    barBgPad:SetAfterValueChanged(function(value)
+        groupData.barBgPadding = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    barBgPad:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(barBgPad, "Group Background Padding", "How far the panel extends past the icons.")
+    yOffset = yOffset - 46
+
+    -- Text placement. One helper for all three, so they behave identically.
+    local function AddTextPlacement(label, posKey, oxKey, oyKey, defPos, defX, defY, tip)
+        local dd = CreateSQDropdown(content, label .. " Position", 160, TEXT_POSITION_ITEMS, function(val)
+            groupData[posKey] = val
+            BH.cdm:ScheduleReconcile()
+        end)
+        dd:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        dd:SetSelectedValue(groupData[posKey] or defPos)
+        ns.Rows.AddTooltip(dd, label .. " Position", tip)
+        yOffset = yOffset - 50
+
+        local sx = CreateSQSlider(content, label .. " Offset X", 220, -30, 30, 1)
+        sx:SetValue(groupData[oxKey] or defX)
+        sx:SetAfterValueChanged(function(v) groupData[oxKey] = v; BH.cdm:ScheduleReconcile() end)
+        sx:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(sx, label .. " Offset X", "Nudge it sideways from that position.")
+        yOffset = yOffset - 46
+
+        local sy = CreateSQSlider(content, label .. " Offset Y", 220, -30, 30, 1)
+        sy:SetValue(groupData[oyKey] or defY)
+        sy:SetAfterValueChanged(function(v) groupData[oyKey] = v; BH.cdm:ScheduleReconcile() end)
+        sy:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(sy, label .. " Offset Y", "Nudge it up or down from that position.")
+        yOffset = yOffset - 46
+    end
+
+    -- Charge / stack count.
+    local countCB = CreateSQCheckbox(content, "Show Charges", function(checked)
+        groupData.showCount = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    countCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(countCB, "Show Charges",
+        "Show the charge or stack number on icons that have one.")
+    countCB:SetChecked(groupData.showCount ~= false)
+    yOffset = yOffset - 24
+
+    local countSize = CreateSQSlider(content, "Charge Text Size", 220, 6, 24, 1)
+    countSize:SetValue(groupData.countSize or 12)
+    countSize:SetAfterValueChanged(function(v) groupData.countSize = v; BH.cdm:ScheduleReconcile() end)
+    countSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(countSize, "Charge Text Size", "Font size of the charge number.")
+    yOffset = yOffset - 46
+
+    AddTextPlacement("Charges", "countPosition", "countOffsetX", "countOffsetY",
+        "BOTTOMRIGHT", -1, 1, "Where the charge number sits on the icon.")
+
+    AddTextPlacement("Cooldown Text", "cooldownTextPosition",
+        "cooldownTextOffsetX", "cooldownTextOffsetY", "CENTER", 0, 0,
+        "Where the countdown sits on the icon. Centre leaves the game's own placement alone; "
+     .. "any other choice moves the countdown the game draws, which it does not officially "
+     .. "support, so it is ignored rather than erroring if a patch stops exposing it.")
+
     -- Keybind text.
     local kbCB = CreateSQCheckbox(content, "Show Keybind", function(checked)
         groupData.showKeybind = checked
@@ -4522,6 +4752,9 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     kbSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     ns.Rows.AddTooltip(kbSize, "Keybind Text Size", "Font size of the keybind text.")
     yOffset = yOffset - 46
+
+    AddTextPlacement("Keybind", "keybindPosition", "keybindOffsetX", "keybindOffsetY",
+        "TOPRIGHT", -1, -1, "Where the keybind sits on the icon.")
 
     -- Tracked-buff options. Only meaningful for a group holding buffs, so they
     -- are only offered on one: on any other group they would be dead controls.

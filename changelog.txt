@@ -63,6 +63,12 @@ V1.69
   icon size all work as before, and Hide Until Active now comes free because the game hides
   an inactive tracked buff itself. The per-icon border, zoom and background do not apply to
   buffs any more, since these are the game's own icons
+- Round icons, a group background panel, and a charge-number toggle round out the Cooldown
+  Manager styling. The group panel sits behind the whole row rather than each icon and
+  grows and shrinks with it, including as a Hide Until Active group packs down
+- The keybind, charge number and cooldown countdown can each be placed in any of nine
+  positions on the icon, with their own offsets and text size. Cooldown text defaults to
+  Centre, which leaves the game's own placement alone
 - Cooldown Manager icons can now show their keybind. Per group, with a colour and text size,
   read from your action bars -- an ability that is not on a bar has no key to show. It
   deliberately does not follow bar swaps from stealth, druid forms or dragonriding: a
