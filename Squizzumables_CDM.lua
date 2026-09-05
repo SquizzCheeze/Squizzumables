@@ -1036,7 +1036,24 @@ local function ApplyProxyVisuals(proxy, groupData)
 
         local hasAura, auraReadable = CooldownAuraActive(proxy.cooldownID, proxy.spellID)
 
-        local isActive = onCD or hasAura
+        -- What "active" means depends on which kind of entry this is.
+        --
+        -- A tracked buff is interesting while its AURA is up; whether the spell
+        -- that applies it happens to be on cooldown says nothing about whether
+        -- to show it. Folding onCD in made every tracked buff active the moment
+        -- combat started, because a secret cooldown now correctly reads as "on
+        -- cooldown" -- so Hide Until Active showed the entire buff list instead
+        -- of the two or three actually running.
+        --
+        -- CooldownAuraActive reads the Blizzard buff item's IsActive(), which
+        -- is real aura state and keeps working in combat, so this stays correct
+        -- there rather than falling back to a guess.
+        local isActive
+        if proxy.viewerType == "buff" then
+            isActive = hasAura
+        else
+            isActive = onCD or hasAura
+        end
 
         if groupData.desaturateReady then
             proxy.Icon:SetDesaturated(not isActive)
@@ -1993,6 +2010,7 @@ function cdmModule:Reconcile()
             if assignment == "FREE" then
                 local proxy = GetOrCreateProxy(cdID, entry.spellID, DEFAULT_ICON_SIZE)
                 proxy.auraSpellIDs = entry.auraIDs
+                proxy.viewerType = entry.viewerType
                 self.freeIcons[cdID] = proxy
                 self:PositionFreeIcon(cdID)
             else
@@ -2003,6 +2021,7 @@ function cdmModule:Reconcile()
                     local iconSize = groupData and groupData.iconSize or DEFAULT_ICON_SIZE
                     local proxy = GetOrCreateProxy(cdID, entry.spellID, iconSize)
                     proxy.auraSpellIDs = entry.auraIDs
+                    proxy.viewerType = entry.viewerType
                     group.members[cdID] = proxy
                 end
             end
