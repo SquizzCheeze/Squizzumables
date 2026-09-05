@@ -146,7 +146,11 @@ without a fundamentally different detection approach that doesn't depend on read
   in, when an alert fires in one and not the other), `/sq cdm` (CDM
   sound wiring) and `/sq buffsounds` (which `AddAuraSound` registrations the client accepted, what
   it refused, and which call site asked for the last rebuild — run this first on any
-  blocked-call report about buff sounds). `/squizz` opens config directly and `/squizz <TabID>` jumps to a named page.
+  blocked-call report about buff sounds) and `/sq cdmbuff` (per tracked-buff frame: whether
+  `IsActive` answers or is secret, whether `auraInstanceID` is usable, whether `GetAuraDuration`
+  yields anything, and whether the swipe mirror and a proxy exist — this is what finally settled
+  the 1.69 buff-swipe hunt after several wrong guesses).
+  `/squizz` opens config directly and `/squizz <TabID>` jumps to a named page.
   `/ginvite <name>` is the guild invite helper.
 
 ### Researching the WoW API
@@ -321,11 +325,36 @@ buffs, dungeon callouts, CDM) has its own tab-building function.
 
 **Taint safety** is a first-order design constraint, not an afterthought — WoW's combat lockdown
 model forbids addons from mutating protected/secure frames during combat:
-- The CDM module (`Squizzumables_CDM.lua`) never reparents or writes into Blizzard's Cooldown
-  Viewer frames; it only reads their state via `hooksecurefunc` on read-only callbacks
-  (`OnActiveStateChanged`, `OnUnitAuraAddedEvent`, etc.) and drives its own proxy icon frames.
-  Container/layout mutations are queued when `InCombatLockdown()` is true and flushed on
-  `PLAYER_REGEN_ENABLED`.
+- The CDM module (`Squizzumables_CDM.lua`) **never reparents** Blizzard's Cooldown Viewer frames.
+  For cooldown-type entries (Essential/Utility) it reads their state via `hooksecurefunc` on
+  read-only callbacks (`OnActiveStateChanged`, `OnUnitAuraAddedEvent`, etc.) and drives its own
+  proxy icon frames. Container/layout mutations are queued when `InCombatLockdown()` is true and
+  flushed on `PLAYER_REGEN_ENABLED`.
+
+  **Tracked buffs are the exception, and deliberately so: the Buffs group displays Blizzard's own
+  item frames, re-anchored.** It does write to them — `SetPoint` and `SetSize`, nothing else —
+  while leaving them parented to Blizzard's viewer, which is what keeps it taint-free.
+
+  This is not a shortcut; a proxy icon **cannot** show a buff's cooldown sweep in combat, and
+  1.69 proved it three ways. The duration is secret so it cannot be read. It cannot be fetched
+  either: with a perfectly readable `auraInstanceID` and unit, `C_UnitAuras.GetAuraDuration` still
+  hard-errors on a restricted unit. And catching the duration object in flight (hooking
+  `SetCooldown` on the Blizzard item) only works if the hook is installed before Blizzard uses the
+  frame — which pooling makes unreliable, since a buff applied mid-fight lands on a freshly
+  acquired frame.
+
+  Borrowing sidesteps all of it: Blizzard keeps driving cooldown, icon, stacks and active state
+  C-side, exactly as for its own bars. `LayoutBorrowedBuffIcons` owns only the anchors, and
+  re-applies them from the 0.2s poll because Blizzard re-anchors on its own layout passes and the
+  pool hands out frames mid-fight. `hideUntilActive` comes free — Blizzard hides an inactive
+  tracked buff itself. EllesmereUI works the same way, and that is why its swipes never break in
+  combat: they *are* Blizzard's swipes.
+
+  Consequences worth knowing before "improving" this: the buff viewers must be exempt from
+  "Hide Blizzard's Cooldown Manager" (their children inherit the viewer's alpha and position), and
+  per-group border/zoom/background styling does not apply to buff icons, because they are
+  Blizzard's icons. `cdmProxyBuffIcons` restores the old proxy path for anyone who wants the
+  styling and can live without combat sweeps.
 - When adding new features that touch frames, action buttons, or secure state, check
   `InCombatLockdown()` and queue mutations rather than assuming they'll succeed mid-combat.
 
