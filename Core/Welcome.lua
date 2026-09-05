@@ -22,12 +22,14 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
     ["1.69"] = {
-        "The Earth Shield reminder no longer fires in delves and follower dungeons, where your party is NPCs and there is nobody to shield.",
-        "The Earth Shield reminder now checks whether you actually have Elemental Orbit instead of guessing from your own shield.",
-        "Cooldown Manager groups can be styled: border thickness and colour (or class colour), icon zoom, and an optional icon background.",
-        "Essential, Utility and Buffs are now standard groups that fill themselves \226\128\148 no need to build your own before anything appears.",
+        "The Cooldown Manager has had a big pass. Essential, Utility and Buffs are now standard groups that fill themselves \226\128\148 no need to build your own before anything appears.",
+        "Style each group: border thickness and colour (or class colour), icon zoom, round or square icons, a panel behind the whole row, and keybind, charge and cooldown text you can place anywhere on the icon.",
+        "Groups can hide while mounted, in housing, outside instances or without a target, and can be anchored to each other so a stack moves as one.",
+        "Tracked buffs now use the game's own icons, so their swipes and timers keep working in combat. \"Always Show Buffs\" keeps a dimmed placeholder for ones that are not up.",
+        "New option to hide Blizzard's own cooldown bars, and other addons can anchor to a group \226\128\148 each one shows its frame name in the settings.",
         "Making your own groups has moved to a new Custom Icons tab, leaving the Cooldowns tab for the Cooldown Manager itself.",
-        "New option to hide Blizzard's own cooldown bars when these are enabled.",
+        "Fixed a Cooldown Manager error that could fire in combat, when reading a buff's duration or stacks while the game was hiding aura data.",
+        "The Earth Shield reminder no longer fires in delves and follower dungeons, and now checks whether you actually have Elemental Orbit instead of guessing.",
     },
     ["1.68"] = {
         "The Just For Kel alert image is now click-through \226\128\148 it no longer swallows clicks while it is on screen.",
