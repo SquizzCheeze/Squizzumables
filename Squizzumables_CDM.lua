@@ -3227,6 +3227,24 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     countLabel:SetText("(" .. assignedCount .. " assigned)")
     countLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
 
+    -- The frame name other addons anchor to.
+    --
+    -- Shown because the alternative is asking: an addon that anchors by typing
+    -- a frame name cannot call our Lua accessor, and the obvious guess --
+    -- EssentialCooldownViewer -- is Blizzard's frame, which this addon parks
+    -- offscreen when "Hide Blizzard's Cooldown Manager" is on. Anchoring to
+    -- that drags the anchored frame off with it, which is a confusing way to
+    -- find out you picked the wrong frame.
+    local anchorLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    anchorLabel:SetPoint("LEFT", countLabel, "RIGHT", 8, 0)
+    anchorLabel:SetText("SQZ_CDMGroup_" .. groupName)
+    anchorLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    ns.Rows.AddTooltip(anchorLabel, "Anchor name",
+        "The frame name to give another addon that anchors to this group.\n\n"
+     .. "Do not use Blizzard's EssentialCooldownViewer or similar: those are separate frames, "
+     .. "and with Hide Blizzard's Cooldown Manager on they are parked far offscreen, which "
+     .. "takes anything anchored to them along too.")
+
     -- Delete button. Not offered for the three built-in groups: they are
     -- recreated on the next reconcile anyway, so a Delete that visibly does
     -- nothing is worse than no button. Their contents can still be emptied by
