@@ -56,11 +56,15 @@ V1.69
   afterwards, instead of staying blank forever and leaving what looked like an empty group
 - Every frame's green move box now says which frame it is while frames are unlocked. There
   can be a dozen or more on screen at once and they were impossible to tell apart
-- Other addons can now anchor to a cooldown group reliably. Each group now shows its frame
-  name in the Cooldowns tab -- SQZ_CDMGroup_Essential and so on -- which is what to give an
-  addon that anchors by frame name. Do not use Blizzard's EssentialCooldownViewer: that is a
-  separate frame, and with Hide Blizzard's Cooldown Manager on it is parked far offscreen, so
-  anything anchored to it goes with it. From Lua there is also
+- Anchoring another addon to Blizzard's Essential Cooldowns (or Utility, or the buff bars)
+  now works even with Hide Blizzard's Cooldown Manager on. Each hidden Blizzard bar is
+  parked invisibly on top of the group that replaced it, matching its position and size, so
+  it stays exactly where the icons are and an anchor pointed at it still lands correctly --
+  it also follows when you drag the group. New "Keep Blizzard's frames on our groups" tick
+  next to the hide option turns this off if you would rather they went off screen
+- Other addons can also anchor to our own frames. Each group shows its frame name in the
+  Cooldowns tab -- SQZ_CDMGroup_Essential and so on -- which is what to give an addon that
+  anchors by frame name. From Lua there is also
   Squizzumables_GetCDMGroupFrame("Essential") and the same for "Utility", "Buffs" or any
   group you have made. The frames now last the whole session instead of being rebuilt when
   you change spec or switch the Cooldown Manager off and on, which used to leave anything

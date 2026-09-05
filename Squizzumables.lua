@@ -82,6 +82,7 @@ BH.defaultSettings = {
     bresCounterScale = 1.0,
     cdmEnabled = false,
     cdmHideBlizzard = false,
+    cdmViewersFollowGroups = true,
 
     -- M+ Death Tally (per-player death counter, resets each key)
     deathTallyEnabled = true,

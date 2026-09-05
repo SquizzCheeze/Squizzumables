@@ -1736,11 +1736,6 @@ function cdmModule:Reconcile()
     -- first reconcile of a fresh spec rather than one pass late.
     self:EnsureBuiltinGroups(specData)
 
-    -- Re-applied every reconcile rather than once at login: these are Edit Mode
-    -- managed frames, and Edit Mode, a layout pass or a spec change can put
-    -- their alpha back. Reconcile already runs on all of those.
-    self:ApplyBlizzardVisibility()
-
     -- Ensure all saved groups have containers
     for groupName, groupData in pairs(specData.groups) do
         if not self.groups[groupName] then
@@ -1815,6 +1810,21 @@ function cdmModule:Reconcile()
         self:LayoutGroup(groupName)
     end
 
+    -- After the containers exist AND have been laid out, not before.
+    --
+    -- This used to run above, before either. "Keep Blizzard's frames on our
+    -- groups" looks up the group frame to follow, got nil every single time
+    -- because no container had been built yet, and silently fell back to
+    -- parking offscreen -- so the option appeared to do nothing and anything
+    -- anchored to a Blizzard viewer still ended up clamped in a screen corner.
+    -- It has to be after LayoutGroup too, since the follow anchors to the
+    -- container's rect and that rect is only correct once the icons are placed.
+    --
+    -- Re-applied every reconcile rather than once at login for the original
+    -- reason as well: these are Edit Mode managed frames, and Edit Mode, a
+    -- layout pass or a spec change can put their alpha back.
+    self:ApplyBlizzardVisibility()
+
     -- Hook Blizzard buff frames and scan active state (CMC-style)
     HookBlizzardBuffFrames()
     HookBlizzardAlertEvents()
@@ -1831,6 +1841,11 @@ function cdmModule:Reconcile()
         cdmModule.alertHookTicker = C_Timer.NewTicker(2, function()
             if BH.settings and BH.settings.cdmEnabled ~= false then
                 HookBlizzardAlertEvents()
+                -- Item frames are pooled and acquired as Blizzard needs them,
+                -- so a newly acquired one arrives mouse-enabled and starts
+                -- showing tooltips over a viewer that is meant to be gone.
+                -- Same reason this sweep re-runs at all.
+                cdmModule:MuteSuppressedViewerItems()
                 -- Same argument as the sweep itself, applied to the cooldown
                 -- set rather than the frame pool: rather than trusting that we
                 -- named every event that can change which cooldowns exist, look
@@ -1991,6 +2006,35 @@ end
 local PARK_X, PARK_Y = -10000, 10000
 local parkPending = false
 
+-- Which of our groups each Blizzard viewer sits on top of when "Follow our
+-- groups" is on. Both buff viewers map to the one Buffs group, matching how
+-- DISCOVER_CATEGORIES folds categories 2 and 3 together.
+local VIEWER_TO_GROUP = {
+    EssentialCooldownViewer = "Essential",
+    UtilityCooldownViewer   = "Utility",
+    BuffIconCooldownViewer  = "Buffs",
+    BuffBarCooldownViewer   = "Buffs",
+}
+
+-- Mute Blizzard's pooled item frames.
+--
+-- This is what parking offscreen was really buying: the cooldown tooltips come
+-- from the item frames, not the viewer, so EnableMouse on the viewer alone left
+-- them live. They are pooled and acquired on Blizzard's own schedule, so this
+-- has to be re-run rather than done once -- the existing 2s hook sweep is
+-- already there for exactly that reason and calls this too.
+local function MuteViewerItems(viewer, muted)
+    if not viewer then return end
+    local ok, children = pcall(function() return { viewer:GetChildren() } end)
+    if not ok or not children then return end
+    for _, child in ipairs(children) do
+        if child and child.EnableMouse then
+            child:EnableMouse(not muted)
+            if child.EnableMouseMotion then child:EnableMouseMotion(not muted) end
+        end
+    end
+end
+
 local function SaveOrigPoints(f)
     if f._sqOrigPoints then return end
     local pts = {}
@@ -1998,7 +2042,25 @@ local function SaveOrigPoints(f)
     f._sqOrigPoints = pts
 end
 
-local function ParkFrame(f)
+-- Where a suppressed viewer goes.
+--
+-- Two options, and the difference matters to other addons:
+--
+--   parked   -- far offscreen. Nothing can reach it.
+--   follow   -- sat exactly on top of the group that replaced it, invisible.
+--
+-- "follow" exists because it is the property that makes anchoring work in
+-- EllesmereUI: they never move the primary viewers, so EssentialCooldownViewer
+-- stays where the icons visibly are and anchoring to it lands on them. Parking
+-- ours offscreen broke that, and the obvious frame to anchor to became the
+-- wrong one. Following puts the guarantee back without adopting their
+-- architecture -- their re-anchoring is a 2,100-line function that replaces our
+-- icons with Blizzard's, and with them the per-group styling.
+--
+-- The reason parking was chosen first still has to be handled either way:
+-- an invisible viewer's item frames still take the mouse. MuteViewerItems does
+-- that, on the sweep that already exists for pooled frames.
+local function ParkFrame(f, groupFrame)
     if InCombatLockdown() then
         -- These are Edit Mode managed frames; moving them is not worth
         -- attempting under lockdown. Flushed on PLAYER_REGEN_ENABLED.
@@ -2007,7 +2069,14 @@ local function ParkFrame(f)
     end
     f._sqParkGuard = true
     f:ClearAllPoints()
-    f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PARK_X, PARK_Y)
+    if groupFrame then
+        -- Match position and size, so the viewer's rect is the group's rect and
+        -- an addon anchored to either gets the same answer.
+        f:SetPoint("TOPLEFT", groupFrame, "TOPLEFT", 0, 0)
+        f:SetPoint("BOTTOMRIGHT", groupFrame, "BOTTOMRIGHT", 0, 0)
+    else
+        f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PARK_X, PARK_Y)
+    end
     f._sqParkGuard = nil
 end
 
@@ -2039,11 +2108,21 @@ local function HoldParked(f)
         self._sqParkQueued = true
         C_Timer.After(0, function()
             self._sqParkQueued = nil
-            if self._sqDimmed then ParkFrame(self) end
+            -- Re-park to the same place it was, following or offscreen.
+            if self._sqDimmed then ParkFrame(self, self._sqFollowFrame) end
         end)
     end
     hooksecurefunc(f, "SetPoint", QueueRepark)
     hooksecurefunc(f, "ClearAllPoints", QueueRepark)
+end
+
+-- Re-mute the item frames of any viewer currently suppressed. Cheap, and it has
+-- to keep happening: see MuteViewerItems.
+function cdmModule:MuteSuppressedViewerItems()
+    for _, name in ipairs(BLIZZARD_VIEWERS) do
+        local f = _G[name]
+        if f and f._sqDimmed then MuteViewerItems(f, true) end
+    end
 end
 
 -- Flush a park that combat postponed. Called from PLAYER_REGEN_ENABLED.
@@ -2105,9 +2184,15 @@ function cdmModule:ApplyBlizzardVisibility()
                 HoldAlphaZero(f)
                 HoldParked(f)
                 f:SetAlpha(0)
-                ParkFrame(f)
+                -- Follow the group that replaced it when there is one and the
+                -- option is on, so this viewer stays a valid anchor target.
+                local follow = BH.settings.cdmViewersFollowGroups ~= false
+                local groupFrame = follow and self:GetGroupFrame(VIEWER_TO_GROUP[name]) or nil
+                f._sqFollowFrame = groupFrame
+                ParkFrame(f, groupFrame)
                 if f.EnableMouse then f:EnableMouse(false) end
                 if f.EnableMouseMotion then f:EnableMouseMotion(false) end
+                MuteViewerItems(f, true)
             elseif f._sqDimmed then
                 -- Clear the flag first: the hook reads it, and leaving it set
                 -- would have our own restore immediately undone.
@@ -2119,10 +2204,12 @@ function cdmModule:ApplyBlizzardVisibility()
                 -- caused this whole problem re-asserts the real value on its
                 -- next pass, so a viewer set to e.g. 80% returns there shortly.
                 f._sqDimmed = nil
+                f._sqFollowFrame = nil
                 RestoreFramePoints(f)
                 f:SetAlpha(1)
                 if f.EnableMouse then f:EnableMouse(true) end
                 if f.EnableMouseMotion then f:EnableMouseMotion(true) end
+                MuteViewerItems(f, false)
             end
         end
     end
@@ -2944,6 +3031,20 @@ function BH:RebuildCDMPage(state, mode)
          .. "on purpose: this addon reads live buff state from those frames, and the game stops updating a frame "
          .. "once it is hidden. Unticking brings them straight back, as does switching the Cooldown Manager off.")
         hideBlizzCB:SetChecked(BH.settings and BH.settings.cdmHideBlizzard)
+        yOffset = yOffset - 24
+
+        local followCB = CreateSQCheckbox(content, "Keep Blizzard's frames on our groups", function(checked)
+            BH.settings.cdmViewersFollowGroups = checked
+            BH:SaveSettings()
+            BH.cdm:ApplyBlizzardVisibility()
+        end)
+        followCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        ns.Rows.AddTooltip(followCB, "Keep Blizzard's frames on our groups",
+            "Parks each hidden Blizzard bar invisibly on top of the group that replaced it, instead of "
+         .. "throwing it off screen.\n\nOnly matters if another addon anchors to EssentialCooldownViewer "
+         .. "or one of its siblings: with this on those frames stay where the icons actually are, so such "
+         .. "an anchor still lands correctly. Off, they go off screen and anything anchored to them goes too.")
+        followCB:SetChecked(BH.settings and BH.settings.cdmViewersFollowGroups ~= false)
         yOffset = yOffset - 28
     end
 
