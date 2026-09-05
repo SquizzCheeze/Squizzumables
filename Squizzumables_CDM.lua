@@ -1384,6 +1384,32 @@ end
 -- Group Container Creation & Management
 -- ============================================================================
 
+-- Every reason a group might be hidden, in one place.
+--
+-- Two copies of this existed and had already drifted: LayoutGroup knew about
+-- the Enable Group tick and UpdateCombatVisibility did not, so a disabled group
+-- came back the moment combat ended. Same failure the text reminders had before
+-- their gates were centralised -- see the reminder gate table in
+-- Squizzumables.lua. Add a new condition here and both paths get it.
+--
+-- Returns a container alpha rather than a boolean because per-icon alpha is
+-- applied separately in ApplyProxyVisuals; this is only the on/off.
+local function GroupAlpha(groupData)
+    if not groupData then return 1 end
+    if groupData.enabled == false then return 0 end
+    if groupData.hideOutOfCombat and not isInCombat then return 0 end
+    if groupData.hideMounted and IsMounted() then return 0 end
+    if groupData.onlyInInstances and not IsInInstance() then return 0 end
+    if groupData.hideInHousing and C_Housing and C_Housing.IsInsideHouseOrPlot
+       and C_Housing.IsInsideHouseOrPlot() then return 0 end
+    if groupData.hideNoTarget and not UnitExists("target") then return 0 end
+    if groupData.hideNoEnemy
+       and not (UnitExists("target") and UnitCanAttack("player", "target")) then
+        return 0
+    end
+    return 1
+end
+
 -- Group containers, kept for the whole session and reused.
 --
 -- Deliberately NOT cleared by ReleaseAll or a spec change. These frames are
@@ -1415,6 +1441,12 @@ local function CreateGroupContainer(groupName, position, iconSize)
 
     container:SetScript("OnDragStart", function(self)
         if InCombatLockdown() then return end
+        -- An anchored group is positioned by the group it follows, so dragging
+        -- it would move it for one frame and snap straight back on the next
+        -- reconcile. Change or clear the anchor in the settings instead.
+        local sd = GetSpecData()
+        local gd = sd and sd.groups[groupName]
+        if gd and gd.anchorTo and gd.anchorTo ~= "" then return end
         self:StartMoving()
         self:SetUserPlaced(false)
     end)
@@ -1429,6 +1461,65 @@ local function CreateGroupContainer(groupName, position, iconSize)
     end)
 
     return container
+end
+
+-- Would anchoring `groupName` to `targetName` form a loop?
+--
+-- WoW raises a hard "circular dependency" error on a cycle rather than
+-- ignoring it, and it takes the frame's layout down with it, so the chain is
+-- walked before anything is anchored. Bounded by the group count as well as by
+-- the visited set, because a corrupt saved chain should not be able to spin.
+local function WouldAnchorLoop(specData, groupName, targetName)
+    local seen = { [groupName] = true }
+    local at = targetName
+    local guard = 0
+    while at do
+        if seen[at] then return true end
+        seen[at] = true
+        guard = guard + 1
+        if guard > 64 then return true end
+        local gd = specData.groups[at]
+        at = gd and gd.anchorTo
+        if at == "" then at = nil end
+    end
+    return false
+end
+
+-- Place a group: against another group if it is anchored to one, otherwise at
+-- its own saved position. Split out of CreateGroupContainer so an anchor change
+-- can be applied without rebuilding the frame.
+function cdmModule:PositionGroup(groupName)
+    local group = self.groups[groupName]
+    local specData = GetSpecData()
+    local gd = specData and specData.groups[groupName]
+    if not group or not group.container or not gd then return end
+
+    local container = group.container
+    local targetName = gd.anchorTo
+    if targetName == "" then targetName = nil end
+
+    local target = targetName and targetName ~= groupName
+                   and not WouldAnchorLoop(specData, groupName, targetName)
+                   and self.groups[targetName] and self.groups[targetName].container
+                   or nil
+
+    container:ClearAllPoints()
+    if target then
+        local where = gd.anchorPoint or "below"
+        local ox, oy = gd.anchorX or 0, gd.anchorY or 0
+        if where == "above" then
+            container:SetPoint("BOTTOM", target, "TOP", ox, oy)
+        elseif where == "left" then
+            container:SetPoint("RIGHT", target, "LEFT", ox, oy)
+        elseif where == "right" then
+            container:SetPoint("LEFT", target, "RIGHT", ox, oy)
+        else
+            container:SetPoint("TOP", target, "BOTTOM", ox, oy)
+        end
+    else
+        local p = gd.position or { x = 0, y = 0 }
+        container:SetPoint("CENTER", UIParent, "CENTER", p.x or 0, p.y or 0)
+    end
 end
 
 -- ============================================================================
@@ -1643,13 +1734,7 @@ function cdmModule:LayoutGroup(groupName)
     -- anything to it, and that is no longer possible for Essential/Utility/
     -- Buffs. Alpha rather than Hide, matching hideOutOfCombat, so the container
     -- is never shown or hidden during combat lockdown.
-    if groupData.enabled == false then
-        group.container:SetAlpha(0)
-    elseif groupData.hideOutOfCombat and not isInCombat then
-        group.container:SetAlpha(0)
-    else
-        group.container:SetAlpha(1)
-    end
+    group.container:SetAlpha(GroupAlpha(groupData))
 end
 
 -- ============================================================================
@@ -1803,6 +1888,13 @@ function cdmModule:Reconcile()
                 entry.managed = false
             end
         end
+    end
+
+    -- Position, then lay out. Positioning first means an anchored group is
+    -- already attached to its target before sizes are computed, so nothing
+    -- jumps on the frame a chain is rebuilt.
+    for groupName, _ in pairs(self.groups) do
+        self:PositionGroup(groupName)
     end
 
     -- Layout all groups
@@ -2303,6 +2395,17 @@ function cdmModule:CreateGroup(groupName)
         bgEnabled = false,
         bgColor = { DEFAULT_BG_COLOR[1], DEFAULT_BG_COLOR[2],
                     DEFAULT_BG_COLOR[3], DEFAULT_BG_COLOR[4] },
+        -- Visibility conditions (all off: the group shows everywhere unless
+        -- told otherwise) and group-to-group anchoring.
+        hideMounted = false,
+        onlyInInstances = false,
+        hideInHousing = false,
+        hideNoTarget = false,
+        hideNoEnemy = false,
+        anchorTo = "",
+        anchorPoint = "below",
+        anchorX = 0,
+        anchorY = -4,
     }
 
     self:ScheduleReconcile()
@@ -2580,6 +2683,13 @@ eventFrame:RegisterEvent("UNIT_AURA")
 eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 eventFrame:RegisterEvent("PLAYER_PVP_TALENT_UPDATE")
 
+-- Drive the per-group visibility conditions. Cheap: each only re-evaluates
+-- GroupAlpha, it does not reconcile.
+eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+
 -- A fingerprint of which cooldowns exist right now, across all four categories.
 --
 -- This exists because the signals that say "the cooldown data changed" are far
@@ -2689,17 +2799,17 @@ local function UpdateCombatVisibility()
     if not specData then return end
     for groupName, group in pairs(cdmModule.groups) do
         if group.container then
-            local groupData = specData.groups[groupName]
-            if groupData and groupData.hideOutOfCombat and not isInCombat then
-                group.container:SetAlpha(0)
-            else
-                group.container:SetAlpha(1)
-            end
+            group.container:SetAlpha(GroupAlpha(specData.groups[groupName]))
         end
     end
 end
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_MOUNT_DISPLAY_CHANGED"
+       or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
+        UpdateCombatVisibility()
+        return
+    end
     if event == "SPELL_UPDATE_COOLDOWN" then
         -- Update proxy cooldown sweeps immediately
         UpdateAllProxyCooldowns()
@@ -3599,6 +3709,90 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     bgColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
     ns.Rows.AddTooltip(bgColorPicker, "Background Colour", "Colour and opacity of the icon background.")
     yOffset = yOffset - 28
+
+    -- Visibility conditions. All default off, so a group shows everywhere
+    -- unless told otherwise.
+    local visRows = {
+        { key = "hideMounted",     label = "Hide While Mounted",
+          tip = "Hide this group while you are on a mount." },
+        { key = "onlyInInstances", label = "Only In Instances",
+          tip = "Only show this group in a dungeon, raid, delve, scenario or battleground." },
+        { key = "hideInHousing",   label = "Hide In Housing",
+          tip = "Hide this group while you are inside your house or on your plot." },
+        { key = "hideNoTarget",    label = "Hide Without A Target",
+          tip = "Hide this group whenever you have nothing targeted." },
+        { key = "hideNoEnemy",     label = "Hide Without An Enemy",
+          tip = "Hide this group unless your target is something you can attack." },
+    }
+    for i, row in ipairs(visRows) do
+        local cb = CreateSQCheckbox(content, row.label, function(checked)
+            groupData[row.key] = checked
+            BH.cdm:ScheduleReconcile()
+        end)
+        -- Two columns, same as the toggles above.
+        local col = ((i - 1) % 2 == 0) and indent or (indent + 190)
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", col, yOffset)
+        ns.Rows.AddTooltip(cb, row.label, row.tip)
+        cb:SetChecked(groupData[row.key])
+        if (i % 2) == 0 or i == #visRows then yOffset = yOffset - 24 end
+    end
+    yOffset = yOffset - 4
+
+    -- Anchor this group to another, so a stack of bars can be positioned by
+    -- moving only the one at the top of the chain.
+    local anchorItems = { { text = "Screen (free)", value = "" } }
+    for otherName in pairs(specData.groups) do
+        if otherName ~= groupName then
+            anchorItems[#anchorItems + 1] = { text = otherName, value = otherName }
+        end
+    end
+    table.sort(anchorItems, function(a, b) return a.value < b.value end)
+
+    local anchorDD = CreateSQDropdown(content, "Anchor To", 160, anchorItems, function(val)
+        groupData.anchorTo = val
+        BH.cdm:ScheduleReconcile()
+    end)
+    anchorDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    anchorDD:SetSelectedValue(groupData.anchorTo or "")
+    ns.Rows.AddTooltip(anchorDD, "Anchor To",
+        "Attach this group to another one, so moving that group moves this with it. "
+     .. "An anchored group cannot be dragged -- it is positioned by whatever it follows. "
+     .. "Anchoring two groups to each other is ignored rather than allowed to break the layout.")
+
+    local sideItems = {
+        { text = "Below", value = "below" },
+        { text = "Above", value = "above" },
+        { text = "Left",  value = "left"  },
+        { text = "Right", value = "right" },
+    }
+    local sideDD = CreateSQDropdown(content, "Side", 110, sideItems, function(val)
+        groupData.anchorPoint = val
+        BH.cdm:ScheduleReconcile()
+    end)
+    sideDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    sideDD:SetSelectedValue(groupData.anchorPoint or "below")
+    ns.Rows.AddTooltip(sideDD, "Side", "Which side of the anchor group this one sits on.")
+    yOffset = yOffset - 50
+
+    local axSlider = CreateSQSlider(content, "Anchor Offset X", 220, -200, 200, 1)
+    axSlider:SetValue(groupData.anchorX or 0)
+    axSlider:SetAfterValueChanged(function(value)
+        groupData.anchorX = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    axSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(axSlider, "Anchor Offset X", "Nudge this group sideways from its anchor.")
+    yOffset = yOffset - 46
+
+    local aySlider = CreateSQSlider(content, "Anchor Offset Y", 220, -200, 200, 1)
+    aySlider:SetValue(groupData.anchorY or -4)
+    aySlider:SetAfterValueChanged(function(value)
+        groupData.anchorY = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    aySlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(aySlider, "Anchor Offset Y", "Nudge this group up or down from its anchor.")
+    yOffset = yOffset - 46
 
     -- Thin separator
     local sep = content:CreateTexture(nil, "ARTWORK")
