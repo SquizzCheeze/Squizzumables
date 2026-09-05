@@ -24,6 +24,7 @@ local RELEASE_NOTES = {
     ["1.69"] = {
         "The Earth Shield reminder no longer fires in delves and follower dungeons, where your party is NPCs and there is nobody to shield.",
         "The Earth Shield reminder now checks whether you actually have Elemental Orbit instead of guessing from your own shield.",
+        "Cooldown Manager groups can be styled: border thickness and colour (or class colour), icon zoom, and an optional icon background.",
     },
     ["1.68"] = {
         "The Just For Kel alert image is now click-through \226\128\148 it no longer swallows clicks while it is on screen.",

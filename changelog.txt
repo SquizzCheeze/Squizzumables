@@ -19,3 +19,10 @@ V1.69
   combat, raids, Mythic+ and PvP -- exactly when the icons are being updated. The reads now
   go through the same safe path the rest of the addon uses, and an unreadable buff falls
   back to showing the spell's cooldown instead of erroring
+- Cooldown Manager groups can now be styled. Border thickness and colour (or your class
+  colour), how much of the icon art is cropped, and an optional coloured background behind
+  each icon. All of it is per group, so one group can be a chunky class-coloured row and
+  another a small plain one. The border was previously a fixed 1px black line you could
+  only switch on or off, and the icon crop was not adjustable at all
+- The icon background pairs with Hide Until Active: the group keeps a visible footprint
+  while its icons are hidden, so you can still see where it is

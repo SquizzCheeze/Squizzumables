@@ -26,6 +26,7 @@ local CreateSQSlider   = ns.CreateSQSlider
 local CreateSQCheckbox = ns.CreateSQCheckbox
 local CreateSQDropdown = ns.CreateSQDropdown
 local CreateSQDivider  = ns.CreateSQDivider
+local CreateSQColorPicker = ns.CreateSQColorPicker
 
 -- ============================================================================
 -- Constants
@@ -47,6 +48,15 @@ local DEFAULT_ORIENTATION = "horizontal"   -- "horizontal" or "vertical"
 local DEFAULT_GROW_DIRECTION = "rightdown" -- "rightdown", "leftdown", "rightup", "leftup"
 local DEFAULT_ALPHA = 1.0
 local DEFAULT_SORT = "assignment"          -- "assignment", "name", "cooldown"
+
+-- Icon look. These were hardcoded into CreateProxyIcon until 1.69: a 1px black
+-- edge, a fixed 0.07 texture crop and no background at all. They are per-group
+-- so one group can be a chunky class-coloured row of cooldowns and another a
+-- small plain one, which is the point of having groups.
+local DEFAULT_BORDER_THICKNESS = 1
+local DEFAULT_BORDER_COLOR     = { 0, 0, 0, 0.9 }
+local DEFAULT_ICON_ZOOM        = 0.07   -- fraction cropped from each edge
+local DEFAULT_BG_COLOR         = { 0.08, 0.08, 0.08, 0.6 }
 
 -- Combat state tracking
 local isInCombat = InCombatLockdown()
@@ -706,6 +716,16 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize)
     proxy.spellID = spellID
     proxy.cooldownID = cooldownID
 
+    -- Background, behind the icon. Shows through wherever the icon does not
+    -- cover it, and gives a group a visible footprint when its icons are
+    -- hidden-until-active. Off unless the group turns it on.
+    local bgTex = proxy:CreateTexture(nil, "BACKGROUND")
+    bgTex:SetAllPoints()
+    bgTex:SetColorTexture(DEFAULT_BG_COLOR[1], DEFAULT_BG_COLOR[2],
+                          DEFAULT_BG_COLOR[3], DEFAULT_BG_COLOR[4])
+    bgTex:Hide()
+    proxy.Bg = bgTex
+
     -- Icon texture
     local iconTex = proxy:CreateTexture(nil, "ARTWORK")
     iconTex:SetAllPoints()
@@ -713,18 +733,22 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize)
     if texture and not BH.Secrets.IsSecret(texture) then
         iconTex:SetTexture(texture)
     end
-    iconTex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    local z = DEFAULT_ICON_ZOOM
+    iconTex:SetTexCoord(z, 1 - z, z, 1 - z)
     proxy.Icon = iconTex
 
     -- Border (1px edge using BackdropTemplate â€” does NOT cover the icon)
+    -- Thickness and colour are per group, applied in ApplyProxyVisuals. What
+    -- is set here is only how it looks before the first pass runs.
     local borderFrame = CreateFrame("Frame", nil, proxy, "BackdropTemplate")
-    borderFrame:SetPoint("TOPLEFT", -1, 1)
-    borderFrame:SetPoint("BOTTOMRIGHT", 1, -1)
+    borderFrame:SetPoint("TOPLEFT", -DEFAULT_BORDER_THICKNESS, DEFAULT_BORDER_THICKNESS)
+    borderFrame:SetPoint("BOTTOMRIGHT", DEFAULT_BORDER_THICKNESS, -DEFAULT_BORDER_THICKNESS)
     borderFrame:SetBackdrop({
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-        edgeSize = 1,
+        edgeSize = DEFAULT_BORDER_THICKNESS,
     })
-    borderFrame:SetBackdropBorderColor(0, 0, 0, 0.9)
+    borderFrame:SetBackdropBorderColor(DEFAULT_BORDER_COLOR[1], DEFAULT_BORDER_COLOR[2],
+                                       DEFAULT_BORDER_COLOR[3], DEFAULT_BORDER_COLOR[4])
     proxy.Border = borderFrame
 
     -- Cooldown sweep widget
@@ -816,6 +840,56 @@ local function ApplyProxyVisuals(proxy, groupData)
     -- Border visibility
     local showBorder = groupData.showBorder ~= false
     if proxy.Border then proxy.Border:SetShown(showBorder) end
+
+    -- Border thickness/colour, icon zoom and background.
+    --
+    -- ApplyProxyVisuals runs on every update pass, and SetBackdrop and
+    -- SetTexCoord are far too heavy for that -- SetBackdrop rebuilds the
+    -- backdrop's textures. So the style values are folded into a signature and
+    -- the work only happens when one of them actually changed, which is when
+    -- the player moves a slider. Any new style field must join the signature or
+    -- editing it will appear to do nothing until a reload.
+    local thickness = groupData.borderThickness or DEFAULT_BORDER_THICKNESS
+    local zoom      = groupData.iconZoom or DEFAULT_ICON_ZOOM
+    local bc        = groupData.borderColor or DEFAULT_BORDER_COLOR
+    local bg        = groupData.bgColor or DEFAULT_BG_COLOR
+    local bgOn      = groupData.bgEnabled and true or false
+    local classCol  = groupData.borderClassColor and true or false
+
+    local sig = ("%d|%.3f|%.2f,%.2f,%.2f,%.2f|%s|%.2f,%.2f,%.2f,%.2f|%s"):format(
+        thickness, zoom, bc[1], bc[2], bc[3], bc[4],
+        tostring(classCol), bg[1], bg[2], bg[3], bg[4], tostring(bgOn))
+
+    if proxy._styleSig ~= sig then
+        proxy._styleSig = sig
+
+        if proxy.Icon then
+            proxy.Icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
+        end
+
+        if proxy.Border then
+            proxy.Border:ClearAllPoints()
+            proxy.Border:SetPoint("TOPLEFT", -thickness, thickness)
+            proxy.Border:SetPoint("BOTTOMRIGHT", thickness, -thickness)
+            proxy.Border:SetBackdrop({
+                edgeFile = "Interface\\BUTTONS\\WHITE8X8",
+                edgeSize = thickness,
+            })
+            local r, g, b, a = bc[1], bc[2], bc[3], bc[4]
+            if classCol then
+                local _, class = UnitClass("player")
+                local cc = class and C_ClassColor and C_ClassColor.GetClassColor
+                    and C_ClassColor.GetClassColor(class)
+                if cc then r, g, b = cc.r, cc.g, cc.b end
+            end
+            proxy.Border:SetBackdropBorderColor(r, g, b, a)
+        end
+
+        if proxy.Bg then
+            proxy.Bg:SetColorTexture(bg[1], bg[2], bg[3], bg[4])
+            proxy.Bg:SetShown(bgOn)
+        end
+    end
 
     -- Cooldown text visibility
     if proxy.Cooldown then
@@ -1749,6 +1823,16 @@ function cdmModule:CreateGroup(groupName)
         desaturateReady = false,
         glowOnReady = false,
         hideOutOfCombat = false,
+        -- Icon look. Absent on groups made before 1.69, which is why every
+        -- read is `or DEFAULT_x` rather than assuming these exist.
+        borderThickness = DEFAULT_BORDER_THICKNESS,
+        borderColor = { DEFAULT_BORDER_COLOR[1], DEFAULT_BORDER_COLOR[2],
+                        DEFAULT_BORDER_COLOR[3], DEFAULT_BORDER_COLOR[4] },
+        borderClassColor = false,
+        iconZoom = DEFAULT_ICON_ZOOM,
+        bgEnabled = false,
+        bgColor = { DEFAULT_BG_COLOR[1], DEFAULT_BG_COLOR[2],
+                    DEFAULT_BG_COLOR[3], DEFAULT_BG_COLOR[4] },
     }
 
     self:ScheduleReconcile()
@@ -2791,6 +2875,69 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     activeOnlyCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
     ns.Rows.AddTooltip(activeOnlyCB, "Hide Until Active", "Only show an icon once its ability is on cooldown or its buff is active.")
     activeOnlyCB:SetChecked(groupData.hideUntilActive)
+    yOffset = yOffset - 28
+
+    -- Icon look. Border thickness/colour, icon crop and background were all
+    -- hardcoded before 1.69; they are per group so two groups can look
+    -- completely different, which is most of the point of having groups.
+    local thickSlider = CreateSQSlider(content, "Border Thickness", 220, 0, 4, 1)
+    thickSlider:SetValue(groupData.borderThickness or DEFAULT_BORDER_THICKNESS)
+    thickSlider:SetAfterValueChanged(function(value)
+        groupData.borderThickness = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    thickSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(thickSlider, "Border Thickness",
+        "How heavy the border around each icon is, in pixels. 0 removes it without unticking Show Border.")
+    yOffset = yOffset - 46
+
+    local zoomSlider = CreateSQSlider(content, "Icon Zoom %", 220, 0, 20, 1)
+    zoomSlider:SetValue(math.floor(((groupData.iconZoom or DEFAULT_ICON_ZOOM) * 100) + 0.5))
+    zoomSlider:SetAfterValueChanged(function(value)
+        groupData.iconZoom = value / 100
+        BH.cdm:ScheduleReconcile()
+    end)
+    zoomSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(zoomSlider, "Icon Zoom %",
+        "How much is cropped from each edge of the icon art. Higher values trim the default border off the artwork.")
+    yOffset = yOffset - 46
+
+    local bcInit = groupData.borderColor or DEFAULT_BORDER_COLOR
+    local borderColorPicker = CreateSQColorPicker(content, "Border Colour",
+        bcInit[1], bcInit[2], bcInit[3], bcInit[4], function(r, g, b, a)
+            groupData.borderColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    borderColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(borderColorPicker, "Border Colour", "Colour of the icon border for this group.")
+
+    local classColorCB = CreateSQCheckbox(content, "Use Class Colour", function(checked)
+        groupData.borderClassColor = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    classColorCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(classColorCB, "Use Class Colour",
+        "Colour the border with your class colour, overriding the colour picked above.")
+    classColorCB:SetChecked(groupData.borderClassColor)
+    yOffset = yOffset - 28
+
+    local bgCB = CreateSQCheckbox(content, "Icon Background", function(checked)
+        groupData.bgEnabled = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    bgCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(bgCB, "Icon Background",
+        "Draw a filled square behind each icon. Mainly useful with Hide Until Active, so the group keeps a visible footprint while its icons are hidden.")
+    bgCB:SetChecked(groupData.bgEnabled)
+
+    local bgInit = groupData.bgColor or DEFAULT_BG_COLOR
+    local bgColorPicker = CreateSQColorPicker(content, "Background Colour",
+        bgInit[1], bgInit[2], bgInit[3], bgInit[4], function(r, g, b, a)
+            groupData.bgColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    bgColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(bgColorPicker, "Background Colour", "Colour and opacity of the icon background.")
     yOffset = yOffset - 28
 
     -- Thin separator
