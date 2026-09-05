@@ -10383,6 +10383,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": Cooldown Manager module not loaded.")
         end
+    elseif msg == "cdmbuff" then
+        if BH.cdm and BH.cdm.PrintBuffDiagnostics then
+            BH.cdm:PrintBuffDiagnostics()
+        else
+            print(addonName .. ": Cooldown Manager module not loaded.")
+        end
     elseif msg == "buffsounds" then
         if BH.PrintBuffSoundDiagnostics then
             BH:PrintBuffSoundDiagnostics()

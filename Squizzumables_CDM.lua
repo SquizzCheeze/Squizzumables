@@ -2404,6 +2404,78 @@ local function HoldParked(f)
     hooksecurefunc(f, "ClearAllPoints", QueueRepark)
 end
 
+-- /sq cdmbuff -- ground truth for tracked-buff state, in and out of combat.
+--
+-- Written because three attempts at reasoning about which of these reads
+-- survives combat were all wrong. Run it out of combat and again during a
+-- pull with buffs up; the difference between the two is the answer.
+--
+-- For every child of the buff viewers it reports what this module actually
+-- depends on: whether IsActive answers and whether that answer is secret,
+-- whether the frame carries a usable auraInstanceID, and whether
+-- GetAuraDuration yields a duration object from it.
+function cdmModule:PrintBuffDiagnostics()
+    print("|cFF00FF00Squizzumables CDM buff state|r")
+    print(("  in combat: %s   auras secret: %s"):format(
+        tostring(InCombatLockdown()), tostring(BH.Secrets.AurasAreSecret())))
+
+    local n = 0
+    for _, viewerName in ipairs(BUFF_VIEWERS) do
+        local viewer = _G[viewerName]
+        if not viewer then
+            print(("  %s: |cFFFF5555missing|r"):format(viewerName))
+        else
+            local ok, children = pcall(function() return { viewer:GetChildren() } end)
+            print(("  %s: %d child(ren)"):format(viewerName, (ok and children) and #children or -1))
+            if ok and children then
+                for _, child in ipairs(children) do
+                    if child and child.cooldownID then
+                        n = n + 1
+                        local cdID = child.cooldownID
+                        local sid  = SpellIDForCooldown(cdID)
+                        local name = sid and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)
+                        name = BH.Secrets.SafeString(name, "?")
+
+                        local activeTxt = "no IsActive"
+                        if child.IsActive then
+                            local gotState, state = pcall(child.IsActive, child)
+                            if not gotState then
+                                activeTxt = "|cFFFF5555threw|r"
+                            elseif BH.Secrets.IsSecret(state) then
+                                activeTxt = "|cFFFFD100SECRET|r"
+                            else
+                                activeTxt = tostring(state)
+                            end
+                        end
+
+                        local iid = child.auraInstanceID
+                        local iidTxt
+                        if iid == nil then iidTxt = "nil"
+                        elseif BH.Secrets.IsSecret(iid) then iidTxt = "|cFFFFD100SECRET|r"
+                        else iidTxt = tostring(iid) end
+
+                        local durTxt = "-"
+                        if iid and child.auraDataUnit and not BH.Secrets.HasAnySecret(iid, child.auraDataUnit)
+                           and C_UnitAuras and C_UnitAuras.GetAuraDuration then
+                            local dok, dobj = pcall(C_UnitAuras.GetAuraDuration, child.auraDataUnit, iid)
+                            durTxt = (dok and dobj) and "|cFF33FF33object|r" or (dok and "nil" or "threw")
+                        end
+
+                        print(("    %s (cd %s, spell %s) IsActive=%s auraInstanceID=%s unit=%s dur=%s tracked=%s"):format(
+                            name, tostring(cdID), tostring(sid), activeTxt, iidTxt,
+                            tostring(child.auraDataUnit),
+                            durTxt,
+                            tostring(sid and cdmModule.buffItemForSpell[sid] ~= nil)))
+                    end
+                end
+            end
+        end
+    end
+    if n == 0 then
+        print("|cFFFF5555  no buff viewer children at all -- the viewers have not built their item frames.|r")
+    end
+end
+
 -- Re-mute the item frames of any viewer currently suppressed. Cheap, and it has
 -- to keep happening: see MuteViewerItems.
 function cdmModule:MuteSuppressedViewerItems()
