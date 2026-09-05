@@ -63,6 +63,11 @@ V1.69
   icon size all work as before, and Hide Until Active now comes free because the game hides
   an inactive tracked buff itself. The per-icon border, zoom and background do not apply to
   buffs any more, since these are the game's own icons
+- Cooldown Manager icons can now show their keybind. Per group, with a colour and text size,
+  read from your action bars -- an ability that is not on a bar has no key to show. It
+  deliberately does not follow bar swaps from stealth, druid forms or dragonriding: a
+  keybind that rewrites itself every time you shapeshift is less use than a steady one, and
+  a talent that replaces a spell is followed so the key still appears
 - New "Always Show Buffs" option for the tracked buff group: keep a slot for every buff you
   track, showing a dimmed placeholder while it is not up, rather than the row shrinking to
   only the active ones. "Grey Out Inactive" and an opacity slider control how those look

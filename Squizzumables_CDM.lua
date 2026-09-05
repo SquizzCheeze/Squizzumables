@@ -764,6 +764,9 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     for _, child in ipairs(shown) do
         child:SetSize(iconSize, iconSize)
         child:ClearAllPoints()
+        -- Works on a borrowed Blizzard frame as well as a placeholder: adding a
+        -- font string to one is an ordinary region write, not a protected call.
+        ApplyKeybindText(child, SpellIDForCooldown(child.cooldownID), groupData)
         if centered then
             local itemsThisLine = math.min(#shown - row * perRow, perRow)
             local rowW = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
@@ -1266,6 +1269,118 @@ local function UpdateProxyCooldown(proxy)
     end
 end
 
+-- ============================================================================
+-- Keybind text
+--
+-- Which key casts this spell. Harder than it sounds, and the reason this was
+-- left until last.
+--
+-- Action slots do not carry bindings; the BUTTONS do, and which button owns a
+-- slot depends on the bar. So a slot number has to be mapped back to a binding
+-- command, which is the table below. Slots 13-24 are deliberately absent: that
+-- is action bar page 2, which has no bindings of its own -- it borrows
+-- ACTIONBUTTON1-12 when the page is active. Claiming those would report a key
+-- that does nothing on the page you are actually looking at.
+--
+-- The map is also rebuilt on binding and action-bar changes only, never on a
+-- page change, and prefers the LOWEST matching slot. That is this addon's
+-- version of EllesmereUI's "stable keybinds": stealth, druid forms, dragonriding
+-- and vehicles all swap the visible page underneath you, and a keybind that
+-- rewrites itself every time you shapeshift is worse than one that is
+-- occasionally a page out of date.
+-- ============================================================================
+
+local KEYBIND_BARS = {
+    { first = 1,  cmd = "ACTIONBUTTON%d" },
+    { first = 25, cmd = "MULTIACTIONBAR3BUTTON%d" },
+    { first = 37, cmd = "MULTIACTIONBAR4BUTTON%d" },
+    { first = 49, cmd = "MULTIACTIONBAR2BUTTON%d" },
+    { first = 61, cmd = "MULTIACTIONBAR1BUTTON%d" },
+    { first = 73, cmd = "MULTIACTIONBAR5BUTTON%d" },
+    { first = 85, cmd = "MULTIACTIONBAR6BUTTON%d" },
+    { first = 97, cmd = "MULTIACTIONBAR7BUTTON%d" },
+}
+
+local keybindForSpell = {}
+local keybindMapBuilt = false
+
+-- Shorten a key for an icon corner. "SHIFT-BUTTON4" is longer than the icon.
+local function AbbrevKey(key)
+    if not key or key == "" then return nil end
+    local out = key
+    out = out:gsub("SHIFT%-", "s"):gsub("CTRL%-", "c"):gsub("ALT%-", "a")
+    out = out:gsub("BUTTON", "m")
+    out = out:gsub("MOUSEWHEELUP", "mwu"):gsub("MOUSEWHEELDOWN", "mwd")
+    out = out:gsub("NUMPAD", "n")
+    out = out:gsub("SPACE", "sp")
+    return out
+end
+
+local function RebuildKeybindMap()
+    wipe(keybindForSpell)
+    keybindMapBuilt = true
+    for _, bar in ipairs(KEYBIND_BARS) do
+        for i = 1, 12 do
+            local slot = bar.first + i - 1
+            local actionType, id, subType = GetActionInfo(slot)
+            local spellID
+            if actionType == "spell" then
+                spellID = id
+            elseif actionType == "macro" then
+                -- A macro that casts something still deserves the key.
+                spellID = GetMacroSpell and GetMacroSpell(id)
+            end
+            -- Lowest slot wins, so a spell on several bars reports the one on
+            -- the main bar rather than whichever was scanned last.
+            if spellID and not keybindForSpell[spellID] then
+                local key = GetBindingKey(bar.cmd:format(i))
+                key = AbbrevKey(key)
+                if key then keybindForSpell[spellID] = key end
+            end
+        end
+    end
+end
+
+local function KeybindForSpell(spellID)
+    if not spellID then return nil end
+    if not keybindMapBuilt then RebuildKeybindMap() end
+    local key = keybindForSpell[spellID]
+    if key then return key end
+    -- Talents replace a spell's ID on the bars while the cooldown viewer still
+    -- lists the base one, so ask what this spell is currently overridden by.
+    if C_SpellBook and C_SpellBook.FindSpellOverrideByID then
+        local ovr = C_SpellBook.FindSpellOverrideByID(spellID)
+        if ovr and ovr ~= spellID then return keybindForSpell[ovr] end
+    end
+    return nil
+end
+cdmModule.InvalidateKeybinds = function() keybindMapBuilt = false end
+
+-- One reusable font string per icon, for a proxy or a borrowed Blizzard frame
+-- alike. Created on demand and remembered on the frame.
+local function ApplyKeybindText(frame, spellID, groupData)
+    if not frame then return end
+    local want = groupData and groupData.showKeybind
+    if not want then
+        if frame._sqKeybind then frame._sqKeybind:Hide() end
+        return
+    end
+
+    local fs = frame._sqKeybind
+    if not fs then
+        fs = frame:CreateFontString(nil, "OVERLAY")
+        frame._sqKeybind = fs
+    end
+    fs:SetFont("Fonts\\FRIZQT__.TTF", groupData.keybindSize or 10, "OUTLINE")
+    fs:ClearAllPoints()
+    fs:SetPoint("TOPRIGHT", frame, "TOPRIGHT",
+        groupData.keybindOffsetX or -1, groupData.keybindOffsetY or -1)
+    local c = groupData.keybindColor or { 1, 1, 1, 0.9 }
+    fs:SetTextColor(c[1], c[2], c[3], c[4])
+    fs:SetText(KeybindForSpell(spellID) or "")
+    fs:Show()
+end
+
 -- Apply per-group visual settings to a proxy frame
 local function ApplyProxyVisuals(proxy, groupData)
     if not proxy or not groupData then return end
@@ -1294,6 +1409,8 @@ local function ApplyProxyVisuals(proxy, groupData)
     -- Border visibility
     local showBorder = groupData.showBorder ~= false
     if proxy.Border then proxy.Border:SetShown(showBorder) end
+
+    ApplyKeybindText(proxy, proxy.spellID, groupData)
 
     -- Border thickness/colour, icon zoom and background.
     --
@@ -3052,6 +3169,12 @@ function cdmModule:CreateGroup(groupName)
         showInactiveBuffs = false,
         desaturateInactiveBuffs = true,
         inactiveBuffAlpha = 0.45,
+        -- Keybind text
+        showKeybind = false,
+        keybindSize = 10,
+        keybindOffsetX = -1,
+        keybindOffsetY = -1,
+        keybindColor = { 1, 1, 1, 0.9 },
     }
 
     self:ScheduleReconcile()
@@ -3331,6 +3454,11 @@ eventFrame:RegisterEvent("PLAYER_PVP_TALENT_UPDATE")
 
 -- Drive the per-group visibility conditions. Cheap: each only re-evaluates
 -- GroupAlpha, it does not reconcile.
+-- Keybind map invalidation. Deliberately NOT ACTIONBAR_PAGE_CHANGED or the
+-- form/stance events: see the note on KEYBIND_BARS about why a keybind that
+-- rewrites itself every time you shapeshift is worse than a stable one.
+eventFrame:RegisterEvent("UPDATE_BINDINGS")
+eventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -3451,6 +3579,12 @@ local function UpdateCombatVisibility()
 end
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_SLOT_CHANGED" then
+        cdmModule.InvalidateKeybinds()
+        UpdateAllProxyCooldowns()
+        cdmModule:LayoutAllBorrowedBuffIcons()
+        return
+    end
     if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_MOUNT_DISPLAY_CHANGED"
        or event == "ZONE_CHANGED_NEW_AREA" or event == "PLAYER_ENTERING_WORLD" then
         UpdateCombatVisibility()
@@ -4355,6 +4489,39 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     bgColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
     ns.Rows.AddTooltip(bgColorPicker, "Background Colour", "Colour and opacity of the icon background.")
     yOffset = yOffset - 28
+
+    -- Keybind text.
+    local kbCB = CreateSQCheckbox(content, "Show Keybind", function(checked)
+        groupData.showKeybind = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    kbCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(kbCB, "Show Keybind",
+        "Show the key that casts each ability on its icon.\n\n"
+     .. "Read from your action bars, so an ability that is not on a bar has no key to show. "
+     .. "It deliberately does not follow bar swaps from stealth, druid forms or dragonriding: "
+     .. "a keybind that rewrites itself every time you shapeshift is less use than a steady one.")
+    kbCB:SetChecked(groupData.showKeybind)
+
+    local kbColor = groupData.keybindColor or { 1, 1, 1, 0.9 }
+    local kbPicker = CreateSQColorPicker(content, "Keybind Colour",
+        kbColor[1], kbColor[2], kbColor[3], kbColor[4], function(r, g, b, a)
+            groupData.keybindColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    kbPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(kbPicker, "Keybind Colour", "Colour of the keybind text.")
+    yOffset = yOffset - 28
+
+    local kbSize = CreateSQSlider(content, "Keybind Text Size", 220, 6, 20, 1)
+    kbSize:SetValue(groupData.keybindSize or 10)
+    kbSize:SetAfterValueChanged(function(value)
+        groupData.keybindSize = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    kbSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(kbSize, "Keybind Text Size", "Font size of the keybind text.")
+    yOffset = yOffset - 46
 
     -- Tracked-buff options. Only meaningful for a group holding buffs, so they
     -- are only offered on one: on any other group they would be dead controls.
