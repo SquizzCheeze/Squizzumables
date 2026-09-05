@@ -522,6 +522,19 @@ fire when the viewers are alpha-suppressed by another addon — so both it and t
 `ClaimAlert(spellID, when)` dropping whichever notices second inside 0.6s. Never let one path
 suppress the other outright: whichever is favoured will eventually be the one that is broken.
 
+**The CDM group frames are a public anchor API.** `Squizzumables_GetCDMGroupFrame(name)` (and
+`BH.cdm:GetGroupFrame(name)`) returns a cooldown group's container — `"Essential"`, `"Utility"`,
+`"Buffs"`, or a custom group's name. Other addons anchor to these, so **the frames are created
+once per session and reused**, never rebuilt on `ReleaseAll` or a spec change: WoW cannot destroy
+a frame, so a second `CreateFrame` under the same name leaves the first alive and orphaned and
+anything anchored to it silently stops tracking. `containerCache` in `Squizzumables_CDM.lua` is
+what guarantees that; do not clear it. The `SQZ_CDMGroup_<name>` globals still exist but the
+accessor is the supported contract.
+
+Note this is *not* a mirror of Blizzard's viewers. The module proxies rather than reparenting, so
+`EssentialCooldownViewer` is a separate frame at its own position — and with "Hide Blizzard's
+Cooldown Manager" on it is parked at -10000, which would drag anything anchored to it offscreen.
+
 **Encounter timeline** (`Core/EncounterTimeline.lua`, `BH.Timeline`): only the **write** side of
 `C_EncounterTimeline` is usable. On the read side, `EncounterTimelineEventInfo` exposes just `id`,
 `source`, `duration` and `maxQueueDuration` as readable values — `spellID`, `spellName`,

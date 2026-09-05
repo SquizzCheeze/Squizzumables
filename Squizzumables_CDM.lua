@@ -1384,8 +1384,27 @@ end
 -- Group Container Creation & Management
 -- ============================================================================
 
+-- Group containers, kept for the whole session and reused.
+--
+-- Deliberately NOT cleared by ReleaseAll or a spec change. These frames are
+-- named globals (SQZ_CDMGroup_Essential and friends) and are the documented
+-- anchor point for other addons, so their identity has to be permanent. WoW
+-- cannot destroy a frame: building a second one under the same name leaves the
+-- first alive and orphaned, and anything anchored to it silently stops
+-- tracking. So a group's frame is created once and re-pointed thereafter.
+local containerCache = {}
+
 local function CreateGroupContainer(groupName, position, iconSize)
+    local cached = containerCache[groupName]
+    if cached then
+        cached:ClearAllPoints()
+        cached:SetPoint("CENTER", UIParent, "CENTER", position.x or 0, position.y or 0)
+        cached:Show()
+        return cached
+    end
+
     local container = CreateFrame("Frame", "SQZ_CDMGroup_" .. groupName, UIParent)
+    containerCache[groupName] = container
     container:SetSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE) -- Will be resized on layout
     container:SetPoint("CENTER", UIParent, "CENTER", position.x or 0, position.y or 0)
     container:SetFrameStrata("MEDIUM")
@@ -1874,6 +1893,38 @@ end
 -- ============================================================================
 -- Release â€” Return all frames to Blizzard's CDM
 -- ============================================================================
+
+-- ============================================================================
+-- Public anchor API
+--
+-- For other addons that want to position something against a cooldown group.
+--
+--     local f = Squizzumables_GetCDMGroupFrame("Essential")
+--     if f then myFrame:SetPoint("TOP", f, "BOTTOM", 0, -4) end
+--
+-- The group names are "Essential", "Utility" and "Buffs" for the built-ins, or
+-- whatever the player called a custom group. The frames are also reachable as
+-- the globals SQZ_CDMGroup_<name>, but go through this: the accessor is the
+-- supported contract and the name is not.
+--
+-- Do NOT anchor to Blizzard's EssentialCooldownViewer expecting to follow these
+-- icons. This module proxies rather than reparenting, so Blizzard's viewer is a
+-- separate frame at its own position -- and with "Hide Blizzard's Cooldown
+-- Manager" on it is parked far offscreen, which would drag anything anchored to
+-- it off with it.
+--
+-- A frame is created once and reused for the rest of the session, so a
+-- reference taken here stays valid across spec changes and across the module
+-- being switched off and on. It may be sized 0-ish or hidden when its group is
+-- empty; anchoring still works, visibility is not inherited.
+-- ============================================================================
+function cdmModule:GetGroupFrame(groupName)
+    return groupName and containerCache[groupName] or nil
+end
+
+function Squizzumables_GetCDMGroupFrame(groupName)
+    return cdmModule:GetGroupFrame(groupName)
+end
 
 -- Every Blizzard cooldown viewer, for the "hide Blizzard's" option.
 local BLIZZARD_VIEWERS = {

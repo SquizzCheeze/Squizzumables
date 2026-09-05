@@ -15,7 +15,8 @@
       "DUNGEON_FLOOR_ICECROWNCITADELDEATHKNIGHT2"
     ],
     "write": [
-      "Squizzumables_OnAddonCompartment*"
+      "Squizzumables_OnAddonCompartment*",
+      "Squizzumables_GetCDMGroupFrame"
     ]
   }
 }

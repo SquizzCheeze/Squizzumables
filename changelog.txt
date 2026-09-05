@@ -56,6 +56,11 @@ V1.69
   afterwards, instead of staying blank forever and leaving what looked like an empty group
 - Every frame's green move box now says which frame it is while frames are unlocked. There
   can be a dozen or more on screen at once and they were impossible to tell apart
+- Other addons can now anchor to a cooldown group reliably, via
+  Squizzumables_GetCDMGroupFrame("Essential") and the same for "Utility", "Buffs" or any
+  group you have made. The frames now last the whole session instead of being rebuilt when
+  you change spec or switch the Cooldown Manager off and on, which used to leave anything
+  anchored to them pointing at a dead frame
 - The Cooldowns tab is now just the Cooldown Manager: the master switch and the three
   standard groups with their styling. Making your own groups and assigning individual
   spells has moved to a new Custom Icons tab, so the settings you are most likely to want
