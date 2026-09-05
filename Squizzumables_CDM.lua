@@ -620,6 +620,106 @@ local function MirrorBlizzardCooldown(child)
 end
 cdmModule.MirrorBlizzardCooldown = MirrorBlizzardCooldown
 
+-- Are we borrowing Blizzard's buff icons rather than proxying them?
+local function BorrowBuffIcons()
+    return not (BH.settings and BH.settings.cdmProxyBuffIcons)
+end
+
+-- Lay Blizzard's own buff item frames out inside one of our group containers.
+--
+-- This is the whole point of the borrowed approach: the frames stay parented to
+-- Blizzard's viewer and Blizzard keeps driving their cooldown, icon, stacks and
+-- active state, so everything works in combat exactly as it does for Blizzard.
+-- All we own is where they sit. Growth direction, spacing, per-row and icon
+-- size come from the group, so the layout options still apply.
+--
+-- Re-applied from the poll, because Blizzard re-anchors these on its own layout
+-- pass and would otherwise pull them back to its bar.
+function cdmModule:LayoutBorrowedBuffIcons(groupName)
+    local group = self.groups[groupName]
+    local specData = GetSpecData()
+    local groupData = specData and specData.groups[groupName]
+    if not group or not group.container or not groupData then return end
+
+    local iconSize = groupData.iconSize or DEFAULT_ICON_SIZE
+    local spacing  = groupData.spacing or DEFAULT_SPACING
+    local perRow   = groupData.perRow or DEFAULT_PER_ROW
+    local growDir  = groupData.growDirection or DEFAULT_GROW_DIRECTION
+
+    -- Only frames Blizzard is currently showing. It hides an inactive tracked
+    -- buff itself, so the row packs down to what is really up without needing
+    -- our own active-state logic -- which is the part that kept breaking.
+    local shown = {}
+    for _, viewerName in ipairs(BUFF_VIEWERS) do
+        local viewer = _G[viewerName]
+        if viewer then
+            local ok, children = pcall(function() return { viewer:GetChildren() } end)
+            if ok and children then
+                for _, child in ipairs(children) do
+                    if child and child.cooldownID and child:IsShown() then
+                        shown[#shown + 1] = child
+                    end
+                end
+            end
+        end
+    end
+    table.sort(shown, function(a, b) return a.cooldownID < b.cooldownID end)
+
+    local centered   = (growDir == "centereddown" or growDir == "centeredup")
+    local centeredUp = (growDir == "centeredup")
+    local colMul, rowMul = 1, -1
+    if not centered then
+        if growDir == "leftdown" then colMul, rowMul = -1, -1
+        elseif growDir == "rightup" then colMul, rowMul = 1, 1
+        elseif growDir == "leftup" then colMul, rowMul = -1, 1 end
+    end
+
+    local cols = math.max(1, math.min(#shown, perRow))
+    local rows = math.max(1, math.ceil(math.max(#shown, 1) / perRow))
+    local fullW = cols * (iconSize + spacing) - spacing
+    local fullH = rows * (iconSize + spacing) - spacing
+
+    local col, row = 0, 0
+    for _, child in ipairs(shown) do
+        child:SetSize(iconSize, iconSize)
+        child:ClearAllPoints()
+        if centered then
+            local itemsThisLine = math.min(#shown - row * perRow, perRow)
+            local rowW = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
+            local x = -rowW / 2 + col * (iconSize + spacing) + iconSize / 2
+            local y = (iconSize / 2 + row * (iconSize + spacing)) * (centeredUp and 1 or -1)
+            child:SetPoint("CENTER", group.container,
+                centeredUp and "BOTTOM" or "TOP", x, y)
+        else
+            local anchor = "TOPLEFT"
+            if colMul < 0 and rowMul < 0 then anchor = "TOPRIGHT"
+            elseif colMul > 0 and rowMul > 0 then anchor = "BOTTOMLEFT"
+            elseif colMul < 0 and rowMul > 0 then anchor = "BOTTOMRIGHT" end
+            child:SetPoint(anchor, group.container, anchor,
+                col * (iconSize + spacing) * colMul,
+                row * (iconSize + spacing) * rowMul)
+        end
+        col = col + 1
+        if col >= perRow then col = 0; row = row + 1 end
+    end
+
+    if not InCombatLockdown() then
+        group.container:SetSize(fullW, fullH)
+    end
+    group.container:SetShown(#shown > 0)
+    group.container:SetAlpha(GroupAlpha(groupData))
+end
+
+-- Re-anchor every borrowed group. Cheap, and driven from the poll so Blizzard's
+-- own layout pass cannot leave the icons back on its bar.
+function cdmModule:LayoutAllBorrowedBuffIcons()
+    for groupName, group in pairs(self.groups) do
+        if group.usesBlizzardIcons then
+            self:LayoutBorrowedBuffIcons(groupName)
+        end
+    end
+end
+
 -- Install the mirror on every buff item frame that currently exists.
 --
 -- Deliberately separate from HookBlizzardBuffFrames and much cheaper: it only
@@ -1812,6 +1912,13 @@ function cdmModule:LayoutGroup(groupName)
     local group = self.groups[groupName]
     if not group or not group.container then return end
 
+    -- A borrowed group holds Blizzard's frames, not proxies of ours, so it has
+    -- its own layout pass. Running both would have them fighting each other.
+    if group.usesBlizzardIcons then
+        self:LayoutBorrowedBuffIcons(groupName)
+        return
+    end
+
     local specData = GetSpecData()
     if not specData then return end
     local groupData = specData.groups[groupName]
@@ -2175,7 +2282,28 @@ function cdmModule:Reconcile()
         -- assigned every spell by hand.
         local assignment = specData.assignments[cdID]
             or BUILTIN_FOR_VIEWERTYPE[cdData.viewerType]
-        if assignment and entry.spellID then
+        -- Tracked buffs use Blizzard's own icons, not a proxy of them.
+        --
+        -- Every attempt to reproduce a buff's sweep on our own icon failed in
+        -- combat, and the reason is structural rather than a bug to find: the
+        -- duration cannot be read (secret), cannot be fetched (the instance-id
+        -- APIs hard-error on a restricted unit), and catching the value in
+        -- flight only works if the hook is on the frame before Blizzard uses
+        -- it -- which pooling makes unreliable for a buff applied mid-fight.
+        --
+        -- EllesmereUI does not solve any of that. It re-anchors Blizzard's own
+        -- item frames into its bars and lets Blizzard keep driving them, which
+        -- is why its swipes are flawless in combat: they ARE Blizzard's swipes,
+        -- rendered C-side with no addon involvement. Same approach here for the
+        -- buff group. LayoutBorrowedBuffIcons does the positioning.
+        --
+        -- No reparenting: the frames stay children of Blizzard's viewer, which
+        -- keeps this taint-free. Only their anchors are ours.
+        if assignment and entry.viewerType == "buff" and BorrowBuffIcons() then
+            entry.managed = true
+            local group = self.groups[assignment]
+            if group then group.usesBlizzardIcons = true end
+        elseif assignment and entry.spellID then
             entry.managed = true
 
             if assignment == "FREE" then
@@ -2294,6 +2422,11 @@ function cdmModule:Reconcile()
                 -- Idempotent per frame, and only walks the two buff viewers'
                 -- children, so running it at poll rate is cheap.
                 MirrorAllBuffCooldowns()
+                -- Borrowed icons are Blizzard's, and Blizzard re-anchors them
+                -- on its own layout passes -- which would drag them back to its
+                -- bar. Re-asserting our anchors at poll rate keeps them in the
+                -- group, and picks up frames the pool hands out mid-fight.
+                cdmModule:LayoutAllBorrowedBuffIcons()
             end
         end)
     end
@@ -2680,6 +2813,17 @@ function cdmModule:ApplyBlizzardVisibility()
                  and not EditModeActive()
     for _, name in ipairs(BLIZZARD_VIEWERS) do
         local f = _G[name]
+        -- Never suppress a viewer whose icons we are borrowing.
+        --
+        -- Those icons are children of the viewer and inherit its alpha, so
+        -- dimming it would hide the very things the group is now made of, and
+        -- parking it offscreen would take them with it. The viewer frame itself
+        -- draws nothing, so leaving it alone costs nothing visually -- it just
+        -- becomes an invisible shell whose children we have re-anchored. This
+        -- is exactly how EllesmereUI leaves the primary viewers alone.
+        local borrowed = BorrowBuffIcons()
+            and (name == "BuffIconCooldownViewer" or name == "BuffBarCooldownViewer")
+        if borrowed then f = nil end
         if f then
             if hide then
                 SaveOrigPoints(f)

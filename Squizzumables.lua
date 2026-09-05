@@ -83,6 +83,9 @@ BH.defaultSettings = {
     cdmEnabled = false,
     cdmHideBlizzard = false,
     cdmViewersFollowGroups = true,
+    -- Off: tracked buffs use Blizzard's own icons, which is what makes their
+    -- swipes work in combat. Ticking it goes back to proxy icons, which cannot.
+    cdmProxyBuffIcons = false,
 
     -- M+ Death Tally (per-player death counter, resets each key)
     deathTallyEnabled = true,
