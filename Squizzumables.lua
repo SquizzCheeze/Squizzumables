@@ -81,6 +81,7 @@ BH.defaultSettings = {
     bresCounterLocked = false,
     bresCounterScale = 1.0,
     cdmEnabled = false,
+    cdmHideBlizzard = false,
 
     -- M+ Death Tally (per-player death counter, resets each key)
     deathTallyEnabled = true,
@@ -1659,6 +1660,7 @@ function BH:CreateOptionsPanel()
     local raidToolsTabBtn = CreateTab("Raid Tools")
     local textRemindersTabBtn = CreateTab("Reminders")
     local cdmTabBtn = CreateTab("Cooldowns")
+    local cdmCustomTabBtn = CreateTab("Custom Icons")
     local soundsTabBtn = CreateTab("Sounds")
     local calloutsTabBtn = CreateTab("Callouts")
     local kelTabBtn = CreateTab("Kelerts")
@@ -1697,6 +1699,12 @@ function BH:CreateOptionsPanel()
     cdmTab:SetAllPoints()
     cdmTab:Hide()
     self.cdmTab = cdmTab
+
+    -- Custom cooldown icons tab content
+    local cdmCustomTab = CreateFrame("Frame", nil, contentArea)
+    cdmCustomTab:SetAllPoints()
+    cdmCustomTab:Hide()
+    self.cdmCustomTab = cdmCustomTab
 
     -- Sounds tab content
     local soundsTab = CreateFrame("Frame", nil, contentArea)
@@ -1739,12 +1747,14 @@ function BH:CreateOptionsPanel()
         classBuffsTabBtn:SetActive(active == "classbuffs")
         calloutsTabBtn:SetActive(active == "callouts")
         kelTabBtn:SetActive(active == "kel")
+        cdmCustomTabBtn:SetActive(active == "cdmcustom")
         cdmSoundsTabBtn:SetActive(active == "cdmsounds")
         if active == "settings" then settingsTab:Show() else settingsTab:Hide() end
         if active == "items" then itemsTab:Show() else itemsTab:Hide() end
         if active == "raidtools" then raidToolsTab:Show() else raidToolsTab:Hide() end
         if active == "reminders" then textRemindersTab:Show() else textRemindersTab:Hide() end
         if active == "cdm" then cdmTab:Show() else cdmTab:Hide() end
+        if active == "cdmcustom" then cdmCustomTab:Show() else cdmCustomTab:Hide() end
         if active == "sounds" then soundsTab:Show() else soundsTab:Hide() end
         if active == "classbuffs" then classBuffsTab:Show() else classBuffsTab:Hide() end
         if active == "callouts" then calloutsTab:Show() else calloutsTab:Hide() end
@@ -1756,6 +1766,7 @@ function BH:CreateOptionsPanel()
     raidToolsTabBtn:SetScript("OnClick", function() SwitchTab("raidtools") end)
     textRemindersTabBtn:SetScript("OnClick", function() SwitchTab("reminders") end)
     cdmTabBtn:SetScript("OnClick", function() SwitchTab("cdm") end)
+    cdmCustomTabBtn:SetScript("OnClick", function() SwitchTab("cdmcustom") end)
     soundsTabBtn:SetScript("OnClick", function() SwitchTab("sounds") end)
     classBuffsTabBtn:SetScript("OnClick", function() SwitchTab("classbuffs") end)
     calloutsTabBtn:SetScript("OnClick", function() SwitchTab("callouts") end)
@@ -1772,6 +1783,7 @@ function BH:CreateOptionsPanel()
         { key = "raidtools",  label = "Raid Tools",  frame = raidToolsTab,     build = "BuildRaidToolsTab" },
         { key = "reminders",  label = "Reminders",   frame = textRemindersTab, build = "BuildTextRemindersTab" },
         { key = "cdm",        label = "Cooldowns",   frame = cdmTab,           build = "BuildCDMTab" },
+        { key = "cdmcustom",  label = "Custom Icons", frame = cdmCustomTab,    build = "BuildCustomCooldownsTab" },
         { key = "sounds",     label = "Sounds",      frame = soundsTab,        build = "BuildSoundsTab" },
         { key = "classbuffs", label = "Class Buffs", frame = classBuffsTab,    build = "BuildClassBuffsTab" },
         { key = "callouts",   label = "Callouts",    frame = calloutsTab,      build = "BuildCalloutsTab" },
@@ -6765,14 +6777,16 @@ end
 -- which is the exact opposite of what unlocking is for.
 -- ============================================================================
 
+-- `label` names the frame on its preview overlay, so the green boxes in unlock
+-- mode can be told apart.
 local MOVABLE_FRAMES = {
     -- field                enabled setting            extra gate
-    { field = "frame" },  -- main buttons frame; always previewable
-    { field = "markersFrame",        enabled = "raidToolsShowMarkers",   gate = "raidToolsEnabled", muteChildren = true },
-    { field = "pullReadyFrame",      enabled = "raidToolsShowPullReady", gate = "raidToolsEnabled", muteChildren = true },
-    { field = "bresCounterFrame",    enabled = "bresCounterEnabled" },
-    { field = "deathTallyFrame",     enabled = "deathTallyEnabled" },
-    { field = "calloutsButtonFrame", enabled = "dungeonCallouts", muteChildren = true },
+    { field = "frame", label = "Consumables" },  -- main buttons frame; always previewable
+    { field = "markersFrame",        label = "Raid Markers",   enabled = "raidToolsShowMarkers",   gate = "raidToolsEnabled", muteChildren = true },
+    { field = "pullReadyFrame",      label = "Pull / Ready",   enabled = "raidToolsShowPullReady", gate = "raidToolsEnabled", muteChildren = true },
+    { field = "bresCounterFrame",    label = "Battle Res",     enabled = "bresCounterEnabled" },
+    { field = "deathTallyFrame",     label = "Death Tally",    enabled = "deathTallyEnabled" },
+    { field = "calloutsButtonFrame", label = "Callouts",       enabled = "dungeonCallouts", muteChildren = true },
 }
 
 -- Every text reminder, from the registry rather than by hand.
@@ -6780,12 +6794,19 @@ for _, def in ipairs(BH.REMINDERS) do
     MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
         field   = def.key .. "ReminderFrame",
         enabled = def.key .. "ReminderEnabled",
+        label   = def.label or def.key,
     }
 end
 BH.MOVABLE_FRAMES = MOVABLE_FRAMES
 
 -- The green tint. Kept on the frame itself rather than in a dozen BH fields.
-local function SetPreviewOverlay(frame, on)
+-- Every previewable frame gets the same green box, and there are well over a
+-- dozen of them once the reminders and the Cooldown Manager groups are counted.
+-- Unlabelled they are indistinguishable, so a box sitting near some other
+-- frame's contents reads as that frame's drag region being misaligned -- there
+-- is no way to tell from looking, or from a screenshot, which frame a given
+-- rectangle belongs to. So each one says what it is.
+local function SetPreviewOverlay(frame, on, label)
     if not frame then return end
     if on then
         if not frame.sqPreviewOverlay then
@@ -6795,8 +6816,30 @@ local function SetPreviewOverlay(frame, on)
             frame.sqPreviewOverlay = ov
         end
         frame.sqPreviewOverlay:Show()
-    elseif frame.sqPreviewOverlay then
-        frame.sqPreviewOverlay:Hide()
+
+        if label then
+            if not frame.sqPreviewLabel then
+                -- Own frame at TOOLTIP strata rather than a FontString on the
+                -- frame itself: these overlap each other freely, and a label at
+                -- the frame's own strata disappears under whatever is stacked
+                -- on top of it.
+                local holder = CreateFrame("Frame", nil, frame)
+                holder:SetFrameStrata("TOOLTIP")
+                holder:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
+                holder:SetSize(240, 14)
+                local fs = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                fs:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, 0)
+                fs:SetJustifyH("LEFT")
+                fs:SetTextColor(0.3, 1, 0.3)
+                frame.sqPreviewLabelHolder = holder
+                frame.sqPreviewLabel = fs
+            end
+            frame.sqPreviewLabel:SetText(label)
+            frame.sqPreviewLabelHolder:Show()
+        end
+    else
+        if frame.sqPreviewOverlay then frame.sqPreviewOverlay:Hide() end
+        if frame.sqPreviewLabelHolder then frame.sqPreviewLabelHolder:Hide() end
     end
 end
 
@@ -6844,7 +6887,7 @@ function BH:SetAllFramesPreview(on)
                 frame:SetMovable(true)
                 frame:EnableMouse(true)
                 frame:SetClampedToScreen(true)
-                SetPreviewOverlay(frame, true)
+                SetPreviewOverlay(frame, true, def.label)
                 if def.muteChildren then MuteFrameChildren(frame, true) end
                 frame:Show()
             else

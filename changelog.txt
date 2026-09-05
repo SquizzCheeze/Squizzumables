@@ -26,3 +26,37 @@ V1.69
   only switch on or off, and the icon crop was not adjustable at all
 - The icon background pairs with Hide Until Active: the group keeps a visible footprint
   while its icons are hidden, so you can still see where it is
+- Essential, Utility and Buffs now exist as standard groups and fill themselves, mirroring
+  Blizzard's own Cooldown Manager categories. Previously every group was one you had to
+  make yourself and a spell showed nothing at all until you had assigned it by hand, so a
+  fresh setup had nothing on screen and nothing to style. Buff and proc cooldowns are also
+  picked up now; only Essential and Utility were before
+- Anything you assign to a group of your own still goes there. The standard groups are only
+  where a spell ends up when you have not said otherwise
+- New per-group "Enable Group" tick, so a standard group you do not want can be switched
+  off without unassigning anything
+- New "Hide Blizzard's Cooldown Manager" option, so only these icons show. Blizzard's bars
+  are faded rather than hidden: the game stops updating a frame once it is hidden, and this
+  addon reads live buff state from those frames, so hiding them outright would stop your
+  own icons tracking buffs. Unticking brings them straight back, as does switching the
+  Cooldown Manager off. Edit Mode re-applies its own opacity to those bars whenever it
+  refreshes, which made them reappear a second after being faded, so the fade is now held
+  in place rather than set once. The fade also lifts while Edit Mode is open, so Blizzard's
+  bars stay visible and positionable there instead of leaving you an empty selection box
+  where the icons should be. They are moved off screen as well as faded, because an
+  invisible bar still catches the mouse and was showing Blizzard's cooldown tooltips over
+  empty screen, and they are hidden the instant you log in rather than half a second later,
+  which is what made them flash on screen at every reload
+- Fixed Cooldown Manager groups set to Centered growth having their drag area in the wrong
+  place. Icons were centred on the container's left edge instead of its middle, so the
+  group's move handle sat down and to the right of the icons it belonged to -- dragging it
+  moved icons that were nowhere near it, and clicking the icons did nothing. The four
+  corner growth directions were never affected
+- Cooldown Manager icons that had no artwork available when they were built now fill it in
+  afterwards, instead of staying blank forever and leaving what looked like an empty group
+- Every frame's green move box now says which frame it is while frames are unlocked. There
+  can be a dozen or more on screen at once and they were impossible to tell apart
+- The Cooldowns tab is now just the Cooldown Manager: the master switch and the three
+  standard groups with their styling. Making your own groups and assigning individual
+  spells has moved to a new Custom Icons tab, so the settings you are most likely to want
+  are not buried under a group-creation form and a list of every spell you know

@@ -53,6 +53,24 @@ local DEFAULT_SORT = "assignment"          -- "assignment", "name", "cooldown"
 -- edge, a fixed 0.07 texture crop and no background at all. They are per-group
 -- so one group can be a chunky class-coloured row of cooldowns and another a
 -- small plain one, which is the point of having groups.
+-- The three groups that exist without the player making anything, mirroring
+-- Blizzard's own Cooldown Manager categories.
+--
+-- Before 1.69 every group was user-made and a cooldown showed nothing at all
+-- unless it had been explicitly assigned to one, so a fresh install had no
+-- groups, nothing on screen, and nothing to style. These are created per spec,
+-- cannot be renamed or deleted, and every discovered cooldown falls back to the
+-- one matching its viewer type. Custom groups are unchanged and still take
+-- priority: an explicit assignment always wins over this fallback.
+local BUILTIN_GROUPS = {
+    { name = "Essential", viewerType = "cooldown", defaultY = -140 },
+    { name = "Utility",   viewerType = "utility",  defaultY = -185 },
+    { name = "Buffs",     viewerType = "buff",     defaultY = -230 },
+}
+
+local BUILTIN_FOR_VIEWERTYPE = {}
+for _, b in ipairs(BUILTIN_GROUPS) do BUILTIN_FOR_VIEWERTYPE[b.viewerType] = b.name end
+
 local DEFAULT_BORDER_THICKNESS = 1
 local DEFAULT_BORDER_COLOR     = { 0, 0, 0, 0.9 }
 local DEFAULT_ICON_ZOOM        = 0.07   -- fraction cropped from each edge
@@ -683,9 +701,22 @@ end
 -- Cooldown Discovery â€” Pure C_CooldownViewer API, no frame interaction.
 -- ============================================================================
 
+-- What reconcile walks. Wider than CDM_VIEWERS, which is only the two
+-- cooldown-type viewers: the buff categories have to be here too, or the
+-- built-in Buffs group has nothing to hold and sits permanently empty.
+-- Categories 2 and 3 both map to "buff" -- 2 is the buff icons, 3 is the
+-- tracked bars (procs like Beast Cleave), and Blizzard splits them across two
+-- viewers while this addon treats them as one group.
+local DISCOVER_CATEGORIES = {
+    { category = 0, viewerType = "cooldown" },
+    { category = 1, viewerType = "utility"  },
+    { category = 2, viewerType = "buff"     },
+    { category = 3, viewerType = "buff"     },
+}
+
 local function DiscoverCooldowns()
     local discovered = {}
-    for _, viewerInfo in ipairs(CDM_VIEWERS) do
+    for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
         local catIDs = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
             and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
         if catIDs then
@@ -732,6 +763,7 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize)
     local texture = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(spellID)
     if texture and not BH.Secrets.IsSecret(texture) then
         iconTex:SetTexture(texture)
+        proxy._iconSet = true
     end
     local z = DEFAULT_ICON_ZOOM
     iconTex:SetTexCoord(z, 1 - z, z, 1 - z)
@@ -832,6 +864,23 @@ end
 -- Apply per-group visual settings to a proxy frame
 local function ApplyProxyVisuals(proxy, groupData)
     if not proxy or not groupData then return end
+
+    -- Fill in an icon that was not available when the proxy was built.
+    --
+    -- CreateProxyIcon reads the spell texture exactly once. If it came back nil
+    -- or secret at that moment the icon stayed blank forever, and since the
+    -- frame still takes up its slot the result is a correctly sized, correctly
+    -- positioned group full of invisible icons -- which looks like a stray
+    -- empty box floating next to the groups that did render. The buff
+    -- categories are the ones that hit this, being discovered earlier in login
+    -- than their spell data settles.
+    if not proxy._iconSet and proxy.Icon and proxy.spellID then
+        local tex = C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(proxy.spellID)
+        if tex and not BH.Secrets.IsSecret(tex) then
+            proxy.Icon:SetTexture(tex)
+            proxy._iconSet = true
+        end
+    end
 
     -- Alpha
     local alpha = groupData.alpha or DEFAULT_ALPHA
@@ -1459,22 +1508,35 @@ function cdmModule:LayoutGroup(groupName)
 
             local xOff, yOff
             if centered then
-                -- Centered horizontally, grow rows up or down
-                local rowDir = centeredUp and 1 or -1
-                local itemsInRow = math.min(#members - row * perRow, perRow)
-                local rowW = itemsInRow * iconSize + (itemsInRow - 1) * spacing
+                -- Centred growth: the offsets below are measured from the
+                -- middle of an edge, so they must be anchored to the middle of
+                -- that edge.
+                --
+                -- They were anchored to TOPLEFT/BOTTOMLEFT, which put a
+                -- centred row of icons around the container's LEFT EDGE rather
+                -- than its centre -- half the row hanging outside the frame --
+                -- and with no half-icon inset the first row straddled the top
+                -- edge too. For five 36px icons that is the container sitting
+                -- ~98px right and ~18px below its own icons: dragging the group
+                -- moved icons that were nowhere near the drag region, and
+                -- clicking the icons hit nothing. TOP/BOTTOM (and LEFT/RIGHT
+                -- when vertical) are the edge midpoints these offsets assume.
+                local sign = centeredUp and 1 or -1
+                local itemsThisLine = math.min(#members - row * perRow, perRow)
                 if orientation == "vertical" then
-                    local itemsInCol = math.min(#members - row * perRow, perRow)
-                    local colH2 = itemsInCol * iconSize + (itemsInCol - 1) * spacing
-                    xOff = row * (iconSize + spacing) * rowDir
-                    yOff = -colH2 / 2 + col * (iconSize + spacing) + iconSize / 2
-                    local anchor = centeredUp and "BOTTOMLEFT" or "TOPLEFT"
-                    proxy:SetPoint("CENTER", group.container, anchor, xOff + iconSize / 2, yOff * -1)
+                    -- Columns march sideways; icons centre vertically.
+                    local colH = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
+                    xOff = (iconSize / 2 + row * (iconSize + spacing)) * -sign
+                    yOff = colH / 2 - col * (iconSize + spacing) - iconSize / 2
+                    proxy:SetPoint("CENTER", group.container,
+                        centeredUp and "RIGHT" or "LEFT", xOff, yOff)
                 else
+                    -- Rows march up or down; icons centre horizontally.
+                    local rowW = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
                     xOff = -rowW / 2 + col * (iconSize + spacing) + iconSize / 2
-                    yOff = row * (iconSize + spacing) * rowDir
-                    local anchor = centeredUp and "BOTTOMLEFT" or "TOPLEFT"
-                    proxy:SetPoint("CENTER", group.container, anchor, xOff, yOff)
+                    yOff = (iconSize / 2 + row * (iconSize + spacing)) * sign
+                    proxy:SetPoint("CENTER", group.container,
+                        centeredUp and "BOTTOM" or "TOP", xOff, yOff)
                 end
             else
                 if orientation == "vertical" then
@@ -1532,7 +1594,19 @@ function cdmModule:LayoutGroup(groupName)
         end
     end
 
-    -- Resize container to fit all icons
+    -- Resize container to fit all icons.
+    --
+    -- An empty group is clamped to one icon's worth above (totalColsCalc and
+    -- totalRowsCalc are floored at 1), so its container is a 36x36 box sitting
+    -- at the group's saved position with nothing in it. Invisible in play, but
+    -- in unlock mode it gets the green drag overlay like any other group -- a
+    -- stray green square floating away from the icons you can see, which reads
+    -- as a group's drag region being misaligned with its own contents. Now that
+    -- Essential/Utility/Buffs all exist by default, most people will have at
+    -- least one empty one. Hide the container instead.
+    local isEmpty = (#members == 0)
+    group.container:SetShown(not isEmpty)
+
     if not InCombatLockdown() then
         group.container:SetSize(fullW, fullH)
     else
@@ -1543,8 +1617,16 @@ function cdmModule:LayoutGroup(groupName)
         end)
     end
 
-    -- Combat visibility
-    if groupData.hideOutOfCombat and not isInCombat then
+    -- Group enable, then combat visibility.
+    --
+    -- The enable toggle matters now that the built-in groups fill themselves:
+    -- before 1.69 an unwanted group was emptied by simply never assigning
+    -- anything to it, and that is no longer possible for Essential/Utility/
+    -- Buffs. Alpha rather than Hide, matching hideOutOfCombat, so the container
+    -- is never shown or hidden during combat lockdown.
+    if groupData.enabled == false then
+        group.container:SetAlpha(0)
+    elseif groupData.hideOutOfCombat and not isInCombat then
         group.container:SetAlpha(0)
     else
         group.container:SetAlpha(1)
@@ -1631,6 +1713,15 @@ function cdmModule:Reconcile()
 
     local discovered = DiscoverCooldowns()
 
+    -- Before the container pass, so the built-ins get containers on the very
+    -- first reconcile of a fresh spec rather than one pass late.
+    self:EnsureBuiltinGroups(specData)
+
+    -- Re-applied every reconcile rather than once at login: these are Edit Mode
+    -- managed frames, and Edit Mode, a layout pass or a spec change can put
+    -- their alpha back. Reconcile already runs on all of those.
+    self:ApplyBlizzardVisibility()
+
     -- Ensure all saved groups have containers
     for groupName, groupData in pairs(specData.groups) do
         if not self.groups[groupName] then
@@ -1664,8 +1755,16 @@ function cdmModule:Reconcile()
 
         local entry = self.registry[cdID]
 
-        -- Check assignment
+        -- Check assignment.
+        --
+        -- An explicit assignment always wins, so moving a spell into a custom
+        -- group (or setting it FREE) still does exactly what it did. Only when
+        -- there is none does it fall back to the built-in group for its viewer
+        -- type -- which is what makes Essential/Utility/Buffs populate
+        -- themselves instead of the CDM showing nothing until the player has
+        -- assigned every spell by hand.
         local assignment = specData.assignments[cdID]
+            or BUILTIN_FOR_VIEWERTYPE[cdData.viewerType]
         if assignment and entry.spellID then
             entry.managed = true
 
@@ -1776,6 +1875,208 @@ end
 -- Release â€” Return all frames to Blizzard's CDM
 -- ============================================================================
 
+-- Every Blizzard cooldown viewer, for the "hide Blizzard's" option.
+local BLIZZARD_VIEWERS = {
+    "EssentialCooldownViewer",
+    "UtilityCooldownViewer",
+    "BuffIconCooldownViewer",
+    "BuffBarCooldownViewer",
+}
+
+-- Suppress (or restore) Blizzard's own cooldown viewers.
+--
+-- ALPHA, NEVER Hide(). Two independent reasons, both of which bite:
+--
+--   1. This module reads live buff state off the viewers' item frames, and
+--      Blizzard drives those from CooldownViewerMixin:OnUpdate. OnUpdate does
+--      not run on a hidden frame, so Hide() freezes the item state we depend on
+--      -- our own icons would stop tracking buffs. Alpha 0 keeps it updating.
+--
+--   2. They are Edit Mode systems and managed frames (isManagedFrame,
+--      layoutParent = UIParentBottomManagedFrameContainer). Hiding one fights
+--      the managed-frame layout, which reflows the other frames in that
+--      container into the gap and re-shows ours on the next layout pass.
+--
+-- Only ever restores what it dimmed, tracked per frame: another addon may be
+-- suppressing these too (this addon's own notes record TriggerAlertEvent not
+-- firing when the viewers were alpha-suppressed by something else), and
+-- stamping alpha 1 over that would fight it.
+--
+-- SetAlpha and EnableMouse are not protected, so no combat queueing is needed.
+--
+-- SETTING THE ALPHA ONCE IS NOT ENOUGH. Edit Mode owns alpha on these frames:
+-- EditModeCooldownViewerSystemMixin:UpdateSystemSettingOpacity does
+-- `self:SetAlpha(opacitySetting / 100)`, and re-asserts it whenever the system
+-- refreshes -- which is why the viewers came back about a second after being
+-- dimmed. So rather than set the value, hold it: a post-hook on the frame's own
+-- SetAlpha puts it back to 0 whenever anything raises it while we are dimming.
+--
+-- Hooking SetAlpha itself rather than UpdateSystemSettingOpacity on purpose --
+-- it catches every source, not just the Edit Mode path we happened to find.
+-- hooksecurefunc cannot be undone, so the hook is installed once per frame and
+-- made inert by clearing _sqDimmed; _sqApplying breaks the recursion from our
+-- own SetAlpha call inside the hook.
+local function HoldAlphaZero(f)
+    if f._sqAlphaHooked then return end
+    f._sqAlphaHooked = true
+    hooksecurefunc(f, "SetAlpha", function(self, a)
+        if self._sqDimmed and a ~= 0 and not self._sqApplying then
+            self._sqApplying = true
+            self:SetAlpha(0)
+            self._sqApplying = nil
+        end
+    end)
+end
+
+-- Alpha 0 alone was not enough: an invisible frame still takes the mouse, so
+-- Blizzard's cooldown tooltips kept appearing over empty screen where the
+-- hidden bars were. EnableMouse(false) on the viewer does not cover it either,
+-- because the tooltips come from its pooled item frames, which are created and
+-- recycled on Blizzard's schedule and would need chasing forever.
+--
+-- Parking the viewer far offscreen solves it at the root -- nothing to hover --
+-- and, unlike Hide(), keeps the frame shown so CooldownViewerMixin:OnUpdate
+-- still runs and our buff-state reads keep working.
+local PARK_X, PARK_Y = -10000, 10000
+local parkPending = false
+
+local function SaveOrigPoints(f)
+    if f._sqOrigPoints then return end
+    local pts = {}
+    for i = 1, f:GetNumPoints() do pts[i] = { f:GetPoint(i) } end
+    f._sqOrigPoints = pts
+end
+
+local function ParkFrame(f)
+    if InCombatLockdown() then
+        -- These are Edit Mode managed frames; moving them is not worth
+        -- attempting under lockdown. Flushed on PLAYER_REGEN_ENABLED.
+        parkPending = true
+        return
+    end
+    f._sqParkGuard = true
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PARK_X, PARK_Y)
+    f._sqParkGuard = nil
+end
+
+local function RestoreFramePoints(f)
+    if not f._sqOrigPoints or InCombatLockdown() then return end
+    f._sqRestoring = true
+    f:ClearAllPoints()
+    for _, p in ipairs(f._sqOrigPoints) do
+        f:SetPoint(p[1], p[2], p[3], p[4], p[5])
+    end
+    f._sqOrigPoints = nil
+    f._sqRestoring = nil
+end
+
+-- Blizzard re-anchors these during Edit Mode layout passes, which would drag
+-- them back on screen. Re-park when that happens -- but NEVER inline.
+--
+-- That layout pass goes on to move protected systems (the action bars), so
+-- re-anchoring from inside it carries this addon's taint into the rest of the
+-- pass. A C_Timer.After(0) runs with none of that lineage. It also coalesces
+-- the ClearAllPoints + SetPoint burst into a single re-park, and one frame of a
+-- stray bar is not visible.
+local function HoldParked(f)
+    if f._sqPointHooked then return end
+    f._sqPointHooked = true
+    local function QueueRepark(self)
+        if not self._sqDimmed or self._sqParkGuard or self._sqRestoring
+           or self._sqParkQueued then return end
+        self._sqParkQueued = true
+        C_Timer.After(0, function()
+            self._sqParkQueued = nil
+            if self._sqDimmed then ParkFrame(self) end
+        end)
+    end
+    hooksecurefunc(f, "SetPoint", QueueRepark)
+    hooksecurefunc(f, "ClearAllPoints", QueueRepark)
+end
+
+-- Flush a park that combat postponed. Called from PLAYER_REGEN_ENABLED.
+function cdmModule:FlushPendingPark()
+    if not parkPending then return end
+    parkPending = false
+    self:ApplyBlizzardVisibility()
+end
+
+-- Is Blizzard's Edit Mode open right now?
+local function EditModeActive()
+    return EditModeManagerFrame and EditModeManagerFrame.IsEditModeActive
+       and EditModeManagerFrame:IsEditModeActive()
+end
+
+-- Follow Edit Mode in and out, so the dim lifts the moment it opens and comes
+-- back the moment it closes, rather than waiting for whatever happens to
+-- trigger the next reconcile. Only reacts; never drives Edit Mode.
+--
+-- Retried from ApplyBlizzardVisibility rather than installed once at login,
+-- because Blizzard_EditMode is not guaranteed to be loaded that early and a
+-- single attempt that lost the race would leave this silently unhooked.
+local editModeHooked = false
+local function HookEditMode()
+    if editModeHooked then return end
+    if not (EditModeManagerFrame and EditModeManagerFrame.EnterEditMode) then return end
+    editModeHooked = true
+    hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function()
+        cdmModule:ApplyBlizzardVisibility()
+    end)
+    hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
+        cdmModule:ApplyBlizzardVisibility()
+    end)
+end
+
+function cdmModule:ApplyBlizzardVisibility()
+    -- Never dim while Edit Mode is open.
+    --
+    -- Edit Mode still draws its selection region for a dimmed viewer, so the
+    -- player got an empty box they could not see the contents of, sitting
+    -- wherever Blizzard's frame really is -- while the icons on screen were our
+    -- proxies at the group's own position. That reads as the region being
+    -- misaligned, and it makes Blizzard's own cooldown bars impossible to
+    -- position while this option is on.
+    --
+    -- Releasing for the duration of Edit Mode costs nothing: it is not a
+    -- situation anyone is playing through, and ApplyBlizzardVisibility is
+    -- called again on exit.
+    HookEditMode()
+
+    local hide = BH.settings and BH.settings.cdmEnabled and BH.settings.cdmHideBlizzard
+                 and not EditModeActive()
+    for _, name in ipairs(BLIZZARD_VIEWERS) do
+        local f = _G[name]
+        if f then
+            if hide then
+                SaveOrigPoints(f)
+                f._sqDimmed = true
+                HoldAlphaZero(f)
+                HoldParked(f)
+                f:SetAlpha(0)
+                ParkFrame(f)
+                if f.EnableMouse then f:EnableMouse(false) end
+                if f.EnableMouseMotion then f:EnableMouseMotion(false) end
+            elseif f._sqDimmed then
+                -- Clear the flag first: the hook reads it, and leaving it set
+                -- would have our own restore immediately undone.
+                --
+                -- Restores to 1 rather than to whatever the player set in Edit
+                -- Mode, because reading that back means calling into Edit Mode's
+                -- own mixin and this module does not write to or drive Blizzard
+                -- frames. It is self-correcting: the same opacity refresh that
+                -- caused this whole problem re-asserts the real value on its
+                -- next pass, so a viewer set to e.g. 80% returns there shortly.
+                f._sqDimmed = nil
+                RestoreFramePoints(f)
+                f:SetAlpha(1)
+                if f.EnableMouse then f:EnableMouse(true) end
+                if f.EnableMouseMotion then f:EnableMouseMotion(true) end
+            end
+        end
+    end
+end
+
 function cdmModule:ReleaseAll()
     -- Destroy all proxy frames
     for cdID, _ in pairs(self.proxyFrames) do
@@ -1794,11 +2095,41 @@ function cdmModule:ReleaseAll()
     self.groups = {}
     self.freeIcons = {}
     self.soundTrackers = {}
+
+    -- Give Blizzard's viewers back. Switching this module off must not leave
+    -- the player with no cooldown display at all -- that reads as the addon
+    -- having broken the game UI, and there is nothing on screen to undo it
+    -- from. Reads cdmEnabled, which is already false by the time we get here.
+    self:ApplyBlizzardVisibility()
 end
 
 -- ============================================================================
 -- Group Management API â€” Used by settings UI
 -- ============================================================================
+
+-- Create the three built-in groups for this spec if they are not there yet.
+--
+-- Idempotent and safe to call on every reconcile: it only fills gaps, so a
+-- player who has restyled or repositioned Essential keeps their settings, and
+-- one who deleted its contents does not get them silently rebuilt.
+function cdmModule:EnsureBuiltinGroups(specData)
+    specData = specData or GetSpecData()
+    if not specData then return end
+    for _, b in ipairs(BUILTIN_GROUPS) do
+        if not specData.groups[b.name] then
+            self:CreateGroup(b.name)
+            local gd = specData.groups[b.name]
+            if gd then
+                gd.builtin = true
+                gd.position = { x = 0, y = b.defaultY }
+            end
+        else
+            -- Re-stamp the flag: groups made before 1.69 could share a name
+            -- with a built-in, and the tab needs to know not to offer delete.
+            specData.groups[b.name].builtin = true
+        end
+    end
+end
 
 function cdmModule:CreateGroup(groupName)
     local specData = GetSpecData()
@@ -1807,6 +2138,7 @@ function cdmModule:CreateGroup(groupName)
 
     specData.groups[groupName] = {
         cooldownIDs = {},
+        enabled = true,
         position = { x = 0, y = 0 },
         iconSize = DEFAULT_ICON_SIZE,
         perRow = DEFAULT_PER_ROW,
@@ -1841,6 +2173,9 @@ end
 function cdmModule:DeleteGroup(groupName)
     local specData = GetSpecData()
     if not specData then return end
+    -- Belt and braces alongside the hidden Delete button: EnsureBuiltinGroups
+    -- would put it straight back, so deleting one only churns frames.
+    if specData.groups[groupName] and specData.groups[groupName].builtin then return end
 
     -- Unassign all cooldowns in this group
     if specData.groups[groupName] then
@@ -2260,6 +2595,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         isInCombat = false
         UpdateCombatVisibility()
+        -- A park that combat postponed. Without this, a Blizzard viewer that
+        -- Blizzard re-anchored mid-fight stays on screen until something else
+        -- happens to trigger a reconcile.
+        cdmModule:FlushPendingPark()
         -- Flush pending mutations
         for _, fn in ipairs(cdmModule.pendingMutations) do
             fn()
@@ -2275,6 +2614,18 @@ end)
 -- ============================================================================
 
 function cdmModule:Initialize()
+    -- Ahead of the enabled checks: the hooks have to exist even when the module
+    -- is off, or turning it on inside Edit Mode leaves them uninstalled.
+    HookEditMode()
+
+    -- Immediately, not via the reconcile below.
+    --
+    -- The reconcile is deliberately delayed half a second to let Blizzard's CDM
+    -- finish setting itself up, and hiding from inside it meant Blizzard's bars
+    -- were drawn on screen for that half second on every login and reload --
+    -- the flash. Suppressing them is not part of the work that needs the delay.
+    self:ApplyBlizzardVisibility()
+
     if not BH.settings or not BH.settings.cdmEnabled then return end
 
     -- Check if CDM is enabled
@@ -2302,6 +2653,34 @@ function cdmModule:ShowPreview()
                 group.previewOverlay = ov
             end
             group.previewOverlay:Show()
+
+            -- Name the drag region.
+            --
+            -- Three built-in groups plus any custom ones means several green
+            -- boxes on screen at once, and an unlabelled one is impossible to
+            -- attribute -- is that Utility's region, or Essential's misplaced?
+            -- Working that out from a screenshot is genuinely ambiguous, so the
+            -- box says which group it is.
+            if not group.previewLabel then
+                -- On its own TOOLTIP-strata frame, not straight onto the
+                -- container: groups overlap each other and the reminder frames,
+                -- and a label drawn at the container's own strata gets covered
+                -- by whatever sits on top -- which is exactly what happened to
+                -- the Essential label, hidden under the Buffs group's box.
+                local holder = CreateFrame("Frame", nil, group.container)
+                holder:SetFrameStrata("TOOLTIP")
+                holder:SetPoint("BOTTOMLEFT", group.container, "TOPLEFT", 0, 2)
+                holder:SetSize(200, 14)
+                local fs = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                fs:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, 0)
+                fs:SetJustifyH("LEFT")
+                fs:SetTextColor(0.3, 1, 0.3)
+                group.previewLabelHolder = holder
+                group.previewLabel = fs
+            end
+            group.previewLabelHolder:Show()
+            group.previewLabel:SetText(groupName)
+            group.previewLabel:Show()
         end
     end
 end
@@ -2310,6 +2689,9 @@ function cdmModule:HidePreview()
     for groupName, group in pairs(self.groups) do
         if group.previewOverlay then
             group.previewOverlay:Hide()
+        end
+        if group.previewLabelHolder then
+            group.previewLabelHolder:Hide()
         end
         -- Restore click-through state based on lock
         if group.container then
@@ -2396,9 +2778,22 @@ local DIM_R, DIM_G, DIM_B = 0.55, 0.55, 0.58
 local LEFT_PANEL_W = 210
 
 -- Reference to the currently displayed group editor (for refresh)
+-- Two pages share one builder.
+--
+--   "manager" -- the Cooldown Manager proper: the master switch and the three
+--                built-in groups (Essential, Utility, Buffs) with their styling.
+--   "custom"  -- custom cooldown icons: making your own groups, and assigning
+--                individual spells into them or setting them loose.
+--
+-- Split because they are different jobs. Styling the three standard groups is
+-- what most people want and was buried under a group-creation form and a long
+-- list of every spell; making custom groups is a deliberate, occasional thing.
+-- Parameterised rather than copied so the group section, the reconcile hooks
+-- and the refresh path stay single-sourced.
 local cdmTabState = {}
+local cdmCustomTabState = {}
 
-function BH:BuildCDMTab(parent)
+local function BuildCDMScroller(parent, state)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
@@ -2407,15 +2802,31 @@ function BH:BuildCDMTab(parent)
     content:SetWidth(400)
     scrollFrame:SetScrollChild(content)
 
-    cdmTabState.content = content
-    cdmTabState.scrollFrame = scrollFrame
-    cdmTabState.parent = parent
+    state.content = content
+    state.scrollFrame = scrollFrame
+    state.parent = parent
+end
 
+function BH:BuildCDMTab(parent)
+    BuildCDMScroller(parent, cdmTabState)
     self:RebuildCDMTabContent()
 end
 
+function BH:BuildCustomCooldownsTab(parent)
+    BuildCDMScroller(parent, cdmCustomTabState)
+    self:RebuildCDMTabContent()
+end
+
+-- Rebuilds whichever pages have been built. Callers throughout the module just
+-- say "refresh the CDM settings" and should not have to know which tab the
+-- player is looking at.
 function BH:RebuildCDMTabContent()
-    local content = cdmTabState.content
+    self:RebuildCDMPage(cdmTabState, "manager")
+    self:RebuildCDMPage(cdmCustomTabState, "custom")
+end
+
+function BH:RebuildCDMPage(state, mode)
+    local content = state.content
     if not content then return end
 
     -- Clear existing children (frames)
@@ -2437,7 +2848,7 @@ function BH:RebuildCDMTabContent()
     header:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     header:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
     header:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    header:SetText("COOLDOWN MANAGER")
+    header:SetText(mode == "custom" and "CUSTOM COOLDOWN ICONS" or "COOLDOWN MANAGER")
     yOffset = yOffset - 16
 
     -- Spec profile info note
@@ -2452,27 +2863,46 @@ function BH:RebuildCDMTabContent()
     yOffset = yOffset - 20
 
     -- ===== ENABLE CHECKBOX =====
-    local enableCB = CreateSQCheckbox(content, "Enable Cooldown Manager", function(checked)
-        BH.settings.cdmEnabled = checked
-        BH:SaveSettings()
-        if checked then
-            BH.cdm:Initialize()
-        else
-            BH.cdm:ReleaseAll()
-        end
-        -- Refresh the tab content to show/hide sections
-        C_Timer.After(0.1, function() BH:RebuildCDMTabContent() end)
-    end)
-    enableCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    ns.Rows.AddTooltip(enableCB, "Enable Cooldown Manager", "Master switch for the Cooldown Manager proxy. It mirrors Blizzard's Cooldown Viewer into its own icons without touching Blizzard's frames, so it stays taint-free.")
-    enableCB:SetChecked(BH.settings and BH.settings.cdmEnabled)
-    yOffset = yOffset - 28
+    -- Master switch, on the manager page only. It governs both pages, and two
+    -- copies of one setting on two tabs is how they end up disagreeing.
+    if mode ~= "custom" then
+        local enableCB = CreateSQCheckbox(content, "Enable Cooldown Manager", function(checked)
+            BH.settings.cdmEnabled = checked
+            BH:SaveSettings()
+            if checked then
+                BH.cdm:Initialize()
+            else
+                BH.cdm:ReleaseAll()
+            end
+            -- Refresh the tab content to show/hide sections
+            C_Timer.After(0.1, function() BH:RebuildCDMTabContent() end)
+        end)
+        enableCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        ns.Rows.AddTooltip(enableCB, "Enable Cooldown Manager", "Master switch for the Cooldown Manager proxy. It mirrors Blizzard's Cooldown Viewer into its own icons without touching Blizzard's frames, so it stays taint-free.")
+        enableCB:SetChecked(BH.settings and BH.settings.cdmEnabled)
+        yOffset = yOffset - 24
+
+        local hideBlizzCB = CreateSQCheckbox(content, "Hide Blizzard's Cooldown Manager", function(checked)
+            BH.settings.cdmHideBlizzard = checked
+            BH:SaveSettings()
+            BH.cdm:ApplyBlizzardVisibility()
+        end)
+        hideBlizzCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        ns.Rows.AddTooltip(hideBlizzCB, "Hide Blizzard's Cooldown Manager",
+            "Fade out Blizzard's own cooldown bars so only these icons show. They are faded rather than hidden, "
+         .. "on purpose: this addon reads live buff state from those frames, and the game stops updating a frame "
+         .. "once it is hidden. Unticking brings them straight back, as does switching the Cooldown Manager off.")
+        hideBlizzCB:SetChecked(BH.settings and BH.settings.cdmHideBlizzard)
+        yOffset = yOffset - 28
+    end
 
     local desc = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     desc:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     desc:SetWidth(380)
     desc:SetJustifyH("LEFT")
-    desc:SetText("Reparent Blizzard's Cooldown Manager icons into custom groups or position them freely. Requires the Cooldown Manager to be enabled in Edit Mode.")
+    desc:SetText(mode == "custom"
+        and "Make your own groups and choose which spells go in them. Anything you do not assign stays in one of the three standard groups on the Cooldowns tab."
+        or "Essential, Utility and Buffs mirror Blizzard's own Cooldown Manager categories and fill themselves. Style each one below. Requires the Cooldown Manager to be enabled in Edit Mode.")
     desc:SetTextColor(DIM_R, DIM_G, DIM_B)
     yOffset = yOffset - 42
 
@@ -2486,6 +2916,9 @@ function BH:RebuildCDMTabContent()
     yOffset = yOffset - 14
 
     -- ===== CREATE GROUP SECTION =====
+    -- Custom page only. This form is the reason the manager page used to open
+    -- on a name box instead of the groups the player actually wanted to style.
+    if mode == "custom" then
     local groupHeader = content:CreateFontString(nil, "OVERLAY")
     groupHeader:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     groupHeader:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
@@ -2536,12 +2969,50 @@ function BH:RebuildCDMTabContent()
     end)
 
     yOffset = yOffset - 34
+    end -- mode == "custom"
 
     -- ===== LIST EXISTING GROUPS =====
     local specData = GetSpecData()
     if specData then
-        for groupName, groupData in pairs(specData.groups) do
-            yOffset = self:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, specData)
+        -- Also here, not just in reconcile: reconcile returns early when the
+        -- Cooldown Manager is switched off, and someone opening this tab to
+        -- turn it on should still find the three groups waiting rather than an
+        -- empty page.
+        BH.cdm:EnsureBuiltinGroups(specData)
+
+        -- Each page lists only its own kind: the manager page shows the three
+        -- built-ins in their declared order, the custom page shows everything
+        -- else, alphabetically. pairs() alone gave an order that changed
+        -- between openings, so a group moved around the page on every rebuild.
+        local ordered = {}
+        if mode == "custom" then
+            local builtin = {}
+            for _, b in ipairs(BUILTIN_GROUPS) do builtin[b.name] = true end
+            for groupName, gd in pairs(specData.groups) do
+                if not builtin[groupName] and not gd.builtin then
+                    ordered[#ordered + 1] = groupName
+                end
+            end
+            table.sort(ordered)
+        else
+            for _, b in ipairs(BUILTIN_GROUPS) do
+                if specData.groups[b.name] then ordered[#ordered + 1] = b.name end
+            end
+        end
+
+        if #ordered == 0 and mode == "custom" then
+            local none = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            none:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+            none:SetWidth(380)
+            none:SetJustifyH("LEFT")
+            none:SetText("No custom groups yet. Create one above, then assign spells to it below.")
+            none:SetTextColor(DIM_R, DIM_G, DIM_B)
+            yOffset = yOffset - 24
+        end
+
+        for _, groupName in ipairs(ordered) do
+            yOffset = self:BuildGroupSection(content, leftPad, yOffset,
+                groupName, specData.groups[groupName], specData)
         end
     end
 
@@ -2550,6 +3021,9 @@ function BH:RebuildCDMTabContent()
     yOffset = yOffset - 14
 
     -- ===== UNASSIGNED COOLDOWNS =====
+    -- Custom page only. This is the long per-spell list, and it is only
+    -- meaningful when there is somewhere custom to move a spell to.
+    if mode == "custom" then
     local unassignedHeader = content:CreateFontString(nil, "OVERLAY")
     unassignedHeader:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     unassignedHeader:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
@@ -2662,6 +3136,7 @@ function BH:RebuildCDMTabContent()
         noneText:SetTextColor(DIM_R, DIM_G, DIM_B)
         yOffset = yOffset - 22
     end
+    end -- mode == "custom"
 
     -- ===== DIVIDER =====
     yOffset = yOffset - 6
@@ -2701,13 +3176,18 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     countLabel:SetText("(" .. assignedCount .. " assigned)")
     countLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
 
-    -- Delete button
-    local delBtn = CreateSQButton(groupRow, "Delete", 60, 20, {0.75, 0.25, 0.25, 1})
-    delBtn:SetPoint("RIGHT", groupRow, "RIGHT", 0, 0)
-    delBtn:SetScript("OnClick", function()
-        BH.cdm:DeleteGroup(groupName)
-        C_Timer.After(0.1, function() BH:RebuildCDMTabContent() end)
-    end)
+    -- Delete button. Not offered for the three built-in groups: they are
+    -- recreated on the next reconcile anyway, so a Delete that visibly does
+    -- nothing is worse than no button. Their contents can still be emptied by
+    -- reassigning spells elsewhere.
+    if not groupData.builtin then
+        local delBtn = CreateSQButton(groupRow, "Delete", 60, 20, {0.75, 0.25, 0.25, 1})
+        delBtn:SetPoint("RIGHT", groupRow, "RIGHT", 0, 0)
+        delBtn:SetScript("OnClick", function()
+            BH.cdm:DeleteGroup(groupName)
+            C_Timer.After(0.1, function() BH:RebuildCDMTabContent() end)
+        end)
+    end
 
     yOffset = yOffset - 28
 
@@ -2858,6 +3338,16 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
     ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
     glowCB:SetChecked(groupData.glowOnReady)
+    yOffset = yOffset - 24
+
+    local enableCB = CreateSQCheckbox(content, "Enable Group", function(checked)
+        groupData.enabled = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    enableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(enableCB, "Enable Group",
+        "Show this group at all. Unticking hides it without unassigning anything, which is how you switch off one of the built-in groups you do not want.")
+    enableCB:SetChecked(groupData.enabled ~= false)
     yOffset = yOffset - 24
 
     local combatCB = CreateSQCheckbox(content, "Hide Out of Combat", function(checked)
