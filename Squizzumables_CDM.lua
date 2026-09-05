@@ -159,6 +159,10 @@ end
 
 -- Forward declarations (defined later in the file)
 local UpdateAllProxyCooldowns
+-- Forward-declared: LayoutBorrowedBuffIcons calls this well above the point
+-- where it is defined, and a plain `local function` further down would be nil
+-- there rather than an error at load.
+local GroupAlpha
 
 -- The two buff-type CDM viewers: category 2 = buff icons, category 3 = tracked bars
 local BUFF_VIEWERS = { "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
@@ -1776,7 +1780,7 @@ end
 --
 -- Returns a container alpha rather than a boolean because per-icon alpha is
 -- applied separately in ApplyProxyVisuals; this is only the on/off.
-local function GroupAlpha(groupData)
+GroupAlpha = function(groupData)
     if not groupData then return 1 end
     if groupData.enabled == false then return 0 end
     if groupData.hideOutOfCombat and not isInCombat then return 0 end
