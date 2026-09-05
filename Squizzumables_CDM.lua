@@ -758,16 +758,27 @@ local function UpdateProxyCooldown(proxy)
     local auraData = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
         and C_UnitAuras.GetPlayerAuraBySpellID(proxy.spellID)
 
-    if auraData and auraData.duration and auraData.duration > 0 and auraData.expirationTime then
+    -- Every field on that table can itself be secret, and this runs per proxy
+    -- per pass -- in combat, which is exactly when auras go secret. Comparing
+    -- or doing arithmetic on a secret value throws rather than misbehaving,
+    -- which is the v1.58 crash (see CLAUDE.md). Resolve each field once through
+    -- BH.Secrets; nil means unreadable, and an unreadable aura falls through to
+    -- the spell-cooldown path below instead of erroring. That is the safe
+    -- direction: a sweep that shows the cooldown rather than the buff.
+    local auraDur = auraData and BH.Secrets.SafeAuraDuration(auraData)
+    local auraExp = auraData and BH.Secrets.SafeAuraExpiration(auraData)
+
+    if auraDur and auraExp and auraDur > 0 then
         -- Buff is active â€” show buff duration sweep instead of spell cooldown
-        local startTime = auraData.expirationTime - auraData.duration
+        local startTime = auraExp - auraDur
         proxy.Cooldown:SetReverse(true)
-        proxy.Cooldown:SetCooldown(startTime, auraData.duration)
+        proxy.Cooldown:SetCooldown(startTime, auraDur)
 
         -- Show stack count
         if proxy.Count then
-            if auraData.applications and auraData.applications > 1 then
-                proxy.Count:SetText(auraData.applications)
+            local stacks = BH.Secrets.SafeAuraStacks(auraData)
+            if stacks and stacks > 1 then
+                proxy.Count:SetText(stacks)
             else
                 proxy.Count:SetText("")
             end

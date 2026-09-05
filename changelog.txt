@@ -14,3 +14,8 @@ V1.69
   up permanently, and having the talent with your only shield on someone else meant it
   never reminded you to shield yourself. It now reads the talent, matching what the Earth
   Shield buttons have always done
+- Fixed a Cooldown Manager crash that could fire in combat. Reading a buff's duration or
+  stack count directly throws an error when the game hides aura data, which it does in
+  combat, raids, Mythic+ and PvP -- exactly when the icons are being updated. The reads now
+  go through the same safe path the rest of the addon uses, and an unreadable buff falls
+  back to showing the spell's cooldown instead of erroring
