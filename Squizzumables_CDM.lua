@@ -716,6 +716,21 @@ local DISCOVER_CATEGORIES = {
 
 local function DiscoverCooldowns()
     local discovered = {}
+    -- One ability, two categories.
+    --
+    -- The same ability is listed under a cooldown category for its cooldown and
+    -- a buff category for the aura it applies, under DIFFERENT cooldownIDs AND
+    -- different spellIDs -- Blessing of Freedom is 61107 in Utility and 92824
+    -- in BuffIcon. Nothing keyed on either ID catches that, so the buff pass
+    -- brought a second copy of half the Essential and Utility abilities into
+    -- the Buffs group. Name is the only thing they share, which is why
+    -- GetAvailableBuffCooldowns has always deduplicated on it too.
+    --
+    -- DISCOVER_CATEGORIES is ordered cooldowns first, so the cooldown-type
+    -- entry wins and the buff duplicate is dropped: the cooldown item is the
+    -- one that carries the cooldown fields, and a buff item leaves them nil
+    -- forever.
+    local seenSpell, seenName = {}, {}
     for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
         local catIDs = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
             and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
@@ -723,11 +738,38 @@ local function DiscoverCooldowns()
             for _, cdID in ipairs(catIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
                 if info and info.isKnown then
-                    discovered[cdID] = {
-                        cooldownID = cdID,
-                        spellID = info.spellID,
-                        viewerType = viewerInfo.viewerType,
-                    }
+                    local name = C_Spell.GetSpellName and C_Spell.GetSpellName(info.spellID)
+                    name = BH.Secrets.SafeString(name, nil)
+                    if not seenSpell[info.spellID] and not (name and seenName[name]) then
+                        seenSpell[info.spellID] = true
+                        if name then seenName[name] = true end
+
+                        -- Which spell IDs might carry this cooldown's aura.
+                        --
+                        -- A tracked buff's aura is very often NOT info.spellID:
+                        -- the API hands the alternatives over as overrideSpellID
+                        -- and linkedSpellIDs. Reading only spellID is why buff
+                        -- icons drew no duration swipe -- the aura lookup missed
+                        -- and it fell through to a spell cooldown that a
+                        -- buff-only entry does not have.
+                        local auraIDs = { info.spellID }
+                        if info.overrideSpellID then
+                            auraIDs[#auraIDs + 1] = info.overrideSpellID
+                        end
+                        if type(info.linkedSpellIDs) == "table" then
+                            for _, lid in ipairs(info.linkedSpellIDs) do
+                                auraIDs[#auraIDs + 1] = lid
+                            end
+                        end
+
+                        discovered[cdID] = {
+                            cooldownID = cdID,
+                            spellID = info.spellID,
+                            viewerType = viewerInfo.viewerType,
+                            auraIDs = auraIDs,
+                            hasAura = info.hasAura,
+                        }
+                    end
                 end
             end
         end
@@ -810,9 +852,20 @@ end
 local function UpdateProxyCooldown(proxy)
     if not proxy or not proxy.spellID or not proxy.Cooldown then return end
 
-    -- Check if this spell has an active buff on the player
-    local auraData = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
-        and C_UnitAuras.GetPlayerAuraBySpellID(proxy.spellID)
+    -- Check if this spell has an active buff on the player.
+    --
+    -- Try every ID the cooldown might carry its aura under, not just spellID:
+    -- for a tracked buff the aura is frequently a different spell entirely, and
+    -- the API says so via overrideSpellID and linkedSpellIDs. Missing that is
+    -- why buff icons drew no swipe -- the lookup found nothing and fell through
+    -- to a spell cooldown that a buff-only entry does not have.
+    local auraData
+    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        for _, sid in ipairs(proxy.auraSpellIDs or { proxy.spellID }) do
+            auraData = C_UnitAuras.GetPlayerAuraBySpellID(sid)
+            if auraData then break end
+        end
+    end
 
     -- Every field on that table can itself be secret, and this runs per proxy
     -- per pass -- in combat, which is exactly when auras go secret. Comparing
@@ -1890,11 +1943,15 @@ function cdmModule:Reconcile()
         if existing then
             existing.spellID = cdData.spellID
             existing.viewerType = cdData.viewerType
+            existing.auraIDs = cdData.auraIDs
+            existing.hasAura = cdData.hasAura
         else
             self.registry[cdID] = {
                 spellID = cdData.spellID,
                 cooldownID = cdID,
                 viewerType = cdData.viewerType,
+                auraIDs = cdData.auraIDs,
+                hasAura = cdData.hasAura,
                 managed = false,
             }
         end
@@ -1916,6 +1973,7 @@ function cdmModule:Reconcile()
 
             if assignment == "FREE" then
                 local proxy = GetOrCreateProxy(cdID, entry.spellID, DEFAULT_ICON_SIZE)
+                proxy.auraSpellIDs = entry.auraIDs
                 self.freeIcons[cdID] = proxy
                 self:PositionFreeIcon(cdID)
             else
@@ -1925,6 +1983,7 @@ function cdmModule:Reconcile()
                     local groupData = specData.groups[assignment]
                     local iconSize = groupData and groupData.iconSize or DEFAULT_ICON_SIZE
                     local proxy = GetOrCreateProxy(cdID, entry.spellID, iconSize)
+                    proxy.auraSpellIDs = entry.auraIDs
                     group.members[cdID] = proxy
                 end
             end

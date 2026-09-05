@@ -49,6 +49,14 @@ V1.69
   visible icons take a slot now, and the row re-packs as buffs come and go -- so with a
   Centered growth direction they grow out from the middle, which is what tracked buffs
   want. The three standard groups now default to Centered, matching Blizzard's own bars
+- Fixed the Buffs group showing duplicates of your Essential and Utility abilities. The game
+  lists an ability twice -- once for its cooldown and once for the buff it applies -- under
+  a different ID each time, so nothing keyed on an ID could spot the pair. They are matched
+  by name now, and the cooldown entry wins, since that is the one carrying cooldown data
+- Fixed tracked buffs showing no duration swipe. A tracked buff's aura is frequently a
+  different spell from the one its cooldown is listed under, and only that one was being
+  checked -- so the lookup found nothing and fell back to a spell cooldown those entries do
+  not have. All the spell IDs the game offers for a cooldown are checked now
 - Fixed most Cooldown Manager icons never refreshing between reconciles. The update pass
   only recognised spells you had assigned to a group by hand, so everything relying on the
   new standard groups was skipped -- desaturation, hide-until-active and the icon artwork
