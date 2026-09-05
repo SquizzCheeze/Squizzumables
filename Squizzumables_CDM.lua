@@ -1022,6 +1022,20 @@ local function UpdateProxyCooldown(proxy)
         return
     end
 
+    -- A tracked buff's sweep belongs to the mirror; do not touch it here.
+    --
+    -- /sq cdmbuff showed the mirror installed and a proxy present for the
+    -- active buffs, so the hook was fine -- this pass was overwriting it. It
+    -- runs on a ticker, and for a buff proxy it fell through to the spell
+    -- cooldown below, whose SetCooldown(0, 0) wiped the mirrored sweep within
+    -- a fraction of a second of Blizzard setting it. That is why the swipe
+    -- looked absent in combat and reappeared afterwards, when the readable
+    -- aura path above started answering again.
+    --
+    -- A buff-only entry has no spell cooldown to show anyway, so there is
+    -- nothing lost by leaving the widget alone.
+    if proxy.viewerType == "buff" then return end
+
     -- No active buff â€” show normal spell cooldown
     proxy.Cooldown:SetReverse(false)
     if proxy.Count then
