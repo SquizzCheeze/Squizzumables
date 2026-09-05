@@ -852,6 +852,51 @@ end
 local function UpdateProxyCooldown(proxy)
     if not proxy or not proxy.spellID or not proxy.Cooldown then return end
 
+    -- Buff duration, the only way that survives combat.
+    --
+    -- An aura's remaining time cannot be computed in combat: the fields are
+    -- secret, and it cannot even be looked up, because GetPlayerAuraBySpellID
+    -- returns nil for a secret aura and no aura filter accepts a spell ID
+    -- (checked against the current generated docs, not just the local copy).
+    --
+    -- The way through is not to look the aura up at all. Blizzard's own buff
+    -- viewer item frame records which aura instance it bound, as
+    -- auraInstanceID + auraDataUnit, and those are ordinary fields on a frame
+    -- we already track. Hand that instance to C_UnitAuras.GetAuraDuration and
+    -- it returns a duration object -- an opaque handle the Cooldown widget
+    -- consumes without any value ever entering Lua. Same trick as
+    -- GetSpellCooldownDuration on the cooldown side.
+    --
+    -- This is how EllesmereUI's bars keep working in combat; it reads
+    -- blzChild.auraInstanceID off the same frames.
+    --
+    -- The instance ID can itself be secret on an actively updating frame, so it
+    -- is checked before use rather than assumed.
+    if proxy.Cooldown.SetCooldownFromDurationObject and C_UnitAuras
+       and C_UnitAuras.GetAuraDuration then
+        for _, sid in ipairs(proxy.auraSpellIDs or { proxy.spellID }) do
+            local item = cdmModule.buffItemForSpell[sid]
+            local iid = item and item.auraInstanceID
+            local aunit = item and item.auraDataUnit
+            if iid and aunit and not BH.Secrets.HasAnySecret(iid, aunit) then
+                local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, aunit, iid)
+                if ok and durObj then
+                    proxy.Cooldown:SetReverse(true)
+                    proxy.Cooldown:SetCooldown(0, 0)
+                    proxy.Cooldown:SetCooldownFromDurationObject(durObj)
+                    if proxy.Count and C_UnitAuras.GetAuraApplicationDisplayCount then
+                        -- Returns a preformatted string, so the stack count
+                        -- needs no comparison either.
+                        local sok, txt = pcall(C_UnitAuras.GetAuraApplicationDisplayCount,
+                                               aunit, iid, 2)
+                        proxy.Count:SetText((sok and type(txt) == "string") and txt or "")
+                    end
+                    return
+                end
+            end
+        end
+    end
+
     -- Check if this spell has an active buff on the player.
     --
     -- Try every ID the cooldown might carry its aura under, not just spellID:
@@ -1013,20 +1058,27 @@ local function ApplyProxyVisuals(proxy, groupData)
             local start = cdInfo.startTime
             local dur = cdInfo.duration
             if start and dur then
-                -- SECRET MEANS ON COOLDOWN. It is not "unreadable, give up".
+                -- Ask the readable booleans, do not infer from the timestamps.
                 --
-                -- These fields are only secret while there is something to
-                -- derive them from; a ready spell has nothing secret to hide
-                -- and reads as a plain value. This module already relies on
-                -- that for the CDM available alert -- see the note there, and
-                -- in CLAUDE.md, about the SECRET -> false transition being
-                -- exactly "now available".
+                -- SpellCooldownInfo carries isActive and isOnGCD, and they stay
+                -- readable when startTime/duration have gone secret. That is
+                -- strictly better than deriving state from the numbers: it
+                -- needs no secret arithmetic, and isOnGCD separates a real
+                -- cooldown from the global, which no amount of inference from a
+                -- secret duration can do -- every GCD used to read as "on
+                -- cooldown".
                 --
-                -- Treating secret as "not on cooldown" made isActive false for
-                -- everything the moment combat started, so with Hide Until
-                -- Active every icon vanished on the pull and came back when
-                -- combat dropped, and desaturation inverted at the same time.
-                if BH.Secrets.IsSecret(start) or BH.Secrets.IsSecret(dur) then
+                -- isActive is not in the generated API docs, but it is present
+                -- and is what EllesmereUI reads in four separate places, which
+                -- is the evidence it works on a live 12.1 client. The old
+                -- derivation is kept as a fallback for a client without it.
+                if cdInfo.isActive ~= nil and not BH.Secrets.IsSecret(cdInfo.isActive) then
+                    onCD = cdInfo.isActive and not cdInfo.isOnGCD
+                elseif BH.Secrets.IsSecret(start) or BH.Secrets.IsSecret(dur) then
+                    -- Secret means on cooldown, not "unreadable, give up": these
+                    -- fields are only secret while there is something to derive
+                    -- them from, so a ready spell reads plainly. Same fact the
+                    -- CDM available alert depends on.
                     onCD = true
                 elseif dur > 1.5 then
                     onCD = true
