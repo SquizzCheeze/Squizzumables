@@ -1,18 +1,18 @@
 -- Core/CoTank.lua
--- The other tank's debuffs, in a movable frame.
+-- The other tank's debuffs and defensives, in a movable frame.
 --
 -- WHY THIS IS BUILT THE WAY IT IS
 --
 -- An addon cannot read another player's auras in combat. They are secret, and
 -- as of 12.1 reading one does not return nil, it throws -- which is exactly the
 -- wall the Cooldown Manager module documents at length. A co-tank tracker that
--- read aura data would therefore work in the open world and go blank in a raid,
--- which is the only place anyone wants it.
+-- read aura data would work in the open world and go blank in a raid, which is
+-- the only place anyone wants it.
 --
 -- 12.1 answers this with Blizzard_AuraContainer: a widget where BLIZZARD reads
--- and renders the auras and the addon only configures it. We hand it a unit and
--- a filter, hand it the regions to draw into, and never see an aura ourselves.
--- Nothing is secret to us because nothing reaches us.
+-- and renders the auras and the addon only configures it. We hand it a unit, a
+-- filter and the regions to draw into, and never see an aura ourselves. Nothing
+-- is secret to us because nothing reaches us.
 --
 --     local c = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
 --     c:SetUnit("raid3")
@@ -22,28 +22,34 @@
 -- It is the same bargain as the tracked-buff icons in 1.69 -- give Blizzard the
 -- widget, let it drive -- and it survives combat for the same reason.
 --
--- FOUR THINGS THAT ARE NOT OBVIOUS AND COST A WRONG DESIGN EACH
+-- THE ASYMMETRY THAT SHAPES THE FILTERS
 --
--- 1. Spell ID filtering is NOT available here. Blizzard's own validator says
---    spell ID matching "is only permitted for helpful buffs on assistable
---    units, and harmful buffs on non-assistable units" -- a co-tank is an
---    assistable unit and we want their harmful auras, which is the one
---    combination excluded. So "show only these five tank busters" cannot be
---    built. What is available is isBossAura, isPriorityAura, dispel type and
---    duration, and isBossAura is the one that separates tank busters from noise.
+-- Blizzard permits spell ID matching "only for helpful buffs on assistable
+-- units, and harmful buffs on non-assistable units". A co-tank is assistable,
+-- so:
 --
--- 2. Once an aura group is added the container gains
---    ForbiddenAspect.UntrustedLayoutScriptExecution, and our frames can no
---    longer anchor TO it. So every region here anchors to the row frame, never
---    to the container, and the row's height is computed rather than measured.
+--   * DEBUFFS (harmful, assistable)  -> spell IDs FORBIDDEN. Only the broad
+--     flags are available: isBossAura, isBossOrRoleAura, isPriorityAura,
+--     canApplyAura, dispel type, maxDuration. So the debuff filter is a set of
+--     presets and cannot be a hand-picked list, however much one might want it.
 --
--- 3. Regions handed over must already be descendants of the aura button
---    (RegionUtil.IsDescendantOf is asserted), so they are created inside
---    initializeFrame parented to the button rather than made in advance.
+--   * DEFENSIVES (helpful, assistable) -> spell IDs PERMITTED. So the
+--     defensives list IS a list of spell IDs, and the player writes it. That is
+--     better than shipping a table of every tank cooldown per class: it would
+--     rot every patch, and the player knows which two or three they care about.
 --
--- 4. Blizzard stamps the handed-over regions with secret aspects -- Text and
---    Shown on the stack count. We can create and position them; we cannot read
---    them back. Nothing here should ever try.
+-- OTHER THINGS THAT ARE NOT OBVIOUS
+--
+--   * Adding an aura group gives the container
+--     ForbiddenAspect.UntrustedLayoutScriptExecution, so nothing of ours may
+--     anchor TO it. Every region anchors to the row frame instead, and the two
+--     groups get their own containers so each can be offset independently.
+--   * Regions handed over must already be descendants of the aura button
+--     (RegionUtil.IsDescendantOf is asserted), so they are built inside
+--     initializeFrame rather than in advance.
+--   * Blizzard stamps handed-over regions with secret aspects -- Text, Alpha,
+--     VertexColor, Shown depending on the element. They can be created, sized
+--     and positioned; they can never be read back. Nothing here should try.
 --
 -- Verified against Gethe/wow-ui-source live, 12.1.0 build 69587
 -- (Blizzard_AuraContainer/*). Not derived from any other addon.
@@ -56,31 +62,87 @@ local BH = ns.BH
 -- building them up front means nothing has to create a frame mid-combat, where
 -- it would be refused.
 local MAX_ROWS = 3
+local NAME_H = 16
 
-local DEFAULT_ICON_SIZE = 32
-local DEFAULT_MAX_ICONS = 8
-local ROW_GAP = 6
-local NAME_H = 14
+local function S()
+    return BH.settings or {}
+end
 
--- What the container is allowed to show. Spell IDs are not an option here (see
--- the header), so these are the useful axes that remain.
-local FILTERS = {
-    { text = "Boss debuffs only", value = "boss" },
-    { text = "All debuffs",       value = "all" },
-    { text = "Dispellable only",  value = "dispel" },
+-- ============================================================================
+-- Filters
+-- ============================================================================
+
+-- Debuff presets. Spell IDs are not permitted here (see the header), so these
+-- are the axes Blizzard does expose, named for what they mean in play.
+local DEBUFF_FILTERS = {
+    { text = "Boss debuffs",          value = "boss" },
+    { text = "Boss + role debuffs",   value = "bossrole" },
+    { text = "Important only",        value = "important" },
+    { text = "Dispellable only",      value = "dispel" },
+    { text = "Everything",            value = "all" },
 }
-BH.COTANK_FILTERS = FILTERS
+BH.COTANK_DEBUFF_FILTERS = DEBUFF_FILTERS
 
-local function CandidateFiltersFor(mode)
-    if mode == "all" then
-        return nil
+local GROWTH = {
+    { text = "Down", value = "down" },
+    { text = "Up",   value = "up" },
+}
+BH.COTANK_GROWTH = GROWTH
+
+local BORDER_STYLES = {
+    { text = "Off",              value = "off" },
+    { text = "Border",           value = "border" },
+    { text = "Border + icon",    value = "bordericon" },
+    { text = "Corner icon only", value = "icon" },
+}
+BH.COTANK_BORDER_STYLES = BORDER_STYLES
+
+local function DebuffCandidateFilters()
+    local s = S()
+    local f = {}
+
+    local mode = s.coTankDebuffFilter or "boss"
+    if mode == "boss" then
+        f.isBossAura = true
+    elseif mode == "bossrole" then
+        f.isBossOrRoleAura = true
+    elseif mode == "important" then
+        f.isPriorityAura = true
     elseif mode == "dispel" then
-        -- No includeDispelTypes list: naming types would mean keeping a list of
-        -- them current, and "has any dispel type at all" is what dispellable
-        -- means. canApplyAura is the closest honest proxy the API offers.
-        return { canApplyAura = true }
+        f.canApplyAura = true
     end
-    return { isBossAura = true }
+    -- "all" adds nothing.
+
+    -- Any non-nil maxDuration implicitly hides permanent auras, which is the
+    -- documented behaviour and exactly what "hide permanent" wants. The ceiling
+    -- is deliberately enormous so it excludes nothing else.
+    if s.coTankDebuffHidePermanent ~= false then
+        f.maxDuration = 86400
+    end
+
+    if next(f) == nil then return nil end
+    return f
+end
+
+-- Parse the user's defensive spell ID list into the map Blizzard wants.
+--
+-- includeSpellIDs is a MAP of permitted ids, not an array -- an array would
+-- silently match nothing, since the lookup is by key.
+local function DefensiveCandidateFilters()
+    local raw = S().coTankDefSpellIDs
+    if type(raw) ~= "string" or raw:match("^%s*$") then
+        -- No list means no whitelist, which for helpful auras on another player
+        -- would be every buff they have. Show nothing instead: an unfiltered
+        -- buff list is noise, not a defensives tracker.
+        return { includeSpellIDs = {} }
+    end
+
+    local ids = {}
+    for token in raw:gmatch("[%d]+") do
+        local id = tonumber(token)
+        if id then ids[id] = true end
+    end
+    return { includeSpellIDs = ids }
 end
 
 -- ============================================================================
@@ -96,17 +158,25 @@ end
 -- The secret probe is still here rather than assumed, because the rule in
 -- CLAUDE.md is that the probe comes first and a bare comparison on a secret is
 -- a hard error, not a wrong answer.
+local function RoleOf(unit)
+    local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
+    if BH.Secrets.IsSecret(role) then return nil end
+    return role
+end
+
 local function IsTank(unit)
     if not UnitExists(unit) then return false end
     if not UnitIsPlayer(unit) then return false end
-    local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
-    if BH.Secrets.IsSecret(role) then return false end
-    return role == "TANK"
+    return RoleOf(unit) == "TANK"
 end
 
 local function FindCoTanks()
     local tanks = {}
     if not IsInGroup() then return tanks end
+
+    local s = S()
+    if not IsInRaid() and s.coTankShowInParty == false then return tanks end
+    if s.coTankOnlyIfTank and RoleOf("player") ~= "TANK" then return tanks end
 
     local n = GetNumGroupMembers() or 0
     if IsInRaid() then
@@ -128,64 +198,111 @@ local function FindCoTanks()
 end
 
 -- ============================================================================
--- Frame
+-- Aura buttons
 -- ============================================================================
 
 local rows = {}
 
+local DISPEL_STYLE_MAP = {
+    border     = "Border",
+    bordericon = "BorderWithIcon",
+    icon       = "Icon",
+}
+
 -- Furnish one aura button. Called by Blizzard, through securecallfunction, with
 -- the button it just created.
 --
--- Everything made here is parented to the button because the handover asserts
--- it (see note 3 in the header). The regions are then given away: from that
--- point Blizzard sets the texture, the stack count and the cooldown, and this
--- addon must not touch them again.
-local function InitializeAuraButton(button)
-    local size = (BH.settings and BH.settings.coTankIconSize) or DEFAULT_ICON_SIZE
+-- `kind` is "debuff" or "def", and selects which block of settings applies --
+-- the two groups are configured independently, which is the whole reason they
+-- get separate containers.
+--
+-- Everything is parented to the button because the handover asserts it. From
+-- the moment a region is handed over Blizzard owns what it displays; this addon
+-- only ever decided its size, position and font.
+local function MakeInitializer(kind)
+    return function(button)
+        local s = S()
+        local pre = (kind == "def") and "coTankDef" or "coTankDebuff"
+        local size = s[pre .. "Size"] or 32
 
-    local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    button:SetIcon(icon)
+        local icon = button:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        local zoom = (s.coTankIconZoom or 7) / 100
+        icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
+        button:SetIcon(icon)
 
-    local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
-    cd:SetAllPoints()
-    cd:SetDrawSwipe(true)
-    cd:SetDrawEdge(false)
-    button:SetDurationCooldown(cd)
+        -- Cooldown swipe. Its own countdown numbers are suppressed because the
+        -- duration text below is the one we can size and place.
+        if s.coTankShowSwipe ~= false then
+            local cd = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+            cd:SetAllPoints()
+            cd:SetDrawSwipe(true)
+            cd:SetDrawEdge(false)
+            cd:SetHideCountdownNumbers(true)
+            button:SetDurationCooldown(cd)
+        end
 
-    -- Stacks. This is the half of the feature that matters for a co-tank: the
-    -- number on a stacking tank debuff is the thing being watched for.
-    local count = button:CreateFontString(nil, "OVERLAY")
-    count:SetFont("Fonts\\FRIZQT__.TTF", math.max(8, size * 0.42), "OUTLINE")
-    count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
-    count:SetJustifyH("RIGHT")
-    button:SetApplicationCount(count)
+        -- Countdown text.
+        if s.coTankShowCountdown ~= false then
+            local dur = button:CreateFontString(nil, "OVERLAY")
+            dur:SetFont(BH:CoTankFontPath(),
+                s[pre .. "CountdownSize"] or math.max(8, size * 0.38), "OUTLINE")
+            dur:SetPoint("CENTER", button, "CENTER",
+                s[pre .. "CountdownX"] or 0, s[pre .. "CountdownY"] or 0)
+            local c = s.coTankCountdownColor or {}
+            dur:SetTextColor(c.r or 1, c.g or 0.82, c.b or 0)
+            button:SetDurationText(dur)
+        end
+
+        -- Stacks. This is the half of the feature that matters for a co-tank:
+        -- the number on a stacking tank debuff is the thing being watched.
+        if s.coTankShowStacks ~= false then
+            local cnt = button:CreateFontString(nil, "OVERLAY")
+            cnt:SetFont(BH:CoTankFontPath(),
+                s[pre .. "StackSize"] or math.max(8, size * 0.42), "OUTLINE")
+            cnt:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT",
+                s[pre .. "StackX"] or -1, s[pre .. "StackY"] or 1)
+            local c = s.coTankStackColor or {}
+            cnt:SetTextColor(c.r or 1, c.g or 1, c.b or 1)
+            button:SetApplicationCount(cnt)
+        end
+
+        -- Border coloured by dispel type. Blizzard owns the colour and the
+        -- artwork; the style says which of its looks to use.
+        local style = DISPEL_STYLE_MAP[s.coTankBorderStyle or "border"]
+        if style then
+            local border = button:CreateTexture(nil, "OVERLAY")
+            border:SetPoint("TOPLEFT", button, "TOPLEFT", -1, 1)
+            border:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
+            button:AddDispelTypeTexture(border, {
+                style = style,
+                showWhenHarmful = true,
+                showWhenHelpful = (kind == "def"),
+                -- Without this a debuff with no dispel type -- most tank
+                -- busters -- would draw no border at all, which reads as the
+                -- setting not working.
+                showWithoutDispelType = true,
+            })
+        end
+    end
 end
 
 -- ============================================================================
 -- Preview
 --
--- Icons we draw ourselves, shown instead of the real container rather than on
+-- Icons we draw ourselves, shown INSTEAD of the real container rather than on
 -- top of it. Two reasons it has to work this way:
 --
---   * There is no way to ask the container what it is showing. The aura data is
---     secret and so is the stack count, so "is it empty right now" is not a
---     question that can be answered -- which rules out drawing placeholders
---     only when it happens to be empty.
+--   * There is no way to ask a container what it is showing. The aura data and
+--     the stack count are both secret, so "is it empty right now" cannot be
+--     answered -- which rules out drawing placeholders only when it is.
 --   * Blizzard's own placeholder source exists (AuraContainerAuraSourceLists
---     .EditMode, used by Edit Mode to show sample auras) but SetUseEditModeSource
---     lives on the PRIVATE mixin, not the inbound one an addon can call. So the
---     real widget cannot be asked to show samples.
+--     .EditMode, which Edit Mode uses for sample auras) but SetUseEditModeSource
+--     is on the PRIVATE mixin, not the inbound one an addon may call.
 --
--- So preview disables the containers and shows this instead. It is a layout
--- preview -- size, spacing, how many, where the names sit -- which is what is
--- actually needed to position the thing.
+-- So it is a layout preview: size, spacing, how many, where the text sits.
 -- ============================================================================
 
--- Long-standing icon art, picked for looking like tank debuffs rather than for
--- meaning anything. A colour block sits behind each so a missing file shows a
--- sized square instead of nothing.
 local PREVIEW_ICONS = {
     "Interface\\Icons\\Ability_Warrior_Sunder",
     "Interface\\Icons\\Spell_Shadow_ShadowWordPain",
@@ -197,99 +314,161 @@ local PREVIEW_ICONS = {
     "Interface\\Icons\\Spell_Nature_CorrosiveBreath",
 }
 
-local function UpdatePreviewRow(row, size, count)
-    row.previewIcons = row.previewIcons or {}
+local PREVIEW_DEF_ICONS = {
+    "Interface\\Icons\\Ability_Warrior_ShieldWall",
+    "Interface\\Icons\\Spell_Holy_ArdentDefender",
+    "Interface\\Icons\\Ability_Druid_Barkskin",
+    "Interface\\Icons\\Spell_DeathKnight_IceBoundFortitude",
+}
+
+local function UpdatePreviewGroup(row, kind, anchorY)
+    local s = S()
+    local pre = (kind == "def") and "coTankDef" or "coTankDebuff"
+    local store = kind .. "Preview"
+    row[store] = row[store] or {}
+    local list = row[store]
+
+    local size    = s[pre .. "Size"] or 32
+    local spacing = s[pre .. "Spacing"] or 2
+    local perRow  = s[pre .. "PerRow"] or 8
+    local maxRows = s[pre .. "MaxRows"] or 1
+    local count   = perRow * maxRows
+    local ox      = s[pre .. "OffsetX"] or 0
+    local oy      = s[pre .. "OffsetY"] or 0
+    local art     = (kind == "def") and PREVIEW_DEF_ICONS or PREVIEW_ICONS
 
     for i = 1, count do
-        local pi = row.previewIcons[i]
+        local pi = list[i]
         if not pi then
             pi = CreateFrame("Frame", nil, row)
-
             local bg = pi:CreateTexture(nil, "BACKGROUND")
             bg:SetAllPoints()
             bg:SetColorTexture(0.15, 0.15, 0.18, 1)
-
             local tex = pi:CreateTexture(nil, "ARTWORK")
             tex:SetAllPoints()
-            tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-            tex:SetTexture(PREVIEW_ICONS[((i - 1) % #PREVIEW_ICONS) + 1])
             pi.tex = tex
-
             local cnt = pi:CreateFontString(nil, "OVERLAY")
-            cnt:SetPoint("BOTTOMRIGHT", pi, "BOTTOMRIGHT", -1, 1)
-            cnt:SetJustifyH("RIGHT")
             pi.count = cnt
-
-            row.previewIcons[i] = pi
+            local dur = pi:CreateFontString(nil, "OVERLAY")
+            pi.dur = dur
+            list[i] = pi
         end
 
+        local zoom = (s.coTankIconZoom or 7) / 100
+        pi.tex:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
+        pi.tex:SetTexture(art[((i - 1) % #art) + 1])
+
+        local col = (i - 1) % perRow
+        local rowIdx = math.floor((i - 1) / perRow)
         pi:SetSize(size, size)
         pi:ClearAllPoints()
-        pi:SetPoint("TOPLEFT", row, "TOPLEFT", (i - 1) * (size + 2), -NAME_H)
-        pi.count:SetFont("Fonts\\FRIZQT__.TTF", math.max(8, size * 0.42), "OUTLINE")
-        -- Varying numbers rather than all the same: the stack count is the
-        -- point of this feature, so the preview should show it doing something.
-        pi.count:SetText(tostring(((i - 1) % 9) + 1))
+        pi:SetPoint("TOPLEFT", row, "TOPLEFT",
+            ox + col * (size + spacing),
+            -(anchorY) + oy - rowIdx * (size + spacing))
+
+        pi.count:ClearAllPoints()
+        pi.count:SetFont(BH:CoTankFontPath(),
+            s[pre .. "StackSize"] or math.max(8, size * 0.42), "OUTLINE")
+        pi.count:SetPoint("BOTTOMRIGHT", pi, "BOTTOMRIGHT",
+            s[pre .. "StackX"] or -1, s[pre .. "StackY"] or 1)
+        local sc = s.coTankStackColor or {}
+        pi.count:SetTextColor(sc.r or 1, sc.g or 1, sc.b or 1)
+        -- Varying numbers, because the stack count is the point of the feature
+        -- and a preview of it all reading "1" shows nothing.
+        pi.count:SetText(s.coTankShowStacks ~= false and tostring(((i - 1) % 9) + 1) or "")
+
+        pi.dur:ClearAllPoints()
+        pi.dur:SetFont(BH:CoTankFontPath(),
+            s[pre .. "CountdownSize"] or math.max(8, size * 0.38), "OUTLINE")
+        pi.dur:SetPoint("CENTER", pi, "CENTER",
+            s[pre .. "CountdownX"] or 0, s[pre .. "CountdownY"] or 0)
+        local cc = s.coTankCountdownColor or {}
+        pi.dur:SetTextColor(cc.r or 1, cc.g or 0.82, cc.b or 0)
+        pi.dur:SetText(s.coTankShowCountdown ~= false and tostring(((i - 1) % 20) + 4) or "")
+
         pi:Show()
     end
 
-    for i = count + 1, #row.previewIcons do
-        row.previewIcons[i]:Hide()
+    for i = count + 1, #list do list[i]:Hide() end
+end
+
+local function HidePreview(row)
+    for _, key in ipairs({ "debuffPreview", "defPreview" }) do
+        for _, pi in ipairs(row[key] or {}) do pi:Hide() end
     end
 end
 
-local function HidePreviewRow(row)
-    for _, pi in ipairs(row.previewIcons or {}) do pi:Hide() end
+-- ============================================================================
+-- Frame
+-- ============================================================================
+
+--- Font path for every text element here, from LibSharedMedia when it has one.
+function BH:CoTankFontPath()
+    local name = S().coTankFont
+    if name and LibStub then
+        local lsm = LibStub("LibSharedMedia-3.0", true)
+        local path = lsm and lsm:Fetch("font", name, true)
+        if path then return path end
+    end
+    return "Fonts\\FRIZQT__.TTF"
+end
+
+local function MakeContainer(row, kind)
+    -- pcall: this is a widget type the client may one day withdraw, and an
+    -- error here would land at login with nothing to explain it.
+    local ok, c = pcall(CreateFrame, "AuraContainer", nil, row, "CustomAuraContainerTemplate")
+    if not ok or not c then
+        BH.coTankUnavailable = true
+        return nil
+    end
+    return c
 end
 
 local function BuildRow(parent, index)
     local row = CreateFrame("Frame", nil, parent)
-    row:SetSize(200, DEFAULT_ICON_SIZE + NAME_H)
+    row:SetSize(240, 64)
 
     local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     name:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
     name:SetJustifyH("LEFT")
     row.name = name
 
-    -- The container is a sibling of the label, both anchored to the row.
-    -- Anchoring the label to the container would work right up until the first
-    -- aura group is added, at which point the container refuses untrusted
-    -- layout and the label would silently stop moving.
-    local ok, container = pcall(CreateFrame, "AuraContainer", nil, row,
-                                "CustomAuraContainerTemplate")
-    if not ok or not container then
-        -- Degrade to nothing rather than erroring at login. If the widget type
-        -- is ever withdrawn this is the line that says so.
-        BH.coTankUnavailable = true
-        return row
-    end
-
-    container:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -NAME_H)
-    row.container = container
+    -- Two containers, both anchored to the row and never to each other. They
+    -- are separate so each group keeps its own offset, and they cannot be
+    -- anchored to one another anyway once an aura group is added.
+    row.debuffs = MakeContainer(row, "debuff")
+    row.defensives = MakeContainer(row, "def")
     row.index = index
     return row
 end
 
---- Apply the aura group to a row's container. Done once per row, because
---- AddAuraGroup asserts if the key already exists and there is no remove.
-local function EnsureAuraGroup(row)
-    if not row.container or row.groupAdded then return end
+--- Attach a group to a container. Once only: AddAuraGroup asserts on a repeat
+--- key and there is no remove, which is why the size and filter settings say
+--- they need a reload.
+local function EnsureGroup(row, kind)
+    local container = (kind == "def") and row.defensives or row.debuffs
+    if not container then return end
 
-    local s = BH.settings or {}
-    local size = s.coTankIconSize or DEFAULT_ICON_SIZE
+    local flag = kind .. "GroupAdded"
+    if row[flag] then return end
+
+    local s = S()
+    local pre = (kind == "def") and "coTankDef" or "coTankDebuff"
+    local size = s[pre .. "Size"] or 32
 
     local ok, err = pcall(function()
-        row.container:AddAuraGroup("debuffs", "HARMFUL", {
-            initializeFrame  = InitializeAuraButton,
-            candidateFilters = CandidateFiltersFor(s.coTankFilter or "boss"),
+        container:AddAuraGroup(kind, (kind == "def") and "HELPFUL" or "HARMFUL", {
+            initializeFrame  = MakeInitializer(kind),
+            candidateFilters = (kind == "def") and DefensiveCandidateFilters()
+                                                or DebuffCandidateFilters(),
             sortMethod       = AuraContainerSortMethod.Expiration,
             sortDirection    = AuraContainerSortDirection.Normal,
-            maxFrameCount    = s.coTankMaxIcons or DEFAULT_MAX_ICONS,
+            maxFrameCount    = (s[pre .. "PerRow"] or 8) * (s[pre .. "MaxRows"] or 1),
             layout = {
                 elementWidth   = size,
                 elementHeight  = size,
-                elementSpacing = 2,
-                lineSpacing    = 2,
+                elementSpacing = s[pre .. "Spacing"] or 2,
+                lineSpacing    = s[pre .. "Spacing"] or 2,
             },
         })
     end)
@@ -298,14 +477,14 @@ local function EnsureAuraGroup(row)
         BH.coTankError = tostring(err)
         return
     end
-    row.groupAdded = true
+    row[flag] = true
 end
 
 function BH:BuildCoTankFrame()
     if self.coTankFrame then return self.coTankFrame end
 
     local f = CreateFrame("Frame", "SquizzumablesCoTank", UIParent)
-    f:SetSize(220, (DEFAULT_ICON_SIZE + NAME_H + ROW_GAP) * MAX_ROWS)
+    f:SetSize(240, 200)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
     f:SetMovable(true)
     f:EnableMouse(false)
@@ -321,67 +500,128 @@ function BH:BuildCoTankFrame()
     f:Hide()
 
     for i = 1, MAX_ROWS do
-        local row = BuildRow(f, i)
-        row:SetPoint("TOPLEFT", f, "TOPLEFT", 0,
-                     -((i - 1) * (DEFAULT_ICON_SIZE + NAME_H + ROW_GAP)))
-        row:Hide()
-        rows[i] = row
+        rows[i] = BuildRow(f, i)
+        rows[i]:Hide()
     end
 
     self.coTankFrame = f
     return f
 end
 
+-- How tall one tank's block is, given the current settings. Computed rather
+-- than measured, because the containers refuse untrusted layout once a group
+-- is attached and so cannot be asked their size.
+local function RowHeight()
+    local s = S()
+    local h = (s.coTankShowName ~= false) and NAME_H or 0
+
+    local dSize = s.coTankDebuffSize or 32
+    local dRows = s.coTankDebuffMaxRows or 1
+    h = h + dRows * (dSize + (s.coTankDebuffSpacing or 2))
+
+    if s.coTankDefEnabled then
+        local fSize = s.coTankDefSize or 24
+        local fRows = s.coTankDefMaxRows or 1
+        h = h + fRows * (fSize + (s.coTankDefSpacing or 2))
+    end
+    return math.max(h, 20)
+end
+
+local function PositionRows()
+    local s = S()
+    local f = BH.coTankFrame
+    if not f then return end
+
+    local rowH = RowHeight()
+    local gap = s.coTankRowSpacing or 6
+    local up = (s.coTankGrowth == "up")
+
+    for i = 1, MAX_ROWS do
+        local row = rows[i]
+        if row then
+            row:SetSize(240, rowH)
+            row:ClearAllPoints()
+            if up then
+                row:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, (i - 1) * (rowH + gap))
+            else
+                row:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -((i - 1) * (rowH + gap)))
+            end
+
+            -- Containers sit below the name, each with its own offset.
+            local y = (s.coTankShowName ~= false) and NAME_H or 0
+            if row.debuffs then
+                row.debuffs:ClearAllPoints()
+                row.debuffs:SetPoint("TOPLEFT", row, "TOPLEFT",
+                    s.coTankDebuffOffsetX or 0, -(y) + (s.coTankDebuffOffsetY or 0))
+            end
+            if row.defensives then
+                local dy = y + (s.coTankDebuffMaxRows or 1)
+                    * ((s.coTankDebuffSize or 32) + (s.coTankDebuffSpacing or 2))
+                row.defensives:ClearAllPoints()
+                row.defensives:SetPoint("TOPLEFT", row, "TOPLEFT",
+                    s.coTankDefOffsetX or 0, -(dy) + (s.coTankDefOffsetY or 0))
+            end
+        end
+    end
+
+    f:SetHeight(MAX_ROWS * (rowH + gap))
+end
+
 -- ============================================================================
 -- Refresh
 -- ============================================================================
 
-local function ShouldShow()
-    local s = BH.settings
-    if not s or not s.coTankEnabled then return false end
-    if BH.unlockMode then return true end
-    return true
-end
+local lastTankCount = 0
 
 function BH:UpdateCoTank()
     local f = self.coTankFrame
     if not f then return end
 
-    -- Mouse only while positioning, re-asserted here for the same reason the
-    -- target distance readout does it: the pass that leaves unlock mode only
-    -- restores mouse state for BH.REMINDERS frames, and this is not one.
+    -- Mouse only while positioning, re-asserted here because the pass that
+    -- leaves unlock mode only restores mouse state for BH.REMINDERS frames,
+    -- and this is not one. A transparent frame that eats clicks is the 1.68
+    -- Just For Kel bug.
     f:EnableMouse(BH.unlockMode and true or false)
 
-    if not ShouldShow() then
+    local s = S()
+    if not s.coTankEnabled then
         f:Hide()
         return
     end
 
-    local s = self.settings or {}
+    PositionRows()
+
     local showName = s.coTankShowName ~= false
-    local size = s.coTankIconSize or DEFAULT_ICON_SIZE
-    local maxIcons = s.coTankMaxIcons or DEFAULT_MAX_ICONS
+    local nameSize = s.coTankNameSize or 12
 
     -- Preview replaces the live display rather than sitting alongside it, so
     -- the two can never both be drawn. Unlock mode implies preview: the frame
-    -- needs a footprint to drag whether or not a co-tank happens to exist.
+    -- needs a footprint to drag whether or not a co-tank exists.
     local preview = BH.unlockMode or s.coTankPreview
 
     if preview then
-        -- Two rows, not one: a raid runs two or three tanks and the vertical
-        -- stacking is the part that affects where the frame can go.
-        local PREVIEW_ROWS = math.min(2, MAX_ROWS)
+        local previewRows = math.min(2, MAX_ROWS)
         for i = 1, MAX_ROWS do
             local row = rows[i]
             if row then
-                if row.container then row.container:SetEnabled(false) end
-                if i <= PREVIEW_ROWS then
+                if row.debuffs then row.debuffs:SetEnabled(false) end
+                if row.defensives then row.defensives:SetEnabled(false) end
+                if i <= previewRows then
                     row:Show()
+                    row.name:SetFont(BH:CoTankFontPath(), nameSize, "OUTLINE")
                     row.name:SetText("Co-tank " .. i)
                     row.name:SetShown(showName)
-                    UpdatePreviewRow(row, size, maxIcons)
+                    UpdatePreviewGroup(row, "debuff", showName and NAME_H or 0)
+                    if s.coTankDefEnabled then
+                        local dy = (showName and NAME_H or 0)
+                            + (s.coTankDebuffMaxRows or 1)
+                              * ((s.coTankDebuffSize or 32) + (s.coTankDebuffSpacing or 2))
+                        UpdatePreviewGroup(row, "def", dy)
+                    else
+                        for _, pi in ipairs(row.defPreview or {}) do pi:Hide() end
+                    end
                 else
-                    HidePreviewRow(row)
+                    HidePreview(row)
                     row:Hide()
                 end
             end
@@ -392,17 +632,34 @@ function BH:UpdateCoTank()
 
     local tanks = FindCoTanks()
 
+    -- "Notify when more co-tanks detected": only on the way up, and only once
+    -- per change, or it would fire every roster event for the whole fight.
+    if s.coTankNotify and #tanks > MAX_ROWS and #tanks ~= lastTankCount then
+        print(("|cffffcc00Squizzumables:|r %d co-tanks in the group; showing the first %d.")
+            :format(#tanks, MAX_ROWS))
+    end
+    lastTankCount = #tanks
+
     for i = 1, MAX_ROWS do
         local row = rows[i]
         local unit = tanks[i]
         if row then
-            HidePreviewRow(row)
+            HidePreview(row)
             if unit then
                 row:Show()
-                if row.container then
-                    EnsureAuraGroup(row)
-                    row.container:SetUnit(unit)
-                    row.container:SetEnabled(true)
+                EnsureGroup(row, "debuff")
+                if row.debuffs then
+                    row.debuffs:SetUnit(unit)
+                    row.debuffs:SetEnabled(true)
+                end
+                if s.coTankDefEnabled then
+                    EnsureGroup(row, "def")
+                    if row.defensives then
+                        row.defensives:SetUnit(unit)
+                        row.defensives:SetEnabled(true)
+                    end
+                elseif row.defensives then
+                    row.defensives:SetEnabled(false)
                 end
                 -- Straight through to SetText without resolving.
                 --
@@ -410,10 +667,12 @@ function BH:UpdateCoTank()
                 -- would turn a name we are allowed to display into a blank on
                 -- exactly the content where this matters. Resolve for logic,
                 -- pass through for display.
+                row.name:SetFont(BH:CoTankFontPath(), nameSize, "OUTLINE")
                 row.name:SetText(UnitName(unit))
                 row.name:SetShown(showName)
             else
-                if row.container then row.container:SetEnabled(false) end
+                if row.debuffs then row.debuffs:SetEnabled(false) end
+                if row.defensives then row.defensives:SetEnabled(false) end
                 row:Hide()
             end
         end
@@ -422,14 +681,17 @@ function BH:UpdateCoTank()
     f:SetShown(#tanks > 0)
 end
 
---- Start or stop the module, matching the setting.
 function BH:ApplyCoTank()
-    local s = self.settings or {}
+    local s = S()
 
     if not s.coTankEnabled then
         if self.coTankFrame then
             for i = 1, MAX_ROWS do
-                if rows[i] and rows[i].container then rows[i].container:SetEnabled(false) end
+                local row = rows[i]
+                if row then
+                    if row.debuffs then row.debuffs:SetEnabled(false) end
+                    if row.defensives then row.defensives:SetEnabled(false) end
+                end
             end
             self.coTankFrame:Hide()
         end
@@ -461,29 +723,154 @@ ev:SetScript("OnEvent", function(_, event)
     if BH.UpdateCoTank then BH:UpdateCoTank() end
 end)
 
--- Unlisted diagnostic: who was found, and whether the container came up at all.
+-- ============================================================================
+-- Options helpers
+-- ============================================================================
+
+--- Say once that a reload is needed, and only when it actually is.
+---
+--- Anything baked into an aura button or its group needs one: AddAuraGroup
+--- asserts on a repeated key and offers no remove, so a group's filter, sizes
+--- and the regions on its buttons are fixed once built. Rather than a reload
+--- warning on every such control, this throttles to one message -- half a dozen
+--- in a row while adjusting sliders reads as something being broken.
+---
+--- Silent while previewing, because the preview is ours and redraws at once, so
+--- there is nothing waiting on a reload to be seen.
+local reloadNoticeAt = 0
+function BH:CoTankNeedsReload()
+    if not (BH.settings and BH.settings.coTankEnabled) then return end
+    if BH.unlockMode or BH.settings.coTankPreview then return end
+    local now = GetTime()
+    if now - reloadNoticeAt < 20 then return end
+    reloadNoticeAt = now
+    print("|cffffcc00Squizzumables:|r co-tank icon settings changed -- /reload to apply them to "
+        .. "the live display. Preview Layout shows them straight away.")
+end
+
+--- The block of size/layout/text rows a group needs, built once and reused for
+--- both Debuffs and Defensives.
+---
+--- `prefix` is the settings prefix ("coTankDebuff" or "coTankDef"), so the two
+--- groups stay genuinely independent without the options code being written
+--- twice and drifting -- which is what happened to the ten hand-copied reminder
+--- gates before they became a table.
+function BH:AddCoTankGroupRows(content, yOffset, prefix, disabled, maxSize)
+    local used = 0
+    local Rows = ns.Rows
+
+    local function num(key, default)
+        return function() return BH.settings[prefix .. key] or default end
+    end
+    local function setNum(key, needsReload)
+        return function(v)
+            BH.settings[prefix .. key] = v
+            BH:SaveSettings()
+            BH:UpdateCoTank()
+            if needsReload then BH:CoTankNeedsReload() end
+        end
+    end
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Icon Size", width = 300, min = 12, max = maxSize or 64, step = 1,
+        tooltip = "Size of each icon in this group.",
+        get = num("Size", 32), set = setNum("Size", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Icon Spacing", width = 300, min = 0, max = 20, step = 1,
+        tooltip = "Gap between icons.",
+        get = num("Spacing", 2), set = setNum("Spacing", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Icons Per Row", width = 300, min = 1, max = 20, step = 1,
+        tooltip = "How many icons before wrapping to the next line.",
+        get = num("PerRow", 8), set = setNum("PerRow", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Maximum Rows", width = 300, min = 1, max = 5, step = 1,
+        tooltip = "How many lines of icons at most. Rows times icons per row is the total shown.",
+        get = num("MaxRows", 1), set = setNum("MaxRows", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Offset X", width = 300, min = -300, max = 300, step = 1,
+        tooltip = "Moves this group left or right within the frame.",
+        get = num("OffsetX", 0), set = setNum("OffsetX", false), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Offset Y", width = 300, min = -300, max = 300, step = 1,
+        tooltip = "Moves this group up or down within the frame.",
+        get = num("OffsetY", 0), set = setNum("OffsetY", false), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Stack Text Size", width = 300, min = 6, max = 30, step = 1,
+        tooltip = "Font size of the stack count on these icons.",
+        get = num("StackSize", 13), set = setNum("StackSize", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Stack Offset X", width = 300, min = -30, max = 30, step = 1,
+        tooltip = "Nudges the stack count horizontally within its icon.",
+        get = num("StackX", -1), set = setNum("StackX", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Stack Offset Y", width = 300, min = -30, max = 30, step = 1,
+        tooltip = "Nudges the stack count vertically within its icon.",
+        get = num("StackY", 1), set = setNum("StackY", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Countdown Text Size", width = 300, min = 6, max = 30, step = 1,
+        tooltip = "Font size of the countdown on these icons.",
+        get = num("CountdownSize", 12), set = setNum("CountdownSize", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Countdown Offset X", width = 300, min = -30, max = 30, step = 1,
+        tooltip = "Nudges the countdown horizontally within its icon.",
+        get = num("CountdownX", 0), set = setNum("CountdownX", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "slider", label = "Countdown Offset Y", width = 300, min = -30, max = 30, step = 1,
+        tooltip = "Nudges the countdown vertically within its icon.",
+        get = num("CountdownY", 0), set = setNum("CountdownY", true), disabled = disabled,
+    })
+
+    return used
+end
+
+-- Unlisted diagnostic.
 function BH:PrintCoTankDiagnostics()
     print("Squizzumables co-tank tracker:")
-    print("  enabled:", tostring(BH.settings and BH.settings.coTankEnabled))
+    print("  enabled:", tostring(S().coTankEnabled))
     if BH.coTankUnavailable then
         print("  |cffff6666AuraContainer could not be created on this client.|r")
     end
     if BH.coTankError then
         print("  last AddAuraGroup error:", BH.coTankError)
     end
+    print("  my role:", tostring(RoleOf("player")))
     local tanks = FindCoTanks()
     print(string.format("  co-tanks found: %d", #tanks))
     for _, unit in ipairs(tanks) do
-        -- SafeString for the print, unlike the display above: this is going
-        -- through string.format, which would throw on a secret.
+        -- SafeString here, unlike the display path: string.format would throw
+        -- on a secret.
         print(string.format("      %s (%s)", unit,
             BH.Secrets.SafeString(UnitName(unit), "<name hidden>")))
     end
     for i = 1, MAX_ROWS do
         local row = rows[i]
         if row then
-            print(string.format("      row %d: container=%s group=%s",
-                i, tostring(row.container ~= nil), tostring(row.groupAdded == true)))
+            print(string.format("      row %d: debuffs=%s/%s defensives=%s/%s",
+                i, tostring(row.debuffs ~= nil), tostring(row.debuffGroupAdded == true),
+                tostring(row.defensives ~= nil), tostring(row.defGroupAdded == true)))
         end
     end
 end

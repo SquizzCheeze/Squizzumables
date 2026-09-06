@@ -60,6 +60,8 @@ local ROW_H = {
     divider = 18,
     spacer  = 14,
     text    = 28,
+    -- Label above the field, like a dropdown, so it needs the same extra room.
+    editbox = 50,
 }
 Rows.HEIGHTS = ROW_H
 
@@ -136,7 +138,10 @@ end
 -- applied to that child or they do nothing at all. Buttons are their own
 -- interactive widget, so they are returned as-is.
 local function InteractiveOf(widget)
-    return widget.checkbox or widget.slider or widget.btn or widget
+    -- editBox included so a disabled edit-box row actually stops taking input
+    -- and its tooltip attaches to the field rather than the wrapper frame,
+    -- which has no mouse and would therefore never show one.
+    return widget.checkbox or widget.slider or widget.btn or widget.editBox or widget
 end
 
 local function AttachTooltip(widget, label, tooltip)
@@ -359,6 +364,54 @@ builders.text = function(parent, y, spec)
     -- Report the height this actually wrapped to. A fixed height meant a
     -- three-line description ran into whatever followed it.
     return fs, math.max(ROW_H.text, math.ceil(fs:GetStringHeight() + 14))
+end
+
+-- A labelled text field.
+--
+-- Commits on both Enter and losing focus, because committing on Enter alone is
+-- the 1.61 "Min" box bug: the value looks typed, the player clicks away, and it
+-- is silently discarded. Escape restores the stored value rather than leaving
+-- whatever half-edit was on screen.
+builders.editbox = function(parent, y, spec)
+    local holder = CreateFrame("Frame", nil, parent)
+    holder:SetSize(spec.width or 220, 42)
+
+    local label = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+    label:SetText(spec.label or "")
+    label:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+    local box = ns.CreateSQEditBox(holder, spec.width or 220, 20, {
+        numeric = spec.numeric,
+        maxLetters = spec.maxLetters,
+    })
+    box:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, -18)
+
+    local function Commit()
+        if spec.set then spec.set(box:GetText()) end
+        if spec.after then spec.after() end
+        Rows.RefreshAll()
+    end
+
+    box:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+        Commit()
+    end)
+    box:SetScript("OnEditFocusLost", Commit)
+    box:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+        if spec.get then self:SetText(spec.get() or "") end
+    end)
+
+    holder.editBox = box
+    return Finish(holder, parent, y, spec, function()
+        -- Never overwrite what is being typed. Refreshes fire from unrelated
+        -- rows, and pushing the stored value back mid-edit would delete the
+        -- half-typed entry under the caret.
+        if spec.get and not box:HasFocus() then
+            box:SetText(spec.get() or "")
+        end
+    end)
 end
 
 builders.divider = function(parent, y, spec)

@@ -99,16 +99,62 @@ BH.defaultSettings = {
     targetDistanceFriendly = false,     -- probes are harmful, so hostile only
     targetDistanceColor = { r = 1, g = 1, b = 1 },
 
-    -- Co-tank debuff tracker (Core/CoTank.lua). Off by default, like the other
+    -- Co-tank tracker (Core/CoTank.lua). Off by default, like the other
     -- persistent readouts.
     coTankEnabled = false,
-    coTankFilter = "boss",              -- "boss" | "all" | "dispel"
-    coTankIconSize = 32,
-    coTankMaxIcons = 8,
-    coTankShowName = true,
-    -- Preview replaces the live display while it is on, so it is a setting rather
-    -- than a transient: leaving it on by accident should be visible, not silent.
     coTankPreview = false,
+
+    -- Frame
+    coTankGrowth = "down",
+    coTankRowSpacing = 6,
+    coTankShowName = true,
+    coTankNameSize = 12,
+    coTankFont = nil,               -- LibSharedMedia name; nil = default font
+    coTankShowInParty = true,
+    coTankOnlyIfTank = false,
+    coTankNotify = false,
+
+    -- Shared icon look
+    coTankIconZoom = 7,             -- percent cropped from each edge
+    coTankBorderStyle = "border",   -- off | border | bordericon | icon
+    coTankShowSwipe = true,
+    coTankShowCountdown = true,
+    coTankShowStacks = true,
+    coTankStackColor = { r = 1, g = 1, b = 1 },
+    coTankCountdownColor = { r = 1, g = 0.82, b = 0 },
+
+    -- Debuffs group
+    coTankDebuffFilter = "boss",    -- boss | bossrole | important | dispel | all
+    coTankDebuffHidePermanent = true,
+    coTankDebuffSize = 32,
+    coTankDebuffSpacing = 2,
+    coTankDebuffPerRow = 8,
+    coTankDebuffMaxRows = 1,
+    coTankDebuffOffsetX = 0,
+    coTankDebuffOffsetY = 0,
+    coTankDebuffStackSize = 13,
+    coTankDebuffStackX = -1,
+    coTankDebuffStackY = 1,
+    coTankDebuffCountdownSize = 12,
+    coTankDebuffCountdownX = 0,
+    coTankDebuffCountdownY = 0,
+
+    -- Defensives group. Spell IDs ARE permitted for helpful auras on a friendly
+    -- unit, which is why this one is a list the player writes.
+    coTankDefEnabled = false,
+    coTankDefSpellIDs = "",
+    coTankDefSize = 24,
+    coTankDefSpacing = 2,
+    coTankDefPerRow = 6,
+    coTankDefMaxRows = 1,
+    coTankDefOffsetX = 0,
+    coTankDefOffsetY = 0,
+    coTankDefStackSize = 11,
+    coTankDefStackX = -1,
+    coTankDefStackY = 1,
+    coTankDefCountdownSize = 10,
+    coTankDefCountdownX = 0,
+    coTankDefCountdownY = 0,
 
     deathTallyEnabled = true,
     deathTallyLocked = false,
@@ -3037,6 +3083,8 @@ function BH:BuildRaidToolsTab(parent)
     ns.Rows.currentSection = content.section
     yOffset = -14
 
+    local function coTankOff() return not BH.settings.coTankEnabled end
+
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
         label = "Show Co-Tank Debuffs",
@@ -3052,94 +3100,268 @@ function BH:BuildRaidToolsTab(parent)
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "text",
-        label = "The game renders these icons itself, which is the only way an addon can show "
-            .. "another player's debuffs during a fight -- their aura data is hidden from addons "
-            .. "in combat, raids and Mythic+. That also means the game decides what may be shown: "
-            .. "picking out debuffs by name is not possible on a friendly target, so the filter "
-            .. "below is as narrow as it gets.",
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Show",
-        width = 180,
-        tooltip = "Which of the other tank's debuffs to show. Boss debuffs is usually what you want: "
-            .. "it is the one that separates tank busters from every minor effect in the room.",
-        items = BH.COTANK_FILTERS,
-        get = function() return BH.settings.coTankFilter or "boss" end,
-        set = function(value)
-            BH.settings.coTankFilter = value
-            BH:SaveSettings()
-            print("|cffffcc00Squizzumables:|r co-tank filter changed -- /reload to apply it.")
-        end,
-        disabled = function() return not BH.settings.coTankEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Co-Tank Icon Size",
-        width = 300, min = 16, max = 64, step = 1,
-        tooltip = "Size of each debuff icon.",
-        get = function() return BH.settings.coTankIconSize or 32 end,
-        set = function(value)
-            BH.settings.coTankIconSize = value
-            BH:SaveSettings()
-            -- The preview is ours to redraw, so it responds at once; the live
-            -- container was built with the old size and needs the reload.
-            BH:UpdateCoTank()
-            if not BH.settings.coTankPreview and not BH.unlockMode then
-                print("|cffffcc00Squizzumables:|r co-tank icon size changed -- /reload to apply it to the live display.")
-            end
-        end,
-        disabled = function() return not BH.settings.coTankEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Maximum Icons Per Tank",
-        width = 300, min = 1, max = 20, step = 1,
-        tooltip = "How many debuff icons to show for each tank before the rest are dropped.",
-        get = function() return BH.settings.coTankMaxIcons or 8 end,
-        set = function(value)
-            BH.settings.coTankMaxIcons = value
-            BH:SaveSettings()
-            BH:UpdateCoTank()
-            if not BH.settings.coTankPreview and not BH.unlockMode then
-                print("|cffffcc00Squizzumables:|r co-tank icon count changed -- /reload to apply it to the live display.")
-            end
-        end,
-        disabled = function() return not BH.settings.coTankEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show Tank Names",
-        tooltip = "Shows each tank's name above their row of debuffs.",
-        get = function() return BH.settings.coTankShowName ~= false end,
-        set = function(v)
-            BH.settings.coTankShowName = v
-            BH:SaveSettings()
-            BH:UpdateCoTank()
-        end,
-        disabled = function() return not BH.settings.coTankEnabled end,
+        label = "The game draws these icons itself, which is the only way an addon can show "
+            .. "another player's debuffs during a fight. It also decides what may be shown: "
+            .. "debuffs cannot be picked out by name on a friendly target, so the filter below "
+            .. "is as narrow as it gets. Defensives are the other way round -- those you list "
+            .. "yourself.",
     })
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
         label = "Preview Layout",
-        tooltip = "Shows sample icons so you can size and position the frame without needing a "
-            .. "group with another tank in it. These are placeholders, not real debuffs -- the "
-            .. "game will not hand out sample aura data to an addon, and while the preview is on "
-            .. "the real display is switched off so the two cannot overlap. Unlock Frames turns "
-            .. "this on by itself.",
+        tooltip = "Shows sample icons so you can size and position everything without a group. "
+            .. "These are placeholders, not real auras -- the game will not hand sample data to "
+            .. "an addon -- so while preview is on the live display is switched off and the two "
+            .. "cannot overlap. Unlock Frames turns this on by itself.",
         get = function() return BH.settings.coTankPreview and true or false end,
         set = function(v)
             BH.settings.coTankPreview = v
             BH:SaveSettings()
             BH:UpdateCoTank()
         end,
-        disabled = function() return not BH.settings.coTankEnabled end,
+        disabled = coTankOff,
     })
+
+    -- ===== FRAME =====
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "FRAME" })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown", label = "Grow Direction", width = 160,
+        tooltip = "Whether extra tanks stack below the first or above it.",
+        items = BH.COTANK_GROWTH,
+        get = function() return BH.settings.coTankGrowth or "down" end,
+        set = function(v) BH.settings.coTankGrowth = v BH:SaveSettings() BH:UpdateCoTank() end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider", label = "Spacing Between Tanks", width = 300, min = 0, max = 40, step = 1,
+        tooltip = "Gap between one tank's block of icons and the next tank's.",
+        get = function() return BH.settings.coTankRowSpacing or 6 end,
+        set = function(v) BH.settings.coTankRowSpacing = v BH:SaveSettings() BH:UpdateCoTank() end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Show Tank Names",
+        tooltip = "Shows each tank's name above their icons.",
+        get = function() return BH.settings.coTankShowName ~= false end,
+        set = function(v) BH.settings.coTankShowName = v BH:SaveSettings() BH:UpdateCoTank() end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider", label = "Name Text Size", width = 300, min = 6, max = 30, step = 1,
+        tooltip = "Font size of the tank names.",
+        get = function() return BH.settings.coTankNameSize or 12 end,
+        set = function(v) BH.settings.coTankNameSize = v BH:SaveSettings() BH:UpdateCoTank() end,
+        disabled = function() return coTankOff() or BH.settings.coTankShowName == false end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown", label = "Font", width = 200,
+        tooltip = "Font for the names, stack counts and countdowns. The list comes from "
+            .. "LibSharedMedia, so anything another addon has registered appears here.",
+        items = BH:BuildFontDropdownItems(),
+        get = function() return BH.settings.coTankFont or "__default" end,
+        set = function(v)
+            BH.settings.coTankFont = (v ~= "__default") and v or nil
+            BH:SaveSettings()
+            BH:UpdateCoTank()
+            BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    -- ===== VISIBILITY =====
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "VISIBILITY" })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Show in Parties",
+        tooltip = "Show in a five-player group as well as in a raid. Unticking makes it raid only.",
+        get = function() return BH.settings.coTankShowInParty ~= false end,
+        set = function(v) BH.settings.coTankShowInParty = v BH:SaveSettings() BH:UpdateCoTank() end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Only When I Am Tanking",
+        tooltip = "Only show while your own role is set to Tank.",
+        get = function() return BH.settings.coTankOnlyIfTank and true or false end,
+        set = function(v) BH.settings.coTankOnlyIfTank = v BH:SaveSettings() BH:UpdateCoTank() end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Warn About Extra Tanks",
+        tooltip = "Prints a note in chat when the group has more tanks than there are rows to show "
+            .. "them in, so a missing tank is explained rather than simply absent.",
+        get = function() return BH.settings.coTankNotify and true or false end,
+        set = function(v) BH.settings.coTankNotify = v BH:SaveSettings() end,
+        disabled = coTankOff,
+    })
+
+    -- ===== ICON LOOK =====
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "ICON LOOK" })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown", label = "Border By Debuff Type", width = 200,
+        tooltip = "Puts a border around each icon coloured by dispel type -- magic, curse, disease, "
+            .. "poison. The game picks the colour; this chooses which of its looks to use.",
+        items = BH.COTANK_BORDER_STYLES,
+        get = function() return BH.settings.coTankBorderStyle or "border" end,
+        set = function(v)
+            BH.settings.coTankBorderStyle = v
+            BH:SaveSettings()
+            BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider", label = "Icon Zoom %", width = 300, min = 0, max = 25, step = 1,
+        tooltip = "How much of each icon's art is cropped from the edges.",
+        get = function() return BH.settings.coTankIconZoom or 7 end,
+        set = function(v)
+            BH.settings.coTankIconZoom = v
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Show Cooldown Swipe",
+        tooltip = "The darkened sweep across each icon as the aura runs down.",
+        get = function() return BH.settings.coTankShowSwipe ~= false end,
+        set = function(v) BH.settings.coTankShowSwipe = v BH:SaveSettings() BH:CoTankNeedsReload() end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Show Countdown",
+        tooltip = "The remaining time as a number on each icon.",
+        get = function()
+            return BH.settings.coTankShowCountdown ~= false
+        end,
+        set = function(v)
+            BH.settings.coTankShowCountdown = v
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "color", label = "Countdown Colour",
+        tooltip = "Colour of the countdown numbers.",
+        get = function()
+            local c = BH.settings.coTankCountdownColor or {}
+            return c.r or 1, c.g or 0.82, c.b or 0
+        end,
+        set = function(r, g, b)
+            BH.settings.coTankCountdownColor = { r = r, g = g, b = b }
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Show Stacks",
+        tooltip = "The stack count on each icon. This is usually the reason for watching another "
+            .. "tank at all.",
+        get = function()
+            return BH.settings.coTankShowStacks ~= false
+        end,
+        set = function(v)
+            BH.settings.coTankShowStacks = v
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "color", label = "Stack Colour",
+        tooltip = "Colour of the stack counts.",
+        get = function()
+            local c = BH.settings.coTankStackColor or {}
+            return c.r or 1, c.g or 1, c.b or 1
+        end,
+        set = function(r, g, b)
+            BH.settings.coTankStackColor = { r = r, g = g, b = b }
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    -- ===== DEBUFFS =====
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "DEBUFFS" })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown", label = "Show", width = 200,
+        tooltip = "Which of the other tank's debuffs to show. Boss debuffs is usually what you "
+            .. "want: it separates tank busters from every minor effect in the room.",
+        items = BH.COTANK_DEBUFF_FILTERS,
+        get = function() return BH.settings.coTankDebuffFilter or "boss" end,
+        set = function(v)
+            BH.settings.coTankDebuffFilter = v
+            BH:SaveSettings() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Hide Permanent Debuffs",
+        tooltip = "Hides auras with no duration, which are almost never what you are watching for.",
+        get = function() return BH.settings.coTankDebuffHidePermanent ~= false end,
+        set = function(v)
+            BH.settings.coTankDebuffHidePermanent = v
+            BH:SaveSettings() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - BH:AddCoTankGroupRows(content, yOffset, "coTankDebuff", coTankOff, 64)
+
+    -- ===== DEFENSIVES =====
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "DEFENSIVES" })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Show Defensives",
+        tooltip = "A second row showing the other tank's active defensive cooldowns.",
+        get = function() return BH.settings.coTankDefEnabled and true or false end,
+        set = function(v)
+            BH.settings.coTankDefEnabled = v
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = coTankOff,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "text",
+        label = "Buffs on a friendly target CAN be matched by spell ID, unlike debuffs, so this "
+            .. "one is a list you write. Enter the spell IDs of the defensives you care about, "
+            .. "separated by spaces or commas. Left empty nothing is shown, because every buff a "
+            .. "tank happens to have would be noise rather than a defensives tracker.",
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "editbox", label = "Defensive Spell IDs", width = 320,
+        tooltip = "For example: 871 1160 12975 -- Shield Wall, Demoralizing Shout, Last Stand.",
+        get = function() return BH.settings.coTankDefSpellIDs or "" end,
+        set = function(v)
+            BH.settings.coTankDefSpellIDs = v
+            BH:SaveSettings() BH:CoTankNeedsReload()
+        end,
+        disabled = function() return coTankOff() or not BH.settings.coTankDefEnabled end,
+    })
+
+    yOffset = yOffset - BH:AddCoTankGroupRows(content, yOffset, "coTankDef",
+        function() return coTankOff() or not BH.settings.coTankDefEnabled end, 48)
 
     -- Sub-tab boundary: size the page just finished, then move to the next.
     content:SetHeight(math.abs(yOffset) + 20)
@@ -3298,6 +3520,20 @@ end
 -- Expose as a BH method so other files can build the list
 function BH:BuildSoundDropdownItems()
     return BuildSoundDropdownItems()
+end
+
+--- Fonts, from LibSharedMedia, with the addon's own default first.
+---
+--- "__default" rather than nil as the sentinel: a dropdown cannot hold nil as a
+--- value, and an empty string would be indistinguishable from an unset setting.
+function BH:BuildFontDropdownItems()
+    local items = { { text = "Default", value = "__default" } }
+    local lsm = GetLSM()
+    if not lsm then return items end
+    for _, name in ipairs(lsm:List("font") or {}) do
+        items[#items + 1] = { text = name, value = name }
+    end
+    return items
 end
 
 -- Plays the named sound via LSM, or falls back to a built-in sound kit.

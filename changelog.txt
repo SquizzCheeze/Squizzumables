@@ -14,10 +14,24 @@ V1.71
   unselected sub-tab, which looks exactly like search being broken
 - The headings and dividers that used to separate those sections are gone,
   since the sub-tab already names them
-- New Co-Tank tracker under Raid Tools: the debuffs on the other tank (or tanks)
-  in your group, with their stack counts, in a movable frame. Off by default.
-  Icon size, how many icons, and whether to show each tank's name are all
-  configurable, and you position it with Unlock Frames like anything else
+- New Co-Tank tracker under Raid Tools: the debuffs and defensives on the other
+  tank (or tanks) in your group, with stack counts and countdowns, in a movable
+  frame. Off by default, positioned with Unlock Frames like anything else
+- Nearly every part of it is adjustable. Frame: grow up or down, spacing between
+  tanks, whether names show, name size, and the font for all of it (any font
+  another addon has registered shows up in the list). Icons: zoom, cooldown
+  swipe on or off, countdown and stack text with their own size, offsets and
+  colours, and a border coloured by the debuff's dispel type in any of the
+  game's three styles. Debuffs and defensives each get their own size, spacing,
+  icons per row, maximum rows and position offset, so the two rows can look
+  completely different
+- Visibility options: show in five-player groups or raid only, only show while
+  you are tanking, and a warning in chat when the group has more tanks than
+  there are rows to show
+- Defensives are a list you write, unlike debuffs. The game permits matching
+  buffs by spell ID on a friendly target but not debuffs, so this one takes the
+  spell IDs of whichever cooldowns you care about -- which also means it never
+  goes stale the way a shipped list of every tank cooldown would
 - The game draws those icons itself rather than this addon drawing them. That is
   the only way it can work: another player's aura data is hidden from addons in
   combat, raids and Mythic+, which is exactly when you want to watch the other
@@ -48,6 +62,13 @@ V1.71
   currently reports, so it follows talents that extend a spell's range without
   being told. A short list of fixed-range items fills the gaps your class leaves
   -- a melee spec has few long rungs and a caster few short ones
+- Fixed the target distance readout logging a blocked-action error over and over.
+  Part of how it measures distance is asking whether certain items would reach,
+  and the game refuses that question in combat about anyone you cannot attack.
+  The refusal is not an error, so nothing broke visibly -- it just filled the
+  error log, several times a second. Those checks are now skipped when the game
+  would refuse them, which leaves a slightly wider estimate on a friendly target
+  mid-fight and no error at all
 - Friendly targets are off by default and will often read "?" when switched on,
   since the estimate is built from harmful spells and items and those refuse to
   answer about a friendly unit
