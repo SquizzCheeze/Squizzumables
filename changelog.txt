@@ -28,10 +28,17 @@ V1.71
 - Visibility options: show in five-player groups or raid only, only show while
   you are tanking, and a warning in chat when the group has more tanks than
   there are rows to show
-- Defensives are a list you write, unlike debuffs. The game permits matching
-  buffs by spell ID on a friendly target but not debuffs, so this one takes the
-  spell IDs of whichever cooldowns you care about -- which also means it never
-  goes stale the way a shipped list of every tank cooldown would
+- Defensives are a tick list, unlike debuffs. The game permits matching buffs by
+  spell ID on a friendly target but not debuffs, so every tank spec's cooldowns
+  are listed by class -- Warrior, Paladin, Death Knight, Druid, Monk and Demon
+  Hunter -- and you tick the ones you want to see. There is also a box for extra
+  spell IDs the list does not cover
+- Each entry is labelled with the name the game itself returns for that spell,
+  so anything that has been changed or removed in a patch shows as "unknown" in
+  the options rather than quietly never appearing
+- Stack counts and countdowns now have a position dropdown -- the same nine
+  points the Cooldown Manager uses -- with the offset sliders left as a nudge
+  from there, rather than being the only way to move text across an icon
 - The game draws those icons itself rather than this addon drawing them. That is
   the only way it can work: another player's aura data is hidden from addons in
   combat, raids and Mythic+, which is exactly when you want to watch the other

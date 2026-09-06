@@ -33,10 +33,10 @@
 --     canApplyAura, dispel type, maxDuration. So the debuff filter is a set of
 --     presets and cannot be a hand-picked list, however much one might want it.
 --
---   * DEFENSIVES (helpful, assistable) -> spell IDs PERMITTED. So the
---     defensives list IS a list of spell IDs, and the player writes it. That is
---     better than shipping a table of every tank cooldown per class: it would
---     rot every patch, and the player knows which two or three they care about.
+--   * DEFENSIVES (helpful, assistable) -> spell IDs PERMITTED. So this one is a
+--     whitelist: a built-in list of every tank spec's cooldowns to tick on and
+--     off, plus a free-text box for anything else. Confirmed against the
+--     enforcement rather than that comment -- see DefensiveCandidateFilters.
 --
 -- OTHER THINGS THAT ARE NOT OBVIOUS
 --
@@ -124,25 +124,80 @@ local function DebuffCandidateFilters()
     return f
 end
 
--- Parse the user's defensive spell ID list into the map Blizzard wants.
+-- Build the map of permitted defensive spell IDs.
 --
--- includeSpellIDs is a MAP of permitted ids, not an array -- an array would
--- silently match nothing, since the lookup is by key.
+-- Confirmed against the enforcement rather than the comment above it:
+-- AuraContainerUtil.CanApplyIdentityCandidateFilters returns true for
+-- "auraData.isHelpful and UnitIsPlayerControlledOrGroupMember(unitToken)", and
+-- a co-tank is a group member. So this genuinely filters.
+--
+-- Worth knowing the failure mode on the other side: for a HARMFUL aura on an
+-- assistable unit the same function returns false, which SKIPS the spell ID
+-- filters rather than rejecting the aura. Offering a debuff whitelist would
+-- therefore have shown everything while looking like it was filtering.
+--
+-- includeSpellIDs is a MAP keyed by id, not an array. An array silently matches
+-- nothing, since the lookup is `includeSpellIDs[auraData.spellId]`.
 local function DefensiveCandidateFilters()
-    local raw = S().coTankDefSpellIDs
-    if type(raw) ~= "string" or raw:match("^%s*$") then
-        -- No list means no whitelist, which for helpful auras on another player
-        -- would be every buff they have. Show nothing instead: an unfiltered
-        -- buff list is noise, not a defensives tracker.
-        return { includeSpellIDs = {} }
+    local s = S()
+    local ids = {}
+    local any = false
+
+    for id in pairs(s.coTankDefSelected or {}) do
+        if type(id) == "number" and s.coTankDefSelected[id] then
+            ids[id] = true
+            any = true
+        end
     end
 
-    local ids = {}
-    for token in raw:gmatch("[%d]+") do
-        local id = tonumber(token)
-        if id then ids[id] = true end
+    -- Free-text extras, for anything not on the built-in list.
+    local raw = s.coTankDefSpellIDs
+    if type(raw) == "string" then
+        for token in raw:gmatch("%d+") do
+            local id = tonumber(token)
+            if id then ids[id] = true any = true end
+        end
     end
+
+    -- An empty whitelist shows nothing, which is deliberate. Passing no filter
+    -- at all would show every buff the tank happens to carry -- food, flasks,
+    -- raid buffs -- which is noise rather than a defensives tracker.
+    if not any then return { includeSpellIDs = {} } end
     return { includeSpellIDs = ids }
+end
+
+--- The built-in defensives for one class, or every class.
+---
+--- Names are resolved live from the client rather than trusted from the table,
+--- so an id that has been changed or removed shows as "Unknown" in the options
+--- instead of silently never matching. That is the whole reason the list is
+--- presented by name.
+function BH:GetTankDefensives(classFile)
+    local all = (BH.defaults and BH.defaults.tankDefensives) or {}
+    local out = {}
+    for _, entry in ipairs(all[classFile] or {}) do
+        local name = C_Spell.GetSpellName and C_Spell.GetSpellName(entry.spellID)
+        name = BH.Secrets.SafeString(name, nil)
+        out[#out + 1] = {
+            spellID = entry.spellID,
+            label   = entry.label,
+            known   = name ~= nil,
+            name    = name or (entry.label .. " (unknown)"),
+        }
+    end
+    return out
+end
+
+--- Class list for the defensives picker, in a stable order.
+function BH:GetTankDefensiveClasses()
+    local all = (BH.defaults and BH.defaults.tankDefensives) or {}
+    local names = BH.CLASS_NAMES or {}
+    local out = {}
+    for classFile in pairs(all) do
+        out[#out + 1] = { text = names[classFile] or classFile, value = classFile }
+    end
+    table.sort(out, function(a, b) return a.text < b.text end)
+    return out
 end
 
 -- ============================================================================
@@ -247,7 +302,7 @@ local function MakeInitializer(kind)
             local dur = button:CreateFontString(nil, "OVERLAY")
             dur:SetFont(BH:CoTankFontPath(),
                 s[pre .. "CountdownSize"] or math.max(8, size * 0.38), "OUTLINE")
-            dur:SetPoint("CENTER", button, "CENTER",
+            ns.PlaceText(dur, button, s[pre .. "CountdownAnchor"] or "CENTER",
                 s[pre .. "CountdownX"] or 0, s[pre .. "CountdownY"] or 0)
             local c = s.coTankCountdownColor or {}
             dur:SetTextColor(c.r or 1, c.g or 0.82, c.b or 0)
@@ -260,7 +315,7 @@ local function MakeInitializer(kind)
             local cnt = button:CreateFontString(nil, "OVERLAY")
             cnt:SetFont(BH:CoTankFontPath(),
                 s[pre .. "StackSize"] or math.max(8, size * 0.42), "OUTLINE")
-            cnt:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT",
+            ns.PlaceText(cnt, button, s[pre .. "StackAnchor"] or "BOTTOMRIGHT",
                 s[pre .. "StackX"] or -1, s[pre .. "StackY"] or 1)
             local c = s.coTankStackColor or {}
             cnt:SetTextColor(c.r or 1, c.g or 1, c.b or 1)
@@ -369,7 +424,7 @@ local function UpdatePreviewGroup(row, kind, anchorY)
         pi.count:ClearAllPoints()
         pi.count:SetFont(BH:CoTankFontPath(),
             s[pre .. "StackSize"] or math.max(8, size * 0.42), "OUTLINE")
-        pi.count:SetPoint("BOTTOMRIGHT", pi, "BOTTOMRIGHT",
+        ns.PlaceText(pi.count, pi, s[pre .. "StackAnchor"] or "BOTTOMRIGHT",
             s[pre .. "StackX"] or -1, s[pre .. "StackY"] or 1)
         local sc = s.coTankStackColor or {}
         pi.count:SetTextColor(sc.r or 1, sc.g or 1, sc.b or 1)
@@ -380,7 +435,7 @@ local function UpdatePreviewGroup(row, kind, anchorY)
         pi.dur:ClearAllPoints()
         pi.dur:SetFont(BH:CoTankFontPath(),
             s[pre .. "CountdownSize"] or math.max(8, size * 0.38), "OUTLINE")
-        pi.dur:SetPoint("CENTER", pi, "CENTER",
+        ns.PlaceText(pi.dur, pi, s[pre .. "CountdownAnchor"] or "CENTER",
             s[pre .. "CountdownX"] or 0, s[pre .. "CountdownY"] or 0)
         local cc = s.coTankCountdownColor or {}
         pi.dur:SetTextColor(cc.r or 1, cc.g or 0.82, cc.b or 0)
@@ -748,6 +803,61 @@ function BH:CoTankNeedsReload()
         .. "the live display. Preview Layout shows them straight away.")
 end
 
+--- The defensives picker: a class to look at, then a tick per cooldown.
+---
+--- Every tank spec listed under its own heading, rather than one class at a
+--- time behind a picker. A picker would have to rebuild the page on each change
+--- -- these are real rows at fixed offsets, not a list that can be re-filtered
+--- -- and the options panel has no rebuild for this tab. Headings also mean
+--- search finds "Ardent Defender" without knowing which class it belongs to.
+---
+--- Each row is labelled with the name the CLIENT returns for that spell ID, not
+--- the name in our table. An id that has been changed or removed therefore
+--- reads "(unknown)" here rather than silently never matching -- which is the
+--- failure this list would otherwise have, since a wrong id and a cooldown the
+--- tank never pressed look identical on screen.
+function BH:AddCoTankDefensiveRows(content, yOffset, disabled)
+    local used = 0
+    local Rows = ns.Rows
+
+    for _, class in ipairs(self:GetTankDefensiveClasses()) do
+        used = used + Rows.Add(content, yOffset - used, {
+            type = "header", label = class.text:upper(),
+        })
+
+        for _, def in ipairs(self:GetTankDefensives(class.value)) do
+            used = used + Rows.Add(content, yOffset - used, {
+                type = "check",
+                label = def.name,
+                indent = 28,
+                tooltip = def.known
+                    and ("Spell ID " .. def.spellID
+                         .. ". Shown on the co-tank's row while it is active.")
+                    or ("Spell ID " .. def.spellID .. " is not recognised by this client -- it "
+                        .. "has probably been changed or removed, and ticking it will show "
+                        .. "nothing."),
+                get = function()
+                    local sel = BH.settings.coTankDefSelected
+                    return sel and sel[def.spellID] and true or false
+                end,
+                set = function(v)
+                    BH.settings.coTankDefSelected = BH.settings.coTankDefSelected or {}
+                    -- nil rather than false when unticked, so the saved table
+                    -- holds only what is on. DefensiveCandidateFilters counts
+                    -- keys to decide whether a whitelist exists at all, and a
+                    -- table full of falses would read as "something is ticked".
+                    BH.settings.coTankDefSelected[def.spellID] = v or nil
+                    BH:SaveSettings()
+                    BH:CoTankNeedsReload()
+                end,
+                disabled = disabled,
+            })
+        end
+    end
+
+    return used
+end
+
 --- The block of size/layout/text rows a group needs, built once and reused for
 --- both Debuffs and Defensives.
 ---
@@ -813,6 +923,21 @@ function BH:AddCoTankGroupRows(content, yOffset, prefix, disabled, maxSize)
         get = num("StackSize", 13), set = setNum("StackSize", true), disabled = disabled,
     })
 
+    -- Anchor plus offset rather than offset alone. Nine named corners get you
+    -- to the right area in one pick; the sliders are then a nudge from there,
+    -- instead of being the only way to cross the whole icon.
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "dropdown", label = "Stack Position", width = 160,
+        tooltip = "Which corner of the icon the stack count sits in.",
+        items = ns.TEXT_POSITION_ITEMS,
+        get = function() return BH.settings[prefix .. "StackAnchor"] or "BOTTOMRIGHT" end,
+        set = function(v)
+            BH.settings[prefix .. "StackAnchor"] = v
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = disabled,
+    })
+
     used = used + Rows.Add(content, yOffset - used, {
         type = "slider", label = "Stack Offset X", width = 300, min = -30, max = 30, step = 1,
         tooltip = "Nudges the stack count horizontally within its icon.",
@@ -829,6 +954,18 @@ function BH:AddCoTankGroupRows(content, yOffset, prefix, disabled, maxSize)
         type = "slider", label = "Countdown Text Size", width = 300, min = 6, max = 30, step = 1,
         tooltip = "Font size of the countdown on these icons.",
         get = num("CountdownSize", 12), set = setNum("CountdownSize", true), disabled = disabled,
+    })
+
+    used = used + Rows.Add(content, yOffset - used, {
+        type = "dropdown", label = "Countdown Position", width = 160,
+        tooltip = "Where on the icon the countdown sits.",
+        items = ns.TEXT_POSITION_ITEMS,
+        get = function() return BH.settings[prefix .. "CountdownAnchor"] or "CENTER" end,
+        set = function(v)
+            BH.settings[prefix .. "CountdownAnchor"] = v
+            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
+        end,
+        disabled = disabled,
     })
 
     used = used + Rows.Add(content, yOffset - used, {

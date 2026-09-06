@@ -174,3 +174,74 @@ BH.defaults = {
         },
     }
 }
+
+-- ============================================================================
+-- Tank defensives, for the co-tank tracker (Core/CoTank.lua)
+--
+-- These are AURA spell IDs -- the id of the buff that appears on the tank, not
+-- the id of the spell they pressed. The two differ often enough that it is the
+-- likeliest thing to be wrong here: Fortifying Brew is cast as 115203 and lands
+-- as 431917, and an id that is merely the cast will silently match nothing.
+--
+-- The tracker resolves each id to a name for its checkbox list, so anything
+-- that has gone stale shows as "Unknown" in the options rather than quietly
+-- never appearing. That is the check to run after a patch, and the reason the
+-- list is shown by name rather than by number.
+--
+-- Only the six tank specs are listed, and only cooldowns worth another tank
+-- watching for -- not every passive or minor mitigation buff, which would make
+-- the list unreadable and the display useless.
+-- ============================================================================
+BH.defaults = BH.defaults or {}
+BH.defaults.tankDefensives = {
+    WARRIOR = {
+        { spellID = 871,    label = "Shield Wall" },
+        { spellID = 12975,  label = "Last Stand" },
+        { spellID = 1160,   label = "Demoralizing Shout" },
+        { spellID = 23920,  label = "Spell Reflection" },
+        { spellID = 2565,   label = "Shield Block" },
+        { spellID = 190456, label = "Ignore Pain" },
+        { spellID = 97462,  label = "Rallying Cry" },
+    },
+    PALADIN = {
+        { spellID = 31850,  label = "Ardent Defender" },
+        { spellID = 86659,  label = "Guardian of Ancient Kings" },
+        { spellID = 642,    label = "Divine Shield" },
+        { spellID = 498,    label = "Divine Protection" },
+        { spellID = 132403, label = "Shield of the Righteous" },
+        { spellID = 204018, label = "Blessing of Spellwarding" },
+        { spellID = 1022,   label = "Blessing of Protection" },
+    },
+    DEATHKNIGHT = {
+        { spellID = 48792,  label = "Icebound Fortitude" },
+        { spellID = 55233,  label = "Vampiric Blood" },
+        { spellID = 81256,  label = "Dancing Rune Weapon" },
+        { spellID = 48707,  label = "Anti-Magic Shell" },
+        { spellID = 195181, label = "Bone Shield" },
+        { spellID = 194679, label = "Rune Tap" },
+        { spellID = 49039,  label = "Lichborne" },
+    },
+    DRUID = {
+        { spellID = 61336,  label = "Survival Instincts" },
+        { spellID = 22812,  label = "Barkskin" },
+        { spellID = 22842,  label = "Frenzied Regeneration" },
+        { spellID = 192081, label = "Ironfur" },
+        { spellID = 200851, label = "Rage of the Sleeper" },
+        { spellID = 155835, label = "Bristling Fur" },
+    },
+    MONK = {
+        { spellID = 115176, label = "Zen Meditation" },
+        { spellID = 122278, label = "Dampen Harm" },
+        { spellID = 122783, label = "Diffuse Magic" },
+        { spellID = 322507, label = "Celestial Brew" },
+        { spellID = 115203, label = "Fortifying Brew" },
+        { spellID = 195630, label = "Elusive Brawler" },
+    },
+    DEMONHUNTER = {
+        { spellID = 187827, label = "Metamorphosis" },
+        { spellID = 203819, label = "Demon Spikes" },
+        { spellID = 207744, label = "Fiery Brand" },
+        { spellID = 196718, label = "Darkness" },
+        { spellID = 212800, label = "Blur" },
+    },
+}

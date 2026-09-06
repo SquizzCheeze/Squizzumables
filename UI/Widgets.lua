@@ -622,6 +622,42 @@ end
 -- Exports
 -- ============================================================================
 
+-- ============================================================================
+-- Nine-point text placement
+--
+-- Lived as file-locals in the Cooldown Manager, where the keybind, charge count
+-- and countdown all share it. The co-tank tracker wants the same nine positions
+-- for its stack and countdown text, so it moved here rather than being copied
+-- -- a second list of the same nine strings is exactly the kind of duplicate
+-- that drifts and then disagrees about what "Centre" is called.
+-- ============================================================================
+
+local TEXT_POSITION_ITEMS = {
+    { text = "Top Left",      value = "TOPLEFT" },
+    { text = "Top",           value = "TOP" },
+    { text = "Top Right",     value = "TOPRIGHT" },
+    { text = "Left",          value = "LEFT" },
+    { text = "Centre",        value = "CENTER" },
+    { text = "Right",         value = "RIGHT" },
+    { text = "Bottom Left",   value = "BOTTOMLEFT" },
+    { text = "Bottom",        value = "BOTTOM" },
+    { text = "Bottom Right",  value = "BOTTOMRIGHT" },
+}
+
+--- Anchor `region` to the same point on `frame`, plus an offset.
+---
+--- Point-to-matching-point is deliberate: anchoring TOPRIGHT to TOPRIGHT keeps
+--- the text inside the icon at every position, where anchoring everything to
+--- CENTER would push it outside as soon as the point moved off centre.
+local function PlaceText(region, frame, point, ox, oy)
+    if not region then return end
+    region:ClearAllPoints()
+    region:SetPoint(point or "CENTER", frame, point or "CENTER", ox or 0, oy or 0)
+end
+
+ns.TEXT_POSITION_ITEMS = TEXT_POSITION_ITEMS
+ns.PlaceText           = PlaceText
+
 ns.SQ_COLORS           = SQ_COLORS
 ns.ApplySQBackdrop     = ApplySQBackdrop
 ns.SQ_GetClickEdge     = SQ_GetClickEdge

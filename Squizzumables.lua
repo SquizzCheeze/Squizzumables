@@ -133,15 +133,21 @@ BH.defaultSettings = {
     coTankDebuffOffsetX = 0,
     coTankDebuffOffsetY = 0,
     coTankDebuffStackSize = 13,
+    coTankDebuffStackAnchor = "BOTTOMRIGHT",
     coTankDebuffStackX = -1,
     coTankDebuffStackY = 1,
     coTankDebuffCountdownSize = 12,
+    coTankDebuffCountdownAnchor = "CENTER",
     coTankDebuffCountdownX = 0,
     coTankDebuffCountdownY = 0,
 
     -- Defensives group. Spell IDs ARE permitted for helpful auras on a friendly
-    -- unit, which is why this one is a list the player writes.
+    -- unit -- confirmed against the enforcement, not just the doc comment -- so
+    -- this one is a whitelist of built-ins plus free-text extras.
     coTankDefEnabled = false,
+    -- Ticked-on built-ins, keyed by aura spell ID. The free-text box below is
+    -- for anything the built-in list does not cover.
+    coTankDefSelected = {},
     coTankDefSpellIDs = "",
     coTankDefSize = 24,
     coTankDefSpacing = 2,
@@ -150,9 +156,11 @@ BH.defaultSettings = {
     coTankDefOffsetX = 0,
     coTankDefOffsetY = 0,
     coTankDefStackSize = 11,
+    coTankDefStackAnchor = "BOTTOMRIGHT",
     coTankDefStackX = -1,
     coTankDefStackY = 1,
     coTankDefCountdownSize = 10,
+    coTankDefCountdownAnchor = "CENTER",
     coTankDefCountdownX = 0,
     coTankDefCountdownY = 0,
 
@@ -3344,20 +3352,30 @@ function BH:BuildRaidToolsTab(parent)
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "text",
         label = "Buffs on a friendly target CAN be matched by spell ID, unlike debuffs, so this "
-            .. "one is a list you write. Enter the spell IDs of the defensives you care about, "
-            .. "separated by spaces or commas. Left empty nothing is shown, because every buff a "
-            .. "tank happens to have would be noise rather than a defensives tracker.",
+            .. "one is a list. Tick the cooldowns you want to see below. Nothing ticked means "
+            .. "nothing shown, because every buff a tank happens to carry would be noise rather "
+            .. "than a defensives tracker.",
     })
 
+    local coTankDefOff = function()
+        return coTankOff() or not BH.settings.coTankDefEnabled
+    end
+
+    yOffset = yOffset - BH:AddCoTankDefensiveRows(content, yOffset, coTankDefOff)
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "editbox", label = "Defensive Spell IDs", width = 320,
-        tooltip = "For example: 871 1160 12975 -- Shield Wall, Demoralizing Shout, Last Stand.",
+        type = "editbox", label = "Extra Spell IDs", width = 320,
+        tooltip = "Anything the list above does not cover, as spell IDs separated by spaces or "
+            .. "commas. These are the IDs of the BUFF that lands, which is often not the id of "
+            .. "the spell that was cast.",
         get = function() return BH.settings.coTankDefSpellIDs or "" end,
         set = function(v)
             BH.settings.coTankDefSpellIDs = v
             BH:SaveSettings() BH:CoTankNeedsReload()
         end,
-        disabled = function() return coTankOff() or not BH.settings.coTankDefEnabled end,
+        disabled = coTankDefOff,
     })
 
     yOffset = yOffset - BH:AddCoTankGroupRows(content, yOffset, "coTankDef",

@@ -1717,17 +1717,9 @@ end
 -- countdown so all three offer the same nine positions and the same offsets.
 -- ============================================================================
 
-local TEXT_POSITION_ITEMS = {
-    { text = "Top Left",      value = "TOPLEFT" },
-    { text = "Top",           value = "TOP" },
-    { text = "Top Right",     value = "TOPRIGHT" },
-    { text = "Left",          value = "LEFT" },
-    { text = "Centre",        value = "CENTER" },
-    { text = "Right",         value = "RIGHT" },
-    { text = "Bottom Left",   value = "BOTTOMLEFT" },
-    { text = "Bottom",        value = "BOTTOM" },
-    { text = "Bottom Right",  value = "BOTTOMRIGHT" },
-}
+-- Moved to UI/Widgets.lua when the co-tank tracker wanted the same nine
+-- positions. One list rather than two that can drift apart.
+local TEXT_POSITION_ITEMS = ns.TEXT_POSITION_ITEMS
 
 -- A backdrop behind the whole group, distinct from the per-icon background.
 --
@@ -1755,11 +1747,7 @@ end
 
 -- Anchor point to itself, so a corner tucks into that corner and the offsets
 -- read the same way whichever corner is chosen.
-local function PlaceText(region, frame, point, ox, oy)
-    if not region then return end
-    region:ClearAllPoints()
-    region:SetPoint(point or "CENTER", frame, point or "CENTER", ox or 0, oy or 0)
-end
+local PlaceText = ns.PlaceText
 
 -- Blizzard's countdown numbers live on a font string the C widget creates, with
 -- no accessor for it, so it has to be found among the regions. Cached per
