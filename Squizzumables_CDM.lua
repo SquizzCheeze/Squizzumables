@@ -106,6 +106,45 @@ cdmModule.knownBuffCooldowns = {}
 -- Per-cooldown sound state trackers for spells NOT in a named group
 cdmModule.soundTrackers = {}
 
+-- ============================================================================
+-- Per-frame state for BLIZZARD-OWNED frames.
+--
+-- NEVER write a field onto a Blizzard frame. Assigning to its table from addon
+-- code taints the table, and from then on Blizzard's own scripts running on
+-- that frame execute tainted -- which is fatal now rather than merely risky,
+-- because 12.1 gave those frames secure members that refuse tainted access.
+--
+-- The symptom is a Blizzard-side error naming us with no Squizzumables frame in
+-- the traceback at all:
+--
+--   CooldownViewer.lua:1865: attempted to index a table that cannot be accessed
+--   while tainted (execution tainted by 'Squizzumables')
+--       in function 'CheckAuraAddedAlertTriggers'
+--
+-- That is Blizzard's UNIT_AURA handler failing to read its own
+-- auraInstanceIDToItemFramesMap, which OnLoad builds with
+-- CreateSecureAuraInstanceMap(). Nothing of ours is on the stack; the taint came
+-- from a dozen `viewer._sqDimmed = true`-style bookkeeping fields written
+-- earlier by the viewer-hiding code. Buff alerts on the tracked-buff viewer
+-- break for the rest of the session.
+--
+-- So the bookkeeping lives here instead, keyed by frame. Weak keys, so a frame
+-- Blizzard drops is not held alive by our table.
+--
+-- Our OWN frames are unaffected and keep their fields directly -- proxy._sqMask
+-- and the rest are on tables we created and already own.
+-- ============================================================================
+local blizzFrameState = setmetatable({}, { __mode = "k" })
+
+local function BS(frame)
+    local t = blizzFrameState[frame]
+    if not t then
+        t = {}
+        blizzFrameState[frame] = t
+    end
+    return t
+end
+
 -- Spec key for per-spec saves
 local function GetSpecKey()
     local _, _, classID = UnitClass("player")
@@ -591,8 +630,8 @@ local function HookBlizzardAlertEvents()
         if viewer then
             ForEachViewerItem(viewer, function(child)
                 if child and child.cooldownID and child.TriggerAlertEvent
-                   and not child._sqzAlertHooked then
-                    child._sqzAlertHooked = true
+                   and not BS(child).alertHooked then
+                    BS(child).alertHooked = true
                     hooksecurefunc(child, "TriggerAlertEvent", function(item, event)
                         -- Read the ID off the item rather than closing over it:
                         -- pooled frames get recycled onto other cooldowns.
@@ -604,10 +643,10 @@ local function HookBlizzardAlertEvents()
                     end)
                 end
                 -- Refreshed every sweep, not just when the hook is first
-                -- installed: a recycled frame carries _sqzAlertHooked with it
+                -- installed: a recycled frame carries its hooked tag with it
                 -- onto a different cooldown, so recording ownership only at
                 -- hook time left the new cooldown looking poll-driven.
-                if child and child.cooldownID and child._sqzAlertHooked then
+                if child and child.cooldownID and BS(child).alertHooked then
                     cdmModule.hookDrivenCooldowns[child.cooldownID] = true
                     -- Keep a handle on the live item frame. Blizzard writes its
                     -- own computed cooldown state onto these (cooldownIsActive,
@@ -654,7 +693,7 @@ end
 -- viewer-item cooldown read both answer for the wrong cooldown. The entry looks
 -- perfectly valid; it is just describing the spec you are no longer in.
 --
--- Deliberately does NOT clear the _sqzAlertHooked / _sqzBuffHooked frame tags.
+-- Deliberately does NOT clear the alertHooked / buffHooked tags in BS().
 -- hooksecurefunc cannot be undone, so a frame that has been hooked stays hooked
 -- for the session; clearing the tag would hook it a second time and play every
 -- sound twice. The hooks read cooldownID off the item at call time precisely so
@@ -691,14 +730,14 @@ end
 -- Separate from the buff-state hooks below, and re-tried on every sweep,
 -- because these frames are pooled and Blizzard builds their regions on its own
 -- schedule: child.Cooldown is frequently absent the first time a frame is seen.
--- Installing this inside the one-shot _sqzBuffHooked gate meant such a frame
+-- Installing this inside the one-shot buffHooked gate meant such a frame
 -- was tagged as hooked, skipped, and never given another chance -- which is
 -- why the swipes were still missing after the first attempt. Idempotent via its
 -- own tag, so repeating it is free.
 local function MirrorBlizzardCooldown(child)
     local cdw = child.Cooldown or (child.GetCooldownFrame and child:GetCooldownFrame())
-    if not cdw or cdw._sqMirrorHooked then return end
-    cdw._sqMirrorHooked = true
+    if not cdw or BS(cdw).mirrorHooked then return end
+    BS(cdw).mirrorHooked = true
 
     -- cooldownID is read at call time rather than closed over: these frames are
     -- pooled and get recycled onto other cooldowns.
@@ -943,8 +982,8 @@ local function HookBlizzardBuffFrames()
             if ok and children then
                 for _, child in ipairs(children) do
                     if child and child.cooldownID then
-                        if not child._sqzBuffHooked then
-                            child._sqzBuffHooked = true
+                        if not BS(child).buffHooked then
+                            BS(child).buffHooked = true
                             local function OnBuffStateChanged()
                                 ScanBlizzardBuffState()
                                 UpdateAllProxyCooldowns()
@@ -2099,7 +2138,22 @@ local function ApplyProxyVisuals(proxy, groupData)
             isActive = onCD or hasAura
         end
 
-        if groupData.desaturateReady then
+        -- Two opposite options, and only one can win.
+        --
+        -- "On cooldown" is Blizzard's own behaviour and what most people mean by
+        -- greying an icon out; "when ready" is the inverse, for a group used as
+        -- a "these are up" display. They contradict each other, so the settings
+        -- UI unticks one when the other is ticked -- but a profile written
+        -- before that, or edited by hand, can still hold both. On cooldown wins
+        -- there, because it is the one that matches the rest of the UI.
+        --
+        -- onCD rather than isActive: isActive folds in whether the buff is up,
+        -- which for a tracked buff means the icon would grey out exactly when
+        -- the buff was active. The question here is only "is the spell on
+        -- cooldown".
+        if groupData.desaturateOnCooldown then
+            proxy.Icon:SetDesaturated(onCD and true or false)
+        elseif groupData.desaturateReady then
             proxy.Icon:SetDesaturated(not isActive)
         else
             proxy.Icon:SetDesaturated(false)
@@ -3467,16 +3521,16 @@ local BLIZZARD_VIEWERS = {
 -- Hooking SetAlpha itself rather than UpdateSystemSettingOpacity on purpose --
 -- it catches every source, not just the Edit Mode path we happened to find.
 -- hooksecurefunc cannot be undone, so the hook is installed once per frame and
--- made inert by clearing _sqDimmed; _sqApplying breaks the recursion from our
+-- made inert by clearing BS(f).dimmed; BS(f).applying breaks the recursion from our
 -- own SetAlpha call inside the hook.
 local function HoldAlphaZero(f)
-    if f._sqAlphaHooked then return end
-    f._sqAlphaHooked = true
+    if BS(f).alphaHooked then return end
+    BS(f).alphaHooked = true
     hooksecurefunc(f, "SetAlpha", function(self, a)
-        if self._sqDimmed and a ~= 0 and not self._sqApplying then
-            self._sqApplying = true
+        if BS(self).dimmed and a ~= 0 and not BS(self).applying then
+            BS(self).applying = true
             self:SetAlpha(0)
-            self._sqApplying = nil
+            BS(self).applying = nil
         end
     end)
 end
@@ -3523,10 +3577,10 @@ local function MuteViewerItems(viewer, muted)
 end
 
 local function SaveOrigPoints(f)
-    if f._sqOrigPoints then return end
+    if BS(f).origPoints then return end
     local pts = {}
     for i = 1, f:GetNumPoints() do pts[i] = { f:GetPoint(i) } end
-    f._sqOrigPoints = pts
+    BS(f).origPoints = pts
 end
 
 -- Where a suppressed viewer goes.
@@ -3554,7 +3608,7 @@ local function ParkFrame(f, groupFrame)
         parkPending = true
         return
     end
-    f._sqParkGuard = true
+    BS(f).parkGuard = true
     f:ClearAllPoints()
     if groupFrame then
         -- Match position and size, so the viewer's rect is the group's rect and
@@ -3564,18 +3618,18 @@ local function ParkFrame(f, groupFrame)
     else
         f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PARK_X, PARK_Y)
     end
-    f._sqParkGuard = nil
+    BS(f).parkGuard = nil
 end
 
 local function RestoreFramePoints(f)
-    if not f._sqOrigPoints or InCombatLockdown() then return end
-    f._sqRestoring = true
+    if not BS(f).origPoints or InCombatLockdown() then return end
+    BS(f).restoring = true
     f:ClearAllPoints()
-    for _, p in ipairs(f._sqOrigPoints) do
+    for _, p in ipairs(BS(f).origPoints) do
         f:SetPoint(p[1], p[2], p[3], p[4], p[5])
     end
-    f._sqOrigPoints = nil
-    f._sqRestoring = nil
+    BS(f).origPoints = nil
+    BS(f).restoring = nil
 end
 
 -- Blizzard re-anchors these during Edit Mode layout passes, which would drag
@@ -3587,16 +3641,16 @@ end
 -- the ClearAllPoints + SetPoint burst into a single re-park, and one frame of a
 -- stray bar is not visible.
 local function HoldParked(f)
-    if f._sqPointHooked then return end
-    f._sqPointHooked = true
+    if BS(f).pointHooked then return end
+    BS(f).pointHooked = true
     local function QueueRepark(self)
-        if not self._sqDimmed or self._sqParkGuard or self._sqRestoring
-           or self._sqParkQueued then return end
-        self._sqParkQueued = true
+        if not BS(self).dimmed or BS(self).parkGuard or BS(self).restoring
+           or BS(self).parkQueued then return end
+        BS(self).parkQueued = true
         C_Timer.After(0, function()
-            self._sqParkQueued = nil
+            BS(self).parkQueued = nil
             -- Re-park to the same place it was, following or offscreen.
-            if self._sqDimmed then ParkFrame(self, self._sqFollowFrame) end
+            if BS(self).dimmed then ParkFrame(self, BS(self).followFrame) end
         end)
     end
     hooksecurefunc(f, "SetPoint", QueueRepark)
@@ -3666,7 +3720,7 @@ function cdmModule:PrintBuffDiagnostics()
                             or (child.GetCooldownFrame and child:GetCooldownFrame())
                         local mirrorTxt
                         if not cdw then mirrorTxt = "|cFFFF5555no Cooldown widget|r"
-                        elseif cdw._sqMirrorHooked then mirrorTxt = "|cFF33FF33hooked|r"
+                        elseif BS(cdw).mirrorHooked then mirrorTxt = "|cFF33FF33hooked|r"
                         else mirrorTxt = "|cFFFF5555NOT hooked|r" end
                         local proxyTxt = cdmModule.proxyFrames[cdID] and "yes" or "|cFFFF5555none|r"
 
@@ -3691,7 +3745,7 @@ end
 function cdmModule:MuteSuppressedViewerItems()
     for _, name in ipairs(BLIZZARD_VIEWERS) do
         local f = _G[name]
-        if f and f._sqDimmed then MuteViewerItems(f, true) end
+        if f and BS(f).dimmed then MuteViewerItems(f, true) end
     end
 end
 
@@ -3761,7 +3815,7 @@ function cdmModule:ApplyBlizzardVisibility()
         if f then
             if hide then
                 SaveOrigPoints(f)
-                f._sqDimmed = true
+                BS(f).dimmed = true
                 HoldAlphaZero(f)
                 HoldParked(f)
                 f:SetAlpha(0)
@@ -3769,12 +3823,12 @@ function cdmModule:ApplyBlizzardVisibility()
                 -- option is on, so this viewer stays a valid anchor target.
                 local follow = BH.settings.cdmViewersFollowGroups ~= false
                 local groupFrame = follow and self:GetGroupFrame(VIEWER_TO_GROUP[name]) or nil
-                f._sqFollowFrame = groupFrame
+                BS(f).followFrame = groupFrame
                 ParkFrame(f, groupFrame)
                 if f.EnableMouse then f:EnableMouse(false) end
                 if f.EnableMouseMotion then f:EnableMouseMotion(false) end
                 MuteViewerItems(f, true)
-            elseif f._sqDimmed then
+            elseif BS(f).dimmed then
                 -- Clear the flag first: the hook reads it, and leaving it set
                 -- would have our own restore immediately undone.
                 --
@@ -3784,8 +3838,8 @@ function cdmModule:ApplyBlizzardVisibility()
                 -- frames. It is self-correcting: the same opacity refresh that
                 -- caused this whole problem re-asserts the real value on its
                 -- next pass, so a viewer set to e.g. 80% returns there shortly.
-                f._sqDimmed = nil
-                f._sqFollowFrame = nil
+                BS(f).dimmed = nil
+                BS(f).followFrame = nil
                 RestoreFramePoints(f)
                 f:SetAlpha(1)
                 if f.EnableMouse then f:EnableMouse(true) end
@@ -3909,6 +3963,10 @@ function cdmModule:CreateGroup(groupName)
         showBorder = true,
         showCooldownText = true,
         desaturateReady = false,
+        -- Grey while on cooldown, which is Blizzard's own behaviour. Off by
+        -- default so existing groups look unchanged; the two are mutually
+        -- exclusive in the settings UI.
+        desaturateOnCooldown = false,
         glowOnReady = false,
         hideOutOfCombat = false,
         -- Blizzard parity, on by default: these are things the Cooldown Manager
@@ -4724,6 +4782,7 @@ local cdmCustomTabState = {}
 
 local function BuildCDMScroller(parent, state)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(scrollFrame)
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
 
@@ -5285,19 +5344,49 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     cdTextCB:SetChecked(groupData.showCooldownText ~= false)
     yOffset = yOffset - 24
 
-    local desatCB = CreateSQCheckbox(content, "Desaturate When Ready", function(checked)
+    -- The two desaturate options are opposites, so ticking one unticks the
+    -- other. Leaving both on screen and independently settable would allow a
+    -- combination that greys the icon in every state, which is not a look
+    -- anyone wants and is hard to diagnose from the settings alone.
+    local desatCB, desatCdCB
+
+    desatCB = CreateSQCheckbox(content, "Grey Out When Ready", function(checked)
         groupData.desaturateReady = checked
+        if checked then
+            groupData.desaturateOnCooldown = false
+            if desatCdCB then desatCdCB:SetChecked(false) end
+        end
         BH.cdm:ScheduleReconcile()
     end)
     desatCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(desatCB, "Desaturate When Ready", "Grey the icon out when the ability is ready, rather than when it is on cooldown.")
+    ns.Rows.AddTooltip(desatCB, "Grey Out When Ready",
+        "Grey the icon out while the ability is READY, so a full-colour icon means it is on "
+        .. "cooldown. The inverse of the usual arrangement, for a group used as an \"these are "
+        .. "up\" display.")
     desatCB:SetChecked(groupData.desaturateReady)
+
+    desatCdCB = CreateSQCheckbox(content, "Grey Out On Cooldown", function(checked)
+        groupData.desaturateOnCooldown = checked
+        if checked then
+            groupData.desaturateReady = false
+            if desatCB then desatCB:SetChecked(false) end
+        end
+        BH.cdm:ScheduleReconcile()
+    end)
+    desatCdCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(desatCdCB, "Grey Out On Cooldown",
+        "Grey the icon out while the ability is on cooldown, which is what Blizzard's own bars "
+        .. "do. Only the cooldown counts here, not whether the buff it applies is up.")
+    desatCdCB:SetChecked(groupData.desaturateOnCooldown)
+    yOffset = yOffset - 24
 
     local glowCB = CreateSQCheckbox(content, "Glow On Ready", function(checked)
         groupData.glowOnReady = checked
         BH.cdm:ScheduleReconcile()
     end)
-    glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    -- Left column: the desaturate pair took the row above, so this would
+    -- otherwise sit on the right with nothing beside it.
+    glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
     glowCB:SetChecked(groupData.glowOnReady)
     yOffset = yOffset - 24
@@ -5718,6 +5807,7 @@ function BH:BuildCDMSoundsTab(parent)
     leftHdr:SetText("COOLDOWNS")
 
     local leftScroll = CreateFrame("ScrollFrame", nil, leftPanel, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(leftScroll)
     leftScroll:SetPoint("TOPLEFT",     leftHdr,   "BOTTOMLEFT", 0,   -6)
     leftScroll:SetPoint("BOTTOMRIGHT", leftPanel,  "BOTTOMRIGHT", -22, 4)
 
@@ -5739,6 +5829,7 @@ function BH:BuildCDMSoundsTab(parent)
     rightPanel:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT",  -1, 0)
 
     local rightScroll = CreateFrame("ScrollFrame", nil, rightPanel, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(rightScroll)
     rightScroll:SetPoint("TOPLEFT",     rightPanel, "TOPLEFT",     0,   0)
     rightScroll:SetPoint("BOTTOMRIGHT", rightPanel, "BOTTOMRIGHT", -22, 4)
 

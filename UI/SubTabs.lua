@@ -152,6 +152,7 @@ function SubTabs.Create(parent, defs)
     -- One scroller per sub-tab, all filling the area below the strip.
     for _, def in ipairs(defs) do
         local scroller = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+        ns.TuneScrollStep(scroller)
         scroller:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", 0, -4)
         scroller:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
         scroller:Hide()

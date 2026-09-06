@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.72"] = {
+        "The settings menus no longer scroll most of a page per notch of the mouse wheel. A click now moves about one option row.",
+        "New \"Grey Out On Cooldown\" tick for Cooldown Manager groups, dimming an icon while its ability is on cooldown the way Blizzard's own bars do.",
+        "Fixed this addon breaking Blizzard's own tracked-buff alerts. It kept per-frame notes on Blizzard's frames, which tainted them, and 12.1 made that fatal: their aura handler could no longer read its own data. Those notes live in our own table now.",
+    },
     ["1.71"] = {
         "New Co-Tank tracker under Raid Tools: the other tank's debuffs and stack counts in a movable frame. The game draws the icons itself, which is the only way it can keep working in a raid or key.",
         "The Raid Tools, Reminders and Kelerts pages now have sub-tabs across the top, so each is a screenful rather than one long scroll. Search jumps straight to the right sub-tab.",
@@ -142,6 +147,7 @@ local function BuildFrame()
     -- so however long a future release's notes are the frame stays the same size
     -- and the buttons stay reachable.
     local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(scroll)
     scroll:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
     -- -22 for the scroll bar gutter, matching every other scroller in the addon.
     scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -22, 52)

@@ -1,110 +1,27 @@
 Squizzumables Changelog
 =======================
 
-V1.71
+V1.72
 
-- Raid Tools, Reminders and Kelerts now have sub-tabs across the top, so each
-  one is a screenful instead of a single long scroll. Raid Tools splits into
-  General, Pull Timer, Scale, Battle Res, Target Distance and Position;
-  Reminders into Class, Instance Sounds, Bags, Feast and Role CC; Kelerts into
-  Lust Alert, Buff Sounds and Death Tally
-- Search knows about them: a result now reads "Raid Tools > Pull Timer" and
-  clicking it opens the right sub-tab as well as the right tab. Without that it
-  would have jumped to the page and left the setting hidden behind an
-  unselected sub-tab, which looks exactly like search being broken
-- The headings and dividers that used to separate those sections are gone,
-  since the sub-tab already names them
-- New Co-Tank tracker under Raid Tools: the debuffs and defensives on the other
-  tank (or tanks) in your group, with stack counts and countdowns, in a movable
-  frame. Off by default, positioned with Unlock Frames like anything else
-- Nearly every part of it is adjustable. Frame: grow up or down, spacing between
-  tanks, whether names show, name size, and the font for all of it (any font
-  another addon has registered shows up in the list). Icons: zoom, cooldown
-  swipe on or off, countdown and stack text with their own size, offsets and
-  colours, and a border coloured by the debuff's dispel type in any of the
-  game's three styles. Debuffs and defensives each get their own size, spacing,
-  icons per row, maximum rows and position offset, so the two rows can look
-  completely different
-- Visibility options: show in five-player groups or raid only, only show while
-  you are tanking, and a warning in chat when the group has more tanks than
-  there are rows to show
-- Defensives are a tick list, unlike debuffs. The game permits matching buffs by
-  spell ID on a friendly target but not debuffs, so every tank spec's cooldowns
-  are listed by class -- Warrior, Paladin, Death Knight, Druid, Monk and Demon
-  Hunter -- and you tick the ones you want to see. There is also a box for extra
-  spell IDs the list does not cover
-- Each entry is labelled with the name the game itself returns for that spell,
-  so anything that has been changed or removed in a patch shows as "unknown" in
-  the options rather than quietly never appearing
-- Stack counts and countdowns now have a position dropdown -- the same nine
-  points the Cooldown Manager uses -- with the offset sliders left as a nudge
-  from there, rather than being the only way to move text across an icon
-- The game draws those icons itself rather than this addon drawing them. That is
-  the only way it can work: another player's aura data is hidden from addons in
-  combat, raids and Mythic+, which is exactly when you want to watch the other
-  tank. Handing the job to the game means there is nothing to hide
-- The trade is that the game also decides what may be shown. Picking debuffs out
-  by name is not permitted on a friendly target, so the filter is Boss debuffs
-  (the default, and what separates tank busters from clutter), All debuffs, or
-  Dispellable only -- a hand-picked list of specific spells is not possible
-- A Preview Layout tick shows sample icons so you can size and position the
-  frame solo, without needing a group with a second tank in it. Unlock Frames
-  turns it on by itself. The icons are placeholders rather than real debuffs:
-  the game will not hand sample aura data to an addon, so while preview is on
-  the live display is switched off and the two can never overlap
-- Changing the filter needs a /reload to take effect, and so does icon size or
-  count for the live display -- the game builds these icon groups once and gives
-  no way to take one apart. Size and count update the preview immediately, so
-  you can settle on them before reloading
-- New Target Distance readout: roughly how far away your target is, as movable
-  on-screen text. Under Raid Tools, off by default. Choose whether it reads as a
-  band ("30-35") or just one end of it, set the text size, alignment, colour and
-  frame strata, and drag it into place with Unlock Frames like any other frame
-- It reads as a band on purpose. The game gives addons no way to measure the
-  distance to an enemy -- only to ask whether a particular spell or item would
-  reach right now -- so the answer is worked out by asking a ladder of known
-  ranges and reporting where you fall between two of them. Bands get wider
-  further out, where there are fewer things to ask about
-- The ladder is built mostly from your own spells, reading the ranges the game
-  currently reports, so it follows talents that extend a spell's range without
-  being told. A short list of fixed-range items fills the gaps your class leaves
-  -- a melee spec has few long rungs and a caster few short ones
-- Fixed the target distance readout logging a blocked-action error over and over.
-  Part of how it measures distance is asking whether certain items would reach,
-  and the game refuses that question in combat about anyone you cannot attack.
-  The refusal is not an error, so nothing broke visibly -- it just filled the
-  error log, several times a second. Those checks are now skipped when the game
-  would refuse them, which leaves a slightly wider estimate on a friendly target
-  mid-fight and no error at all
-- Friendly targets are off by default and will often read "?" when switched on,
-  since the estimate is built from harmful spells and items and those refuse to
-  answer about a friendly unit
-- Fixed a spell removed by a talent change vanishing from the Cooldown Manager
-  and then reappearing a second later, with the group never shrinking around the
-  gap. When a spell went away its icon was destroyed but left listed as a member
-  of its group, and the next layout pass re-attached and re-showed the very frame
-  that had just been destroyed. The clean-up only looked at spells you had
-  assigned to a group by hand, so it missed everything relying on the standard
-  Essential, Utility and Buffs groups -- which since 1.69 is almost everything.
-  Groups also re-pack now, so the row closes up instead of holding the space
-- Fixed the Cooldown Manager not updating on a spec or talent change until you
-  reloaded. Three things were wrong, all introduced in 1.70. A spec change is
-  handled in two places and each asked for a rebuild on its own timer; the
-  shorter of the two cancelled the longer, so the rebuild ran while the game was
-  still reporting the outgoing spec and then never ran again. Rebuilds are now
-  never pulled earlier than one already waiting, so it no longer matters which
-  order those arrive in
-- The check for "have my cooldowns changed" was also looking only at Blizzard's
-  filtered list, which updates on its own schedule, instead of the game's own
-  set, which updates immediately. A talent swap could leave it looking identical
-  and the rebuild was skipped entirely. Both are checked now -- one catches spec
-  and talent changes, the other catches edits made in Blizzard's Cooldown
-  Manager options, and neither alone covers both
-- A talent or loadout swap now always rebuilds rather than trusting that check,
-  matching what a spec change already did, since neither the game nor Blizzard's
-  own list is necessarily up to date at the instant the event arrives
-- The update notes popup now scrolls. With 1.70's eight highlights the text ran
-  underneath the buttons and off the bottom of the box, leaving the last few
-  unreadable and no way to reach them. The notes now sit in a scrolling area
-  between the heading and the buttons, so however long a release's highlights
-  are the box stays the same size and the buttons stay reachable
+- Fixed the settings menus scrolling most of a page per notch of the mouse
+  wheel, which read as the list skipping rows rather than scrolling -- it was,
+  because several rows went past between one click and the next. The game's
+  default step for this kind of panel is half the visible height; it is now
+  about one option row, everywhere in the settings
+- New "Grey Out On Cooldown" tick for Cooldown Manager groups: dims an icon
+  while its ability is on cooldown, which is what Blizzard's own bars do. It
+  pairs with the existing "Grey Out When Ready", which does the opposite, so
+  ticking either unticks the other -- having both on would have greyed the icon
+  in every state
+- Fixed this addon breaking Blizzard's own tracked-buff alerts. The error came
+  from Blizzard's code and named Squizzumables, with nothing of ours in the
+  report: their aura handler could no longer read its own internal table because
+  our addon had "tainted" the frame it lives on. Once it happened, buff alerts
+  on the tracked buff bar stayed broken for the rest of the session
+- The cause was bookkeeping. Hiding Blizzard's cooldown bars needs a dozen small
+  notes kept per frame -- whether it is dimmed, where it was before it moved,
+  whether a hook has been installed -- and those notes were being written onto
+  Blizzard's frames. That is enough to taint them, and 12.1 made it fatal rather
+  than merely untidy by giving those frames internals that refuse to be read
+  from tainted code. The notes now live in this addon's own table instead, which
+  changes nothing about how anything behaves

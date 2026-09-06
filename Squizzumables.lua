@@ -1908,6 +1908,7 @@ function BH:CreateOptionsPanel()
     desc:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, itemsTab, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(scrollFrame)
     scrollFrame:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -8)
     scrollFrame:SetPoint("BOTTOMRIGHT", itemsTab, "BOTTOMRIGHT", -22, 4)
 
@@ -2048,6 +2049,7 @@ function BH:ShowProfileStringDialog(mode, text)
         f.hint:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
         local scroll = CreateFrame("ScrollFrame", "SQUIZZUMABLESProfileIOScroll", f, "UIPanelScrollFrameTemplate")
+        ns.TuneScrollStep(scroll)
         scroll:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -74)
         scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -34, 46)
 
@@ -2115,6 +2117,7 @@ end
 
 function BH:BuildSettingsTab(parent)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(scrollFrame)
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
 
@@ -4350,6 +4353,7 @@ function BH:BuildSoundsTab(parent)
     local leftPad = 14
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(scrollFrame)
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
 
@@ -4520,6 +4524,7 @@ function BH:BuildClassBuffsTab(parent)
     desc:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(scrollFrame)
     scrollFrame:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -8)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 4)
 
@@ -4993,6 +4998,7 @@ end
 
 function BH:BuildCalloutsTab(parent)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
+    ns.TuneScrollStep(scrollFrame)
     scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
     scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
     local content = CreateFrame("Frame", nil, scrollFrame)

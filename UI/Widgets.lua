@@ -655,6 +655,37 @@ local function PlaceText(region, frame, point, ox, oy)
     region:SetPoint(point or "CENTER", frame, point or "CENTER", ox or 0, oy or 0)
 end
 
+-- ============================================================================
+-- Scroll wheel step
+--
+-- UIPanelScrollFrameTemplate scrolls half a page per wheel click. Blizzard's
+-- handler is:
+--
+--     local scrollStep = scrollBar.scrollStep or scrollBar:GetHeight() / 2
+--
+-- and the bar is as tall as the frame, so one notch of the wheel jumps most of
+-- a screen. On a settings page that reads as the list skipping rows rather than
+-- scrolling, because it is: several rows go past between one click and the next.
+--
+-- `scrollStep` is Blizzard's own override, so this needs no script of ours --
+-- setting the field is enough, and a future template change cannot leave a
+-- hand-written OnMouseWheel fighting it.
+--
+-- 40 is roughly one option row (a check is 34, a slider 50), which makes a
+-- wheel click move about a line the way it does everywhere else.
+-- ============================================================================
+local DEFAULT_SCROLL_STEP = 40
+
+local function TuneScrollStep(scrollFrame, step)
+    if not scrollFrame then return end
+    local bar = scrollFrame.ScrollBar
+        or (scrollFrame.GetName and scrollFrame:GetName()
+            and _G[scrollFrame:GetName() .. "ScrollBar"])
+    if bar then bar.scrollStep = step or DEFAULT_SCROLL_STEP end
+    return scrollFrame
+end
+
+ns.TuneScrollStep      = TuneScrollStep
 ns.TEXT_POSITION_ITEMS = TEXT_POSITION_ITEMS
 ns.PlaceText           = PlaceText
 
