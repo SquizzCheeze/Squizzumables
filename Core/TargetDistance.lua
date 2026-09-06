@@ -192,17 +192,40 @@ end
 -- Spells before items: a spell reflects the character's current talents, and
 -- costs no item cache. Any probe giving a definite answer wins; only if every
 -- probe on the rung answers nil is the rung itself unanswerable.
-local function RungAnswer(rung, unit)
+-- Item range checks are PROTECTED in combat against a unit you cannot attack.
+--
+-- Calling one anyway raises ADDON_ACTION_BLOCKED naming this addon. That is not
+-- a Lua error, so nothing fails visibly and nothing stops -- it just logs, and
+-- on a 0.15s poll it logs continuously, which is how this first showed up: a
+-- blocked-action report with `UNKNOWN()` and two anonymous C frames above the
+-- item probe.
+--
+-- Spell checks have no such restriction, which is the asymmetry to remember:
+-- C_Spell.IsSpellInRange is AllowedWhenTainted, C_Item.IsItemInRange is not.
+-- LibRangeCheck-3.0 guards its item checkers with exactly this predicate and
+-- leaves its spell checkers unguarded, which is the confirmation that the rule
+-- is about items specifically rather than about range checking generally.
+--
+-- The cost of the guard is a coarser band on a friendly target mid-fight, since
+-- only the spell rungs can answer there. That is the right way round: a wider
+-- estimate beats a correct one that spams the error log.
+local function ItemProbesAllowed(unit)
+    return not (InCombatLockdown() and not UnitCanAttack("player", unit))
+end
+
+local function RungAnswer(rung, unit, allowItems)
     for _, sid in ipairs(rung.spells) do
         local inRange = C_Spell.IsSpellInRange and C_Spell.IsSpellInRange(sid, unit)
         if inRange ~= nil and not BH.Secrets.IsSecret(inRange) then
             return inRange and true or false
         end
     end
-    for _, iid in ipairs(rung.items) do
-        local inRange = C_Item.IsItemInRange and C_Item.IsItemInRange(iid, unit)
-        if inRange ~= nil and not BH.Secrets.IsSecret(inRange) then
-            return inRange and true or false
+    if allowItems then
+        for _, iid in ipairs(rung.items) do
+            local inRange = C_Item.IsItemInRange and C_Item.IsItemInRange(iid, unit)
+            if inRange ~= nil and not BH.Secrets.IsSecret(inRange) then
+                return inRange and true or false
+            end
         end
     end
     return nil
@@ -224,9 +247,14 @@ function Range:GetRange(unit)
     -- Walk up until something says "yes, within". Everything below the first
     -- yes is a no, so that rung's range is the upper bound and the previous
     -- answered rung is the lower.
+    -- Decided once per query rather than per rung: it cannot change part way
+    -- through a walk, and it is two API calls we would otherwise make for every
+    -- rung on every tick.
+    local allowItems = ItemProbesAllowed(unit)
+
     local lastNo = nil
     for i = 1, #l do
-        local answer = RungAnswer(l[i], unit)
+        local answer = RungAnswer(l[i], unit, allowItems)
         if answer == true then
             return lastNo, l[i].range
         elseif answer == false then
@@ -377,7 +405,13 @@ function BH:UpdateTargetDistance()
 
     -- Unlock mode shows a sample rather than a live reading, so the frame can
     -- be positioned without needing something to target.
-    if self.unlockMode and not UnitExists("target") then
+    --
+    -- Unconditionally, not only when there is no target: unlock mode is the one
+    -- path that skips the hostile-only check in ShouldShow, so querying here
+    -- could ask about a friendly unit -- which is exactly the case the item
+    -- probes are refused for. A positioning aid has no business making range
+    -- calls at all.
+    if self.unlockMode then
         f.text:SetText("30-35")
         return
     end
@@ -471,9 +505,15 @@ function BH:PrintRangeDiagnostics()
             rung.range, #rung.spells, #rung.items))
     end
     if UnitExists("target") then
+        -- Whether the item rungs are usable right now. When this is false the
+        -- band is spell-only and therefore wider, which otherwise looks like
+        -- the ladder having lost half its rungs.
+        print("  item probes allowed on this target:",
+            tostring(ItemProbesAllowed("target")))
         local minR, maxR = self.Range:GetRange("target")
         print(string.format("  current target: %s (%s)",
-            FormatRange(minR, maxR, "band"), UnitName("target") or "?"))
+            FormatRange(minR, maxR, "band"),
+            BH.Secrets.SafeString(UnitName("target"), "<name hidden>")))
     else
         print("  no target")
     end
