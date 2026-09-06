@@ -22,6 +22,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
     ["1.71"] = {
+        "New Co-Tank tracker under Raid Tools: the other tank's debuffs and stack counts in a movable frame. The game draws the icons itself, which is the only way it can keep working in a raid or key.",
         "The Raid Tools, Reminders and Kelerts pages now have sub-tabs across the top, so each is a screenful rather than one long scroll. Search jumps straight to the right sub-tab.",
         "New Target Distance readout under Raid Tools: roughly how far away your target is, as movable on-screen text, with your choice of format, size, colour and alignment.",
         "It reads as a band like \"30-35\" because the game lets addons ask whether a spell would reach, but never how far away something is \226\128\148 so the distance is narrowed down rather than measured.",

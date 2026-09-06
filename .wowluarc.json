@@ -3,6 +3,8 @@
   "globals": {
     "read": [
       "ActionButtonSpellAlertManager",
+      "AuraContainerSortMethod",
+      "AuraContainerSortDirection",
       "EditBox_OnTabPressed",
       "Menu",
       "UNKNOWNOBJECT",

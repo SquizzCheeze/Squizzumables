@@ -99,6 +99,17 @@ BH.defaultSettings = {
     targetDistanceFriendly = false,     -- probes are harmful, so hostile only
     targetDistanceColor = { r = 1, g = 1, b = 1 },
 
+    -- Co-tank debuff tracker (Core/CoTank.lua). Off by default, like the other
+    -- persistent readouts.
+    coTankEnabled = false,
+    coTankFilter = "boss",              -- "boss" | "all" | "dispel"
+    coTankIconSize = 32,
+    coTankMaxIcons = 8,
+    coTankShowName = true,
+    -- Preview replaces the live display while it is on, so it is a setting rather
+    -- than a transient: leaving it on by accident should be visible, not silent.
+    coTankPreview = false,
+
     deathTallyEnabled = true,
     deathTallyLocked = false,
     deathTallyScale = 1.0,
@@ -441,6 +452,7 @@ local POSITION_PAIRS = {
     { "healerCCReminderFrame",    "healerCCReminderPosition" },
     { "deathTallyFrame",          "deathTallyPosition" },
     { "targetDistanceFrame",      "targetDistancePosition" },
+    { "coTankFrame",              "coTankPosition" },
 }
 
 -- All position keys stored in profiles.
@@ -692,6 +704,7 @@ function BH:SwitchToProfile(profileName)
     -- After the BH references above, since the rebuild reads cdmEnabled.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
+    if self.ApplyCoTank then self:ApplyCoTank() end
 
     return true
 end
@@ -783,6 +796,7 @@ function BH:OnSpecChanged()
     -- cached view is stale either way.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
+    if self.ApplyCoTank then self:ApplyCoTank() end
     -- Outside the panel check: the new profile has its own alerts, so the
     -- client-side aura sound registrations have to follow it whether or not the
     -- options panel happens to be open. Leaving them would keep playing the
@@ -1938,6 +1952,7 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             -- Default's Cooldown Manager layout, not the deleted profile's.
             if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
             if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
+            if BH.ApplyCoTank then BH:ApplyCoTank() end
             BH:RefreshSettingsTab()
             print("Squizzumables: Deleted profile '" .. data .. "', switched to Default.")
         end
@@ -2197,6 +2212,7 @@ function BH:BuildSettingsTab(parent)
         -- above, since it lives on the profile as of 1.70. Rebuild so it shows.
         if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
         if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
+        if BH.ApplyCoTank then BH:ApplyCoTank() end
         BH:RefreshSettingsTab()
         BH:RefreshItemList()
         BH:RefreshRaidToolsTab()
@@ -2644,6 +2660,7 @@ function BH:BuildRaidToolsTab(parent)
         { key = "scale",    label = "Scale" },
         { key = "bres",     label = "Battle Res" },
         { key = "distance", label = "Target Distance" },
+        { key = "cotank",   label = "Co-Tank" },
         { key = "position", label = "Position" },
     })
 
@@ -3012,6 +3029,116 @@ function BH:BuildRaidToolsTab(parent)
             BH:UpdateTargetDistance()
         end,
         disabled = function() return not BH.settings.targetDistanceEnabled end,
+    })
+
+    -- Sub-tab boundary: size the page just finished, then move to the next.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.cotank
+    ns.Rows.currentSection = content.section
+    yOffset = -14
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show Co-Tank Debuffs",
+        tooltip = "A movable frame showing the debuffs on the other tank (or tanks) in your group, "
+            .. "with their stack counts. Position it with Unlock Frames.",
+        get = function() return BH.settings.coTankEnabled and true or false end,
+        set = function(v)
+            BH.settings.coTankEnabled = v
+            BH:SaveSettings()
+            BH:ApplyCoTank()
+        end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "text",
+        label = "The game renders these icons itself, which is the only way an addon can show "
+            .. "another player's debuffs during a fight -- their aura data is hidden from addons "
+            .. "in combat, raids and Mythic+. That also means the game decides what may be shown: "
+            .. "picking out debuffs by name is not possible on a friendly target, so the filter "
+            .. "below is as narrow as it gets.",
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Show",
+        width = 180,
+        tooltip = "Which of the other tank's debuffs to show. Boss debuffs is usually what you want: "
+            .. "it is the one that separates tank busters from every minor effect in the room.",
+        items = BH.COTANK_FILTERS,
+        get = function() return BH.settings.coTankFilter or "boss" end,
+        set = function(value)
+            BH.settings.coTankFilter = value
+            BH:SaveSettings()
+            print("|cffffcc00Squizzumables:|r co-tank filter changed -- /reload to apply it.")
+        end,
+        disabled = function() return not BH.settings.coTankEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Co-Tank Icon Size",
+        width = 300, min = 16, max = 64, step = 1,
+        tooltip = "Size of each debuff icon.",
+        get = function() return BH.settings.coTankIconSize or 32 end,
+        set = function(value)
+            BH.settings.coTankIconSize = value
+            BH:SaveSettings()
+            -- The preview is ours to redraw, so it responds at once; the live
+            -- container was built with the old size and needs the reload.
+            BH:UpdateCoTank()
+            if not BH.settings.coTankPreview and not BH.unlockMode then
+                print("|cffffcc00Squizzumables:|r co-tank icon size changed -- /reload to apply it to the live display.")
+            end
+        end,
+        disabled = function() return not BH.settings.coTankEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Maximum Icons Per Tank",
+        width = 300, min = 1, max = 20, step = 1,
+        tooltip = "How many debuff icons to show for each tank before the rest are dropped.",
+        get = function() return BH.settings.coTankMaxIcons or 8 end,
+        set = function(value)
+            BH.settings.coTankMaxIcons = value
+            BH:SaveSettings()
+            BH:UpdateCoTank()
+            if not BH.settings.coTankPreview and not BH.unlockMode then
+                print("|cffffcc00Squizzumables:|r co-tank icon count changed -- /reload to apply it to the live display.")
+            end
+        end,
+        disabled = function() return not BH.settings.coTankEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show Tank Names",
+        tooltip = "Shows each tank's name above their row of debuffs.",
+        get = function() return BH.settings.coTankShowName ~= false end,
+        set = function(v)
+            BH.settings.coTankShowName = v
+            BH:SaveSettings()
+            BH:UpdateCoTank()
+        end,
+        disabled = function() return not BH.settings.coTankEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Preview Layout",
+        tooltip = "Shows sample icons so you can size and position the frame without needing a "
+            .. "group with another tank in it. These are placeholders, not real debuffs -- the "
+            .. "game will not hand out sample aura data to an addon, and while the preview is on "
+            .. "the real display is switched off so the two cannot overlap. Unlock Frames turns "
+            .. "this on by itself.",
+        get = function() return BH.settings.coTankPreview and true or false end,
+        set = function(v)
+            BH.settings.coTankPreview = v
+            BH:SaveSettings()
+            BH:UpdateCoTank()
+        end,
+        disabled = function() return not BH.settings.coTankEnabled end,
     })
 
     -- Sub-tab boundary: size the page just finished, then move to the next.
@@ -6972,6 +7099,7 @@ local MOVABLE_FRAMES = {
     { field = "deathTallyFrame",     label = "Death Tally",    enabled = "deathTallyEnabled" },
     { field = "calloutsButtonFrame", label = "Callouts",       enabled = "dungeonCallouts", muteChildren = true },
     { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled" },
+    { field = "coTankFrame",         label = "Co-Tank",        enabled = "coTankEnabled" },
 }
 
 -- Every text reminder, from the registry rather than by hand.
@@ -10602,6 +10730,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             BH:PrintRangeDiagnostics()
         else
             print(addonName .. ": Target distance module not loaded.")
+        end
+    elseif msg == "cotank" then
+        if BH.PrintCoTankDiagnostics then
+            BH:PrintCoTankDiagnostics()
+        else
+            print(addonName .. ": Co-tank module not loaded.")
         end
     elseif msg == "cdmbuff" then
         if BH.cdm and BH.cdm.PrintBuffDiagnostics then
