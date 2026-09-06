@@ -2339,6 +2339,23 @@ function cdmModule:PrintSoundDiagnostics()
     print("  auras secret right now:", tostring(BH.Secrets.AurasAreSecret()))
     print("  in combat:", tostring(InCombatLockdown()))
 
+    -- When the set was last seen to change, and when it was last rebuilt.
+    --
+    -- "the icons are stale" has two very different causes -- the change was
+    -- never noticed (signature unchanged), or it was noticed and the rebuild
+    -- did not happen or ran too early. A timestamp on each separates them,
+    -- which guessing between them repeatedly did not.
+    do
+        local now = GetTime()
+        local function ago(t)
+            if not t then return "never" end
+            return string.format("%.1fs ago", now - t)
+        end
+        print(string.format("  cooldown set last changed: %s | last reconcile: %s | spec key: %s",
+            ago(cdmModule.lastSetChangeAt), ago(cdmModule.lastReconcileAt),
+            tostring(GetSpecKey())))
+    end
+
     -- Whether Blizzard's own filtering is being honoured, per viewer.
     --
     -- "our groups list more than Blizzard's bars" has two completely different
@@ -3054,6 +3071,8 @@ end
 local reconcileTimer = nil
 
 function cdmModule:Reconcile()
+    self.lastReconcileAt = GetTime()
+
     -- SetPassThroughButtons (and other protected calls) are banned in combat.
     --
     -- One timer a second, not one per frame. This used to reschedule with a 0
@@ -3301,14 +3320,31 @@ function cdmModule:Reconcile()
     -- Update all proxy cooldown sweeps
     UpdateAllProxyCooldowns()
 
-    -- Handle spells that disappeared (talent/spec change removed a spell)
+    -- Handle spells that disappeared (talent/spec change removed a spell).
+    --
+    -- Every group is swept, not just the one named by an explicit assignment.
+    -- Reading `specData.assignments` alone stopped being enough the moment the
+    -- built-in groups arrived in 1.69: a cooldown with no explicit assignment
+    -- falls back to the group for its viewer type, so for most spells the
+    -- lookup returned nil and the removal below was skipped entirely.
+    --
+    -- The proxy was destroyed but its entry stayed in `group.members`, and that
+    -- is worse than it sounds, because LayoutGroup does `proxy:SetParent(...)`
+    -- on every member it finds. So the next layout pass re-parented and
+    -- re-showed the frame that had just been destroyed: the icon vanished on
+    -- the talent change and came back a second later. The member count never
+    -- changed either, which is why the group did not resize around the gap.
+    --
+    -- This is the same failure CLAUDE.md already records for
+    -- UpdateAllProxyCooldowns. Sweeping every group needs no assignment lookup
+    -- at all and cannot drift out of step with the fallback rules again.
+    local touchedGroups = {}
     for cdID, entry in pairs(self.registry) do
         if not discovered[cdID] and entry.managed then
-            local assignment = specData.assignments and specData.assignments[cdID]
-            if assignment and assignment ~= "FREE" then
-                local group = self.groups[assignment]
-                if group then
+            for groupName, group in pairs(self.groups) do
+                if group.members and group.members[cdID] then
                     group.members[cdID] = nil
+                    touchedGroups[groupName] = true
                 end
             end
             self.freeIcons[cdID] = nil
@@ -3316,11 +3352,54 @@ function cdmModule:Reconcile()
             entry.managed = false
         end
     end
+
+    -- Re-lay out whatever just lost an icon. This pass runs after the layout
+    -- above, so without it the container keeps the size it was given while the
+    -- removed icon was still counted -- a hole in the row until something else
+    -- happened to trigger a rebuild.
+    for groupName in pairs(touchedGroups) do
+        self:LayoutGroup(groupName)
+    end
 end
 
-function cdmModule:ScheduleReconcile(delay)
+-- Schedule a reconcile, never EARLIER than one already pending.
+--
+-- The delays here are not interchangeable waits, they are statements about how
+-- long the game needs before the answer is trustworthy. A spec change asks for
+-- 1.0s because the category sets still report the outgoing spec for a moment
+-- after the event; a settings edit asks for 0.15s because the data is already
+-- correct. The old version cancelled and replaced unconditionally, so a short
+-- request landing after a long one won.
+--
+-- That is exactly what a spec change does. PLAYER_SPECIALIZATION_CHANGED is
+-- handled twice -- here, which schedules 1.0s, and in Squizzumables.lua's spec
+-- handler, which since 1.70 calls OnProfileChanged and asked for 0.15s. Whichever
+-- ran second decided, and when that was the 0.15s one the reconcile fired while
+-- the client still reported the old spec, then never ran again because nothing
+-- reschedules. The result was the previous spec's cooldowns sitting there until
+-- a reload.
+--
+-- Taking the longer of the two makes the order the events arrive in stop
+-- mattering. It stays a debounce -- repeated calls still push the fire time out
+-- rather than stacking timers -- it just cannot be pulled forward.
+-- `force` overrides that and is for one thing only: the "Refresh Cooldowns"
+-- button, where the player has explicitly asked for it now and having the
+-- request quietly dropped because some automatic pass was pending would read as
+-- the button not working. Do not reach for it on an event path -- that is how
+-- the spec-change race gets reintroduced.
+local reconcileDueAt = nil
+function cdmModule:ScheduleReconcile(delay, force)
+    delay = delay or RECONCILE_DEBOUNCE
+    local due = GetTime() + delay
+
+    if not force and reconcileTimer and reconcileDueAt and reconcileDueAt > due then
+        return
+    end
+
     if reconcileTimer then reconcileTimer:Cancel() end
-    reconcileTimer = C_Timer.NewTimer(delay or RECONCILE_DEBOUNCE, function()
+    reconcileDueAt = due
+    reconcileTimer = C_Timer.NewTimer(delay, function()
+        reconcileTimer, reconcileDueAt = nil, nil
         self:Reconcile()
     end)
 end
@@ -4249,24 +4328,34 @@ local function CooldownSetSignature()
     local parts = {}
     -- 0 Essential, 1 Utility, 2 TrackedBuff, 3 TrackedBar.
     --
-    -- Blizzard's filtered list where it can be had, matching what discovery
-    -- actually walks -- otherwise a change the player makes in the Cooldown
-    -- Manager options leaves the raw sets identical, the signature unchanged,
-    -- and the reconcile skipped. Left unsorted for the same reason: the order
-    -- is the player's arrangement and now drives our layout, so a pure reorder
-    -- has to register as a change.
+    -- BOTH lists, raw and filtered. 1.70 switched this to the filtered list
+    -- alone, to match what discovery walks, and that broke spec and talent
+    -- changes: the raw category set updates the instant the client knows the new
+    -- spells, while Blizzard's filtered list only changes once its settings data
+    -- provider has rebuilt, which happens on its own schedule. So a talent swap
+    -- could leave the filtered list momentarily identical, the signature
+    -- unchanged, and OnCooldownSetChanged returning early -- no reconcile, no
+    -- cache reset, and the old spec's cooldowns still on screen until a reload.
+    --
+    -- Raw catches spec and talent changes, filtered catches edits in Blizzard's
+    -- Cooldown Manager options that leave the raw set identical. Neither alone
+    -- covers both, and a signature that misses a change is silent.
+    --
+    -- The raw half is sorted (the C API's order carries no meaning); the
+    -- filtered half deliberately is not, because that order is the player's own
+    -- arrangement and drives our layout, so a pure reorder must register.
     for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
-        local ids = BlizzardFilteredIDs(viewerInfo.viewer)
-        if not ids then
-            local ok, raw = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, viewerInfo.category)
-            if ok and raw then
-                ids = {}
-                for i = 1, #raw do ids[i] = raw[i] end
-                table.sort(ids)
-            end
+        local ok, raw = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, viewerInfo.category)
+        if ok and type(raw) == "table" then
+            local sorted = {}
+            for i = 1, #raw do sorted[i] = raw[i] end
+            table.sort(sorted)
+            parts[#parts + 1] = viewerInfo.category .. "r:" .. table.concat(sorted, ",")
         end
+
+        local ids = BlizzardFilteredIDs(viewerInfo.viewer)
         if ids then
-            parts[#parts + 1] = viewerInfo.category .. ":" .. table.concat(ids, ",")
+            parts[#parts + 1] = viewerInfo.category .. "f:" .. table.concat(ids, ",")
         end
     end
     if #parts == 0 then return nil end
@@ -4286,6 +4375,7 @@ local function OnCooldownSetChanged(debounce, force)
     -- than never resetting at all.
     if not force and signature and signature == lastCooldownSignature then return end
     lastCooldownSignature = signature
+    cdmModule.lastSetChangeAt = GetTime()
 
     cdmModule:ResetResolutionMaps()
     cdmModule:ScheduleReconcile(debounce or SPEC_CHANGE_DEBOUNCE)
@@ -4430,7 +4520,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- are just as stale as after a spec change. The proxies are left alone:
         -- Reconcile re-derives them, and ReleaseAll would make every icon
         -- visibly flicker on a change that often alters nothing on screen.
-        OnCooldownSetChanged(SPEC_CHANGE_DEBOUNCE)
+        --
+        -- Forced, for the same reason the spec branch above is: the signature is
+        -- sampled the instant the event arrives, and neither the category sets
+        -- nor Blizzard's filtered list are necessarily updated by then. An
+        -- unchanged signature meant an early return -- no cache reset and no
+        -- reconcile scheduled at all -- so a loadout swap could leave the old
+        -- talents' cooldowns on screen until a reload. The cost of forcing is
+        -- one reconcile that occasionally finds nothing new; the cost of not
+        -- forcing is silently missing the change.
+        OnCooldownSetChanged(SPEC_CHANGE_DEBOUNCE, true)
     elseif event == "PLAYER_REGEN_DISABLED" then
         isInCombat = true
         UpdateCombatVisibility()
@@ -5003,7 +5102,8 @@ function BH:RebuildCDMPage(state, mode)
     local refreshBtn = CreateSQButton(content, "Refresh Cooldowns", 160, 26)
     refreshBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     refreshBtn:SetScript("OnClick", function()
-        BH.cdm:ScheduleReconcile(0)
+        -- force: an explicit press must not be swallowed by a pending pass.
+        BH.cdm:ScheduleReconcile(0, true)
         C_Timer.After(0.3, function() BH:RebuildCDMTabContent() end)
     end)
     yOffset = yOffset - 40

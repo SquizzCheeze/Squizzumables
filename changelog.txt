@@ -1,60 +1,34 @@
 Squizzumables Changelog
 =======================
 
-V1.70
+V1.71
 
-- The Essential and Utility groups now follow your Blizzard Cooldown Manager filter. Hiding
-  a spell in Blizzard's own Cooldown Manager options, or dragging it between Essential and
-  Utility, now changes these groups to match. Previously they listed every cooldown your
-  class has, because the filtering does not live in the game's cooldown API at all -- it is
-  held in a saved layout, and only Blizzard's own bars were reading it. They are read
-  through the same call Blizzard's bars use now, so the two always agree
-- This also means spells the game hides by default no longer show. Those were appearing
-  before you had touched anything, which is why the groups looked busier than Blizzard's
-  bars on a fresh install
-- Groups also follow the order you arranged in Blizzard's Cooldown Manager, rather than an
-  internal ID order that matched nothing you could see. Only for the default "assignment"
-  sort; sorting by name or cooldown is unchanged
-- Editing Blizzard's Cooldown Manager now updates the groups straight away instead of
-  waiting for a reload or a spec change
-- Trinkets and other equipment cooldowns now work. Drag one into Essential or Utility in
-  Blizzard's Cooldown Manager and it appears here too, with its item icon and its cooldown.
-  These have no spell attached, so they were previously discarded
-- Fixed a crash that could take out the entire Cooldown Manager display. Equipment entries
-  carry no spell ID, and one was being used as a table key without checking -- which is not
-  a harmless no-op but a hard error, and it would have stopped every icon from being
-  discovered. It could not happen before this version, since those entries never got this
-  far, so nothing was broken in 1.69 by it
-- Cooldown icons now show the game's proc glow. When an ability lights up on your action
-  bar it lights up here too, with the same animation, on the same events the game's own
-  cooldown bars use. Per group, on by default
-- Cooldown icons are now coloured by whether you can actually cast them, exactly as
-  Blizzard's bars do it: dimmed when unusable, blue when you lack the power, and red when
-  your target is out of range. Per group, on by default, using the game's own colours
-- Both of these apply to cooldowns only, not tracked buffs -- Blizzard's buff icons do not
-  do either, and there is no "can you cast this" to colour a buff by
-- The Custom Icons assignment list still offers every cooldown, including ones you have
-  hidden on Blizzard's bars. Hiding something there is about Blizzard's display, and should
-  not take away your ability to put it in a group of your own
-- Cooldown Manager groups are now part of your profile, and shared across every spec and
-  character using it. Set the groups up once on Default and every spec gets that layout;
-  if you want something different for one spec, save a new profile and point that spec at
-  it. Previously the layout was stored per class and spec and sat outside profiles
-  entirely, so saving a profile did not capture it and every new spec started from nothing
-- This covers group names, positions, sizes, growth, spacing and every styling option.
-  Which spells you have assigned to which group stays per spec, because a cooldown's ID
-  means something different on each class -- but the groups themselves are shared, so an
-  assignment still points at the same group and a group with nothing assigned on a
-  particular spec just hides itself
-- Your existing layout is not lost: the first time each profile is used it takes the layout
-  from whichever spec you are on. If you had different layouts per spec, the others are
-  left untouched on disk rather than deleted, but they are no longer used
-- Profile export and import strings now carry the Cooldown Manager layout too, so a profile
-  you share sets up the other person's groups as well. Strings made before this version
-  still import; they simply arrive with the standard groups
-- Switching profile, changing spec, deleting a profile and "Reset from Default" all rebuild
-  the groups now instead of leaving the previous profile's on screen
-- /sq cdm now reports whether the Blizzard filter is being read, per bar, with a count of
-  how many cooldowns it is showing out of how many exist. A group listing more than
-  Blizzard's bar looks the same whether the filter is being ignored or simply has nothing
-  hidden in it, and this is what tells those apart
+- Fixed a spell removed by a talent change vanishing from the Cooldown Manager
+  and then reappearing a second later, with the group never shrinking around the
+  gap. When a spell went away its icon was destroyed but left listed as a member
+  of its group, and the next layout pass re-attached and re-showed the very frame
+  that had just been destroyed. The clean-up only looked at spells you had
+  assigned to a group by hand, so it missed everything relying on the standard
+  Essential, Utility and Buffs groups -- which since 1.69 is almost everything.
+  Groups also re-pack now, so the row closes up instead of holding the space
+- Fixed the Cooldown Manager not updating on a spec or talent change until you
+  reloaded. Three things were wrong, all introduced in 1.70. A spec change is
+  handled in two places and each asked for a rebuild on its own timer; the
+  shorter of the two cancelled the longer, so the rebuild ran while the game was
+  still reporting the outgoing spec and then never ran again. Rebuilds are now
+  never pulled earlier than one already waiting, so it no longer matters which
+  order those arrive in
+- The check for "have my cooldowns changed" was also looking only at Blizzard's
+  filtered list, which updates on its own schedule, instead of the game's own
+  set, which updates immediately. A talent swap could leave it looking identical
+  and the rebuild was skipped entirely. Both are checked now -- one catches spec
+  and talent changes, the other catches edits made in Blizzard's Cooldown
+  Manager options, and neither alone covers both
+- A talent or loadout swap now always rebuilds rather than trusting that check,
+  matching what a spec change already did, since neither the game nor Blizzard's
+  own list is necessarily up to date at the instant the event arrives
+- The update notes popup now scrolls. With 1.70's eight highlights the text ran
+  underneath the buttons and off the bottom of the box, leaving the last few
+  unreadable and no way to reach them. The notes now sit in a scrolling area
+  between the heading and the buttons, so however long a release's highlights
+  are the box stays the same size and the buttons stay reachable

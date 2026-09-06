@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.71"] = {
+        "Fixed a spell removed by a talent change disappearing from the Cooldown Manager and then coming back a second later, with the group never closing up around the gap.",
+        "Fixed the Cooldown Manager not updating on a spec or talent change until you reloaded \226\128\148 a 1.70 regression, where two rebuild timers raced and the change check could miss a talent swap entirely.",
+        "The update notes you are reading now scroll, so a long set no longer runs off the bottom of the box with the last few bullets unreachable.",
+    },
     ["1.70"] = {
         "The Essential and Utility groups now follow your Blizzard Cooldown Manager filter \226\128\148 hide or move a spell there and these groups match, instead of listing every cooldown your class has.",
         "They follow the order you arranged there too, and update the moment you change it rather than waiting for a reload.",
@@ -97,6 +102,10 @@ end
 
 local frame
 
+-- Narrower than the old 424 by the width of the scroll bar, so a long note is
+-- not drawn underneath it.
+local BODY_WIDTH = 404
+
 local function BuildFrame()
     if frame then return frame end
 
@@ -116,9 +125,32 @@ local function BuildFrame()
     title:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -16)
     frame.title = title
 
-    local body = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
-    body:SetWidth(424)
+    -- The notes scroll.
+    --
+    -- They used to be one FontString anchored under the title on a fixed 320
+    -- tall frame, which silently relied on every release having few enough
+    -- bullets to fit. 1.70 had eight and the text ran underneath the buttons and
+    -- off the bottom of the frame -- the last three bullets were unreadable and
+    -- there was no way to get at them. Nothing warns you when this happens; the
+    -- text simply draws outside its parent.
+    --
+    -- Bounded between the title and the buttons rather than sized to the text,
+    -- so however long a future release's notes are the frame stays the same size
+    -- and the buttons stay reachable.
+    local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
+    -- -22 for the scroll bar gutter, matching every other scroller in the addon.
+    scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -22, 52)
+    frame.scroll = scroll
+
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(BODY_WIDTH, 1)
+    scroll:SetScrollChild(content)
+    frame.content = content
+
+    local body = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    body:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    body:SetWidth(BODY_WIDTH)
     body:SetJustifyH("LEFT")
     body:SetJustifyV("TOP")
     body:SetSpacing(4)
@@ -143,6 +175,17 @@ local function Show(titleText, bodyText)
     local f = BuildFrame()
     f.title:SetText(titleText)
     f.body:SetText(bodyText)
+
+    -- Size the scroll child to the text, after SetText so the height is the
+    -- wrapped height rather than the pre-layout one. Without this the child
+    -- keeps its placeholder height of 1 and the scroll frame decides there is
+    -- nothing to scroll, which looks exactly like the overflow bug it replaced.
+    f.content:SetHeight(math.max(1, f.body:GetStringHeight() + 4))
+
+    -- Back to the top: the frame is reused, so re-opening it through /sq notes
+    -- would otherwise restore wherever the last read was left.
+    f.scroll:SetVerticalScroll(0)
+
     f:Show()
 end
 
