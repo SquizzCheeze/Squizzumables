@@ -22,6 +22,7 @@ Core\ProfileIO.lua
 Core\EncounterTimeline.lua
 Core\Minimap.lua
 Core\Welcome.lua
+Core\TargetDistance.lua
 Squizzumables_CDM.lua
 Squizzumables_SpellAlerts.lua
 Squizzumables_StackDiag.lua

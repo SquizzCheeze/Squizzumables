@@ -3,6 +3,22 @@ Squizzumables Changelog
 
 V1.71
 
+- New Target Distance readout: roughly how far away your target is, as movable
+  on-screen text. Under Raid Tools, off by default. Choose whether it reads as a
+  band ("30-35") or just one end of it, set the text size, alignment, colour and
+  frame strata, and drag it into place with Unlock Frames like any other frame
+- It reads as a band on purpose. The game gives addons no way to measure the
+  distance to an enemy -- only to ask whether a particular spell or item would
+  reach right now -- so the answer is worked out by asking a ladder of known
+  ranges and reporting where you fall between two of them. Bands get wider
+  further out, where there are fewer things to ask about
+- The ladder is built mostly from your own spells, reading the ranges the game
+  currently reports, so it follows talents that extend a spell's range without
+  being told. A short list of fixed-range items fills the gaps your class leaves
+  -- a melee spec has few long rungs and a caster few short ones
+- Friendly targets are off by default and will often read "?" when switched on,
+  since the estimate is built from harmful spells and items and those refuse to
+  answer about a friendly unit
 - Fixed a spell removed by a talent change vanishing from the Cooldown Manager
   and then reappearing a second later, with the group never shrinking around the
   gap. When a spell went away its icon was destroyed but left listed as a member

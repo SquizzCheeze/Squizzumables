@@ -88,6 +88,17 @@ BH.defaultSettings = {
     cdmProxyBuffIcons = false,
 
     -- M+ Death Tally (per-player death counter, resets each key)
+    -- Target distance readout (Core/TargetDistance.lua). Off by default: it is
+    -- a persistent on-screen number rather than a reminder, so it should be
+    -- asked for rather than appear unbidden.
+    targetDistanceEnabled = false,
+    targetDistanceFormat = "band",      -- "band" | "max" | "min"
+    targetDistanceAlign = "CENTER",
+    targetDistanceTextSize = 18,
+    targetDistanceStrata = "HIGH",
+    targetDistanceFriendly = false,     -- probes are harmful, so hostile only
+    targetDistanceColor = { r = 1, g = 1, b = 1 },
+
     deathTallyEnabled = true,
     deathTallyLocked = false,
     deathTallyScale = 1.0,
@@ -429,6 +440,7 @@ local POSITION_PAIRS = {
     { "bagsReminderFrame",        "bagsReminderPosition" },
     { "healerCCReminderFrame",    "healerCCReminderPosition" },
     { "deathTallyFrame",          "deathTallyPosition" },
+    { "targetDistanceFrame",      "targetDistancePosition" },
 }
 
 -- All position keys stored in profiles.
@@ -679,6 +691,7 @@ function BH:SwitchToProfile(profileName)
     -- to be rebuilt here rather than left showing the old profile's groups.
     -- After the BH references above, since the rebuild reads cdmEnabled.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
+    if self.ApplyTargetDistance then self:ApplyTargetDistance() end
 
     return true
 end
@@ -769,6 +782,7 @@ function BH:OnSpecChanged()
     -- the CDM data -- assignments and free icons -- changes here too, so the
     -- cached view is stale either way.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
+    if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     -- Outside the panel check: the new profile has its own alerts, so the
     -- client-side aura sound registrations have to follow it whether or not the
     -- options panel happens to be open. Leaving them would keep playing the
@@ -1918,6 +1932,7 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             BH:UpdateButtons()
             -- Default's Cooldown Manager layout, not the deleted profile's.
             if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
+            if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
             BH:RefreshSettingsTab()
             print("Squizzumables: Deleted profile '" .. data .. "', switched to Default.")
         end
@@ -2176,6 +2191,7 @@ function BH:BuildSettingsTab(parent)
         -- Default's Cooldown Manager layout came across with the CopyTable
         -- above, since it lives on the profile as of 1.70. Rebuild so it shows.
         if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
+        if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
         BH:RefreshSettingsTab()
         BH:RefreshItemList()
         BH:RefreshRaidToolsTab()
@@ -2866,6 +2882,114 @@ function BH:BuildRaidToolsTab(parent)
             end
         end,
         disabled = function() return not BH.settings.bresCounterEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "TARGET DISTANCE" })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Show Target Distance",
+        tooltip = "Shows roughly how far away your target is, as movable text. "
+            .. "It reads as a band (\"30-35\") rather than a single number because the game gives "
+            .. "addons no way to measure distance -- only to ask whether a spell or item would "
+            .. "reach. Position it with Unlock Frames.",
+        get = function() return BH.settings.targetDistanceEnabled and true or false end,
+        set = function(v)
+            BH.settings.targetDistanceEnabled = v
+            BH:SaveSettings()
+            BH:ApplyTargetDistance()
+        end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Distance Format",
+        width = 160,
+        tooltip = "How the estimate reads. The band is the honest one; the other two pick an end of it.",
+        items = BH.TARGET_DISTANCE_FORMATS,
+        get = function() return BH.settings.targetDistanceFormat or "band" end,
+        set = function(value)
+            BH.settings.targetDistanceFormat = value
+            BH:SaveSettings()
+            BH:UpdateTargetDistance()
+        end,
+        disabled = function() return not BH.settings.targetDistanceEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Text Align",
+        width = 160,
+        tooltip = "Alignment of the distance text within its frame.",
+        items = BH.TARGET_DISTANCE_ALIGNMENTS,
+        get = function() return BH.settings.targetDistanceAlign or "CENTER" end,
+        set = function(value)
+            BH.settings.targetDistanceAlign = value
+            BH:SaveSettings()
+            BH:ApplyTargetDistanceStyle()
+        end,
+        disabled = function() return not BH.settings.targetDistanceEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        label = "Distance Text Size",
+        width = 300, min = 8, max = 48, step = 1,
+        tooltip = "Font size of the distance text.",
+        get = function() return BH.settings.targetDistanceTextSize or 18 end,
+        set = function(value)
+            BH.settings.targetDistanceTextSize = value
+            BH:SaveSettings()
+            BH:ApplyTargetDistanceStyle()
+        end,
+        disabled = function() return not BH.settings.targetDistanceEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Frame Strata",
+        width = 160,
+        tooltip = "How far in front of other frames the distance text sits. Raise it if something covers it.",
+        items = BH.TARGET_DISTANCE_STRATAS,
+        get = function() return BH.settings.targetDistanceStrata or "HIGH" end,
+        set = function(value)
+            BH.settings.targetDistanceStrata = value
+            BH:SaveSettings()
+            BH:ApplyTargetDistanceStyle()
+        end,
+        disabled = function() return not BH.settings.targetDistanceEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "color",
+        label = "Distance Text Colour",
+        tooltip = "Colour of the distance text.",
+        get = function()
+            local c = BH.settings.targetDistanceColor or {}
+            return c.r or 1, c.g or 1, c.b or 1
+        end,
+        set = function(r, g, b)
+            BH.settings.targetDistanceColor = { r = r, g = g, b = b }
+            BH:SaveSettings()
+            BH:ApplyTargetDistanceStyle()
+        end,
+        disabled = function() return not BH.settings.targetDistanceEnabled end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Also Show For Friendly Targets",
+        tooltip = "Off by default, and it will often read \"?\" when on. The estimate is built from "
+            .. "harmful spells and items, and those refuse to answer about a friendly unit -- so "
+            .. "there is frequently nothing to go on.",
+        get = function() return BH.settings.targetDistanceFriendly and true or false end,
+        set = function(v)
+            BH.settings.targetDistanceFriendly = v
+            BH:SaveSettings()
+            BH:UpdateTargetDistance()
+        end,
+        disabled = function() return not BH.settings.targetDistanceEnabled end,
     })
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
@@ -6831,6 +6955,7 @@ local MOVABLE_FRAMES = {
     { field = "bresCounterFrame",    label = "Battle Res",     enabled = "bresCounterEnabled" },
     { field = "deathTallyFrame",     label = "Death Tally",    enabled = "deathTallyEnabled" },
     { field = "calloutsButtonFrame", label = "Callouts",       enabled = "dungeonCallouts", muteChildren = true },
+    { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled" },
 }
 
 -- Every text reminder, from the registry rather than by hand.
@@ -10455,6 +10580,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             BH.cdm:PrintSoundDiagnostics()
         else
             print(addonName .. ": Cooldown Manager module not loaded.")
+        end
+    elseif msg == "range" then
+        if BH.PrintRangeDiagnostics then
+            BH:PrintRangeDiagnostics()
+        else
+            print(addonName .. ": Target distance module not loaded.")
         end
     elseif msg == "cdmbuff" then
         if BH.cdm and BH.cdm.PrintBuffDiagnostics then
