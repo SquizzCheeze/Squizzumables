@@ -1556,7 +1556,12 @@ function BH:CreateOptionsPanel()
                 resultButtons[i] = btn
             end
             btn.title:SetText(res.entry.label)
-            btn.where:SetText(res.entry.page and res.entry.page.label or "")
+            -- "Raid Tools > Pull Timer" where the page has sub-tabs, so a
+            -- result names the sub-tab it will switch to rather than just the
+            -- page, which for a six-section page says almost nothing.
+            local pageLabel = res.entry.page and res.entry.page.label or ""
+            local sectionLabel = res.entry.section and res.entry.section.label
+            btn.where:SetText(sectionLabel and (pageLabel .. " > " .. sectionLabel) or pageLabel)
             btn:SetScript("OnClick", function()
                 ns.Rows.JumpTo(res.entry)
                 searchBox:SetText("")
@@ -2630,13 +2635,20 @@ end
 -- ============================================================================
 
 function BH:BuildRaidToolsTab(parent)
-    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-    scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
+    -- Six unrelated sections in one scroll had become the problem this page
+    -- was, so each is now its own sub-tab. `content` is reassigned at every
+    -- boundary below; the row calls themselves are unchanged.
+    local pages = ns.SubTabs.Create(parent, {
+        { key = "general",  label = "General" },
+        { key = "pull",     label = "Pull Timer" },
+        { key = "scale",    label = "Scale" },
+        { key = "bres",     label = "Battle Res" },
+        { key = "distance", label = "Target Distance" },
+        { key = "position", label = "Position" },
+    })
 
-    local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetWidth(400)
-    scrollFrame:SetScrollChild(content)
+    local content = pages.general
+    ns.Rows.currentSection = content.section
 
     local yOffset = -14
     local leftPad = 14
@@ -2758,9 +2770,11 @@ function BH:BuildRaidToolsTab(parent)
         disabled = function() return BH.settings.raidToolsEnabled == false end,
     })
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "PULL TIMER" })
+    -- Sub-tab boundary: size the page just finished, then move to the next.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.pull
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "slider",
@@ -2799,9 +2813,11 @@ function BH:BuildRaidToolsTab(parent)
         label = "The timeline may only draw during an encounter, in which case a pre-pull countdown will not appear.",
     })
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "SCALE" })
+    -- Sub-tab boundary: size the page just finished, then move to the next.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.scale
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "slider",
@@ -2835,8 +2851,11 @@ function BH:BuildRaidToolsTab(parent)
         disabled = function() return BH.settings.raidToolsEnabled == false end,
     })
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "BATTLE RES COUNTER" })
+    -- Sub-tab boundary: size the page just finished, then move to the next.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.bres
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
@@ -2884,8 +2903,11 @@ function BH:BuildRaidToolsTab(parent)
         disabled = function() return not BH.settings.bresCounterEnabled end,
     })
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "TARGET DISTANCE" })
+    -- Sub-tab boundary: size the page just finished, then move to the next.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.distance
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
@@ -2992,8 +3014,11 @@ function BH:BuildRaidToolsTab(parent)
         disabled = function() return not BH.settings.targetDistanceEnabled end,
     })
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "POSITION" })
+    -- Sub-tab boundary: size the page just finished, then move to the next.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.position
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
@@ -3099,6 +3124,7 @@ function BH:BuildRaidToolsTab(parent)
     yOffset = yOffset - 40
 
     content:SetHeight(math.abs(yOffset) + 20)
+    ns.Rows.currentSection = nil
 end
 
 -- Kept as a thin shim: the Raid Tools rows are declarative now, so each one
@@ -3586,13 +3612,20 @@ function BH:AddReminderSection(content, y, key, skipDivider)
 end
 
 function BH:BuildTextRemindersTab(parent)
-    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-    scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
+    -- Split by what the reminder is about rather than one long scroll. The
+    -- dividers and section headings that used to separate these are gone: the
+    -- sub-tab label says the same thing, and keeping both would name every
+    -- section twice.
+    local pages = ns.SubTabs.Create(parent, {
+        { key = "class",  label = "Class" },
+        { key = "sounds", label = "Instance Sounds" },
+        { key = "bags",   label = "Bags" },
+        { key = "feast",  label = "Feast" },
+        { key = "cc",     label = "Role CC" },
+    })
 
-    local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetWidth(400)
-    scrollFrame:SetScrollChild(content)
+    local content = pages.class
+    ns.Rows.currentSection = content.section
 
     local yOffset = -14
     local leftPad = 14
@@ -3606,16 +3639,11 @@ function BH:BuildTextRemindersTab(parent)
         yOffset = yOffset - self:AddReminderSection(content, yOffset, key, i == #classReminders)
     end
 
-    -- === Instance Sound ===
-    local instDivider = CreateSQDivider(content, yOffset)
-    instDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    yOffset = yOffset - 18
-
-    local instLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    instLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    instLabel:SetText("INSTANCE SOUND ALERTS")
-    ns.ApplyAccent(instLabel, "text")
-    yOffset = yOffset - 22
+    -- Sub-tab boundary.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.sounds
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
@@ -3628,16 +3656,11 @@ function BH:BuildTextRemindersTab(parent)
         end,
     })
 
-    -- === Food/Flask/Oil Bag Reminders ===
-    local consumDivider = CreateSQDivider(content, yOffset)
-    consumDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    yOffset = yOffset - 18
-
-    local consumLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    consumLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    consumLabel:SetText("CONSUMABLE BAG REMINDERS")
-    ns.ApplyAccent(consumLabel, "text")
-    yOffset = yOffset - 16
+    -- Sub-tab boundary.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.bags
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     local consumNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     consumNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -3675,15 +3698,11 @@ function BH:BuildTextRemindersTab(parent)
     yOffset = yOffset - self:AddReminderSection(content, yOffset, "healthstone", true)
 
     -- === Feast Announce ===
-    local feastDivider = CreateSQDivider(content, yOffset)
-    feastDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    yOffset = yOffset - 18
-
-    local feastLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    feastLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    feastLabel:SetText("FEAST ANNOUNCE")
-    ns.ApplyAccent(feastLabel, "text")
-    yOffset = yOffset - 16
+    -- Sub-tab boundary.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.feast
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     local feastNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     feastNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -3803,15 +3822,11 @@ function BH:BuildTextRemindersTab(parent)
     })
 
     -- === Healer CC Alert ===
-    local healerCCDivider = CreateSQDivider(content, yOffset)
-    healerCCDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    yOffset = yOffset - 18
-
-    local healerCCTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    healerCCTitle:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    healerCCTitle:SetText("ROLE CC ALERT")
-    ns.ApplyAccent(healerCCTitle, "text")
-    yOffset = yOffset - 18
+    -- Sub-tab boundary.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.cc
+    ns.Rows.currentSection = content.section
+    yOffset = -14
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "text",
         label = "Plays a sound and shows an alert when a watched party or raid member is crowd controlled. Pick which roles to watch.",
@@ -3891,6 +3906,7 @@ function BH:BuildTextRemindersTab(parent)
     })
 
     content:SetHeight(math.abs(yOffset) + 20)
+    ns.Rows.currentSection = nil
 end
 
 function BH:RefreshCustomSoundsList()

@@ -3,6 +3,17 @@ Squizzumables Changelog
 
 V1.71
 
+- Raid Tools, Reminders and Kelerts now have sub-tabs across the top, so each
+  one is a screenful instead of a single long scroll. Raid Tools splits into
+  General, Pull Timer, Scale, Battle Res, Target Distance and Position;
+  Reminders into Class, Instance Sounds, Bags, Feast and Role CC; Kelerts into
+  Lust Alert, Buff Sounds and Death Tally
+- Search knows about them: a result now reads "Raid Tools > Pull Timer" and
+  clicking it opens the right sub-tab as well as the right tab. Without that it
+  would have jumped to the page and left the setting hidden behind an
+  unselected sub-tab, which looks exactly like search being broken
+- The headings and dividers that used to separate those sections are gone,
+  since the sub-tab already names them
 - New Target Distance readout: roughly how far away your target is, as movable
   on-screen text. Under Raid Tools, off by default. Choose whether it reads as a
   band ("30-35") or just one end of it, set the text size, alignment, colour and

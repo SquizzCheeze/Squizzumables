@@ -527,6 +527,12 @@ function Rows.JumpTo(entry)
     if entry.page and entry.page.key and BH and BH.switchTab then
         BH.switchTab(entry.page.key)
     end
+    -- Then the sub-tab, if the row lives on a page that has them. Without this
+    -- the search would switch to the right page and leave the row hidden behind
+    -- an unselected sub-tab, which is indistinguishable from search not working.
+    if entry.section and entry.section.select then
+        entry.section.select()
+    end
     -- One frame later: the page has to be shown before its scroll geometry and
     -- the row's position are meaningful.
     C_Timer.After(0, function()

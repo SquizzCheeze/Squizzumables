@@ -967,23 +967,23 @@ end
 -- ============================================================================
 
 function BH:BuildJustForKelTab(parent)
-    local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-    scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -22, 0)
+    -- Three unrelated things shared this page: the lust alert, the buff sound
+    -- grid and the death tally. `content` is reassigned at each boundary below.
+    --
+    -- The alert and its frame are one sub-tab, not two. They are the same
+    -- feature -- what fires and what it looks like -- and separating them meant
+    -- setting up one alert across two tabs.
+    local pages = ns.SubTabs.Create(parent, {
+        { key = "alerts",     label = "Lust Alert" },
+        { key = "buffsounds", label = "Buff Sounds" },
+        { key = "deaths",     label = "Death Tally" },
+    })
 
-    local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetWidth(400)
-    scrollFrame:SetScrollChild(content)
+    local content = pages.alerts
+    ns.Rows.currentSection = content.section
 
     local leftPad = 14
     local yOffset = -14
-
-    -- Section header
-    local hdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    hdr:SetText("KELERTS")
-    ns.ApplyAccent(hdr, "text")
-    yOffset = yOffset - 20
 
     local lustNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lustNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -1231,6 +1231,10 @@ function BH:BuildJustForKelTab(parent)
     yOffset = yOffset - 8
 
     -- ── ALERT FRAME ────────────────────────────────────────────────────────
+    --
+    -- A subsection of Lust Alert rather than a sub-tab of its own: it is how
+    -- that one alert looks, so splitting them put two halves of the same
+    -- setting behind different tabs.
     do
         local div = CreateSQDivider(content, yOffset)
         div:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -1274,19 +1278,15 @@ function BH:BuildJustForKelTab(parent)
     -- carry the key; nothing reads it, which is harmless, so there is nothing
     -- for a migration to repair.
 
-    -- ── BUFF SOUNDS ───────────────────────────────────────────────────────
-    --
-    -- A sound when one of your own buffs lands or drops, with no image. That is
-    -- not a design choice -- see the buff sounds section at the top of this
-    -- file. The client plays these, which is the only way they can fire in
-    -- combat, and it reports nothing back for us to draw from.
+    -- Sub-tab boundary.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.buffsounds
+    ns.Rows.currentSection = content.section
+    yOffset = -14
     do
-        local bsHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        bsHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-        bsHdr:SetText("BUFF SOUNDS")
-        ns.ApplyAccent(bsHdr, "text")
-        yOffset = yOffset - 20
-
+        -- No heading here any more: the sub-tab is called Buff Sounds, and
+        -- naming the section twice on the same screen is what this tidy-up was
+        -- getting rid of.
         local bsNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         bsNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
         bsNote:SetWidth(372)
@@ -1358,18 +1358,11 @@ function BH:BuildJustForKelTab(parent)
         end
     end
 
-    -- ── M+ DEATH TALLY ────────────────────────────────────────────────────
-    do
-        local div = CreateSQDivider(content, yOffset)
-        div:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-        yOffset = yOffset - 18
-    end
-
-    local dtHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    dtHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    dtHdr:SetText("M+ DEATH TALLY")
-    ns.ApplyAccent(dtHdr, "text")
-    yOffset = yOffset - 22
+    -- Sub-tab boundary.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.deaths
+    ns.Rows.currentSection = content.section
+    yOffset = -14
 
     local dtEnableCb = CreateSQCheckbox(content, "Enable M+ Death Tally", function(checked)
         BH.settings.deathTallyEnabled = checked
@@ -1449,8 +1442,14 @@ function BH:BuildJustForKelTab(parent)
     ns.Rows.AddTooltip(dtLockCb, "Lock M+ Death Tally", "Stops the death tally frame being dragged.")
     yOffset = yOffset - 28
 
-    self.kelTabContent = content
     content:SetHeight(math.abs(yOffset) + 20)
+    ns.Rows.currentSection = nil
+
+    -- Only ever read as "has this tab been built yet", so which page it points
+    -- at does not matter -- but the first one is the honest answer, and leaving
+    -- it as whatever `content` happened to be at the end of the function would
+    -- silently follow any future re-ordering of the sub-tabs.
+    self.kelTabContent = pages.alerts
 
     self:RefreshJustForKelTab()
 end
