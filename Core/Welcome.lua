@@ -23,10 +23,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.73"] = {
         "Fixed this addon breaking Blizzard's own Cooldown Manager. The errors came from Blizzard's code and named Squizzumables, and in back-to-back keys ran to thousands per run, surviving reloads.",
-        "The cause was reading your Cooldown Manager filter, added in 1.70. Asking for that list runs Blizzard's settings code inside this addon, which permanently marks their cooldown data as addon-touched and locks their own code out of it.",
-        "So the Essential and Utility groups list a category's full set again, as they did before 1.70. This is not coming back until Blizzard offers a way to read that filter without breaking their frames.",
-        "What that costs: a spell you hid in Blizzard's options shows here again, the order you arranged there is not followed, and trinkets dragged into Essential or Utility no longer appear. Not worth breaking the game's own Cooldown Manager over.",
-        "Also fixed a second, quieter route to the same damage: this addon listened on one of Blizzard's internal notifications, which left our mark on everything else listening for it. It watches the underlying game events directly now.",
+        "The cause was how 1.70 read your Cooldown Manager filter: asking Blizzard for that list runs their settings code inside this addon, which permanently marks their cooldown data as addon-touched and locks their own code out of it.",
+        "The Essential and Utility groups still follow your filter, in your order, trinkets included \226\128\148 nothing changes on screen. Blizzard's bars had already worked the list out and left the answer on their icons, so it is read from there now instead of asked for.",
+        "Editing Blizzard's Cooldown Manager options still updates these groups without a reload, now within about two seconds rather than instantly. That is a deliberate trade for keeping well clear of the code that caused all of this.",
+        "Also fixed a second, quieter route to the same damage: this addon listened on one of Blizzard's internal notifications, which left our mark on everything else listening for it, their Cooldown Manager included.",
     },
     ["1.72"] = {
         "The settings menus no longer scroll most of a page per notch of the mouse wheel. A click now moves about one option row.",

@@ -8,26 +8,24 @@ V1.73
   report -- their aura and cooldown handlers could no longer read their own
   internal tables. In back-to-back Mythic+ this ran to thousands of errors per
   run and came straight back after a reload
-- The cause was reading the player's Cooldown Manager filter. Version 1.70
-  added that so the Essential and Utility groups would hide whatever you had
-  hidden in Blizzard's own options. Asking for that list runs Blizzard's
-  settings code inside this addon, which permanently marks their cooldown data
-  as addon-touched; from then on their own code is refused access to it
-- So that feature is gone, and the Essential and Utility groups list a
-  category's full set again, exactly as they did before 1.70. Blizzard exposes
-  no way to read that filter without breaking their frames, so this is not
-  coming back until they offer one
-- What that costs, stated plainly: a spell you hid in Blizzard's Cooldown
-  Manager options shows in these groups again, the order you arranged there is
-  no longer followed, and trinkets and other equipment cooldowns dragged into
-  Essential or Utility no longer appear here. There is currently no way to hide
-  an individual spell from these groups from within this addon. None of that is
-  worth breaking the game's own Cooldown Manager over
+- The cause was how 1.70 read your Cooldown Manager filter. Asking Blizzard for
+  that list runs their settings code inside this addon, which permanently marks
+  their cooldown data as addon-touched; from then on their own code is refused
+  access to it
+- The Essential and Utility groups still follow your Blizzard Cooldown Manager
+  filter, in your order, trinkets included. Nothing about the feature changes on
+  screen -- only how the list is obtained. Blizzard's bars already worked the
+  filter out and left the answer on their icons, so this now reads that instead
+  of asking, which touches nothing and taints nothing
+- Editing Blizzard's Cooldown Manager options still updates these groups without
+  a reload; it now takes up to two seconds instead of being instant. That is a
+  deliberate trade -- the instant version put this addon inside the part of
+  Blizzard's code that caused all of the above, to save two seconds on a screen
+  you are already looking at
 - Also removed a second, quieter route to the same damage: this addon listened
   on one of Blizzard's internal notifications, and everything else listening for
-  that same notification -- including Blizzard's own Cooldown Manager -- ran
-  with our mark on it afterwards. It now watches the underlying game events
-  directly, which is equivalent and keeps the two apart
+  it -- including Blizzard's own Cooldown Manager -- ran with our mark on it
+  afterwards. The filter is followed without any of that now
 - Version 1.72's fix for this was aimed at the wrong thing. It moved this
-  addon's per-frame bookkeeping off Blizzard's frames, which was worth doing
-  and is kept, but it was not what was breaking the Cooldown Manager
+  addon's per-frame bookkeeping off Blizzard's frames, which was worth doing and
+  is kept, but it was not what was breaking the Cooldown Manager

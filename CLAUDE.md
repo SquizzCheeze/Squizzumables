@@ -420,16 +420,18 @@ tainted depends on what else has run first. Three things learned the hard way:
   `ShouldDisplaySpellCooldown`, all blamed on this addon, none with any of our frames in the stack.
   It survived reloads because we re-tainted within seconds of login.
 
-  Three rules fall out, and all three were violated:
+  Four rules fall out, and the first three were violated:
   - **Prefer the `C_` API to a frame method.** `C_CooldownViewer.GetCooldownViewerCategorySet` is
     a C call and taints nothing; `viewer:GetCooldownIDs()` is Lua and taints everything it touches.
     Reading a Blizzard table field directly is likewise free — an accessor that only does
     `return self.x` is a taint risk for no benefit, so read `x`.
   - **A `CallbackRegistry` runs every handler for one event in a single call chain.** Registering
     on `EventRegistry` for an event Blizzard also listens to means our handler taints the
-    execution and *Blizzard's* handlers for the same event then run tainted. Register for the
-    underlying game events on our own frame instead: an event handler starts a clean chain. 1.70
-    registered on `CooldownViewerSettings.OnDataChanged` — twice.
+    execution and *Blizzard's* handlers for the same event then run tainted. 1.70 registered on
+    `CooldownViewerSettings.OnDataChanged` — twice. Note this is **not** true of
+    `hooksecurefunc`, which saves and restores taint around the hook; that is why the item-frame
+    hooks in `Squizzumables_CDM.lua` measure clean. Safe mechanism, unsafe mechanism, and they
+    look alike.
   - **Reading the source cannot answer this, so measure.** Gethe gives signatures and behaviour and
     was right about both; taint is a runtime property documented nowhere. `issecurevariable(tbl,
     key)` returns `isSecure, taintingAddon` and settles it in one run — that is what
@@ -437,11 +439,31 @@ tainted depends on what else has run first. Three things learned the hard way:
     after some play; the first report from it was clean because the taint took seconds to
     re-establish. Note the diagnostic must itself read only plain fields, or it causes what it
     measures.
+  - **When a Blizzard Lua call is the only way to compute something, look for where Blizzard
+    already computed it.** Blizzard's own code runs on a clean stack and leaves results lying on
+    frames as plain fields, and reading those costs nothing. This is what makes the Cooldown
+    Manager filter obtainable at all: `CooldownViewerMixin:RefreshLayout` calls `GetCooldownIDs()`
+    itself, acquires one pooled item frame per entry, sets `itemFrame.layoutIndex = i`, and
+    `RefreshData` then writes each frame's `cooldownID`. So `cooldownID` + `layoutIndex` across
+    `viewer.itemFramePool:EnumerateActive()` **is** the filtered, ordered list — membership, order
+    and equip-slot entries included — for two plain field reads. `BlizzardFilteredIDs` in
+    `Squizzumables_CDM.lua` does exactly that, and the long note above it carries the three
+    details that make it correct: hidden-but-acquired frames are *not* released (so enumerate the
+    pool, never the shown children), `GetItemCount` pads to a minimum of 2 (surplus frames get
+    `ClearCooldownID`, so test `cooldownID` rather than trusting `layoutIndex` to be dense), and
+    the pool is lazy (empty means "not built yet", not "everything is hidden").
 
   The wrong turn worth knowing: the comment justifying the 1.70 call cited the missing
   `HasRestrictions` flag as prior verification, and a later paragraph called the taint risk "real
   but unevidenced". It was unevidenced because nobody had measured. **An absence of evidence got
   written down as reassurance**, and then survived three rounds of debugging as settled fact.
+
+  The second wrong turn: on finding the cause, 1.73 initially **deleted the feature** rather than
+  re-implementing it, even though the removal note itself said reading the pool was the way to do
+  it. "This mechanism is unsafe" is not "this feature is impossible" — separate the two before
+  throwing work away. EllesmereUI's CDM (`EllesmereUICooldownManager`, current on 12.1) calls
+  `GetCooldownIDs` zero times and gets perfect filtering, which is what prompted the user to ask
+  why we could not.
 - **`C_Timer.After(0)` clears call-lineage taint, not combat lockdown.** The timer still fires in
   combat, so a protected call inside it is still refused — which is how `AddAuraSound` kept
   throwing `ADDON_ACTION_BLOCKED` from inside the deferral that was supposed to fix it (1.66).
