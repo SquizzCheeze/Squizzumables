@@ -21,6 +21,13 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.73"] = {
+        "Fixed this addon breaking Blizzard's own Cooldown Manager. The errors came from Blizzard's code and named Squizzumables, and in back-to-back keys ran to thousands per run, surviving reloads.",
+        "The cause was reading your Cooldown Manager filter, added in 1.70. Asking for that list runs Blizzard's settings code inside this addon, which permanently marks their cooldown data as addon-touched and locks their own code out of it.",
+        "So the Essential and Utility groups list a category's full set again, as they did before 1.70. This is not coming back until Blizzard offers a way to read that filter without breaking their frames.",
+        "What that costs: a spell you hid in Blizzard's options shows here again, the order you arranged there is not followed, and trinkets dragged into Essential or Utility no longer appear. Not worth breaking the game's own Cooldown Manager over.",
+        "Also fixed a second, quieter route to the same damage: this addon listened on one of Blizzard's internal notifications, which left our mark on everything else listening for it. It watches the underlying game events directly now.",
+    },
     ["1.72"] = {
         "The settings menus no longer scroll most of a page per notch of the mouse wheel. A click now moves about one option row.",
         "New \"Grey Out On Cooldown\" tick for Cooldown Manager groups, dimming an icon while its ability is on cooldown the way Blizzard's own bars do.",

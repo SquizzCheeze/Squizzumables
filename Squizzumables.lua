@@ -10991,6 +10991,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": Target distance module not loaded.")
         end
+    elseif msg == "cdmtaint" then
+        if BH.cdm and BH.cdm.PrintTaintDiagnostics then
+            BH.cdm:PrintTaintDiagnostics()
+        else
+            print(addonName .. ": Cooldown Manager module not loaded.")
+        end
     elseif msg == "cotank" then
         if BH.PrintCoTankDiagnostics then
             BH:PrintCoTankDiagnostics()

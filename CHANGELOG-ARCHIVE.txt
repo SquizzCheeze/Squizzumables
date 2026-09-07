@@ -8,6 +8,31 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.72
+
+- Fixed the settings menus scrolling most of a page per notch of the mouse
+  wheel, which read as the list skipping rows rather than scrolling -- it was,
+  because several rows went past between one click and the next. The game's
+  default step for this kind of panel is half the visible height; it is now
+  about one option row, everywhere in the settings
+- New "Grey Out On Cooldown" tick for Cooldown Manager groups: dims an icon
+  while its ability is on cooldown, which is what Blizzard's own bars do. It
+  pairs with the existing "Grey Out When Ready", which does the opposite, so
+  ticking either unticks the other -- having both on would have greyed the icon
+  in every state
+- Fixed this addon breaking Blizzard's own tracked-buff alerts. The error came
+  from Blizzard's code and named Squizzumables, with nothing of ours in the
+  report: their aura handler could no longer read its own internal table because
+  our addon had "tainted" the frame it lives on. Once it happened, buff alerts
+  on the tracked buff bar stayed broken for the rest of the session
+- The cause was bookkeeping. Hiding Blizzard's cooldown bars needs a dozen small
+  notes kept per frame -- whether it is dimmed, where it was before it moved,
+  whether a hook has been installed -- and those notes were being written onto
+  Blizzard's frames. That is enough to taint them, and 12.1 made it fatal rather
+  than merely untidy by giving those frames internals that refuse to be read
+  from tainted code. The notes now live in this addon's own table instead, which
+  changes nothing about how anything behaves
+
 V1.71
 
 - Raid Tools, Reminders and Kelerts now have sub-tabs across the top, so each

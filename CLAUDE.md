@@ -146,7 +146,10 @@ without a fundamentally different detection approach that doesn't depend on read
   in, when an alert fires in one and not the other), `/sq cdm` (CDM
   sound wiring) and `/sq buffsounds` (which `AddAuraSound` registrations the client accepted, what
   it refused, and which call site asked for the last rebuild — run this first on any
-  blocked-call report about buff sounds) and `/sq cdmbuff` (per tracked-buff frame: whether
+  blocked-call report about buff sounds), `/sq cdmtaint` (whether this addon has tainted
+  Blizzard's Cooldown Manager — the first thing to run on any report of errors that come from
+  Blizzard's own code and name Squizzumables; see the taint-spread note under "Taint safety" for
+  why nothing else can answer that) and `/sq cdmbuff` (per tracked-buff frame: whether
   `IsActive` answers or is secret, whether `auraInstanceID` is usable, whether `GetAuraDuration`
   yields anything, and whether the swipe mirror and a proxy exist — this is what finally settled
   the 1.69 buff-swipe hunt after several wrong guesses).
@@ -402,6 +405,43 @@ tainted depends on what else has run first. Three things learned the hard way:
   runs `CreateOptionsPanel` → `RefreshJustForKelTab` → the registration — trips
   `ADDON_ACTION_BLOCKED`. The fix is a `C_Timer.After(0)`, which runs with none of that lineage.
   Check that flag before building on any new API.
+
+- **`HasRestrictions` says nothing about taint SPREAD, and no absence of it makes a call safe.**
+  Two different mechanisms, and conflating them cost 1.70 through 1.72. The flag governs whether a
+  *protected call is refused*. Taint spread is separate and happens by *execution*: call any
+  Blizzard Lua function and it runs on your stack, so every table it writes is tainted by you from
+  then on, permanently, with no error at the time and nothing in any traceback pointing at you.
+
+  1.70 called `viewer:GetCooldownIDs()` to read the player's Cooldown Manager filter. That runs
+  `CooldownViewerSettings`' data provider, which calls `CheckBuildDisplayData()` and rebuilds
+  `displayData` — the Cooldown Manager's spine — while tainted. Every Blizzard path that later read
+  it then ran tainted too. One Mythic+ session produced thousands of errors inside Blizzard's own
+  `CheckAuraAddedAlertTriggers`, `RefreshTotemData`, `GetUnitAuras`, `CacheChargeValues` and
+  `ShouldDisplaySpellCooldown`, all blamed on this addon, none with any of our frames in the stack.
+  It survived reloads because we re-tainted within seconds of login.
+
+  Three rules fall out, and all three were violated:
+  - **Prefer the `C_` API to a frame method.** `C_CooldownViewer.GetCooldownViewerCategorySet` is
+    a C call and taints nothing; `viewer:GetCooldownIDs()` is Lua and taints everything it touches.
+    Reading a Blizzard table field directly is likewise free — an accessor that only does
+    `return self.x` is a taint risk for no benefit, so read `x`.
+  - **A `CallbackRegistry` runs every handler for one event in a single call chain.** Registering
+    on `EventRegistry` for an event Blizzard also listens to means our handler taints the
+    execution and *Blizzard's* handlers for the same event then run tainted. Register for the
+    underlying game events on our own frame instead: an event handler starts a clean chain. 1.70
+    registered on `CooldownViewerSettings.OnDataChanged` — twice.
+  - **Reading the source cannot answer this, so measure.** Gethe gives signatures and behaviour and
+    was right about both; taint is a runtime property documented nowhere. `issecurevariable(tbl,
+    key)` returns `isSecure, taintingAddon` and settles it in one run — that is what
+    `/sq cdmtaint` (`cdmModule:PrintTaintDiagnostics`) exists for. Run it after a reload *and*
+    after some play; the first report from it was clean because the taint took seconds to
+    re-establish. Note the diagnostic must itself read only plain fields, or it causes what it
+    measures.
+
+  The wrong turn worth knowing: the comment justifying the 1.70 call cited the missing
+  `HasRestrictions` flag as prior verification, and a later paragraph called the taint risk "real
+  but unevidenced". It was unevidenced because nobody had measured. **An absence of evidence got
+  written down as reassurance**, and then survived three rounds of debugging as settled fact.
 - **`C_Timer.After(0)` clears call-lineage taint, not combat lockdown.** The timer still fires in
   combat, so a protected call inside it is still refused — which is how `AddAuraSound` kept
   throwing `ADDON_ACTION_BLOCKED` from inside the deferral that was supposed to fix it (1.66).

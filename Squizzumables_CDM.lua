@@ -1136,8 +1136,54 @@ local DISCOVER_CATEGORIES = {
     { category = 3, viewerType = "buff",     viewer = "BuffBarCooldownViewer"   },
 }
 
--- Blizzard's OWN list for a category: filtered by the player's Cooldown Manager
--- settings, and in the order they arranged it.
+-- REMOVED IN 1.73. DO NOT REINSTATE THIS WITHOUT READING THE WHOLE NOTE.
+--
+-- 1.70 read the player's Cooldown Manager filter by calling
+-- `viewer:GetCooldownIDs()`. That runs
+-- `CooldownViewerSettings:GetDataProvider():GetOrderedCooldownIDsForCategory()`
+-- and can trigger `CheckBuildDisplayData()` -- Blizzard settings code executing
+-- on OUR stack. Everything it writes is tainted by us from that moment, and
+-- `/sq cdmtaint` showed exactly that on a live client:
+--
+--     data provider:    displayData<-Squizzumables
+--     display data:     orderedCooldownIDs<-Squizzumables
+--                       cooldownInfoByID<-Squizzumables
+--                       defaultOrderedCooldownIDs<-Squizzumables
+--     first item frame: cooldownID<-Squizzumables
+--
+-- Those tables are the Cooldown Manager's spine, so once they carried our taint
+-- every Blizzard path that read them ran tainted too. A single Mythic+ session
+-- produced thousands of errors across CheckAuraAddedAlertTriggers,
+-- RefreshTotemData, GetUnitAuras, CacheChargeValues and
+-- ShouldDisplaySpellCooldown -- all Blizzard's own code, all blamed on this
+-- addon, none with any of our frames in the traceback. It survived reloads
+-- because we re-tainted within seconds of login.
+--
+-- THE REASONING THAT LET THIS SHIP, so it is not repeated:
+--
+-- The comment here used to argue the call was safe because no C_CooldownViewer
+-- function carries HasRestrictions. That flag governs whether a PROTECTED CALL
+-- is REFUSED. It says nothing about TAINT SPREAD, which happens by execution.
+-- Two different mechanisms, conflated, and the conflation was then cited as
+-- prior verification.
+--
+-- Reading the source cannot answer this. Gethe gives signatures and behaviour
+-- and was right about both; taint is a runtime property that appears in no
+-- documentation. The only way to settle it is to measure -- issecurevariable on
+-- Blizzard's own fields, which is what /sq cdmtaint exists for. Measure first,
+-- do not reason from flags.
+--
+-- Discovery uses the raw category set again, as it did before 1.70. The cost is
+-- real: a spell hidden in Blizzard's Cooldown Manager options shows in these
+-- groups anyway, and so do HideByDefault entries. If this is ever reattempted
+-- it must execute NO Blizzard Lua -- read `cooldownID` and `layoutIndex` off
+-- `viewer.itemFramePool` entries regardless of shown state, which is pure table
+-- reads -- and it must be confirmed with /sq cdmtaint on a live client before
+-- shipping. Note a shown-frames scan is NOT the answer: Blizzard hides an item
+-- frame when its own "hide when inactive" is on, so that silently drops every
+-- inactive cooldown.
+--
+-- Everything below is retained as the record of what the filter actually was.
 --
 -- This is the difference between mirroring Blizzard's bars and merely listing
 -- the same class's spells. `C_CooldownViewer.GetCooldownViewerCategorySet` --
@@ -1185,12 +1231,12 @@ local DISCOVER_CATEGORIES = {
 -- lose most of their icons for anyone using that Blizzard setting, and only for
 -- them. Reading the list Blizzard reads has no such hole.
 --
--- The residual taint consideration is real but unevidenced: this executes
--- `CooldownViewerSettings:GetDataProvider()`, and `CheckBuildDisplayData` can
--- run on our stack inside the Edit Mode system. No blocked call has ever been
--- traced to it. If one ever is, the fix is NOT the shown-frames scan above --
--- it is to read `viewer.itemFramePool` entries regardless of shown state, which
--- keeps the inactive ones.
+-- The paragraph that stood here called the taint risk "real but unevidenced"
+-- and noted that no blocked call had been traced to it. That was true only
+-- because nobody had measured; /sq cdmtaint later traced it in one run. An
+-- absence of evidence was written down as reassurance, which is how it survived
+-- three separate rounds of debugging.
+--
 -- An EMPTY list counts as "no answer", not as "the player hid everything".
 --
 -- Defensive rather than a fix for an observed bug -- worth saying, because the
@@ -1207,22 +1253,6 @@ local DISCOVER_CATEGORIES = {
 -- and self-correcting, against the alternative of a silently blank group.
 -- `CooldownSetSignature` uses this same helper, so the moment a real list
 -- arrives the change registers and a reconcile follows.
-local function BlizzardFilteredIDs(viewerGlobal)
-    local viewer = viewerGlobal and _G[viewerGlobal]
-    if type(viewer) ~= "table" or type(viewer.GetCooldownIDs) ~= "function" then
-        return nil
-    end
-    local ok, ids = pcall(viewer.GetCooldownIDs, viewer)
-    if ok and type(ids) == "table" and #ids > 0 then return ids end
-    return nil
-end
-
--- Whether the last discovery pass managed to read Blizzard's filtered lists.
--- Reported by /sq cdm: "our groups show more than Blizzard's bars" and "the
--- filter is being honoured but the player hid nothing" look identical on
--- screen, and only this tells them apart.
-cdmModule.usedBlizzardFilter = {}
-
 local function DiscoverCooldowns()
     local discovered = {}
     -- One ability, two categories.
@@ -1251,14 +1281,12 @@ local function DiscoverCooldowns()
     for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
         local isCooldownType = (viewerInfo.viewerType ~= "buff")
 
-        -- Blizzard's filtered list first; the raw category set only if the
-        -- viewer frame cannot answer.
-        local catIDs = BlizzardFilteredIDs(viewerInfo.viewer)
-        cdmModule.usedBlizzardFilter[viewerInfo.viewer] = (catIDs ~= nil)
-        if not catIDs then
-            catIDs = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
-                and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
-        end
+        -- The raw category set, and only that. Reading Blizzard's filtered
+        -- list meant calling a method on their viewer frame, which taints the
+        -- frame and everything the method touches -- see the note above
+        -- DiscoverCooldowns' caller for what that cost.
+        local catIDs = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
+            and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
 
         if catIDs then
             for orderIndex, cdID in ipairs(catIDs) do
@@ -2398,24 +2426,21 @@ function cdmModule:PrintSoundDiagnostics()
             tostring(GetSpecKey())))
     end
 
-    -- Whether Blizzard's own filtering is being honoured, per viewer.
+    -- How many cooldowns each category offers.
     --
-    -- "our groups list more than Blizzard's bars" has two completely different
-    -- causes -- the filter not being read at all, or being read correctly by a
-    -- player who has hidden nothing -- and they look identical on screen. This
-    -- is the only thing that separates them, so it is the first question on any
-    -- report that a group is showing too much.
+    -- This used to also report whether Blizzard's per-viewer filtering was
+    -- being honoured, by calling their viewer's GetCooldownIDs. That call is
+    -- what tainted Blizzard's Cooldown Manager, so it is gone and so is the
+    -- line -- our groups now always show the whole category set, and a report
+    -- that a group "shows too much" is answered by that, not by a diagnostic.
     do
-        print("  Blizzard CDM filter (false = falling back to the raw category set):")
+        print("  category sets (our groups list all of these; Blizzard's own")
+        print("  per-viewer filtering is not readable without tainting them):")
         for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
-            local used = cdmModule.usedBlizzardFilter[viewerInfo.viewer]
-            local filtered = BlizzardFilteredIDs(viewerInfo.viewer)
             local raw = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet
                 and C_CooldownViewer.GetCooldownViewerCategorySet(viewerInfo.category)
-            print(string.format("      %-24s honoured=%-5s shows %s of %s",
-                viewerInfo.viewer, tostring(used and true or false),
-                filtered and tostring(#filtered) or "?",
-                raw and tostring(#raw) or "?"))
+            print(string.format("      %-24s %s entries",
+                viewerInfo.viewer, raw and tostring(#raw) or "?"))
         end
     end
 
@@ -3740,6 +3765,91 @@ function cdmModule:PrintBuffDiagnostics()
     end
 end
 
+-- /sq cdmtaint -- has this addon tainted Blizzard's Cooldown Manager?
+--
+-- Keep this. It is the only thing that has ever answered the question, and it
+-- answered it in one run after three rounds of reasoning from documentation got
+-- it wrong (see the long note above DiscoverCooldowns). Taint is a runtime
+-- property; it appears in no API documentation, and `HasRestrictions` describes
+-- a different mechanism entirely. Measure, do not infer.
+--
+-- `issecurevariable(table, key)` returns `isSecure, taintingAddon`. A field
+-- reported insecure and blamed on us means our execution wrote it -- or wrote
+-- something Blizzard derived it from -- and every Blizzard code path that
+-- later reads it runs tainted. That is what produced thousands of errors per
+-- Mythic+ run inside Blizzard's own aura and cooldown code, with nothing of
+-- ours anywhere in the traceback.
+--
+-- Run it after a fresh reload and again after some play. A clean result
+-- immediately after login proves nothing on its own: the 1.70 bug took a few
+-- seconds to re-establish itself, and the first report from this diagnostic was
+-- clean for exactly that reason.
+--
+-- Unlisted, like the other diagnostics. Any future attempt to follow Blizzard's
+-- Cooldown Manager filter must be signed off by this on a live client.
+function cdmModule:PrintTaintDiagnostics()
+    print("|cFF00FF00Squizzumables CDM taint check|r")
+    print("  (insecure + blamed on Squizzumables = we tainted it)")
+
+    -- issecurevariable errors on a nil table, and half of what is probed here
+    -- may not exist yet on an early login.
+    local function Probe(label, tbl, keys)
+        if type(tbl) ~= "table" then
+            print(("  %-22s |cFF888888absent|r"):format(label))
+            return
+        end
+        local bad = {}
+        for _, key in ipairs(keys) do
+            local ok, isSecure, who = pcall(issecurevariable, tbl, key)
+            if ok and isSecure == false then
+                bad[#bad + 1] = key .. "<-" .. tostring(who or "?")
+            end
+        end
+        if #bad == 0 then
+            print(("  %-22s |cFF55FF55clean|r"):format(label))
+        else
+            print(("  %-22s |cFFFF5555%s|r"):format(label, table.concat(bad, " ")))
+        end
+    end
+
+    -- Plain field reads throughout: `settings.dataProvider` and
+    -- `provider.displayData` are both bare fields, verified in Blizzard's
+    -- CooldownViewerSettingsDataProvider on Gethe/wow-ui-source live. The
+    -- accessors GetDataProvider/GetDisplayData return exactly those fields and
+    -- nothing more, so calling them would buy nothing -- and calling
+    -- GetOrderedCooldownIDs* instead would run CheckBuildDisplayData on our
+    -- stack and CAUSE the taint this is here to measure. A diagnostic that
+    -- dirties its own subject is worse than no diagnostic.
+    local settings = _G.CooldownViewerSettings
+    Probe("settings frame", settings,
+        { "dataProvider", "layouts", "activeLayoutID" })
+
+    local provider = settings and settings.dataProvider
+    Probe("data provider", provider,
+        { "displayData", "displayDataDirty", "layoutManager" })
+
+    local display = provider and provider.displayData
+    Probe("display data", display,
+        { "orderedCooldownIDs", "cooldownInfoByID", "defaultOrderedCooldownIDs" })
+
+    for _, viewerInfo in ipairs(ALL_VIEWERS) do
+        local viewer = _G[viewerInfo.name]
+        Probe(viewerInfo.name, viewer,
+            { "itemFramePool", "cooldownIDs", "layoutIndex", "isActive" })
+
+        -- One item frame is enough: they come from a shared pool, so if the
+        -- pool was populated on a tainted stack they are all the same.
+        if viewer then
+            local first
+            ForEachViewerItem(viewer, function(item)
+                if not first then first = item end
+            end)
+            Probe("  first item frame", first,
+                { "cooldownID", "cooldownInfo", "auraInstanceID", "isOnActualCooldown" })
+        end
+    end
+end
+
 -- Re-mute the item frames of any viewer currently suppressed. Cheap, and it has
 -- to keep happening: see MuteViewerItems.
 function cdmModule:MuteSuppressedViewerItems()
@@ -4334,19 +4444,14 @@ eventFrame:RegisterEvent("SPELL_RANGE_CHECK_UPDATE")
 eventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
 
--- The player editing Blizzard's Cooldown Manager settings.
+-- No CooldownViewerSettings.OnDataChanged callback here, deliberately.
 --
--- Now that the groups follow Blizzard's filter, hiding a spell there has to
--- take a spell off our bar too, and no game event fires for it -- the layout
--- manager announces it on the EventRegistry instead, which is how Blizzard's
--- own viewers hear about it (CooldownViewerMixin registers the same callback).
--- Without this the change would not land until the next spec change or reload,
--- which reads exactly like the filter being ignored again.
-if EventRegistry and EventRegistry.RegisterCallback then
-    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
-        cdmModule:ScheduleReconcile(RECONCILE_DEBOUNCE)
-    end, cdmModule)
-end
+-- 1.70 registered one (twice, in fact) so that hiding a spell in Blizzard's
+-- Cooldown Manager options took it off our bar as well. Following that filter
+-- is what tainted Blizzard's Cooldown Manager, so it is gone in 1.73 and there
+-- is nothing left for this callback to react to: our groups show the whole
+-- category set, and that only moves on a spec, talent or loadout change, which
+-- the events above already cover.
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -4374,22 +4479,14 @@ local function CooldownSetSignature()
     local parts = {}
     -- 0 Essential, 1 Utility, 2 TrackedBuff, 3 TrackedBar.
     --
-    -- BOTH lists, raw and filtered. 1.70 switched this to the filtered list
-    -- alone, to match what discovery walks, and that broke spec and talent
-    -- changes: the raw category set updates the instant the client knows the new
-    -- spells, while Blizzard's filtered list only changes once its settings data
-    -- provider has rebuilt, which happens on its own schedule. So a talent swap
-    -- could leave the filtered list momentarily identical, the signature
-    -- unchanged, and OnCooldownSetChanged returning early -- no reconcile, no
-    -- cache reset, and the old spec's cooldowns still on screen until a reload.
+    -- The raw category set only. 1.70 hashed Blizzard's filtered list here as
+    -- well, so that an edit in their Cooldown Manager options registered as a
+    -- change; reading that list is what tainted their viewers, and it went with
+    -- the rest of the filter support in 1.73.
     --
-    -- Raw catches spec and talent changes, filtered catches edits in Blizzard's
-    -- Cooldown Manager options that leave the raw set identical. Neither alone
-    -- covers both, and a signature that misses a change is silent.
-    --
-    -- The raw half is sorted (the C API's order carries no meaning); the
-    -- filtered half deliberately is not, because that order is the player's own
-    -- arrangement and drives our layout, so a pure reorder must register.
+    -- Sorted, because the C API's order carries no meaning -- an unsorted hash
+    -- would report a change every time the client happened to return the same
+    -- IDs in a different order.
     for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
         local ok, raw = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, viewerInfo.category)
         if ok and type(raw) == "table" then
@@ -4397,11 +4494,6 @@ local function CooldownSetSignature()
             for i = 1, #raw do sorted[i] = raw[i] end
             table.sort(sorted)
             parts[#parts + 1] = viewerInfo.category .. "r:" .. table.concat(sorted, ",")
-        end
-
-        local ids = BlizzardFilteredIDs(viewerInfo.viewer)
-        if ids then
-            parts[#parts + 1] = viewerInfo.category .. "f:" .. table.concat(ids, ",")
         end
     end
     if #parts == 0 then return nil end
@@ -4465,18 +4557,19 @@ function cdmModule.CheckCooldownSetChanged()
     OnCooldownSetChanged(RECONCILE_DEBOUNCE)
 end
 
--- Blizzard's own "the cooldown data changed, relayout" signal: its viewers
--- rebuild from this callback (CooldownViewerMixin:OnShow registers it to call
--- RefreshLayout), and its data provider fires it on COOLDOWN_VIEWER_TABLE_HOTFIXED,
--- PLAYER_PVP_TALENT_UPDATE and SPELLS_CHANGED. Hooking the same signal means we
--- rebuild when the viewers do rather than guessing at the game events behind it.
-if EventRegistry and EventRegistry.RegisterCallback then
-    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
-        if BH.settings and BH.settings.cdmEnabled ~= false then
-            OnCooldownSetChanged(RECONCILE_DEBOUNCE)
-        end
-    end, cdmModule)
-end
+-- We listen to the three game events behind Blizzard's
+-- "CooldownViewerSettings.OnDataChanged" callback -- COOLDOWN_VIEWER_TABLE_HOTFIXED,
+-- PLAYER_PVP_TALENT_UPDATE and SPELLS_CHANGED -- rather than to the callback
+-- itself, which is the reverse of what this file used to do.
+--
+-- Registering on that callback looked like the tidier option, since it is the
+-- same signal Blizzard's own viewers rebuild from. The cost is invisible: a
+-- CallbackRegistry runs every handler for an event in one Lua call chain, so
+-- our handler taints the execution and Blizzard's handlers for the SAME event
+-- then run tainted, writing to viewer state they later cannot read. That is
+-- the same failure the removed filter support caused, reached by a different
+-- road. All three events are registered on eventFrame above and handled below,
+-- so nothing is lost: an event handler starts its own clean call chain.
 
 -- Update combat visibility for all groups
 local function UpdateCombatVisibility()
@@ -4568,8 +4661,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- visibly flicker on a change that often alters nothing on screen.
         --
         -- Forced, for the same reason the spec branch above is: the signature is
-        -- sampled the instant the event arrives, and neither the category sets
-        -- nor Blizzard's filtered list are necessarily updated by then. An
+        -- sampled the instant the event arrives, and the category sets are not
+        -- necessarily updated by then. An
         -- unchanged signature meant an early return -- no cache reset and no
         -- reconcile scheduled at all -- so a loadout swap could leave the old
         -- talents' cooldowns on screen until a reload. The cost of forcing is
