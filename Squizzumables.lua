@@ -99,71 +99,6 @@ BH.defaultSettings = {
     targetDistanceFriendly = false,     -- probes are harmful, so hostile only
     targetDistanceColor = { r = 1, g = 1, b = 1 },
 
-    -- Co-tank tracker (Core/CoTank.lua). Off by default, like the other
-    -- persistent readouts.
-    coTankEnabled = false,
-    coTankPreview = false,
-
-    -- Frame
-    coTankGrowth = "down",
-    coTankRowSpacing = 6,
-    coTankShowName = true,
-    coTankNameSize = 12,
-    coTankFont = nil,               -- LibSharedMedia name; nil = default font
-    coTankShowInParty = true,
-    coTankOnlyIfTank = false,
-    coTankNotify = false,
-
-    -- Shared icon look
-    coTankIconZoom = 7,             -- percent cropped from each edge
-    coTankBorderStyle = "border",   -- off | border | bordericon | icon
-    coTankShowSwipe = true,
-    coTankShowCountdown = true,
-    coTankShowStacks = true,
-    coTankStackColor = { r = 1, g = 1, b = 1 },
-    coTankCountdownColor = { r = 1, g = 0.82, b = 0 },
-
-    -- Debuffs group
-    coTankDebuffFilter = "boss",    -- boss | bossrole | important | dispel | all
-    coTankDebuffHidePermanent = true,
-    coTankDebuffSize = 32,
-    coTankDebuffSpacing = 2,
-    coTankDebuffPerRow = 8,
-    coTankDebuffMaxRows = 1,
-    coTankDebuffOffsetX = 0,
-    coTankDebuffOffsetY = 0,
-    coTankDebuffStackSize = 13,
-    coTankDebuffStackAnchor = "BOTTOMRIGHT",
-    coTankDebuffStackX = -1,
-    coTankDebuffStackY = 1,
-    coTankDebuffCountdownSize = 12,
-    coTankDebuffCountdownAnchor = "CENTER",
-    coTankDebuffCountdownX = 0,
-    coTankDebuffCountdownY = 0,
-
-    -- Defensives group. Spell IDs ARE permitted for helpful auras on a friendly
-    -- unit -- confirmed against the enforcement, not just the doc comment -- so
-    -- this one is a whitelist of built-ins plus free-text extras.
-    coTankDefEnabled = false,
-    -- Ticked-on built-ins, keyed by aura spell ID. The free-text box below is
-    -- for anything the built-in list does not cover.
-    coTankDefSelected = {},
-    coTankDefSpellIDs = "",
-    coTankDefSize = 24,
-    coTankDefSpacing = 2,
-    coTankDefPerRow = 6,
-    coTankDefMaxRows = 1,
-    coTankDefOffsetX = 0,
-    coTankDefOffsetY = 0,
-    coTankDefStackSize = 11,
-    coTankDefStackAnchor = "BOTTOMRIGHT",
-    coTankDefStackX = -1,
-    coTankDefStackY = 1,
-    coTankDefCountdownSize = 10,
-    coTankDefCountdownAnchor = "CENTER",
-    coTankDefCountdownX = 0,
-    coTankDefCountdownY = 0,
-
     deathTallyEnabled = true,
     deathTallyLocked = false,
     deathTallyScale = 1.0,
@@ -506,7 +441,6 @@ local POSITION_PAIRS = {
     { "healerCCReminderFrame",    "healerCCReminderPosition" },
     { "deathTallyFrame",          "deathTallyPosition" },
     { "targetDistanceFrame",      "targetDistancePosition" },
-    { "coTankFrame",              "coTankPosition" },
 }
 
 -- All position keys stored in profiles.
@@ -758,7 +692,6 @@ function BH:SwitchToProfile(profileName)
     -- After the BH references above, since the rebuild reads cdmEnabled.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
-    if self.ApplyCoTank then self:ApplyCoTank() end
 
     return true
 end
@@ -850,7 +783,6 @@ function BH:OnSpecChanged()
     -- cached view is stale either way.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
-    if self.ApplyCoTank then self:ApplyCoTank() end
     -- Outside the panel check: the new profile has its own alerts, so the
     -- client-side aura sound registrations have to follow it whether or not the
     -- options panel happens to be open. Leaving them would keep playing the
@@ -2007,7 +1939,6 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             -- Default's Cooldown Manager layout, not the deleted profile's.
             if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
             if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
-            if BH.ApplyCoTank then BH:ApplyCoTank() end
             BH:RefreshSettingsTab()
             print("Squizzumables: Deleted profile '" .. data .. "', switched to Default.")
         end
@@ -2269,7 +2200,6 @@ function BH:BuildSettingsTab(parent)
         -- above, since it lives on the profile as of 1.70. Rebuild so it shows.
         if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
         if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
-        if BH.ApplyCoTank then BH:ApplyCoTank() end
         BH:RefreshSettingsTab()
         BH:RefreshItemList()
         BH:RefreshRaidToolsTab()
@@ -2717,7 +2647,6 @@ function BH:BuildRaidToolsTab(parent)
         { key = "scale",    label = "Scale" },
         { key = "bres",     label = "Battle Res" },
         { key = "distance", label = "Target Distance" },
-        { key = "cotank",   label = "Co-Tank" },
         { key = "position", label = "Position" },
     })
 
@@ -3087,302 +3016,6 @@ function BH:BuildRaidToolsTab(parent)
         end,
         disabled = function() return not BH.settings.targetDistanceEnabled end,
     })
-
-    -- Sub-tab boundary: size the page just finished, then move to the next.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.cotank
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-
-    local function coTankOff() return not BH.settings.coTankEnabled end
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show Co-Tank Debuffs",
-        tooltip = "A movable frame showing the debuffs on the other tank (or tanks) in your group, "
-            .. "with their stack counts. Position it with Unlock Frames.",
-        get = function() return BH.settings.coTankEnabled and true or false end,
-        set = function(v)
-            BH.settings.coTankEnabled = v
-            BH:SaveSettings()
-            BH:ApplyCoTank()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "text",
-        label = "The game draws these icons itself, which is the only way an addon can show "
-            .. "another player's debuffs during a fight. It also decides what may be shown: "
-            .. "debuffs cannot be picked out by name on a friendly target, so the filter below "
-            .. "is as narrow as it gets. Defensives are the other way round -- those you list "
-            .. "yourself.",
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Preview Layout",
-        tooltip = "Shows sample icons so you can size and position everything without a group. "
-            .. "These are placeholders, not real auras -- the game will not hand sample data to "
-            .. "an addon -- so while preview is on the live display is switched off and the two "
-            .. "cannot overlap. Unlock Frames turns this on by itself.",
-        get = function() return BH.settings.coTankPreview and true or false end,
-        set = function(v)
-            BH.settings.coTankPreview = v
-            BH:SaveSettings()
-            BH:UpdateCoTank()
-        end,
-        disabled = coTankOff,
-    })
-
-    -- ===== FRAME =====
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "FRAME" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown", label = "Grow Direction", width = 160,
-        tooltip = "Whether extra tanks stack below the first or above it.",
-        items = BH.COTANK_GROWTH,
-        get = function() return BH.settings.coTankGrowth or "down" end,
-        set = function(v) BH.settings.coTankGrowth = v BH:SaveSettings() BH:UpdateCoTank() end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider", label = "Spacing Between Tanks", width = 300, min = 0, max = 40, step = 1,
-        tooltip = "Gap between one tank's block of icons and the next tank's.",
-        get = function() return BH.settings.coTankRowSpacing or 6 end,
-        set = function(v) BH.settings.coTankRowSpacing = v BH:SaveSettings() BH:UpdateCoTank() end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Show Tank Names",
-        tooltip = "Shows each tank's name above their icons.",
-        get = function() return BH.settings.coTankShowName ~= false end,
-        set = function(v) BH.settings.coTankShowName = v BH:SaveSettings() BH:UpdateCoTank() end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider", label = "Name Text Size", width = 300, min = 6, max = 30, step = 1,
-        tooltip = "Font size of the tank names.",
-        get = function() return BH.settings.coTankNameSize or 12 end,
-        set = function(v) BH.settings.coTankNameSize = v BH:SaveSettings() BH:UpdateCoTank() end,
-        disabled = function() return coTankOff() or BH.settings.coTankShowName == false end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown", label = "Font", width = 200,
-        tooltip = "Font for the names, stack counts and countdowns. The list comes from "
-            .. "LibSharedMedia, so anything another addon has registered appears here.",
-        items = BH:BuildFontDropdownItems(),
-        get = function() return BH.settings.coTankFont or "__default" end,
-        set = function(v)
-            BH.settings.coTankFont = (v ~= "__default") and v or nil
-            BH:SaveSettings()
-            BH:UpdateCoTank()
-            BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    -- ===== VISIBILITY =====
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "VISIBILITY" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Show in Parties",
-        tooltip = "Show in a five-player group as well as in a raid. Unticking makes it raid only.",
-        get = function() return BH.settings.coTankShowInParty ~= false end,
-        set = function(v) BH.settings.coTankShowInParty = v BH:SaveSettings() BH:UpdateCoTank() end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Only When I Am Tanking",
-        tooltip = "Only show while your own role is set to Tank.",
-        get = function() return BH.settings.coTankOnlyIfTank and true or false end,
-        set = function(v) BH.settings.coTankOnlyIfTank = v BH:SaveSettings() BH:UpdateCoTank() end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Warn About Extra Tanks",
-        tooltip = "Prints a note in chat when the group has more tanks than there are rows to show "
-            .. "them in, so a missing tank is explained rather than simply absent.",
-        get = function() return BH.settings.coTankNotify and true or false end,
-        set = function(v) BH.settings.coTankNotify = v BH:SaveSettings() end,
-        disabled = coTankOff,
-    })
-
-    -- ===== ICON LOOK =====
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "ICON LOOK" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown", label = "Border By Debuff Type", width = 200,
-        tooltip = "Puts a border around each icon coloured by dispel type -- magic, curse, disease, "
-            .. "poison. The game picks the colour; this chooses which of its looks to use.",
-        items = BH.COTANK_BORDER_STYLES,
-        get = function() return BH.settings.coTankBorderStyle or "border" end,
-        set = function(v)
-            BH.settings.coTankBorderStyle = v
-            BH:SaveSettings()
-            BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider", label = "Icon Zoom %", width = 300, min = 0, max = 25, step = 1,
-        tooltip = "How much of each icon's art is cropped from the edges.",
-        get = function() return BH.settings.coTankIconZoom or 7 end,
-        set = function(v)
-            BH.settings.coTankIconZoom = v
-            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Show Cooldown Swipe",
-        tooltip = "The darkened sweep across each icon as the aura runs down.",
-        get = function() return BH.settings.coTankShowSwipe ~= false end,
-        set = function(v) BH.settings.coTankShowSwipe = v BH:SaveSettings() BH:CoTankNeedsReload() end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Show Countdown",
-        tooltip = "The remaining time as a number on each icon.",
-        get = function()
-            return BH.settings.coTankShowCountdown ~= false
-        end,
-        set = function(v)
-            BH.settings.coTankShowCountdown = v
-            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "color", label = "Countdown Colour",
-        tooltip = "Colour of the countdown numbers.",
-        get = function()
-            local c = BH.settings.coTankCountdownColor or {}
-            return c.r or 1, c.g or 0.82, c.b or 0
-        end,
-        set = function(r, g, b)
-            BH.settings.coTankCountdownColor = { r = r, g = g, b = b }
-            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Show Stacks",
-        tooltip = "The stack count on each icon. This is usually the reason for watching another "
-            .. "tank at all.",
-        get = function()
-            return BH.settings.coTankShowStacks ~= false
-        end,
-        set = function(v)
-            BH.settings.coTankShowStacks = v
-            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "color", label = "Stack Colour",
-        tooltip = "Colour of the stack counts.",
-        get = function()
-            local c = BH.settings.coTankStackColor or {}
-            return c.r or 1, c.g or 1, c.b or 1
-        end,
-        set = function(r, g, b)
-            BH.settings.coTankStackColor = { r = r, g = g, b = b }
-            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    -- ===== DEBUFFS =====
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "DEBUFFS" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown", label = "Show", width = 200,
-        tooltip = "Which of the other tank's debuffs to show. Boss debuffs is usually what you "
-            .. "want: it separates tank busters from every minor effect in the room.",
-        items = BH.COTANK_DEBUFF_FILTERS,
-        get = function() return BH.settings.coTankDebuffFilter or "boss" end,
-        set = function(v)
-            BH.settings.coTankDebuffFilter = v
-            BH:SaveSettings() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Hide Permanent Debuffs",
-        tooltip = "Hides auras with no duration, which are almost never what you are watching for.",
-        get = function() return BH.settings.coTankDebuffHidePermanent ~= false end,
-        set = function(v)
-            BH.settings.coTankDebuffHidePermanent = v
-            BH:SaveSettings() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - BH:AddCoTankGroupRows(content, yOffset, "coTankDebuff", coTankOff, 64)
-
-    -- ===== DEFENSIVES =====
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "DEFENSIVES" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check", label = "Show Defensives",
-        tooltip = "A second row showing the other tank's active defensive cooldowns.",
-        get = function() return BH.settings.coTankDefEnabled and true or false end,
-        set = function(v)
-            BH.settings.coTankDefEnabled = v
-            BH:SaveSettings() BH:UpdateCoTank() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankOff,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "text",
-        label = "Buffs on a friendly target CAN be matched by spell ID, unlike debuffs, so this "
-            .. "one is a list. Tick the cooldowns you want to see below. Nothing ticked means "
-            .. "nothing shown, because every buff a tank happens to carry would be noise rather "
-            .. "than a defensives tracker.",
-    })
-
-    local coTankDefOff = function()
-        return coTankOff() or not BH.settings.coTankDefEnabled
-    end
-
-    yOffset = yOffset - BH:AddCoTankDefensiveRows(content, yOffset, coTankDefOff)
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "editbox", label = "Extra Spell IDs", width = 320,
-        tooltip = "Anything the list above does not cover, as spell IDs separated by spaces or "
-            .. "commas. These are the IDs of the BUFF that lands, which is often not the id of "
-            .. "the spell that was cast.",
-        get = function() return BH.settings.coTankDefSpellIDs or "" end,
-        set = function(v)
-            BH.settings.coTankDefSpellIDs = v
-            BH:SaveSettings() BH:CoTankNeedsReload()
-        end,
-        disabled = coTankDefOff,
-    })
-
-    yOffset = yOffset - BH:AddCoTankGroupRows(content, yOffset, "coTankDef",
-        function() return coTankOff() or not BH.settings.coTankDefEnabled end, 48)
 
     -- Sub-tab boundary: size the page just finished, then move to the next.
     content:SetHeight(math.abs(yOffset) + 20)
@@ -7359,7 +6992,6 @@ local MOVABLE_FRAMES = {
     { field = "deathTallyFrame",     label = "Death Tally",    enabled = "deathTallyEnabled" },
     { field = "calloutsButtonFrame", label = "Callouts",       enabled = "dungeonCallouts", muteChildren = true },
     { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled" },
-    { field = "coTankFrame",         label = "Co-Tank",        enabled = "coTankEnabled" },
 }
 
 -- Every text reminder, from the registry rather than by hand.
@@ -10996,12 +10628,6 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             BH.cdm:PrintTaintDiagnostics()
         else
             print(addonName .. ": Cooldown Manager module not loaded.")
-        end
-    elseif msg == "cotank" then
-        if BH.PrintCoTankDiagnostics then
-            BH:PrintCoTankDiagnostics()
-        else
-            print(addonName .. ": Co-tank module not loaded.")
         end
     elseif msg == "cdmbuff" then
         if BH.cdm and BH.cdm.PrintBuffDiagnostics then

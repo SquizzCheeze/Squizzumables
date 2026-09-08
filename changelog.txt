@@ -1,26 +1,10 @@
 Squizzumables Changelog
 =======================
 
-V1.74
+V1.75
 
-- Tracked buff bars now have a Cooldown Manager group of their own, drawn as
-  bars the way Blizzard draws them. They were previously folded in with the buff
-  icons and squeezed into the icon grid, which left the bar too small to read
-- The new "Buff Bars" group has its own position, sitting below Buffs by
-  default, and its own Bar Width and Bar Height sliders in place of the Icon
-  Size and Per Row ones that mean nothing for a bar. Drag it anywhere in unlock
-  mode like any other group
-- Other addons can anchor to it as Squizzumables_GetCDMGroupFrame("Buff Bars")
-- Fixed Cooldown Manager groups with nothing currently active having no green
-  drag zone in unlock mode, so there was no way to position them. The group hid
-  itself again a fraction of a second after unlock mode revealed it. Most
-  visible on the new Buff Bars group, since tracked bars are procs and none of
-  them are up while you are out of combat arranging your UI -- the giveaway was
-  that the zone appeared if Blizzard's Edit Mode happened to be open too
-- Fixed dragging a Cooldown Manager group saving the wrong position, so it
-  jumped somewhere else the next time anything rebuilt it. The drag was saving
-  reliably -- it was saving a number that meant something different to the one
-  reading it back, because the position was read relative to whatever edge the
-  frame had ended up anchored to and then restored as an offset from the centre
-  of the screen. It is now measured from the centre either way. Groups anchored
-  to another group were never affected, which is why this went unnoticed
+- Removed the Co-Tank tracker. It never worked -- the icons would not render --
+  and the game feature it is built on is better served by SquizzFrames, which
+  already drives raid frame auras the same way. It has been rebuilt there
+  instead of kept here in a broken state. Its settings are gone from the Raid
+  Tools page; nothing else is affected

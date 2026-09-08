@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.75"] = {
+        "Removed the Co-Tank tracker. It never rendered its icons, and it has been rebuilt in SquizzFrames, which already drives raid frame auras through the same game feature.",
+        "Its settings are gone from the Raid Tools page. Nothing else is affected.",
+    },
     ["1.74"] = {
         "Tracked buff bars now have a Cooldown Manager group of their own, \"Buff Bars\", drawn as bars the way Blizzard draws them.",
         "They used to be folded in with the buff icons, which squeezed each bar into an icon-sized square and left its name and timer unreadable.",
