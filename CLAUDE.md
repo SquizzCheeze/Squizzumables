@@ -672,9 +672,22 @@ fire when the viewers are alpha-suppressed by another addon — so both it and t
 `ClaimAlert(spellID, when)` dropping whichever notices second inside 0.6s. Never let one path
 suppress the other outright: whichever is favoured will eventually be the one that is broken.
 
+**Blizzard's two buff categories are drawn differently, and so are ours.** Category 2
+(`BuffIconCooldownViewer`) is square icons and feeds the `Buffs` group; category 3
+(`BuffBarCooldownViewer`) is tracked *bars* — a fill, a spell name and a timer — and feeds
+`Buff Bars`, a separate built-in group added in 1.74. Both were folded into `Buffs` before that
+and laid out on the icon grid, which sized each bar down to `iconSize` square and made it
+unreadable. Two things keep them apart and both are needed: `DISCOVER_CATEGORIES` gives category 3
+the `viewerType` `"buffbar"`, and `BORROW_VIEWERS` says which Blizzard viewer each group borrows
+from — without the second, the layout pass walks *both* buff viewers for *any* borrowing group and
+each group shows everything. A custom group falls back to both viewers on purpose, since the
+player assigned to it explicitly. `groupData.isBarGroup` selects the stacking layout and swaps the
+Icon Size / Per Row sliders for Bar Width / Bar Height; it is re-stamped by `EnsureBuiltinGroups`
+on every reconcile because profiles predating 1.74 do not have it.
+
 **The CDM group frames are a public anchor API.** `Squizzumables_GetCDMGroupFrame(name)` (and
 `BH.cdm:GetGroupFrame(name)`) returns a cooldown group's container — `"Essential"`, `"Utility"`,
-`"Buffs"`, or a custom group's name. Other addons anchor to these, so **the frames are created
+`"Buffs"`, `"Buff Bars"`, or a custom group's name. Other addons anchor to these, so **the frames are created
 once per session and reused**, never rebuilt on `ReleaseAll` or a spec change: WoW cannot destroy
 a frame, so a second `CreateFrame` under the same name leaves the first alive and orphaned and
 anything anchored to it silently stops tracking. `containerCache` in `Squizzumables_CDM.lua` is

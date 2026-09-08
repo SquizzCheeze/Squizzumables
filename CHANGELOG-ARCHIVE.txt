@@ -8,6 +8,35 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.73
+
+- Fixed this addon breaking Blizzard's own Cooldown Manager. The errors came
+  from Blizzard's code, named Squizzumables, and had nothing of ours in the
+  report -- their aura and cooldown handlers could no longer read their own
+  internal tables. In back-to-back Mythic+ this ran to thousands of errors per
+  run and came straight back after a reload
+- The cause was how 1.70 read your Cooldown Manager filter. Asking Blizzard for
+  that list runs their settings code inside this addon, which permanently marks
+  their cooldown data as addon-touched; from then on their own code is refused
+  access to it
+- The Essential and Utility groups still follow your Blizzard Cooldown Manager
+  filter, in your order, trinkets included. Nothing about the feature changes on
+  screen -- only how the list is obtained. Blizzard's bars already worked the
+  filter out and left the answer on their icons, so this now reads that instead
+  of asking, which touches nothing and taints nothing
+- Editing Blizzard's Cooldown Manager options still updates these groups without
+  a reload; it now takes up to two seconds instead of being instant. That is a
+  deliberate trade -- the instant version put this addon inside the part of
+  Blizzard's code that caused all of the above, to save two seconds on a screen
+  you are already looking at
+- Also removed a second, quieter route to the same damage: this addon listened
+  on one of Blizzard's internal notifications, and everything else listening for
+  it -- including Blizzard's own Cooldown Manager -- ran with our mark on it
+  afterwards. The filter is followed without any of that now
+- Version 1.72's fix for this was aimed at the wrong thing. It moved this
+  addon's per-frame bookkeeping off Blizzard's frames, which was worth doing and
+  is kept, but it was not what was breaking the Cooldown Manager
+
 V1.72
 
 - Fixed the settings menus scrolling most of a page per notch of the mouse

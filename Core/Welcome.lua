@@ -21,6 +21,13 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.74"] = {
+        "Tracked buff bars now have a Cooldown Manager group of their own, \"Buff Bars\", drawn as bars the way Blizzard draws them.",
+        "They used to be folded in with the buff icons, which squeezed each bar into an icon-sized square and left its name and timer unreadable.",
+        "The new group has its own position and its own Bar Width and Bar Height sliders, and moves to sit below Buffs by default. Drag it wherever you like in unlock mode.",
+        "Fixed Cooldown Manager groups with nothing currently active having no green drag zone in unlock mode, so there was no way to position them at all.",
+        "Fixed dragging a Cooldown Manager group saving the wrong position, so it jumped somewhere else as soon as anything rebuilt it. Drag a group anywhere and it now stays there.",
+    },
     ["1.73"] = {
         "Fixed this addon breaking Blizzard's own Cooldown Manager. The errors came from Blizzard's code and named Squizzumables, and in back-to-back keys ran to thousands per run, surviving reloads.",
         "The cause was how 1.70 read your Cooldown Manager filter: asking Blizzard for that list runs their settings code inside this addon, which permanently marks their cooldown data as addon-touched and locks their own code out of it.",

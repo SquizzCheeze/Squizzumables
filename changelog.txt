@@ -1,31 +1,26 @@
 Squizzumables Changelog
 =======================
 
-V1.73
+V1.74
 
-- Fixed this addon breaking Blizzard's own Cooldown Manager. The errors came
-  from Blizzard's code, named Squizzumables, and had nothing of ours in the
-  report -- their aura and cooldown handlers could no longer read their own
-  internal tables. In back-to-back Mythic+ this ran to thousands of errors per
-  run and came straight back after a reload
-- The cause was how 1.70 read your Cooldown Manager filter. Asking Blizzard for
-  that list runs their settings code inside this addon, which permanently marks
-  their cooldown data as addon-touched; from then on their own code is refused
-  access to it
-- The Essential and Utility groups still follow your Blizzard Cooldown Manager
-  filter, in your order, trinkets included. Nothing about the feature changes on
-  screen -- only how the list is obtained. Blizzard's bars already worked the
-  filter out and left the answer on their icons, so this now reads that instead
-  of asking, which touches nothing and taints nothing
-- Editing Blizzard's Cooldown Manager options still updates these groups without
-  a reload; it now takes up to two seconds instead of being instant. That is a
-  deliberate trade -- the instant version put this addon inside the part of
-  Blizzard's code that caused all of the above, to save two seconds on a screen
-  you are already looking at
-- Also removed a second, quieter route to the same damage: this addon listened
-  on one of Blizzard's internal notifications, and everything else listening for
-  it -- including Blizzard's own Cooldown Manager -- ran with our mark on it
-  afterwards. The filter is followed without any of that now
-- Version 1.72's fix for this was aimed at the wrong thing. It moved this
-  addon's per-frame bookkeeping off Blizzard's frames, which was worth doing and
-  is kept, but it was not what was breaking the Cooldown Manager
+- Tracked buff bars now have a Cooldown Manager group of their own, drawn as
+  bars the way Blizzard draws them. They were previously folded in with the buff
+  icons and squeezed into the icon grid, which left the bar too small to read
+- The new "Buff Bars" group has its own position, sitting below Buffs by
+  default, and its own Bar Width and Bar Height sliders in place of the Icon
+  Size and Per Row ones that mean nothing for a bar. Drag it anywhere in unlock
+  mode like any other group
+- Other addons can anchor to it as Squizzumables_GetCDMGroupFrame("Buff Bars")
+- Fixed Cooldown Manager groups with nothing currently active having no green
+  drag zone in unlock mode, so there was no way to position them. The group hid
+  itself again a fraction of a second after unlock mode revealed it. Most
+  visible on the new Buff Bars group, since tracked bars are procs and none of
+  them are up while you are out of combat arranging your UI -- the giveaway was
+  that the zone appeared if Blizzard's Edit Mode happened to be open too
+- Fixed dragging a Cooldown Manager group saving the wrong position, so it
+  jumped somewhere else the next time anything rebuilt it. The drag was saving
+  reliably -- it was saving a number that meant something different to the one
+  reading it back, because the position was read relative to whatever edge the
+  frame had ended up anchored to and then restored as an offset from the centre
+  of the screen. It is now measured from the centre either way. Groups anchored
+  to another group were never affected, which is why this went unnoticed

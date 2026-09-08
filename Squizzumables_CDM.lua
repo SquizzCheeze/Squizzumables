@@ -62,14 +62,37 @@ local DEFAULT_SORT = "assignment"          -- "assignment", "name", "cooldown"
 -- cannot be renamed or deleted, and every discovered cooldown falls back to the
 -- one matching its viewer type. Custom groups are unchanged and still take
 -- priority: an explicit assignment always wins over this fallback.
+--
+-- "Buff Bars" is separate from "Buffs" because Blizzard draws those two
+-- categories differently: category 2 is square icons, category 3 is bars with a
+-- name and a timer. Both were folded into Buffs until 1.74 and laid out on the
+-- icon grid, which sized a bar down to an icon's width and left it unreadable.
+-- Since these are Blizzard's own frames (see BorrowBuffIcons), the bar keeps its
+-- real appearance as soon as it is given bar-shaped dimensions.
 local BUILTIN_GROUPS = {
     { name = "Essential", viewerType = "cooldown", defaultY = -140 },
     { name = "Utility",   viewerType = "utility",  defaultY = -185 },
     { name = "Buffs",     viewerType = "buff",     defaultY = -230 },
+    { name = "Buff Bars", viewerType = "buffbar",  defaultY = -275, bars = true },
 }
 
 local BUILTIN_FOR_VIEWERTYPE = {}
 for _, b in ipairs(BUILTIN_GROUPS) do BUILTIN_FOR_VIEWERTYPE[b.viewerType] = b.name end
+
+-- Which Blizzard viewer each borrowing group takes its frames from.
+--
+-- Before 1.74 the layout pass walked BOTH buff viewers for ANY borrowing group,
+-- so the Buffs group collected the tracked bars as well as the icons. Splitting
+-- the two groups is only half the fix; without this they would both still show
+-- everything. A custom group falls back to both viewers, because the player
+-- assigned to it explicitly and may well have mixed the two on purpose.
+local BORROW_VIEWERS = {
+    [BUILTIN_FOR_VIEWERTYPE["buff"]]    = { "BuffIconCooldownViewer" },
+    [BUILTIN_FOR_VIEWERTYPE["buffbar"]] = { "BuffBarCooldownViewer"  },
+}
+
+local DEFAULT_BAR_WIDTH   = 200
+local DEFAULT_BAR_HEIGHT  = 20
 
 local DEFAULT_BORDER_THICKNESS = 1
 local DEFAULT_BORDER_COLOR     = { 0, 0, 0, 0.9 }
@@ -858,7 +881,7 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     -- does it.
     local showInactive = groupData.showInactiveBuffs and true or false
     local shown, inactive = {}, {}
-    for _, viewerName in ipairs(BUFF_VIEWERS) do
+    for _, viewerName in ipairs(BORROW_VIEWERS[groupName] or BUFF_VIEWERS) do
         local viewer = _G[viewerName]
         if viewer then
             local ok, children = pcall(function() return { viewer:GetChildren() } end)
@@ -890,6 +913,40 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     end
     self:ReleaseUnusedPlaceholders(group, slots)
     shown = slots
+
+    -- Bars stack; icons grid.
+    --
+    -- A tracked bar is Blizzard's own bar frame -- a fill, a spell name and a
+    -- timer -- so it only needs bar-shaped dimensions to look like one. Laying
+    -- it out on the icon grid is what made it unreadable before 1.74: the grid
+    -- gives every slot iconSize x iconSize, which squashes a 200-wide bar into a
+    -- 32px square.
+    --
+    -- One per row always. perRow is an icon idea, and side-by-side bars are not
+    -- how Blizzard draws these or how anyone reads them.
+    if groupData.isBarGroup then
+        local barW    = groupData.barWidth  or DEFAULT_BAR_WIDTH
+        local barH    = groupData.barHeight or DEFAULT_BAR_HEIGHT
+        local up      = (growDir == "centeredup" or growDir == "rightup" or growDir == "leftup")
+        local fullH   = math.max(#shown, 1) * (barH + spacing) - spacing
+
+        for i, child in ipairs(shown) do
+            child:SetSize(barW, barH)
+            child:ClearAllPoints()
+            ApplyKeybindText(child, SpellIDForCooldown(child.cooldownID), groupData)
+            local offset = (i - 1) * (barH + spacing)
+            child:SetPoint(up and "BOTTOM" or "TOP", group.container,
+                up and "BOTTOM" or "TOP", 0, up and offset or -offset)
+        end
+
+        if not InCombatLockdown() then
+            group.container:SetSize(barW, fullH)
+        end
+        group.container:SetShown(#shown > 0 or self.previewMode)
+        ApplyBarBackground(group, groupData)
+        group.container:SetAlpha(GroupAlpha(groupData))
+        return
+    end
 
     local centered   = (growDir == "centereddown" or growDir == "centeredup")
     local centeredUp = (growDir == "centeredup")
@@ -935,7 +992,10 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     if not InCombatLockdown() then
         group.container:SetSize(fullW, fullH)
     end
-    group.container:SetShown(#shown > 0)
+    -- Empty but previewing still has to be draggable. See the note on
+    -- cdmModule.previewMode: this pass runs on a 0.2s poll, so hiding an empty
+    -- borrowed group here un-does what ShowPreview just did.
+    group.container:SetShown(#shown > 0 or self.previewMode)
     ApplyBarBackground(group, groupData)
     group.container:SetAlpha(GroupAlpha(groupData))
 end
@@ -1133,7 +1193,11 @@ local DISCOVER_CATEGORIES = {
     { category = 0, viewerType = "cooldown", viewer = "EssentialCooldownViewer" },
     { category = 1, viewerType = "utility",  viewer = "UtilityCooldownViewer"   },
     { category = 2, viewerType = "buff",     viewer = "BuffIconCooldownViewer"  },
-    { category = 3, viewerType = "buff",     viewer = "BuffBarCooldownViewer"   },
+    -- Category 3 is "buffbar", not "buff": it is the tracked BARS, and since
+    -- 1.74 they get their own group rather than being squeezed onto the buff
+    -- icon grid. Everything else about them is identical to category 2, so the
+    -- two share every code path except the layout.
+    { category = 3, viewerType = "buffbar",  viewer = "BuffBarCooldownViewer"   },
 }
 
 -- The player's Cooldown Manager filter, read WITHOUT running any Blizzard Lua.
@@ -2466,6 +2530,69 @@ function cdmModule:PrintSoundDiagnostics()
     --
     -- honoured=false is expected for a few seconds after login (the viewer pool
     -- is lazy) and a bug if it persists.
+    -- Where each group thinks it is, versus where it actually is.
+    --
+    -- "I moved it and it went back" has at least three separate causes that look
+    -- identical on screen: the drag never saved, the drag saved but something
+    -- re-positioned the container, or the container is exactly where it should
+    -- be and the ICONS are drawing somewhere else (which is possible for a
+    -- borrowed group, because those are Blizzard's frames and only their anchors
+    -- are ours). saved vs actual separates the first two; holds= separates the
+    -- third, since a borrowed group with 0 frames is not re-anchoring anything.
+    do
+        print("  group positions (saved -> actual, borrowed groups show frame count):")
+        -- Fetched here rather than assumed in scope: `specData` is a local in
+        -- the reconcile paths, not in this one, and a bare read would be nil
+        -- with no error -- reporting "saved=?,?" for every group and hiding the
+        -- exact thing this is here to show.
+        local posSpecData = GetSpecData()
+        for groupName, group in pairs(cdmModule.groups) do
+            local gd = posSpecData and posSpecData.groups[groupName]
+            local sx, sy = "?", "?"
+            if gd and gd.position then
+                sx = string.format("%.0f", gd.position.x or 0)
+                sy = string.format("%.0f", gd.position.y or 0)
+            end
+            local ax, ay = "?", "?"
+            local shown = "hidden"
+            if group.container then
+                local cx, cy = group.container:GetCenter()
+                local px, py = UIParent:GetCenter()
+                if cx and px then
+                    ax = string.format("%.0f", cx - px)
+                    ay = string.format("%.0f", cy - py)
+                end
+                shown = group.container:IsShown() and "shown" or "hidden"
+            end
+            local kind = group.usesBlizzardIcons and "borrowed" or "proxy"
+            local held = 0
+            if group.usesBlizzardIcons then
+                for _, viewerName in ipairs(BORROW_VIEWERS[groupName] or BUFF_VIEWERS) do
+                    local viewer = _G[viewerName]
+                    if viewer then
+                        local ok, children = pcall(function() return { viewer:GetChildren() } end)
+                        if ok and children then
+                            for _, child in ipairs(children) do
+                                if child and child.cooldownID and child:IsShown() then
+                                    held = held + 1
+                                end
+                            end
+                        end
+                    end
+                end
+            else
+                for _ in pairs(group.members or {}) do held = held + 1 end
+            end
+            print(string.format("      %-14s saved=%5s,%-6s actual=%5s,%-6s %-8s %-6s holds=%d%s",
+                groupName, sx, sy, ax, ay, kind, shown, held,
+                (gd and gd.isBarGroup) and " [bars]" or ""))
+            if gd and gd.anchorTo and gd.anchorTo ~= "" then
+                print(string.format("        anchored to %s (%s) -- its own saved position is ignored",
+                    tostring(gd.anchorTo), tostring(gd.anchorPoint)))
+            end
+        end
+    end
+
     do
         print("  Blizzard CDM filter (false = falling back to the raw category set):")
         for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
@@ -2775,11 +2902,33 @@ local function CreateGroupContainer(groupName, position, iconSize)
     end)
     container:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        -- Save position
+        -- Measure the centre offset; do NOT read it off GetPoint().
+        --
+        -- PositionGroup restores a group with
+        -- SetPoint("CENTER", UIParent, "CENTER", x, y), so the saved pair has to
+        -- mean "offset of my centre from UIParent's centre" and nothing else.
+        -- GetPoint() returns offsets relative to whatever anchor the frame
+        -- happens to hold, and StartMoving/StopMovingOrSizing -- with
+        -- SetClampedToScreen in play -- can leave that as something other than
+        -- CENTER/CENTER. Those numbers were then written straight to the profile
+        -- and re-applied as if they were centre offsets, so the group jumped on
+        -- the next reconcile.
+        --
+        -- Measured on a live client: a bar group dropped at centre offset +468
+        -- saved as -393, a difference of 861 -- exactly half that player's
+        -- UIParent width, which is the fingerprint of an edge anchor being read
+        -- as a centre one. It looked like "the drag does not save", and the drag
+        -- was saving perfectly; it was saving a number that meant something
+        -- else. /sq cdm prints saved and actual side by side for this reason.
+        --
+        -- GetCenter() is anchor-independent, so this cannot drift again.
         local specData = GetSpecData()
         if specData and specData.groups[groupName] then
-            local point, _, relativePoint, x, y = self:GetPoint()
-            specData.groups[groupName].position = { x = x, y = y }
+            local cx, cy = self:GetCenter()
+            local px, py = UIParent:GetCenter()
+            if cx and cy and px and py then
+                specData.groups[groupName].position = { x = cx - px, y = cy - py }
+            end
         end
     end)
 
@@ -3283,7 +3432,8 @@ function cdmModule:Reconcile()
         --
         -- No reparenting: the frames stay children of Blizzard's viewer, which
         -- keeps this taint-free. Only their anchors are ours.
-        if assignment and entry.viewerType == "buff" and BorrowBuffIcons() then
+        if assignment and (entry.viewerType == "buff" or entry.viewerType == "buffbar")
+           and BorrowBuffIcons() then
             entry.managed = true
             local group = self.groups[assignment]
             if group then group.usesBlizzardIcons = true end
@@ -3519,8 +3669,11 @@ end
 --     local f = Squizzumables_GetCDMGroupFrame("Essential")
 --     if f then myFrame:SetPoint("TOP", f, "BOTTOM", 0, -4) end
 --
--- The group names are "Essential", "Utility" and "Buffs" for the built-ins, or
--- whatever the player called a custom group. The frames are also reachable as
+-- The group names are "Essential", "Utility", "Buffs" and "Buff Bars" for the
+-- built-ins, or whatever the player called a custom group. Note the space in
+-- "Buff Bars": these names are passed through verbatim, and a custom group has
+-- always been able to contain one, so nothing here assumes otherwise.
+-- The frames are also reachable as
 -- the globals SQZ_CDMGroup_<name>, but go through this: the accessor is the
 -- supported contract and the name is not.
 --
@@ -3615,7 +3768,7 @@ local VIEWER_TO_GROUP = {
     EssentialCooldownViewer = "Essential",
     UtilityCooldownViewer   = "Utility",
     BuffIconCooldownViewer  = "Buffs",
-    BuffBarCooldownViewer   = "Buffs",
+    BuffBarCooldownViewer   = "Buff Bars",
 }
 
 -- Mute Blizzard's pooled item frames.
@@ -4071,6 +4224,7 @@ function cdmModule:EnsureBuiltinGroups(specData)
             local gd = specData.groups[b.name]
             if gd then
                 gd.builtin = true
+                gd.isBarGroup = b.bars or nil
                 gd.position = { x = 0, y = b.defaultY }
                 -- Centred, like Blizzard's own bars. It also matters more here
                 -- than for a custom group: with Hide Until Active the row packs
@@ -4080,9 +4234,13 @@ function cdmModule:EnsureBuiltinGroups(specData)
                 gd.growDirection = "centereddown"
             end
         else
-            -- Re-stamp the flag: groups made before 1.69 could share a name
+            -- Re-stamp the flags: groups made before 1.69 could share a name
             -- with a built-in, and the tab needs to know not to offer delete.
+            -- isBarGroup is re-stamped for the same reason plus one of its own
+            -- -- it did not exist before 1.74, so every existing profile's
+            -- groups are missing it and the bar group would lay out as a grid.
             specData.groups[b.name].builtin = true
+            specData.groups[b.name].isBarGroup = b.bars or nil
         end
     end
 end
@@ -4777,7 +4935,23 @@ end
 -- Preview Mode Integration
 -- ============================================================================
 
+-- Unlock mode is showing the drag zones, so nothing may hide a group.
+--
+-- A borrowed group hides itself when nothing in it is active
+-- (LayoutBorrowedBuffIcons' SetShown), and that pass runs on the 0.2s poll --
+-- so it re-hid the container a fifth of a second after ShowPreview revealed it,
+-- and the drag zone appeared to never exist.
+--
+-- Tracked BARS are what exposed this: they are procs, so out of combat none of
+-- them are up, which is exactly when a player is in unlock mode positioning
+-- things. The tell was that the zone appeared if Blizzard's Edit Mode was open
+-- at the same time -- Edit Mode force-shows Blizzard's viewers including the
+-- inactive bars, which made #shown non-zero and stopped the hide firing.
+--
+-- The Buffs group had the same latent bug and was simply less likely to be
+-- empty. Both branches check this flag.
 function cdmModule:ShowPreview()
+    self.previewMode = true
     for groupName, group in pairs(self.groups) do
         if group.container then
             group.container:Show()
@@ -4822,6 +4996,9 @@ function cdmModule:ShowPreview()
 end
 
 function cdmModule:HidePreview()
+    -- Before the loop: the borrowed-layout poll reads this, and until it is
+    -- cleared an empty group stays on screen as a stray box.
+    self.previewMode = false
     for groupName, group in pairs(self.groups) do
         if group.previewOverlay then
             group.previewOverlay:Hide()
@@ -5361,15 +5538,29 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
 
     yOffset = yOffset - 28
 
-    -- ===== ROW 1: Icon Size + Spacing =====
-    local sizeSlider = CreateSQSlider(content, "Icon Size", 170, 20, 80, 2)
-    sizeSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(sizeSlider, "Icon Size", "Width and height of each cooldown icon in this group, in pixels.")
-    sizeSlider:SetValue(groupData.iconSize or DEFAULT_ICON_SIZE)
-    sizeSlider:SetAfterValueChanged(function(value)
-        groupData.iconSize = value
-        BH.cdm:ScheduleReconcile()
-    end)
+    -- ===== ROW 1: size + Spacing =====
+    -- A bar group is sized in two dimensions, so it gets width and height where
+    -- an icon group gets one square Icon Size. Same slot on the page either way.
+    local isBarGroup = groupData.isBarGroup and true or false
+    if isBarGroup then
+        local widthSlider = CreateSQSlider(content, "Bar Width", 170, 60, 400, 5)
+        widthSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(widthSlider, "Bar Width", "How wide each tracked buff bar is, in pixels.")
+        widthSlider:SetValue(groupData.barWidth or DEFAULT_BAR_WIDTH)
+        widthSlider:SetAfterValueChanged(function(value)
+            groupData.barWidth = value
+            BH.cdm:ScheduleReconcile()
+        end)
+    else
+        local sizeSlider = CreateSQSlider(content, "Icon Size", 170, 20, 80, 2)
+        sizeSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(sizeSlider, "Icon Size", "Width and height of each cooldown icon in this group, in pixels.")
+        sizeSlider:SetValue(groupData.iconSize or DEFAULT_ICON_SIZE)
+        sizeSlider:SetAfterValueChanged(function(value)
+            groupData.iconSize = value
+            BH.cdm:ScheduleReconcile()
+        end)
+    end
 
     local spacingSlider = CreateSQSlider(content, "Spacing", 170, 0, 20, 1)
     spacingSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
@@ -5381,15 +5572,29 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     end)
     yOffset = yOffset - 50
 
-    -- ===== ROW 2: Per Row + Alpha =====
-    local rowSlider = CreateSQSlider(content, "Per Row", 170, 1, 20, 1)
-    rowSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(rowSlider, "Per Row", "How many icons before wrapping to the next row or column.")
-    rowSlider:SetValue(groupData.perRow or DEFAULT_PER_ROW)
-    rowSlider:SetAfterValueChanged(function(value)
-        groupData.perRow = value
-        BH.cdm:ScheduleReconcile()
-    end)
+    -- ===== ROW 2: Per Row / Bar Height + Alpha =====
+    -- Bars always stack one per row -- that is how Blizzard draws them and how
+    -- a name and a timer stay readable -- so Per Row has nothing to say here and
+    -- the slot goes to the bar's other dimension instead.
+    if isBarGroup then
+        local heightSlider = CreateSQSlider(content, "Bar Height", 170, 8, 48, 1)
+        heightSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(heightSlider, "Bar Height", "How tall each tracked buff bar is, in pixels.")
+        heightSlider:SetValue(groupData.barHeight or DEFAULT_BAR_HEIGHT)
+        heightSlider:SetAfterValueChanged(function(value)
+            groupData.barHeight = value
+            BH.cdm:ScheduleReconcile()
+        end)
+    else
+        local rowSlider = CreateSQSlider(content, "Per Row", 170, 1, 20, 1)
+        rowSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(rowSlider, "Per Row", "How many icons before wrapping to the next row or column.")
+        rowSlider:SetValue(groupData.perRow or DEFAULT_PER_ROW)
+        rowSlider:SetAfterValueChanged(function(value)
+            groupData.perRow = value
+            BH.cdm:ScheduleReconcile()
+        end)
+    end
 
     local alphaSlider = CreateSQSlider(content, "Opacity", 170, 10, 100, 5)
     alphaSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
@@ -5787,6 +5992,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     local grp = BH.cdm.groups[groupName]
     local holdsBuffs = (grp and grp.usesBlizzardIcons)
         or groupName == BUILTIN_FOR_VIEWERTYPE["buff"]
+        or groupName == BUILTIN_FOR_VIEWERTYPE["buffbar"]
     if holdsBuffs then
         local alwaysCB = CreateSQCheckbox(content, "Always Show Buffs", function(checked)
             groupData.showInactiveBuffs = checked
