@@ -21,6 +21,18 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.76"] = {
+        "Unlock mode now previews your Cooldown Manager groups, so you can see how the icons will sit while you move them.",
+        "Groups set to show only in combat, only in instances or only with a target used to be an invisible box in unlock mode. They now show in full, and each label says when the group really appears.",
+        "Hide Until Active groups show every icon while unlocked, and the Buffs and Buff Bars groups fill in a sample for each tracked buff that is not up.",
+        "Always Show Buffs on the Buff Bars group now draws proper bars with the spell's icon and name, instead of a stretched icon.",
+        "New Cooldown Manager icon shapes: Diamond, Hexagon, Shield, Heart and Star. Pick one under Icon Shape on any group; the cooldown sweep and border follow the shape.",
+        "Round icons now get a round cooldown sweep and a round border instead of square ones.",
+        "On shaped icons the proc glow and Glow When Ready follow the shape as well: the game's glow animation, redrawn in each shape and in your glow colour.",
+        "Cooldown Manager glows now draw on top of neighbouring frames instead of being cut off by the border of a bar sitting right next to them.",
+        "Tracked buffs and buff bars are now drawn by this addon, so your group's border, zoom, shape, background and text settings apply to them, and the sweep and timers still work in combat. \"Draw Buffs Ourselves\" on the Cooldown Manager page switches back to Blizzard's frames.",
+        "The Cooldowns settings page now has a sub-tab for each group -- Essential, Utility, Buffs and Buff Bars -- instead of one long scroll.",
+    },
     ["1.75"] = {
         "Removed the Co-Tank tracker. It never rendered its icons, and it has been rebuilt in SquizzFrames, which already drives raid frame auras through the same game feature.",
         "Its settings are gone from the Raid Tools page. Nothing else is affected.",

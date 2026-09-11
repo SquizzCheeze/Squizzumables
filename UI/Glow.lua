@@ -15,6 +15,11 @@
 --   3. A plain pulsing texture of our own, so the feature degrades to something
 --      rather than nothing if both disappear.
 --
+-- A frame given a shape (Glow.SetShape -- the CDM does this for a shaped icon)
+-- stays on tier 1 with Blizzard's art swapped for flipbooks in its shape (see
+-- ApplyAlertArt), falls back to a shaped halo on tier 3, and skips tier 2,
+-- which is square art with nothing to swap.
+--
 -- The CDM module previously called the deprecated function directly, which is
 -- where the two deprecation warnings in the editor came from.
 
@@ -37,15 +42,10 @@ local FALLBACK_TEXTURE = "Interface\\SpellActivationOverlay\\IconAlert"
 local function EnsureFallback(frame, anchorTo)
     if frame.sqGlowFallback then return frame.sqGlowFallback end
 
+    -- Texture and anchors are ApplyArt's job, not set here: they depend on the
+    -- frame's shape, which can change between one glow and the next.
     local glow = frame:CreateTexture(nil, anchorTo and "ARTWORK" or "OVERLAY")
-    glow:SetTexture(FALLBACK_TEXTURE)
-    glow:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
     glow:SetBlendMode("ADD")
-    -- Padded outwards: the art has a lot of empty margin, so drawn at exactly
-    -- the target size the visible ring sits inside it rather than around it.
-    local target = anchorTo or frame
-    glow:SetPoint("TOPLEFT", target, "TOPLEFT", -6, 6)
-    glow:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 6, -6)
     glow:Hide()
 
     local anim = glow:CreateAnimationGroup()
@@ -61,6 +61,47 @@ local function EnsureFallback(frame, anchorTo)
     return glow
 end
 
+-- The player's glow colour. Tints every glow of ours, and the shaped
+-- flipbooks that replace Blizzard's art; Blizzard's own square glow keeps its
+-- art's colour, as it always has.
+local function GlowColor()
+    local s = (ns.BH and ns.BH.settings) or {}
+    local c = s.glowColor or {}
+    return c.r or 1, c.g or 0.82, c.b or 0.0
+end
+
+-- Shaped art is drawn this much larger than the frame. The generator
+-- (.claude/make-shapes.ps1, GlowScale) leaves the same margin around the shape,
+-- which is what puts the glow's outline on the icon's edge -- change one and
+-- the other has to follow. It is also the ratio Blizzard's own alert frame
+-- uses, so shaped and square glows match in size.
+local SHAPED_SCALE = 1.4
+
+-- Tier 3 texture and placement, set every time a self-drawn glow starts.
+-- Cheap, since that only happens on a transition.
+local function ApplyArt(frame, anchorTo)
+    local glow = frame.sqGlowFallback
+    if not glow then return end
+    local target = anchorTo or frame
+    local art = frame.sqGlowShape
+    glow:ClearAllPoints()
+    if art and art.halo then
+        glow:SetTexture(art.halo)
+        glow:SetTexCoord(0, 1, 0, 1)
+        local w, h = target:GetSize()
+        glow:SetPoint("CENTER", target, "CENTER", 0, 0)
+        glow:SetSize((w or 0) * SHAPED_SCALE, (h or 0) * SHAPED_SCALE)
+    else
+        glow:SetTexture(FALLBACK_TEXTURE)
+        glow:SetTexCoord(0.00781250, 0.50781250, 0.27734375, 0.52734375)
+        -- Padded outwards: the art has a lot of empty margin, so drawn at
+        -- exactly the target size the visible ring sits inside it rather
+        -- than around it.
+        glow:SetPoint("TOPLEFT", target, "TOPLEFT", -6, 6)
+        glow:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 6, -6)
+    end
+end
+
 -- Colour, speed and whether it pulses at all, read from settings every time a
 -- glow starts rather than captured when the texture is built. The textures
 -- live on pooled button frames and outlive any number of settings changes, so
@@ -72,8 +113,8 @@ local function ApplyStyle(frame)
     if not glow then return end
 
     local s = (ns.BH and ns.BH.settings) or {}
-    local c = s.glowColor or {}
-    glow:SetVertexColor(c.r or 1, c.g or 0.82, c.b or 0.0, 1)
+    local r, g, b = GlowColor()
+    glow:SetVertexColor(r, g, b, 1)
 
     if not anim then return end
     if s.glowPulse == false then
@@ -90,6 +131,117 @@ local function ApplyStyle(frame)
         pulse:SetFromAlpha(s.glowMinAlpha or 0.35)
     end
     anim:Play()
+end
+
+-- ============================================================================
+-- Shaped flipbooks on Blizzard's alert (tier 1)
+--
+-- Blizzard's alert (ActionButtonSpellAlertTemplate) is a burst flipbook,
+-- ProcStartFlipbook driven by the ProcStartAnim group, handing over to a
+-- looping one, ProcLoopFlipbook in the ProcLoop group. Both are square atlases
+-- with no mask and no shape option. So a shaped frame keeps the alert --
+-- Blizzard still owns showing, hiding, timing and the burst-to-loop hand-over
+-- -- and only the art is replaced: each texture gets a sheet of our own and
+-- each flipbook animation is told that sheet's grid. This is Masque's approach
+-- for its round and hexagon skins (Masque/Core/Regions/SpellAlert.lua).
+--
+-- Safe to write to: GetAlertFrame creates the alert once per button, stores it
+-- on the button as SpellActivationAlert and never pools it. Our buttons are the
+-- CDM's own glow frames, so art set here cannot reach a real action button.
+-- And these are widget calls on regions, not Blizzard Lua running on our stack,
+-- so nothing of Blizzard's is left tainted by them.
+--
+-- Applied after every ShowAlert rather than once, so nothing Blizzard does on a
+-- show can leave a shaped frame on square art.
+-- ============================================================================
+
+-- The generator's sheet layout ($SheetFrame and friends in make-shapes.ps1).
+-- Blizzard's own grid: 30 frames, 6 rows of 5. 84px frames on a 512 sheet.
+local SHEET_FRAME  = 84
+local SHEET_ROWS   = 6
+local SHEET_COLS   = 5
+local SHEET_FRAMES = 30
+
+-- Blizzard's art, for putting a frame back when its shape is cleared. From
+-- ActionButtonSpellAlertTemplate in Blizzard_ActionBar/Shared/
+-- ActionButtonSpellAlerts.xml.
+local BLIZZ_LOOP_ATLAS  = "UI-HUD-ActionBar-Proc-Loop-Flipbook"
+local BLIZZ_START_ATLAS = "UI-HUD-ActionBar-Proc-Start-Flipbook"
+local BLIZZ_START_SIZE  = 150
+
+-- The FlipBook animation inside one of the alert's animation groups. The
+-- groups also hold Alpha animations, so it is found by type, not by position.
+---@return FlipBook?
+local function FlipBookOf(group)
+    if not group then return nil end
+    for _, a in ipairs({ group:GetAnimations() }) do
+        if a:GetObjectType() == "FlipBook" then return a end
+    end
+    return nil
+end
+
+-- A frame size of 0 means "work it out from the atlas", which is what
+-- Blizzard's own sheets rely on and what putting them back restores.
+---@param anim FlipBook?
+local function SetGrid(anim, frameSize)
+    if not anim then return end
+    anim:SetFlipBookFrameWidth(frameSize)
+    anim:SetFlipBookFrameHeight(frameSize)
+    anim:SetFlipBookRows(SHEET_ROWS)
+    anim:SetFlipBookColumns(SHEET_COLS)
+    anim:SetFlipBookFrames(SHEET_FRAMES)
+end
+
+local function ApplyAlertArt(frame)
+    local alert = frame.SpellActivationAlert
+    if not alert then return end
+    local loopTex  = alert.ProcLoopFlipbook
+    local startTex = alert.ProcStartFlipbook
+    if not (loopTex and startTex) then return end
+    local loopAnim  = FlipBookOf(alert.ProcLoop)
+    local startAnim = FlipBookOf(alert.ProcStartAnim)
+
+    local art = frame.sqGlowShape
+    if art and art.loop and art.start then
+        -- Remember Blizzard's blend modes the first time, to put them back.
+        if not alert._sqShaped then
+            alert._sqLoopBlend  = alert._sqLoopBlend  or loopTex:GetBlendMode()
+            alert._sqStartBlend = alert._sqStartBlend or startTex:GetBlendMode()
+        end
+        local r, g, b = GlowColor()
+
+        loopTex:SetTexture(art.loop)
+        loopTex:SetBlendMode("ADD")
+        loopTex:SetVertexColor(r, g, b)
+        SetGrid(loopAnim, SHEET_FRAME)
+
+        -- Blizzard's burst is a fixed 150px centred on the button, much larger
+        -- than the alert; ours is drawn to the alert's own 1.4x like the loop,
+        -- so the two line up on the icon's edge.
+        startTex:SetTexture(art.start)
+        startTex:SetBlendMode("ADD")
+        startTex:SetVertexColor(r, g, b)
+        startTex:ClearAllPoints()
+        startTex:SetAllPoints(alert)
+        SetGrid(startAnim, SHEET_FRAME)
+
+        alert._sqShaped = true
+    elseif alert._sqShaped then
+        loopTex:SetAtlas(BLIZZ_LOOP_ATLAS)
+        loopTex:SetBlendMode(alert._sqLoopBlend or "BLEND")
+        loopTex:SetVertexColor(1, 1, 1)
+        SetGrid(loopAnim, 0)
+
+        startTex:SetAtlas(BLIZZ_START_ATLAS)
+        startTex:SetBlendMode(alert._sqStartBlend or "BLEND")
+        startTex:SetVertexColor(1, 1, 1)
+        startTex:ClearAllPoints()
+        startTex:SetPoint("CENTER")
+        startTex:SetSize(BLIZZ_START_SIZE, BLIZZ_START_SIZE)
+        SetGrid(startAnim, 0)
+
+        alert._sqShaped = nil
+    end
 end
 
 --- Start the glow. `anchorTo` restricts it to one region of the frame; without
@@ -109,6 +261,7 @@ function Glow.Show(frame, anchorTo, skipBirth)
 
     if anchorTo then
         local glow = EnsureFallback(frame, anchorTo)
+        ApplyArt(frame, anchorTo)
         glow:Show()
         ApplyStyle(frame)
         frame.sqGlowTier = 3
@@ -119,12 +272,13 @@ function Glow.Show(frame, anchorTo, skipBirth)
         local ok = pcall(ActionButtonSpellAlertManager.ShowAlert, ActionButtonSpellAlertManager,
                          frame, skipBirth)
         if ok then
+            ApplyAlertArt(frame)
             frame.sqGlowTier = 1
             return
         end
     end
 
-    if ActionButton_ShowOverlayGlow then
+    if ActionButton_ShowOverlayGlow and not frame.sqGlowShape then
         local ok = pcall(ActionButton_ShowOverlayGlow, frame)
         if ok then
             frame.sqGlowTier = 2
@@ -133,6 +287,7 @@ function Glow.Show(frame, anchorTo, skipBirth)
     end
 
     local glow = EnsureFallback(frame)
+    ApplyArt(frame)
     glow:Show()
     ApplyStyle(frame)
     frame.sqGlowTier = 3
@@ -172,13 +327,37 @@ end
 --- the button measured at that instant, and never revisits it -- Blizzard's
 --- action buttons are a fixed size, so nothing there ever needed it to. Our CDM
 --- icons resize from a slider, and without this the glow keeps the dimensions
---- the icon had the first time it ever glowed.
+--- the icon had the first time it ever glowed. The shaped flipbooks are
+--- anchored to the alert, so they follow it.
+---
+--- The tier 3 shaped halo is sized when it starts, so it is re-sized here too.
 function Glow.Resize(frame)
     if not frame then return end
-    local alert = frame.SpellActivationAlert
-    if not alert then return end
     local w, h = frame:GetSize()
-    if w and h and w > 0 and h > 0 then
+    if not (w and h and w > 0 and h > 0) then return end
+    local alert = frame.SpellActivationAlert
+    if alert then
         alert:SetSize(w * 1.4, h * 1.4)
+    end
+    if frame.sqGlowShape and frame.sqGlowFallback then
+        frame.sqGlowFallback:SetSize(w * SHAPED_SCALE, h * SHAPED_SCALE)
+    end
+end
+
+--- Give a frame shaped glow art, or nil for the normal glow. `art` is a table
+--- of texture paths: `start` and `loop` (the tier 1 flipbook sheets) and `halo`
+--- (the tier 3 fallback). The same table must be passed each time for the
+--- same shape; it is compared by identity.
+---
+--- A glow already running is restarted so it changes over at once rather than
+--- when it next ends -- a proc glow can last a whole fight. The restart passes
+--- no anchorTo, so this is for whole-frame glows like the CDM icons; the
+--- reminder buttons, which glow one region, never set a shape.
+function Glow.SetShape(frame, art)
+    if not frame or frame.sqGlowShape == art then return end
+    frame.sqGlowShape = art
+    if frame.sqGlowing then
+        Glow.Hide(frame)
+        Glow.Show(frame, nil, true)
     end
 end

@@ -1,10 +1,37 @@
 Squizzumables Changelog
 =======================
 
-V1.75
+V1.76
 
-- Removed the Co-Tank tracker. It never worked -- the icons would not render --
-  and the game feature it is built on is better served by SquizzFrames, which
-  already drives raid frame auras the same way. It has been rebuilt there
-  instead of kept here in a broken state. Its settings are gone from the Raid
-  Tools page; nothing else is affected
+- Unlock mode now previews every Cooldown Manager group, so you can see how
+  the icons will sit while you position them. Groups set to show only in
+  combat, only in instances, only with a target, or hidden while mounted used
+  to be an invisible box in unlock mode; they now appear in full. Hide Until
+  Active groups show every icon, and the Buffs and Buff Bars groups fill in a
+  sample for each tracked buff that is not currently up. Each group's label
+  also says when it will really be shown, e.g. "Essential (combat only)"
+- Always Show Buffs on the Buff Bars group now draws its placeholders as bars,
+  with the spell's icon and name, instead of stretching the icon across the
+  whole bar
+- New Cooldown Manager icon shapes: Diamond, Hexagon, Shield, Heart and Star,
+  alongside Square and Round. The cooldown sweep and the border follow the
+  shape, and border thickness and colour work as before
+- Round icons now have a round cooldown sweep and a round border. Both used to
+  stay square around the circle
+- On shaped icons, the proc glow and Glow When Ready now follow the shape too:
+  the game's own glow animation, burst and all, redrawn in each shape and in
+  your glow colour. Square icons keep the game's glow exactly as it was
+- Cooldown Manager glows now draw above neighbouring frames. A group sitting
+  right next to another addon's bar could have the edge of its glow cut off
+  underneath that bar's border
+- Tracked buffs and buff bars are now drawn by this addon instead of borrowed
+  from Blizzard's Cooldown Manager, so each buff group's border, zoom, icon
+  shape, background, stack and timer text settings finally apply to them. The
+  duration sweep, stacks and timer keep working in combat, because the game
+  fills them in itself. Buff bars get their own Bar Colour. Untick "Draw Buffs
+  Ourselves" on the Cooldown Manager page to go back to Blizzard's frames.
+  Totem-style entries that are not real auras still use Blizzard's
+- The Cooldowns settings page is split into sub-tabs: General for the module
+  switches, then one each for Essential, Utility, Buffs and Buff Bars, instead
+  of every group's settings in one long scroll. Search takes you to the right
+  sub-tab

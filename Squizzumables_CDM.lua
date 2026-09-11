@@ -812,6 +812,43 @@ end
 -- Ours, not Blizzard's: Blizzard's frame is hidden because it has no aura bound
 -- to it, so showing it would draw whatever stale state it last held. One per
 -- cooldownID, kept on the group and reused.
+--
+-- Also the unlock-mode mock: previewing fills every slot with one of these, so
+-- a buff group can be positioned with its full row visible instead of only
+-- whatever happens to be up while standing in town.
+
+-- The bar-shaped parts, for a placeholder in a bar group. Before these, a bar
+-- placeholder was the square icon texture stretched to the full bar size by
+-- the stacking layout -- a 200x20 smear of spell art.
+--
+-- Returned as a table rather than set as fields here, so they are assigned in
+-- GetBuffPlaceholder where the frame is built -- the linter types the frame as
+-- a plain Frame everywhere else and reports every field added from outside.
+local function BuildPlaceholderBar(ph, icon)
+    local bg = ph:CreateTexture(nil, "BACKGROUND")
+    bg:SetPoint("TOPLEFT", icon, "TOPRIGHT", 1, 0)
+    bg:SetPoint("BOTTOMRIGHT", ph, "BOTTOMRIGHT", 0, 0)
+    bg:SetColorTexture(0, 0, 0, 0.5)
+
+    local fill = ph:CreateTexture(nil, "ARTWORK")
+    fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    fill:SetVertexColor(0.9, 0.6, 0.1)
+    fill:SetPoint("TOPLEFT", bg, "TOPLEFT", 0, 0)
+    fill:SetPoint("BOTTOMLEFT", bg, "BOTTOMLEFT", 0, 0)
+
+    local timer = ph:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    timer:SetPoint("RIGHT", bg, "RIGHT", -4, 0)
+    timer:SetText("12s")
+
+    local name = ph:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    name:SetPoint("LEFT", bg, "LEFT", 4, 0)
+    name:SetPoint("RIGHT", timer, "LEFT", -4, 0)
+    name:SetJustifyH("LEFT")
+    name:SetWordWrap(false)
+
+    return { bg = bg, fill = fill, timer = timer, name = name }
+end
+
 function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
     group.placeholders = group.placeholders or {}
     local ph = group.placeholders[cdID]
@@ -821,15 +858,15 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
         ph.isPlaceholder = true
         ph.cooldownID = cdID
         local tex = ph:CreateTexture(nil, "ARTWORK")
-        tex:SetAllPoints()
         ph.Icon = tex
         group.placeholders[cdID] = ph
     end
 
+    local sid = SpellIDForCooldown(cdID)
+
     -- Texture resolved lazily and remembered: it can be unavailable or secret
     -- early in a login, the same way proxy icons could come up blank.
     if not ph._iconSet then
-        local sid = SpellIDForCooldown(cdID)
         local t = sid and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sid)
         if t and not BH.Secrets.IsSecret(t) then
             ph.Icon:SetTexture(t)
@@ -837,10 +874,82 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
         end
     end
 
+    -- Icon on the left and a bar beside it for a bar group; the icon fills the
+    -- frame otherwise. Re-anchored only when the shape changes.
+    local isBar = groupData.isBarGroup and true or false
+    if ph._isBar ~= isBar then
+        ph._isBar = isBar
+        ph.Icon:ClearAllPoints()
+        if isBar then
+            ph.Icon:SetPoint("TOPLEFT", ph, "TOPLEFT", 0, 0)
+            ph.Icon:SetPoint("BOTTOMLEFT", ph, "BOTTOMLEFT", 0, 0)
+            if not ph.bar then ph.bar = BuildPlaceholderBar(ph, ph.Icon) end
+        else
+            ph.Icon:SetAllPoints()
+        end
+    end
+
+    local preview = self.previewMode
+    local bar = ph.bar
+    if isBar and bar then
+        local barW = groupData.barWidth  or DEFAULT_BAR_WIDTH
+        local barH = groupData.barHeight or DEFAULT_BAR_HEIGHT
+        ph.Icon:SetWidth(barH)
+        if not ph._nameSet then
+            local n = sid and C_Spell.GetSpellName and C_Spell.GetSpellName(sid)
+            n = BH.Secrets.SafeString(n)
+            if n then
+                bar.name:SetText(n)
+                ph._nameSet = true
+            end
+        end
+        bar.bg:Show()
+        bar.name:Show()
+        -- A running bar in the preview, so the fill and timer are part of what
+        -- is being positioned; an empty one for Always Show Buffs, because
+        -- that placeholder stands for a buff that is not up.
+        bar.fill:SetWidth(math.max(1, (barW - barH - 1) * 0.65))
+        bar.fill:SetShown(preview)
+        bar.timer:SetShown(preview)
+    elseif bar then
+        bar.bg:Hide()
+        bar.fill:Hide()
+        bar.name:Hide()
+        bar.timer:Hide()
+    end
+
     local zoom = groupData.iconZoom or DEFAULT_ICON_ZOOM
     ph.Icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
-    ph.Icon:SetDesaturated(groupData.desaturateInactiveBuffs ~= false)
-    ph:SetAlpha(groupData.inactiveBuffAlpha or 0.45)
+
+    -- Cut to the group's shape, like the native buff icons it stands in for.
+    -- Read through the module table: SHAPE_FILE is a local declared further
+    -- down this file, and so is not in scope here.
+    local shapeFile = not isBar and cdmModule.shapeFiles
+        and cdmModule.shapeFiles[groupData.iconShape or "none"] or nil
+    if shapeFile then
+        if not ph.mask then
+            ph.mask = ph:CreateMaskTexture()
+            ph.mask:SetAllPoints(ph.Icon)
+        end
+        ph.mask:SetTexture(shapeFile, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        if not ph._maskOn then
+            ph.Icon:AddMaskTexture(ph.mask)
+            ph._maskOn = true
+        end
+    elseif ph._maskOn then
+        ph.Icon:RemoveMaskTexture(ph.mask)
+        ph._maskOn = false
+    end
+    -- Drawn as a live buff while previewing: the point is to show how the
+    -- group will look when it is up. Dimmed and greyed only when it stands for
+    -- a buff that is genuinely not there.
+    if preview then
+        ph.Icon:SetDesaturated(false)
+        ph:SetAlpha(1)
+    else
+        ph.Icon:SetDesaturated(groupData.desaturateInactiveBuffs ~= false)
+        ph:SetAlpha(groupData.inactiveBuffAlpha or 0.45)
+    end
     ph:Show()
     return ph
 end
@@ -856,6 +965,68 @@ function cdmModule:ReleaseUnusedPlaceholders(group, slots)
     for cdID, ph in pairs(group.placeholders) do
         if not used[cdID] then ph:Hide() end
     end
+end
+
+-- Move a Blizzard buff frame whose buff we draw natively out of sight.
+--
+-- Parked, not hidden: Blizzard stops updating a hidden item, and both the row
+-- packing (IsShown) and the sound alerts read its live state. Re-applied on
+-- every pass, because Blizzard re-anchors its items on its own layout passes.
+-- SetPoint is the only kind of write this module makes to Blizzard's frames.
+local function ParkBorrowedFrame(child)
+    child:ClearAllPoints()
+    child:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", -2000, -2000)
+end
+
+-- Is this Blizzard buff item up because of a totem rather than an aura?
+--
+-- Then a native slot has nothing to show -- slots match auras -- so Blizzard's
+-- frame keeps the slot for that pass. Read from the fields Blizzard's own item
+-- data sets (CooldownViewerItemDataMixin: SetAuraInstanceInfo writes
+-- auraInstanceID, SetTotemData writes totemData, both cleared to nil). Plain
+-- field reads, which taint nothing.
+--
+-- Secret probes first, always: auraInstanceID is secret in instanced combat,
+-- and a secret ID is still an aura that is there -- so it means "aura".
+local function ItemDrivenByTotem(child)
+    local aura = child.auraInstanceID
+    if BH.Secrets.IsSecret(aura) or aura ~= nil then return false end
+    local totem = child.totemData
+    if BH.Secrets.IsSecret(totem) then return true end
+    return totem ~= nil
+end
+
+-- Finish the native cells after a layout pass.
+--
+-- A cell in a slot of its own is a buff that is up: fully visible, keybind and
+-- all. One riding on a placeholder is a buff that is not up, kept invisible so
+-- only the placeholder's keybind draws -- and if the buff comes up before the
+-- next pass, its button appears in exactly that slot. Idle cells (not up, no
+-- placeholder) wait invisibly in the middle of the group.
+function cdmModule:SettleNativeCells(groupName, group, slots, idle)
+    for _, f in ipairs(slots) do
+        if f.isNativeCell then
+            f:SetAlpha(1)
+        elseif f._sqCell then
+            local cell = f._sqCell
+            cell:ClearAllPoints()
+            cell:SetAllPoints(f)
+            cell:SetAlpha(0)
+        end
+    end
+    for _, cell in ipairs(idle) do
+        cell:ClearAllPoints()
+        cell:SetPoint("CENTER", group.container, "CENTER")
+        cell:SetAlpha(0)
+    end
+
+    -- A hidden group frame hides its AuraContainer too, and a hidden container
+    -- stops listening for aura changes. Re-scan once when the group reappears.
+    local visible = #slots > 0 or self.previewMode
+    if visible and not group._sqWasVisible and self.native then
+        self.native:Refresh(groupName)
+    end
+    group._sqWasVisible = visible
 end
 
 function cdmModule:LayoutBorrowedBuffIcons(groupName)
@@ -879,19 +1050,55 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     -- draw whatever stale state it last held. So an inactive buff gets a
     -- placeholder of OURS in the slot instead, which is also how EllesmereUI
     -- does it.
-    local showInactive = groupData.showInactiveBuffs and true or false
-    local shown, inactive = {}, {}
+    -- Unlock mode forces it on, as the mock of the full group: see
+    -- GetBuffPlaceholder.
+    local showInactive = (groupData.showInactiveBuffs or self.previewMode) and true or false
+
+    -- Buffs drawn natively (Squizzumables_CDMAuras.lua) take their slot as a
+    -- cell of ours instead of Blizzard's frame.
+    --
+    -- Blizzard's frame still says WHETHER the buff is up: IsShown is a plain
+    -- flag, readable in combat, and it is what already drives the packing
+    -- below. So the row packs exactly as before; only what sits in each slot
+    -- changes, and Blizzard's frame is parked (ParkBorrowedFrame).
+    --
+    -- A buff native in ANOTHER group is parked and skipped here. A buff whose
+    -- slot failed to build is not native at all, so it falls straight back to
+    -- being borrowed and cannot go missing.
+    local native = self.native
+    local nativeOn = native and native:IsEnabled() or false
+    local shown, inactive, idle = {}, {}, {}
     for _, viewerName in ipairs(BORROW_VIEWERS[groupName] or BUFF_VIEWERS) do
         local viewer = _G[viewerName]
         if viewer then
             local ok, children = pcall(function() return { viewer:GetChildren() } end)
             if ok and children then
                 for _, child in ipairs(children) do
-                    if child and child.cooldownID then
-                        if child:IsShown() then
-                            shown[#shown + 1] = child
-                        elseif showInactive then
-                            inactive[#inactive + 1] = child.cooldownID
+                    local cdID = child and child.cooldownID
+                    if cdID then
+                        local isNative = nativeOn and native:IsNative(cdID)
+                        -- Up because of a totem: the slot has no aura to show,
+                        -- so Blizzard's frame keeps it for this pass.
+                        local byTotem = isNative and child:IsShown()
+                            and ItemDrivenByTotem(child)
+                        local useCell = isNative and not byTotem
+                        local cell = useCell and native:GetCell(groupName, cdID) or nil
+                        if useCell then ParkBorrowedFrame(child) end
+                        local slotFrame = cell or ((not useCell) and child) or nil
+                        if slotFrame then
+                            if child:IsShown() then
+                                shown[#shown + 1] = slotFrame
+                            elseif showInactive then
+                                inactive[#inactive + 1] = cdID
+                            elseif cell then
+                                idle[#idle + 1] = cell
+                            end
+                        end
+                        -- Its cell waits out of sight while Blizzard's frame
+                        -- stands in.
+                        if byTotem then
+                            local standby = native:GetCell(groupName, cdID)
+                            if standby then idle[#idle + 1] = standby end
                         end
                     end
                 end
@@ -905,10 +1112,14 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     -- live ones together stops an icon jumping across the row every time an
     -- unrelated buff further along expires.
     local slots = {}
-    for _, child in ipairs(shown) do slots[#slots + 1] = child end
+    for _, f in ipairs(shown) do slots[#slots + 1] = f end
     if showInactive then
         for _, cdID in ipairs(inactive) do
-            slots[#slots + 1] = self:GetBuffPlaceholder(group, cdID, groupData)
+            local ph = self:GetBuffPlaceholder(group, cdID, groupData)
+            -- Reset every pass: the placeholder is reused, and a buff that has
+            -- stopped being native must not leave its old cell attached.
+            ph._sqCell = nativeOn and native:GetCell(groupName, cdID) or nil
+            slots[#slots + 1] = ph
         end
     end
     self:ReleaseUnusedPlaceholders(group, slots)
@@ -942,6 +1153,7 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
         if not InCombatLockdown() then
             group.container:SetSize(barW, fullH)
         end
+        self:SettleNativeCells(groupName, group, shown, idle)
         group.container:SetShown(#shown > 0 or self.previewMode)
         ApplyBarBackground(group, groupData)
         group.container:SetAlpha(GroupAlpha(groupData))
@@ -995,6 +1207,7 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     -- Empty but previewing still has to be draggable. See the note on
     -- cdmModule.previewMode: this pass runs on a 0.2s poll, so hiding an empty
     -- borrowed group here un-does what ShowPreview just did.
+    self:SettleNativeCells(groupName, group, shown, idle)
     group.container:SetShown(#shown > 0 or self.previewMode)
     ApplyBarBackground(group, groupData)
     group.container:SetAlpha(GroupAlpha(groupData))
@@ -1346,6 +1559,11 @@ cdmModule.usedBlizzardFilter = {}
 
 local function DiscoverCooldowns()
     local discovered = {}
+    -- Buff entries dropped as duplicates of a cooldown (see below). Kept out of
+    -- the registry, but returned: Blizzard still shows them on its buff bar,
+    -- so the native buff slots need one for each or they stay Blizzard frames
+    -- in the middle of a row of ours.
+    local buffExtras = {}
     -- One ability, two categories.
     --
     -- The same ability is listed under a cooldown category for its cooldown and
@@ -1368,9 +1586,16 @@ local function DiscoverCooldowns()
     -- board collapsed all four into one and silently dropped most of the buffs
     -- the player was tracking. Only a buff entry that duplicates a
     -- cooldown-type entry is a real duplicate.
+    --
+    -- Only Essential and Utility are the cooldown side of that divide. This
+    -- was `viewerType ~= "buff"` until 1.76, written before 1.74 split tracked
+    -- bars out as "buffbar" -- which silently put the bars on the cooldown
+    -- side too, so a buff icon sharing a name with a tracked bar was dropped
+    -- as a "duplicate" of it.
     local seenCdSpell, seenCdName = {}, {}
     for _, viewerInfo in ipairs(DISCOVER_CATEGORIES) do
-        local isCooldownType = (viewerInfo.viewerType ~= "buff")
+        local isCooldownType = (viewerInfo.viewerType == "cooldown"
+                                or viewerInfo.viewerType == "utility")
 
         -- What Blizzard actually put on its own bar, read off the item frames.
         -- The raw category set only when the pool cannot answer, which means
@@ -1408,12 +1633,14 @@ local function DiscoverCooldowns()
                     local isDuplicate = (not isCooldownType)
                         and ((spellID and seenCdSpell[spellID])
                              or (name and seenCdName[name]))
-                    if not isDuplicate then
-                        if isCooldownType then
-                            if spellID then seenCdSpell[spellID] = true end
-                            if name then seenCdName[name] = true end
-                        end
+                    -- A cooldown-type entry is never a duplicate, so this is
+                    -- exactly the old "recorded only when kept" behaviour.
+                    if isCooldownType then
+                        if spellID then seenCdSpell[spellID] = true end
+                        if name then seenCdName[name] = true end
+                    end
 
+                    do
                         -- Which spell IDs might carry this cooldown's aura.
                         --
                         -- A tracked buff's aura is very often NOT info.spellID:
@@ -1441,24 +1668,35 @@ local function DiscoverCooldowns()
                             end
                         end
 
-                        discovered[cdID] = {
+                        local record = {
                             cooldownID = cdID,
                             spellID = spellID,
                             equipSlot = equipSlot,
                             viewerType = viewerInfo.viewerType,
                             auraIDs = auraIDs,
                             hasAura = info.hasAura,
+                            -- For the native buff slots: which unit the aura
+                            -- sits on, and the tooltip override Blizzard's own
+                            -- buff item matches as well (kept out of auraIDs
+                            -- for the reason given above).
+                            selfAura = info.selfAura,
+                            tooltipSpellID = info.overrideTooltipSpellID,
                             -- Blizzard's own ordering, so the default
                             -- "assignment" sort lays a group out the way the
                             -- player arranged the matching Blizzard bar.
                             order = orderIndex,
                         }
+                        if isDuplicate then
+                            buffExtras[cdID] = record
+                        else
+                            discovered[cdID] = record
+                        end
                     end
                 end
             end
         end
     end
-    return discovered
+    return discovered, buffExtras
 end
 
 -- ============================================================================
@@ -1483,6 +1721,28 @@ local function ResolveProxyTexture(spellID, equipSlot)
         if tex and not BH.Secrets.IsSecret(tex) then return tex end
     end
     return nil
+end
+
+-- The glows draw one strata above the icons.
+--
+-- A glow spills past its icon by design (1.4x), so it overlaps whatever sits
+-- next to the group. At the icons' own MEDIUM strata that is a frame-level
+-- contest, and SquizzFrames' resource bar border (MEDIUM, bar level + 4) won
+-- it, cutting the top off the glow on an icon row sitting just below the bar.
+-- Raising our level would only win until the next addon went higher; a strata
+-- settles it. The glow frames take no mouse input, so nothing under them
+-- becomes unclickable.
+--
+-- Fixed as well as set: a child normally follows its parent's strata when that
+-- changes, and PositionFreeIcon re-asserts MEDIUM on the proxy every time a
+-- free icon is placed, which would drag the glow straight back down.
+-- Blizzard's alert frame (the square-icon glow) is created as a child of the
+-- glow frame, so it inherits this too.
+local GLOW_STRATA = "HIGH"
+
+local function RaiseGlowFrame(f)
+    f:SetFrameStrata(GLOW_STRATA)
+    f:SetFixedFrameStrata(true)
 end
 
 local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
@@ -1547,6 +1807,7 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     -- Glow frame (ActionButton glow)
     local glow = CreateFrame("Frame", nil, proxy)
     glow:SetAllPoints()
+    RaiseGlowFrame(glow)
     proxy.GlowFrame = glow
     proxy._glowShowing = false
 
@@ -1560,6 +1821,7 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     -- overlap rarely, but when they do neither should cancel the other.
     local procGlow = CreateFrame("Frame", nil, proxy)
     procGlow:SetAllPoints()
+    RaiseGlowFrame(procGlow)
     proxy.ProcGlow = procGlow
 
     -- Default on, so a free-positioned icon -- which never goes through
@@ -1929,29 +2191,114 @@ local function CooldownCountdownText(cd)
     return cd._sqCountdownFS or nil
 end
 
--- Round icons. Blizzard's portrait alpha mask is the usual circular mask and
--- ships with the client, so this needs no art of our own.
-local ICON_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+-- Icon shapes.
+--
+-- One white-on-transparent image per shape, generated by
+-- .claude/make-shapes.ps1, and each does three jobs:
+--   * the icon's mask (and the background's), so the icon is cut to shape
+--   * the cooldown's swipe texture, so the dark sweep is the same shape. A
+--     Cooldown cannot take a mask, but its swipe is drawn through this
+--     texture's alpha and tinted by the swipe colour
+--   * the border: the same shape drawn behind the icon, larger by the border
+--     thickness and tinted the border colour, so what shows is a rim. That is
+--     one image rather than a separate outline per shape, and it keeps the
+--     thickness slider continuous instead of baking a width into the art
+--
+-- Before 1.76 Round used Blizzard's portrait mask on the icon alone, so the
+-- sweep and the border stayed square around a circle. It uses our own circle
+-- now, which is what lets all three match.
+--
+-- An unknown saved value (a profile from a newer version, a hand edit) has no
+-- entry in SHAPE_FILE and simply draws square.
+local SHAPE_DIR = "Interface\\AddOns\\" .. addonName .. "\\Media\\Shapes\\"
+local ICON_SHAPES = {
+    { value = "none",    text = "Square" },
+    { value = "round",   text = "Round",   file = "circle"  },
+    { value = "diamond", text = "Diamond", file = "diamond" },
+    { value = "hexagon", text = "Hexagon", file = "hexagon" },
+    { value = "shield",  text = "Shield",  file = "shield"  },
+    { value = "heart",   text = "Heart",   file = "heart"   },
+    { value = "star",    text = "Star",    file = "star"    },
+}
+-- SHAPE_GLOW is the glow art for ns.Glow.SetShape: the two flipbook sheets
+-- that replace Blizzard's proc-glow art, and the static halo it falls back to.
+-- One table per shape, built once here, because SetShape compares by identity.
+local SHAPE_FILE = {}
+local SHAPE_GLOW = {}
+for _, s in ipairs(ICON_SHAPES) do
+    if s.file then
+        local base = SHAPE_DIR .. s.file
+        SHAPE_FILE[s.value] = base .. ".png"
+        SHAPE_GLOW[s.value] = {
+            start = base .. "_proc_start.png",
+            loop  = base .. "_proc_loop.png",
+            halo  = base .. "_glow.png",
+        }
+    end
+end
+-- For GetBuffPlaceholder, which sits above this point in the file.
+cdmModule.shapeFiles = SHAPE_FILE
+
+-- What a square swipe goes back to after a shape. A white square tinted by the
+-- swipe colour draws the same as the template's own swipe. Only ever set on a
+-- proxy that has been shaped, so one that never was is left exactly as built.
+local SQUARE_SWIPE = "Interface\\Buttons\\WHITE8X8"
 
 local function ApplyIconShape(proxy, shape)
-    local wantRound = (shape == "round")
-    if wantRound then
-        if not proxy._sqMask then
-            local m = proxy:CreateMaskTexture()
-            m:SetAllPoints(proxy.Icon)
-            m:SetTexture(ICON_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            proxy._sqMask = m
-            proxy.Icon:AddMaskTexture(m)
-        end
-        proxy._sqMask:Show()
-    elseif proxy._sqMask then
-        -- RemoveMaskTexture rather than just hiding it: a hidden mask still
-        -- clips on some builds, which showed up as icons staying round after
-        -- the option was switched back off.
-        proxy.Icon:RemoveMaskTexture(proxy._sqMask)
-        proxy._sqMask:Hide()
-        proxy._sqMask = nil
+    local file = SHAPE_FILE[shape]
+
+    -- Always off before on. RemoveMaskTexture rather than just hiding it: a
+    -- hidden mask still clips on some builds, which showed up as icons staying
+    -- round after the option was switched back off. Removing first also means
+    -- moving from one shape to another never leaves the mask added twice.
+    local m = proxy._sqMask
+    if m and proxy._sqMaskOn then
+        proxy.Icon:RemoveMaskTexture(m)
+        if proxy.Bg then proxy.Bg:RemoveMaskTexture(m) end
+        m:Hide()
+        proxy._sqMaskOn = false
     end
+
+    if file then
+        if not m then
+            m = proxy:CreateMaskTexture()
+            m:SetAllPoints(proxy.Icon)
+            proxy._sqMask = m
+        end
+        m:SetTexture(file, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        m:Show()
+        proxy.Icon:AddMaskTexture(m)
+        if proxy.Bg then proxy.Bg:AddMaskTexture(m) end
+        proxy._sqMaskOn = true
+
+        -- Below the background and the icon, so only the rim that sticks out
+        -- past them shows. Sized, tinted and shown by ApplyProxyVisuals.
+        if not proxy.ShapeBorder then
+            proxy.ShapeBorder = proxy:CreateTexture(nil, "BACKGROUND", nil, -8)
+        end
+        proxy.ShapeBorder:SetTexture(file)
+    elseif proxy.ShapeBorder then
+        proxy.ShapeBorder:Hide()
+    end
+
+    local cd = proxy.Cooldown
+    if cd and (file or proxy._sqShapedSwipe) then
+        cd:SetSwipeTexture(file or SQUARE_SWIPE)
+        -- The edge is the bright line riding the sweep, and it is drawn out to
+        -- the frame's own square. Round has a circular edge for exactly this;
+        -- every other shape would have the line poking out past its outline,
+        -- so they go without.
+        if cd.SetUseCircularEdge then cd:SetUseCircularEdge(shape == "round") end
+        cd:SetDrawEdge(file == nil or shape == "round")
+        if file then proxy._sqShapedSwipe = true end
+    end
+
+    -- Both glows follow the shape: Blizzard's alert still plays, with its art
+    -- swapped for animated sheets in this shape (see ns.Glow, ApplyAlertArt).
+    -- Square keeps Blizzard's art. A glow already running switches at once.
+    local glowArt = SHAPE_GLOW[shape]
+    ns.Glow.SetShape(proxy.ProcGlow, glowArt)
+    ns.Glow.SetShape(proxy.GlowFrame, glowArt)
 end
 
 -- ============================================================================
@@ -2111,9 +2458,13 @@ local function ApplyProxyVisuals(proxy, groupData)
     local alpha = groupData.alpha or DEFAULT_ALPHA
     proxy:SetAlpha(alpha)
 
-    -- Border visibility
+    -- Border visibility. A shaped icon draws its border as ShapeBorder (see
+    -- ApplyIconShape), so the square one gives way to it; ShapeBorder itself
+    -- is shown after the style block below, which is what creates it.
     local showBorder = groupData.showBorder ~= false
-    if proxy.Border then proxy.Border:SetShown(showBorder) end
+    local shape      = groupData.iconShape or "none"
+    local shaped     = SHAPE_FILE[shape] ~= nil
+    if proxy.Border then proxy.Border:SetShown(showBorder and not shaped) end
 
     ApplyKeybindText(proxy, proxy.spellID, groupData)
 
@@ -2147,7 +2498,6 @@ local function ApplyProxyVisuals(proxy, groupData)
     local bg        = groupData.bgColor or DEFAULT_BG_COLOR
     local bgOn      = groupData.bgEnabled and true or false
     local classCol  = groupData.borderClassColor and true or false
-    local shape     = groupData.iconShape or "none"
 
     -- Appended after format, not built into the format string: a value
     -- containing a % would otherwise be read as a directive.
@@ -2174,6 +2524,14 @@ local function ApplyProxyVisuals(proxy, groupData)
             proxy.Icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
         end
 
+        local r, g, b, a = bc[1], bc[2], bc[3], bc[4]
+        if classCol then
+            local _, class = UnitClass("player")
+            local cc = class and C_ClassColor and C_ClassColor.GetClassColor
+                and C_ClassColor.GetClassColor(class)
+            if cc then r, g, b = cc.r, cc.g, cc.b end
+        end
+
         if proxy.Border then
             proxy.Border:ClearAllPoints()
             proxy.Border:SetPoint("TOPLEFT", -thickness, thickness)
@@ -2182,14 +2540,16 @@ local function ApplyProxyVisuals(proxy, groupData)
                 edgeFile = "Interface\\BUTTONS\\WHITE8X8",
                 edgeSize = thickness,
             })
-            local r, g, b, a = bc[1], bc[2], bc[3], bc[4]
-            if classCol then
-                local _, class = UnitClass("player")
-                local cc = class and C_ClassColor and C_ClassColor.GetClassColor
-                    and C_ClassColor.GetClassColor(class)
-                if cc then r, g, b = cc.r, cc.g, cc.b end
-            end
             proxy.Border:SetBackdropBorderColor(r, g, b, a)
+        end
+
+        -- The shaped border: the shape itself, grown by the thickness on
+        -- every side and tinted, sitting behind the icon.
+        if proxy.ShapeBorder then
+            proxy.ShapeBorder:ClearAllPoints()
+            proxy.ShapeBorder:SetPoint("TOPLEFT", -thickness, thickness)
+            proxy.ShapeBorder:SetPoint("BOTTOMRIGHT", thickness, -thickness)
+            proxy.ShapeBorder:SetVertexColor(r, g, b, a)
         end
 
         if proxy.Bg then
@@ -2197,6 +2557,8 @@ local function ApplyProxyVisuals(proxy, groupData)
             proxy.Bg:SetShown(bgOn)
         end
     end
+
+    if proxy.ShapeBorder then proxy.ShapeBorder:SetShown(showBorder and shaped) end
 
     -- Cooldown text visibility
     if proxy.Cooldown then
@@ -2281,9 +2643,11 @@ local function ApplyProxyVisuals(proxy, groupData)
             proxy.Icon:SetDesaturated(false)
         end
 
-        -- Hide until active: only show when on cooldown or buff is active
+        -- Hide until active: only show when on cooldown or buff is active.
+        -- Everything shows in unlock mode, so the group is positioned at its
+        -- full extent rather than at whatever happens to be on cooldown.
         if groupData.hideUntilActive then
-            proxy:SetShown(isActive)
+            proxy:SetShown(isActive or cdmModule.previewMode)
         end
 
         -- Detect state transitions this frame
@@ -2847,6 +3211,12 @@ end
 GroupAlpha = function(groupData)
     if not groupData then return 1 end
     if groupData.enabled == false then return 0 end
+    -- Unlock mode overrides every situational condition below. It is used out
+    -- of combat, in town, with no target -- exactly when a group set to combat
+    -- or instances only is hidden -- so without this the player was dragging a
+    -- box they could not see, with no idea how its icons would sit. Enable
+    -- Group is the one condition kept: that is "I do not want this at all".
+    if cdmModule.previewMode then return 1 end
     if groupData.hideOutOfCombat and not isInCombat then return 0 end
     if groupData.hideMounted and IsMounted() then return 0 end
     if groupData.onlyInInstances and not IsInInstance() then return 0 end
@@ -3234,9 +3604,10 @@ function cdmModule:LayoutGroup(groupName)
     -- stray green square floating away from the icons you can see, which reads
     -- as a group's drag region being misaligned with its own contents. Now that
     -- Essential/Utility/Buffs all exist by default, most people will have at
-    -- least one empty one. Hide the container instead.
+    -- least one empty one. Hide the container instead -- except in unlock mode,
+    -- where ShowPreview has just shown it and a relayout must not undo that.
     local isEmpty = (#members == 0)
-    group.container:SetShown(not isEmpty)
+    group.container:SetShown(not isEmpty or self.previewMode)
 
     if not InCombatLockdown() then
         group.container:SetSize(fullW, fullH)
@@ -3358,7 +3729,7 @@ function cdmModule:Reconcile()
         return
     end
 
-    local discovered = DiscoverCooldowns()
+    local discovered, buffExtras = DiscoverCooldowns()
 
     -- Before the container pass, so the built-ins get containers on the very
     -- first reconcile of a fresh spec rather than one pass late.
@@ -3380,6 +3751,10 @@ function cdmModule:Reconcile()
         end
     end
 
+    -- Buff entries each group will draw natively, handed to the native module
+    -- once the loop is done (Squizzumables_CDMAuras.lua).
+    local nativeByGroup = {}
+
     -- Process each discovered cooldown (pure API data, no frame references)
     for cdID, cdData in pairs(discovered) do
         local existing = self.registry[cdID]
@@ -3389,6 +3764,8 @@ function cdmModule:Reconcile()
             existing.viewerType = cdData.viewerType
             existing.auraIDs = cdData.auraIDs
             existing.hasAura = cdData.hasAura
+            existing.selfAura = cdData.selfAura
+            existing.tooltipSpellID = cdData.tooltipSpellID
             existing.order = cdData.order
         else
             self.registry[cdID] = {
@@ -3398,6 +3775,8 @@ function cdmModule:Reconcile()
                 viewerType = cdData.viewerType,
                 auraIDs = cdData.auraIDs,
                 hasAura = cdData.hasAura,
+                selfAura = cdData.selfAura,
+                tooltipSpellID = cdData.tooltipSpellID,
                 order = cdData.order,
                 managed = false,
             }
@@ -3436,7 +3815,15 @@ function cdmModule:Reconcile()
            and BorrowBuffIcons() then
             entry.managed = true
             local group = self.groups[assignment]
-            if group then group.usesBlizzardIcons = true end
+            if group then
+                -- The buff layout path either way: a natively drawn buff still
+                -- takes its slot, and its active state, through the same pass.
+                group.usesBlizzardIcons = true
+                if self.native and self.native:Handles(entry) then
+                    nativeByGroup[assignment] = nativeByGroup[assignment] or {}
+                    table.insert(nativeByGroup[assignment], entry)
+                end
+            end
         -- equipSlot as well as spellID: an equip-slot entry (a trinket) carries
         -- no spellID at all, and reaches a group only because the player
         -- dragged it into Essential or Utility in Blizzard's own settings.
@@ -3471,6 +3858,29 @@ function cdmModule:Reconcile()
             end
         end
     end
+
+    -- The buffs discovery kept out of the registry as duplicates of a cooldown.
+    -- The borrowed layout has always shown them anyway (it walks every item on
+    -- Blizzard's buff bar); natively drawn groups need a slot for each too, or
+    -- they stay Blizzard frames among ours -- the stacking buffs in the 1.76
+    -- test were exactly these. Always their built-in group, since they are not
+    -- offered for custom assignment.
+    if self.native then
+        for _, extra in pairs(buffExtras or {}) do
+            local builtinName = BUILTIN_FOR_VIEWERTYPE[extra.viewerType]
+            local builtinGroup = builtinName and self.groups[builtinName]
+            if builtinGroup and self.native:Handles(extra) then
+                builtinGroup.usesBlizzardIcons = true
+                nativeByGroup[builtinName] = nativeByGroup[builtinName] or {}
+                table.insert(nativeByGroup[builtinName], extra)
+            end
+        end
+    end
+
+    -- Build or restyle the native buff slots before anything is laid out, so
+    -- the layout below finds their cells. Every group is passed through, even
+    -- those with nothing native, so one that lost its buffs is released.
+    if self.native then self.native:SyncAll(nativeByGroup) end
 
     -- Position, then lay out. Positioning first means an anchored group is
     -- already attached to its target before sizes are computed, so nothing
@@ -4164,6 +4574,11 @@ function cdmModule:ReleaseAll()
     for groupName, group in pairs(self.groups) do
         if group.container then group.container:Hide() end
     end
+    -- Native buff slots off with everything else. Their containers are
+    -- switched off, not destroyed (nothing can be), and rebuilt on the next
+    -- reconcile.
+    if self.native then self.native:ReleaseAll() end
+
     self.groups = {}
     self.freeIcons = {}
     self.soundTrackers = {}
@@ -4907,10 +5322,30 @@ end)
 -- Initialize â€” Called from PLAYER_LOGIN
 -- ============================================================================
 
+-- Shared with Squizzumables_CDMAuras.lua (native buffs). That file is separate
+-- to keep this one's main chunk clear of Lua 5.1's 200-local limit, so what it
+-- needs from here is handed over explicitly rather than reached as upvalues.
+cdmModule.shared = {
+    GetSpecData              = GetSpecData,
+    PlaceText                = PlaceText,
+    SHAPE_FILE               = SHAPE_FILE,
+    DEFAULT_ICON_SIZE        = DEFAULT_ICON_SIZE,
+    DEFAULT_ALPHA            = DEFAULT_ALPHA,
+    DEFAULT_BORDER_THICKNESS = DEFAULT_BORDER_THICKNESS,
+    DEFAULT_BORDER_COLOR     = DEFAULT_BORDER_COLOR,
+    DEFAULT_ICON_ZOOM        = DEFAULT_ICON_ZOOM,
+    DEFAULT_BG_COLOR         = DEFAULT_BG_COLOR,
+}
+
 function cdmModule:Initialize()
     -- Ahead of the enabled checks: the hooks have to exist even when the module
     -- is off, or turning it on inside Edit Mode leaves them uninstalled.
     HookEditMode()
+
+    -- Load Blizzard_AuraContainer now, at login and out of combat. Loading an
+    -- addon is not documented as combat-safe, and until it is loaded the
+    -- native buffs fall back to Blizzard's frames.
+    if self.native then self.native:Preload() end
 
     -- Immediately, not via the reconcile below.
     --
@@ -4950,8 +5385,58 @@ end
 --
 -- The Buffs group had the same latent bug and was simply less likely to be
 -- empty. Both branches check this flag.
+--
+-- The flag also turns the groups into a mock of themselves (1.76): GroupAlpha
+-- ignores the combat/instance/target conditions, Hide Until Active shows every
+-- icon, and the borrowed buff groups fill each inactive slot with a
+-- placeholder. All three are reads of previewMode in the normal layout paths,
+-- not a separate preview renderer, so the mock cannot drift from the real
+-- layout -- it IS the real layout, with nothing hidden.
+
+-- What normally keeps a group out of sight, for its unlock-mode label. Since
+-- the preview shows every group regardless, nothing else on screen would say
+-- that the box being placed is only there in combat.
+local PREVIEW_CONDITIONS = {
+    { "hideOutOfCombat", "combat only" },
+    { "onlyInInstances", "instances only" },
+    { "hideNoEnemy",     "enemy target only" },
+    { "hideNoTarget",    "with a target" },
+    { "hideMounted",     "hidden mounted" },
+    { "hideInHousing",   "hidden in housing" },
+    { "hideUntilActive", "active only" },
+}
+
+local function PreviewLabelText(groupName, groupData)
+    local notes = {}
+    if groupData then
+        for _, c in ipairs(PREVIEW_CONDITIONS) do
+            if groupData[c[1]] then notes[#notes + 1] = c[2] end
+        end
+    end
+    if #notes == 0 then return groupName end
+    return groupName .. "  |cffaaaaaa(" .. table.concat(notes, ", ") .. ")|r"
+end
+
+-- Re-run the layout after previewMode flips, so what it gates takes effect
+-- now rather than on the next reconcile. Alpha first and unconditionally: it
+-- is a plain write to our own container and fine in combat. The layout is
+-- not -- leaving unlock mode can happen mid-pull (zoning in force-locks) -- so
+-- in combat it goes through the reconcile, which waits for combat to end.
+function cdmModule:RefreshPreviewLayout()
+    UpdateCombatVisibility()
+    if InCombatLockdown() then
+        self:ScheduleReconcile(0.1)
+        return
+    end
+    for groupName in pairs(self.groups) do
+        self:LayoutGroup(groupName)
+    end
+end
+
 function cdmModule:ShowPreview()
     self.previewMode = true
+    self:RefreshPreviewLayout()
+    local specData = GetSpecData()
     for groupName, group in pairs(self.groups) do
         if group.container then
             group.container:Show()
@@ -4989,7 +5474,8 @@ function cdmModule:ShowPreview()
                 group.previewLabel = fs
             end
             group.previewLabelHolder:Show()
-            group.previewLabel:SetText(groupName)
+            group.previewLabel:SetText(PreviewLabelText(groupName,
+                specData and specData.groups[groupName]))
             group.previewLabel:Show()
         end
     end
@@ -5025,6 +5511,9 @@ function cdmModule:HidePreview()
             end
         end
     end
+    -- Put the conditions back: re-hides combat-only groups, repacks Hide Until
+    -- Active, and lets the poll release the mock buff placeholders.
+    self:RefreshPreviewLayout()
 end
 
 -- ============================================================================
@@ -5121,8 +5610,38 @@ local function BuildCDMScroller(parent, state)
     state.parent = parent
 end
 
+-- Empty a page for a rebuild: its frames and its bare regions (headers and
+-- dividers are font strings and textures straight on the page).
+local function ClearCDMPage(page)
+    for _, child in pairs({ page:GetChildren() }) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+    for _, region in pairs({ page:GetRegions() }) do
+        region:Hide()
+        region:SetParent(nil)
+    end
+end
+
+-- The manager page's sub-tabs: General for the module switches, then one per
+-- built-in group in their declared order, keyed by group name so the rebuild
+-- can find each group's page.
+--
+-- The page used to be the switches with every group's full styling stacked
+-- underneath -- several screens of scrolling to reach Buffs, and more again
+-- for Buff Bars once that group existed.
+local CDM_SUBTAB_DEFS = { { key = "general", label = "General" } }
+for _, b in ipairs(BUILTIN_GROUPS) do
+    CDM_SUBTAB_DEFS[#CDM_SUBTAB_DEFS + 1] = { key = b.name, label = b.name }
+end
+
 function BH:BuildCDMTab(parent)
-    BuildCDMScroller(parent, cdmTabState)
+    -- Sub-tabs rather than one scroller; see CDM_SUBTAB_DEFS. General is the
+    -- page everything that is not a group still builds into.
+    local pages = ns.SubTabs.Create(parent, CDM_SUBTAB_DEFS)
+    cdmTabState.pages = pages
+    cdmTabState.content = pages.general
+    cdmTabState.parent = parent
     self:RebuildCDMTabContent()
 end
 
@@ -5142,17 +5661,24 @@ end
 function BH:RebuildCDMPage(state, mode)
     local content = state.content
     if not content then return end
+    ClearCDMPage(content)
 
-    -- Clear existing children (frames)
-    for _, child in pairs({content:GetChildren()}) do
-        child:Hide()
-        child:SetParent(nil)
+    -- The manager page's per-group sub-tabs, rebuilt along with it. The pages
+    -- themselves are kept, so the sub-tab you are on stays selected when a
+    -- setting change rebuilds everything.
+    local groupPages = (mode ~= "custom") and state.pages or nil
+    if groupPages then
+        for _, b in ipairs(BUILTIN_GROUPS) do
+            if groupPages[b.name] then ClearCDMPage(groupPages[b.name]) end
+        end
     end
-    -- Clear existing regions (FontStrings, Textures from headers/dividers)
-    for _, region in pairs({content:GetRegions()}) do
-        region:Hide()
-        region:SetParent(nil)
-    end
+
+    -- Search files each row under the sub-tab it sits on, so a result can bring
+    -- that sub-tab forward -- otherwise it lands on the right page with the row
+    -- hidden behind an unselected sub-tab. Only the panel's first build pass is
+    -- indexed at all; restored before every return.
+    local prevSection = ns.Rows.currentSection
+    if groupPages then ns.Rows.currentSection = content.section end
 
     local leftPad = 14
     local yOffset = -14
@@ -5221,6 +5747,21 @@ function BH:RebuildCDMPage(state, mode)
          .. "or one of its siblings: with this on those frames stay where the icons actually are, so such "
          .. "an anchor still lands correctly. Off, they go off screen and anything anchored to them goes too.")
         followCB:SetChecked(BH.settings and BH.settings.cdmViewersFollowGroups ~= false)
+        yOffset = yOffset - 24
+
+        local nativeCB = CreateSQCheckbox(content, "Draw Buffs Ourselves", function(checked)
+            BH.settings.cdmNativeBuffs = checked
+            BH:SaveSettings()
+            BH.cdm:ScheduleReconcile()
+        end)
+        nativeCB:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        ns.Rows.AddTooltip(nativeCB, "Draw Buffs Ourselves",
+            "Draw tracked buffs and buff bars as this addon's own icons and bars, so each group's border, "
+         .. "zoom, shape, background and text settings apply to them. The game fills in the sweep, stacks "
+         .. "and timer itself, so they keep working in combat.\n\nUntick to go back to borrowing Blizzard's "
+         .. "own buff frames, which keep Blizzard's look. Totem-style entries that are not real auras always "
+         .. "use Blizzard's frame.")
+        nativeCB:SetChecked(BH.settings and BH.settings.cdmNativeBuffs ~= false)
         yOffset = yOffset - 28
     end
 
@@ -5230,12 +5771,28 @@ function BH:RebuildCDMPage(state, mode)
     desc:SetJustifyH("LEFT")
     desc:SetText(mode == "custom"
         and "Make your own groups and choose which spells go in them. Anything you do not assign stays in one of the three standard groups on the Cooldowns tab."
-        or "Essential, Utility and Buffs mirror Blizzard's own Cooldown Manager categories and fill themselves. Style each one below. Requires the Cooldown Manager to be enabled in Edit Mode.")
+        or "Essential, Utility, Buffs and Buff Bars mirror Blizzard's own Cooldown Manager categories and fill themselves. Style each one on its own tab above. Requires the Cooldown Manager to be enabled in Edit Mode.")
     desc:SetTextColor(DIM_R, DIM_G, DIM_B)
     yOffset = yOffset - 42
 
     if not (BH.settings and BH.settings.cdmEnabled) then
         content:SetHeight(math.abs(yOffset) + 20)
+        -- A group tab with nothing on it would read as broken, so say why.
+        if groupPages then
+            for _, b in ipairs(BUILTIN_GROUPS) do
+                local page = groupPages[b.name]
+                if page then
+                    local note = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    note:SetPoint("TOPLEFT", page, "TOPLEFT", leftPad, -14)
+                    note:SetWidth(380)
+                    note:SetJustifyH("LEFT")
+                    note:SetText("Turn on the Cooldown Manager on the General tab to style this group.")
+                    note:SetTextColor(DIM_R, DIM_G, DIM_B)
+                    page:SetHeight(60)
+                end
+            end
+        end
+        ns.Rows.currentSection = prevSection
         return
     end
 
@@ -5339,14 +5896,28 @@ function BH:RebuildCDMPage(state, mode)
         end
 
         for _, groupName in ipairs(ordered) do
-            yOffset = self:BuildGroupSection(content, leftPad, yOffset,
-                groupName, specData.groups[groupName], specData)
+            local page = groupPages and groupPages[groupName]
+            if page then
+                -- On its own sub-tab, from the top of that page.
+                if page.section then ns.Rows.currentSection = page.section end
+                local pageY = self:BuildGroupSection(page, leftPad, -14,
+                    groupName, specData.groups[groupName], specData)
+                page:SetHeight(math.abs(pageY) + 20)
+                ns.Rows.currentSection = content.section
+            else
+                yOffset = self:BuildGroupSection(content, leftPad, yOffset,
+                    groupName, specData.groups[groupName], specData)
+            end
         end
     end
 
     -- ===== DIVIDER =====
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    -- Not on the manager's General tab: the groups are on their own tabs now,
+    -- so this would sit directly under the divider above.
+    if not groupPages then
+        CreateSQDivider(content, yOffset)
+        yOffset = yOffset - 14
+    end
 
     -- ===== UNASSIGNED COOLDOWNS =====
     -- Custom page only. This is the long per-spell list, and it is only
@@ -5467,9 +6038,11 @@ function BH:RebuildCDMPage(state, mode)
     end -- mode == "custom"
 
     -- ===== DIVIDER =====
-    yOffset = yOffset - 6
-    CreateSQDivider(content, yOffset)
-    yOffset = yOffset - 14
+    if not groupPages then
+        yOffset = yOffset - 6
+        CreateSQDivider(content, yOffset)
+        yOffset = yOffset - 14
+    end
 
     -- ===== REFRESH BUTTON =====
     local refreshBtn = CreateSQButton(content, "Refresh Cooldowns", 160, 26)
@@ -5482,6 +6055,7 @@ function BH:RebuildCDMPage(state, mode)
     yOffset = yOffset - 40
 
     content:SetHeight(math.abs(yOffset) + 20)
+    ns.Rows.currentSection = prevSection
 end
 
 -- ===== Build a single group's settings section =====
@@ -5855,17 +6429,19 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     yOffset = yOffset - 28
 
     -- Icon shape and the whole-group backdrop.
-    local shapeDD = CreateSQDropdown(content, "Icon Shape", 160, {
-        { text = "Square", value = "none" },
-        { text = "Round",  value = "round" },
-    }, function(val)
+    -- Built from ICON_SHAPES, so a new shape is one line there plus its image.
+    local shapeItems = {}
+    for _, s in ipairs(ICON_SHAPES) do
+        shapeItems[#shapeItems + 1] = { text = s.text, value = s.value }
+    end
+    local shapeDD = CreateSQDropdown(content, "Icon Shape", 160, shapeItems, function(val)
         groupData.iconShape = val
         BH.cdm:ScheduleReconcile()
     end)
     shapeDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     shapeDD:SetSelectedValue(groupData.iconShape or "none")
     ns.Rows.AddTooltip(shapeDD, "Icon Shape",
-        "Round crops each icon to a circle. Does not apply to tracked buffs, which are the game's own icons.")
+        "Cuts each icon, its cooldown sweep and its border to a shape. Tracked buffs follow it too while Draw Buffs Ourselves is on; Blizzard's own buff frames keep their look.")
     yOffset = yOffset - 50
 
     local barBgCB = CreateSQCheckbox(content, "Group Background", function(checked)
@@ -6025,6 +6601,21 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         ns.Rows.AddTooltip(phAlpha, "Inactive Buff Opacity %",
             "How visible the placeholder for a buff that is not up should be.")
         yOffset = yOffset - 46
+
+        -- Only the native bars have a fill of ours to colour; Blizzard's
+        -- borrowed bars keep their own.
+        if groupData.isBarGroup then
+            local bc = groupData.barColor or { 1.0, 0.7, 0.0, 1 }
+            local barColorPicker = CreateSQColorPicker(content, "Bar Colour",
+                bc[1], bc[2], bc[3], bc[4] or 1, function(r, g, b, a)
+                    groupData.barColor = { r, g, b, a }
+                    BH.cdm:ScheduleReconcile()
+                end)
+            barColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+            ns.Rows.AddTooltip(barColorPicker, "Bar Colour",
+                "Fill colour of the buff bars. Applies when Draw Buffs Ourselves is on.")
+            yOffset = yOffset - 28
+        end
     end
 
     -- Visibility conditions. All default off, so a group shows everywhere

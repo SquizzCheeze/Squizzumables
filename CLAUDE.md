@@ -152,7 +152,10 @@ without a fundamentally different detection approach that doesn't depend on read
   why nothing else can answer that) and `/sq cdmbuff` (per tracked-buff frame: whether
   `IsActive` answers or is secret, whether `auraInstanceID` is usable, whether `GetAuraDuration`
   yields anything, and whether the swipe mirror and a proxy exist — this is what finally settled
-  the 1.69 buff-swipe hunt after several wrong guesses).
+  the 1.69 buff-swipe hunt after several wrong guesses) and `/sq cdmnative` (the native buff
+  slots: whether Blizzard_AuraContainer loaded, and per group how many slots registered and how many
+  buttons the engine actually built — slots but no buttons means the engine never created them,
+  buttons but nothing on screen points at sizing or anchoring).
   `/squizz` opens config directly and `/squizz <TabID>` jumps to a named page.
   `/ginvite <name>` is the guild invite helper.
 
@@ -288,6 +291,9 @@ initialized `BH`. `perl .claude/check-toc.pl` verifies every listed path exists 
     there is hand-maintained and keyed by the `.toc` Version string; update it alongside
     `changelog.txt`.
 12. `Squizzumables_CDM.lua` — Cooldown Manager proxy module (`BH.cdm`).
+    `Squizzumables_CDMAuras.lua` loads straight after it — the native buff slots (`BH.cdm.native`),
+    fed through `cdmModule.shared`. A separate file partly to keep the CDM main chunk clear of Lua
+    5.1's 200-local limit.
 13. `Squizzumables_SpellAlerts.lua` — "Kelerts", the user-defined spell alerts (full-screen image
     + sound on an aura), and the M+ Death Tally.
 
@@ -393,6 +399,35 @@ model forbids addons from mutating protected/secure frames during combat:
   per-group border/zoom/background styling does not apply to buff icons, because they are
   Blizzard's icons. `cdmProxyBuffIcons` restores the old proxy path for anyone who wants the
   styling and can live without combat sweeps.
+
+  **As of 1.76 there is a third path, and it is the default: native buffs
+  (`Squizzumables_CDMAuras.lua`, `cdmNativeBuffs`, "Draw Buffs Ourselves").** Blizzard_AuraContainer
+  (12.1) lets us build every piece of a buff button — icon, cooldown, font strings, status bar — and
+  hand them to the client, which writes the live values in C-side. So the look is ours and the sweep
+  still works in combat. One `AddAuraSlot` per tracked buff; the button is anchored (inside
+  `initializeFrame`, the only legal moment) to a host frame on a **cell** of ours, and the cell takes
+  the buff's slot in `LayoutBorrowedBuffIcons`. Blizzard's frame for the buff still decides whether
+  it is up — `IsShown` stays readable in combat — so packing, placeholders and the unlock mock are
+  unchanged; that frame is parked off screen by `ParkBorrowedFrame`, never hidden, because the sound
+  alerts read it. Things that will break it if forgotten, most of them from SquizzFrames' CLAUDE.md:
+  no calls on an aura button outside `initializeFrame`; style a font string before registering it
+  (an unstyled one hard-errors and aborts the whole batch); host anchored before `AddAuraSlot`; slots
+  declared before `SetUnit`; containers only out of combat; do **not** define
+  `CustomAuraButtonTemplate` (live Blizzard ships it with mixins; SquizzFrames' empty copy is
+  PTR-era); never a HARMFUL slot on the player, because spell-ID candidate filters are ignored for a
+  harmful aura on an assistable unit and it would show every debuff. Style changes restyle our pieces
+  only; a rebuild happens only when the set of buffs changes, because containers can never be freed.
+  A buff whose Blizzard item is up with `totemData` and no `auraInstanceID` (totem-style: no aura
+  for a slot to show) keeps Blizzard's frame for that layout pass (`ItemDrivenByTotem`), and any slot
+  that failed to build stays on the borrowed path entirely. **Do not gate on
+  `cooldownInfo.hasAura`:** Blizzard's own viewer code never reads it, so it is evidence of nothing,
+  and gating on it is the likely reason the first in-game test drew every buff on Blizzard's frames.
+  Discovery keeps a buff that duplicates an Essential/Utility entry (by spell or name) out of the
+  registry; those still get slots, through `DiscoverCooldowns`' second return (`buffExtras`), or they
+  stay Blizzard frames in a row of ours — that was the second test's "some work, some don't". Only
+  `cooldown`/`utility` are the cooldown side of that divide: `buffbar` was too until 1.76 (a
+  `~= "buff"` test written before bars were split out), which dropped any buff icon sharing a name
+  with a tracked bar. `/sq cdmnative` lists every Blizzard buff item not drawn by us, by name.
 - When adding new features that touch frames, action buttons, or secure state, check
   `InCombatLockdown()` and queue mutations rather than assuming they'll succeed mid-combat.
 
@@ -697,6 +732,25 @@ accessor is the supported contract.
 Note this is *not* a mirror of Blizzard's viewers. The module proxies rather than reparenting, so
 `EssentialCooldownViewer` is a separate frame at its own position — and with "Hide Blizzard's
 Cooldown Manager" on it is parked at -10000, which would drag anything anchored to it offscreen.
+
+**CDM icon shapes** (`ApplyIconShape` in `Squizzumables_CDM.lua`): each shape is one
+white-on-transparent PNG in `Media/Shapes/`, generated by `.claude/make-shapes.ps1` (run it with
+`-SheetPath` for a preview), and that one image is used three ways — the icon's mask, the
+cooldown's swipe texture, and the border, drawn as the same shape behind the icon grown by the
+border thickness and tinted. So a new shape is a path in the script plus one line in
+`ICON_SHAPES`; it must fill its square edge to edge and be centred or the rim comes out lopsided.
+Shapes apply to proxy icons only — tracked buffs are Blizzard's frames and are not masked.
+
+Each shape also has glow art, because Blizzard's proc glow (`ActionButtonSpellAlertManager`) is a
+pair of square flipbooks with no mask or shape option. `<name>_proc_start.png` and
+`<name>_proc_loop.png` are 30-frame sheets on Blizzard's own 6x5 grid (84px frames on 512), and
+`ApplyAlertArt` in `UI/Glow.lua` swaps them into Blizzard's alert after every `ShowAlert` —
+Blizzard still owns showing, timing and the burst-to-loop hand-over. This is Masque's approach
+(`Masque/Core/Regions/SpellAlert.lua`). It is safe because Blizzard creates the alert frame once
+per button and never pools it, so art set on our `ProcGlow` frame cannot leak onto the real
+action bars. `<name>_glow.png` is a static halo for the self-drawn fallback tier. Shapes are set
+per frame with `Glow.SetShape` from `ApplyIconShape`. The generator's `GlowScale` and sheet
+constants must match `SHAPED_SCALE` and `SHEET_*` in Glow.lua.
 
 **Encounter timeline** (`Core/EncounterTimeline.lua`, `BH.Timeline`): only the **write** side of
 `C_EncounterTimeline` is usable. On the read side, `EncounterTimelineEventInfo` exposes just `id`,

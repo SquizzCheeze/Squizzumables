@@ -86,6 +86,11 @@ BH.defaultSettings = {
     -- Off: tracked buffs use Blizzard's own icons, which is what makes their
     -- swipes work in combat. Ticking it goes back to proxy icons, which cannot.
     cdmProxyBuffIcons = false,
+    -- On: tracked buffs and buff bars are drawn as our own icons and bars,
+    -- filled in by the client's AuraContainer (Squizzumables_CDMAuras.lua), so
+    -- the group's styling applies and the sweep still works in combat. Off
+    -- goes back to borrowing Blizzard's frames.
+    cdmNativeBuffs = true,
 
     -- M+ Death Tally (per-player death counter, resets each key)
     -- Target distance readout (Core/TargetDistance.lua). Off by default: it is
@@ -10634,6 +10639,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
             BH.cdm:PrintBuffDiagnostics()
         else
             print(addonName .. ": Cooldown Manager module not loaded.")
+        end
+    elseif msg == "cdmnative" then
+        if BH.cdm and BH.cdm.native then
+            BH.cdm.native:PrintDiagnostics()
+        else
+            print(addonName .. ": native buff module not loaded.")
         end
     elseif msg == "buffsounds" then
         if BH.PrintBuffSoundDiagnostics then

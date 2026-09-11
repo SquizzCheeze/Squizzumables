@@ -8,6 +8,14 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.75
+
+- Removed the Co-Tank tracker. It never worked -- the icons would not render --
+  and the game feature it is built on is better served by SquizzFrames, which
+  already drives raid frame auras the same way. It has been rebuilt there
+  instead of kept here in a broken state. Its settings are gone from the Raid
+  Tools page; nothing else is affected
+
 V1.74
 
 - Tracked buff bars now have a Cooldown Manager group of their own, drawn as
