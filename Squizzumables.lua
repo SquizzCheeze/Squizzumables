@@ -10525,7 +10525,12 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
     elseif event == "CANCEL_PLAYER_COUNTDOWN" then
         if BH.Timeline then BH.Timeline.Stop("pull") end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        BH:OnSpecChanged()
+        -- Your own spec only. The event also fires for group members, and a
+        -- full profile reload for someone else's spec is wasted work that
+        -- also tears down and rebuilds the Cooldown Manager.
+        if not arg1 or arg1 == "player" then
+            BH:OnSpecChanged()
+        end
     elseif event == "UPDATE_INVENTORY_DURABILITY" then
         BH:UpdateRepairReminder()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then

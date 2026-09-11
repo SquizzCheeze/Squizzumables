@@ -5276,12 +5276,32 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "SPELLS_CHANGED" or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
         cdmModule:ScheduleReconcile(RECONCILE_DEBOUNCE)
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        -- Spec changed - release all, reload for new spec.
-        -- Forced: the category sets can still report the outgoing spec at the
-        -- moment this fires, so a signature comparison would see no change and
-        -- skip. The ticker's comparison catches the real set a moment later.
-        cdmModule:ReleaseAll()
-        OnCooldownSetChanged(SPEC_CHANGE_DEBOUNCE, true)
+        -- Yours only. This event also fires for group members -- their spec
+        -- info arriving when someone joins or the roster refreshes -- and this
+        -- branch used to tear every group down for each one. In combat
+        -- Reconcile then refuses to rebuild, so the whole Cooldown Manager
+        -- vanished for the rest of the fight whenever the group changed
+        -- (fixed 1.77). Checked here rather than by RegisterUnitEvent, which
+        -- is unverified for this event: if it did not apply, your own spec
+        -- change would stop arriving at all.
+        local unit = ...
+        if not unit or unit == "player" then
+            -- Never torn down mid-fight: nothing can be rebuilt until combat
+            -- ends. Your own spec cannot change in combat, so this is a guard
+            -- rather than a path anything should take; PLAYER_REGEN_ENABLED
+            -- carries it out.
+            if InCombatLockdown() then
+                cdmModule.pendingSpecRelease = true
+            else
+                -- Spec changed - release all, reload for new spec.
+                -- Forced: the category sets can still report the outgoing spec
+                -- at the moment this fires, so a signature comparison would see
+                -- no change and skip. The ticker's comparison catches the real
+                -- set a moment later.
+                cdmModule:ReleaseAll()
+                OnCooldownSetChanged(SPEC_CHANGE_DEBOUNCE, true)
+            end
+        end
     elseif event == "TRAIT_CONFIG_UPDATED" or event == "PLAYER_PVP_TALENT_UPDATE" then
         -- A talent or loadout swap keeps the spec but can change which spells
         -- exist and which cooldownIDs the viewer uses for them, so the caches
@@ -5313,6 +5333,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             fn()
         end
         cdmModule.pendingMutations = {}
+        -- A spec-change teardown that combat postponed (see that branch).
+        if cdmModule.pendingSpecRelease then
+            cdmModule.pendingSpecRelease = nil
+            cdmModule:ReleaseAll()
+            OnCooldownSetChanged(SPEC_CHANGE_DEBOUNCE, true)
+        end
         -- Run a full reconcile now that protected calls are allowed again
         cdmModule:ScheduleReconcile(0.1)
     end

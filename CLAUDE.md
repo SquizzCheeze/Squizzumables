@@ -656,6 +656,17 @@ Counter uses) and edge-detects the false→true transition. **Don't reach for co
 `UNIT_DIED` for new features that need to detect a group member's death or combat state — poll
 instead.**
 
+**`PLAYER_SPECIALIZATION_CHANGED` fires for group members too** — its payload is a unit, and the
+game sends it whenever a party or raid member's spec info arrives (someone joining, a roster
+refresh). Both handlers registered it with plain `RegisterEvent` and never checked the unit, so
+the CDM ran `ReleaseAll` for other people's specs; in combat Reconcile refuses to rebuild, and the
+whole Cooldown Manager vanished for the rest of any fight in which the group changed (fixed 1.77).
+Both handlers now require `unit == "player"`, and the CDM defers any teardown to
+`PLAYER_REGEN_ENABLED`. The check is in the handlers rather than a `RegisterUnitEvent`, which is
+unverified for this event — if it did not apply, your own spec change would stop arriving. More
+generally: **nothing may tear the CDM down in combat**, because nothing can put it back until
+combat ends.
+
 **Cooldown Manager sound alerts** (`Squizzumables_CDM.lua`): five findings here cost a long
 debugging session each; none are guessable from the API docs.
 

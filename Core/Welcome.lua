@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.77"] = {
+        "Fixed the Cooldown Manager disappearing in the middle of a fight when someone joined or left your group. It stayed gone until combat ended.",
+        "The cause: the game announces a group member's spec with the same event as your own, and every one of those was treated as you changing spec.",
+    },
     ["1.76"] = {
         "Unlock mode now previews your Cooldown Manager groups, so you can see how the icons will sit while you move them.",
         "Groups set to show only in combat, only in instances or only with a target used to be an invisible box in unlock mode. They now show in full, and each label says when the group really appears.",
