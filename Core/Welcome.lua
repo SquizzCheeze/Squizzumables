@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.78"] = {
+        "Fixed Cooldown Manager glows drawing on top of the world map. They still draw above anything sitting next to them, but the map, bags and other windows now cover them again.",
+    },
     ["1.77"] = {
         "Fixed the Cooldown Manager disappearing in the middle of a fight when someone joined or left your group. It stayed gone until combat ended.",
         "The cause: the game announces a group member's spec with the same event as your own, and every one of those was treated as you changing spec.",

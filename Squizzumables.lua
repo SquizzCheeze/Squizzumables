@@ -92,6 +92,38 @@ BH.defaultSettings = {
     -- goes back to borrowing Blizzard's frames.
     cdmNativeBuffs = true,
 
+    -- Nameplate purge glow (Squizzumables_Nameplates.lua). Off by default: it
+    -- is a nameplate feature in an addon that otherwise has none, and most
+    -- players run a nameplate addon with opinions of its own.
+    --
+    -- The module is currently DISABLED: its .toc line is commented out and its
+    -- options tab is unwired, so none of these are read. They stay so that a
+    -- profile written while it was enabled still loads, and so the feature can
+    -- be revived without a migration. See CLAUDE.md.
+    npPurgeEnabled = false,
+    npPurgeOnlyWhenCapable = true,
+    npPurgeTargetOnly = false,
+    npPurgeCombatOnly = false,
+    npPurgeInstanceOnly = false,
+    npPurgeMaxIcons = 3,
+    npPurgeIconSize = 26,
+    npPurgeSpacing = 2,
+    npPurgePerRow = 3,
+    npPurgeAnchor = "TOP",          -- TOP, BOTTOM, LEFT, RIGHT of the health bar
+    npPurgeOffsetX = 0,
+    npPurgeOffsetY = 4,
+    npPurgeShape = "none",
+    npPurgeZoom = 0.07,
+    npPurgeBorder = true,
+    npPurgeBorderColor = { 0, 0, 0, 0.9 },
+    npPurgeShowDuration = true,
+    npPurgeDurationSize = 12,
+    npPurgeShowStacks = true,
+    npPurgeStackSize = 11,
+    npPurgeGlow = true,
+    npPurgeGlowStyle = "halo",      -- "halo" (ours) or "game" (Blizzard's)
+    npPurgeGlowColor = { r = 1, g = 0.82, b = 0 },
+
     -- M+ Death Tally (per-player death counter, resets each key)
     -- Target distance readout (Core/TargetDistance.lua). Off by default: it is
     -- a persistent on-screen number rather than a reminder, so it should be
@@ -1703,6 +1735,9 @@ function BH:CreateOptionsPanel()
     local calloutsTabBtn = CreateTab("Callouts")
     local kelTabBtn = CreateTab("Kelerts")
     local cdmSoundsTabBtn = CreateTab("CDM Sounds")
+    -- No Nameplates tab: the purge-glow module is disabled and unloaded, so it
+    -- has no page to build. See the Nameplate purge glow note in CLAUDE.md for
+    -- what to restore here when the feature comes back.
 
     -- Content area: everything right of the sidebar.
     local contentArea = CreateFrame("Frame", nil, panel)
@@ -10651,6 +10686,18 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": native buff module not loaded.")
         end
+    elseif msg == "nameplates" then
+        if BH.Nameplates then
+            BH.Nameplates:PrintDiagnostics()
+        else
+            print(addonName .. ": nameplate module not loaded.")
+        end
+    elseif msg == "nameplates test" then
+        if BH.Nameplates then BH.Nameplates:TestRow() end
+    elseif msg == "nameplates testoff" then
+        if BH.Nameplates then BH.Nameplates:TestRowOff() end
+    elseif msg:match("^nameplates test %S+$") then
+        if BH.Nameplates then BH.Nameplates:TestRow(msg:match("^nameplates test (%S+)$")) end
     elseif msg == "buffsounds" then
         if BH.PrintBuffSoundDiagnostics then
             BH:PrintBuffSoundDiagnostics()

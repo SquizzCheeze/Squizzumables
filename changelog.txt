@@ -1,11 +1,10 @@
 Squizzumables Changelog
 =======================
 
-V1.77
+V1.78
 
-- Fixed the Cooldown Manager disappearing mid-fight whenever someone joined or
-  left the group. The game reports a group member's specialisation with the
-  same event it uses for your own, and the Cooldown Manager was treating every
-  one of those as you changing spec: it cleared its groups to rebuild them, and
-  combat does not allow the rebuild, so they stayed gone until the fight ended.
-  It now only reacts to your own spec, and never clears anything during combat
+- Fixed Cooldown Manager glows drawing on top of the world map. 1.77 moved
+  them up a layer so a neighbouring addon's bar could not clip them, which put
+  them in the same layer the map uses. They now sit high within their own
+  layer instead: still above anything next to them, and behind the map, bags
+  and other windows

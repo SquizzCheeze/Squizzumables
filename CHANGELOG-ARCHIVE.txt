@@ -8,6 +8,15 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.77
+
+- Fixed the Cooldown Manager disappearing mid-fight whenever someone joined or
+  left the group. The game reports a group member's specialisation with the
+  same event it uses for your own, and the Cooldown Manager was treating every
+  one of those as you changing spec: it cleared its groups to rebuild them, and
+  combat does not allow the rebuild, so they stayed gone until the fight ended.
+  It now only reacts to your own spec, and never clears anything during combat
+
 V1.76
 
 - Unlock mode now previews every Cooldown Manager group, so you can see how

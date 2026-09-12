@@ -656,6 +656,97 @@ Counter uses) and edge-detects the false→true transition. **Don't reach for co
 `UNIT_DIED` for new features that need to detect a group member's death or combat state — poll
 instead.**
 
+**Nameplate purge glow — BUILT BUT DISABLED, NOT SHIPPED.** The `.toc` line is commented out so
+the module never loads, and the Nameplates options tab is unwired; the file, its settings defaults
+and its diagnostics all stay on disk for the revisit. It was pulled from 1.78 because the feature
+could not be verified: on the test target the row stayed empty under every filter, **and Plater's
+own purge display failed identically on that same buff**, so the blocker is that the client does
+not flag it dispellable rather than anything in this code. Everything below is the research, and it
+is correct as far as it was taken — the filter string is the same one EllesmereUI ships. To revive
+it: uncomment the `.toc` line, restore the tab button/frame/pages entry in `CreateOptionsPanel`,
+and re-verify against a target whose buff Plater's purge highlight actually fires on.
+
+(`Squizzumables_Nameplates.lua`, `BH.Nameplates`, `npPurge*` settings, off
+by default): a row of the enemy's purgeable buffs per nameplate, through the same AuraContainer
+API as the native CDM buffs. **The group is the filter, never the aura.** Whether a specific aura is
+purgeable is aura data, and enemy aura data is secret in instanced content — so the narrowing is
+declared to the client and every button the group shows is purgeable by construction; the glow
+belongs to the group. The narrowing is `HELPFUL|INCLUDE_NAME_PLATE_ONLY` plus
+`candidateFilters = { includeDispelTypes = { Magic = true, Enrage = true } }`.
+
+**That is EllesmereUI's `BuffFilterGlow` exactly, and its `BuffCand` returns nil whenever the
+DISPELLABLE token exists** — read `EllesmereUINameplates/EUI_Nameplates_AuraContainers.lua` before
+touching this, it is the same feature solved on the same client build and its comments record the
+same findings independently. **Use no candidate filter here.** Every candidate filter reads a field
+the client redacts for an enemy's auras, which is why `isStealable`, `includeDispelTypes = Magic`
+and `includeDispelTypes = Enrage` all matched nothing on a live target. The last cannot work in any
+case: **an enrage carries no `dispelName`**, so an include test rejects it and only an exclude test
+keeps it — Plater's `includeDispelTypes["Enrage"] = true` notwithstanding.
+
+**Four narrowings were tried before it and every one matched nothing**, tested on a hunter with
+Tranquilizing Shot available against an absorb shield that hunter could remove: `isStealable`
+(means *Spellstealable*, which is Magic-only), `DISPELLABLE` (means "carries a dispel type", the
+debuff sense), `RAID_PLAYER_DISPELLABLE`, and `includeDispelTypes = { Magic = true }`. A plain
+`HELPFUL` group on the same target filled normally, so the container, the icons and the glow were
+never at fault.
+
+**The aura's actual dispel type was never established, and that is the whole story of this bug.**
+Three rounds of in-game testing went to filters chosen from guesses about what the buff *was* —
+stealable, then dispel-typed, then an enrage — each guess wrong, each test therefore meaningless.
+The cheap step skipped every time: **make the client tell you what the aura is before choosing a
+filter for it.** `/sq nameplates test`'s probe does exactly that — `SetDispelTypeText` and
+`AddDispelTypeTexture` are filled in by the client from the assigned aura, so they report the
+dispel type and stealable state on auras we are never allowed to read — and it would have answered
+this in one pull. Filter strings are built from `AuraUtil.AuraFilters` rather than
+written out (`NOT_CANCELABLE` was removed in favour of a `!` prefix, and `IsValidFilterString`
+rejects unknown tokens).
+
+**`DISPELLABLE` is not the purge filter, and using it drew an empty row for all of 1.78's first
+cut.** It means "auras that are dispellable, regardless of whether the player's raid can dispel
+them" — auras carrying a *dispel type*, the debuff sense of the word — so on a hostile unit
+`HELPFUL|INCLUDE_NAME_PLATE_ONLY|DISPELLABLE` matches nothing whatsoever. There is no purge token;
+`AuraUtil.AuraFilters` has none for stealable, purgeable or enemy buffs, and the nearest,
+`IMPORTANT`, is the opposite case (helpful auras that show on enemy nameplates *even when
+non-stealable*). The tell was that rows attached and showed, `initializeFrame` never errored, and
+the container stayed sized `1x1` — nothing had been laid out, because nothing matched.
+
+**Candidate filters DO work on secret enemy auras, and a note here previously said they did not.**
+`AuraContainerUtil.DoesAuraPassCandidateFilters` compares `auraData.isStealable` in Lua, but it is
+*Blizzard's* Lua running untainted from the client's own update, where comparing a secret is legal.
+Only the **spellID** filters are restricted: `CanApplyIdentityCandidateFilters` drops
+`includeSpellIDs`/`excludeSpellIDs` for a helpful aura on a unit the player cannot assist, which is
+why a per-spell list really is impossible on enemies and `isStealable`, `includeDispelTypes` and
+the rest are fine. The wrong note generalised that one gate to every candidate filter and recorded
+it as settled — the same "absence of evidence written down as reassurance" failure as 1.70, and it
+is what sent the feature to `DISPELLABLE` in the first place. Read
+`Blizzard_AuraContainer/Blizzard_AuraContainerUtil.lua` before theorising about what a container
+will and will not match.
+
+`/sq nameplates test` builds one row on `UIParent` bound to your target, with the same filter,
+group and initializer as the plate rows, and `testoff` removes it. It exists because "the filter
+matched nothing" and "icons were built somewhere invisible" look identical in game, and it settles
+which in one pull: parented to the screen, it has none of the nameplate's restrictions, so icons
+there with none on a plate means the plate is at fault and an empty box means the filter is. It
+queues itself if run in combat and builds at the next lull, because a container cannot be created
+in combat but the mob only gains the buff once the fight is on. Containers are pooled at login and attached to plates as they come and go (creation is not
+safely combat-legal), the host frame is anchored to the plate and **never reparented**, and buttons
+are sized in `initializeFrame` — the Co-Tank lesson. Anchoring resolves `plate.unitFrame` (Plater's
+documented attach point) then `plate.UnitFrame`, so it works under Plater, which has its own
+equivalent in Buff Special → Dispellable. **Blizzard's spell-alert glow cannot be used anywhere
+inside an aura button's subtree**: the button carries secret aspects, so the alert template's
+`OnHide` handler is refused —
+`Cannot assign script handler for 'onhide' (blocked by secret aspects)`, once per button, which is
+what 15 of them looked like in 1.78 testing. `ns.Glow`'s `sqGlowSelfOnly` forces the self-drawn tier
+(textures plus an animation group, no script handlers) and is the only glow legal there. A settings change rebuilds the pool rather than restyling,
+because a button may not be touched after creation. `/sq nameplates` reports it.
+
+**A CDM glow spills past its icon, so it competes with the neighbours.** `RaiseGlowFrame` keeps the
+glow frames at MEDIUM with a frame level of 300, fixed with `SetFixedFrameStrata`/
+`SetFixedFrameLevel` (a child otherwise follows its parent, and `PositionFreeIcon` re-asserts
+MEDIUM on every free icon). The level beats an ordinary neighbour — SquizzFrames' resource bar
+border sits at bar level + 4 — while higher strata still cover it. 1.77 used the HIGH strata
+instead and that drew glows over the open world map, which is what MEDIUM-plus-level avoids.
+
 **`PLAYER_SPECIALIZATION_CHANGED` fires for group members too** — its payload is a unit, and the
 game sends it whenever a party or raid member's spec info arrives (someone joining, a roster
 refresh). Both handlers registered it with plain `RegisterEvent` and never checked the unit, so

@@ -64,7 +64,12 @@ end
 -- The player's glow colour. Tints every glow of ours, and the shaped
 -- flipbooks that replace Blizzard's art; Blizzard's own square glow keeps its
 -- art's colour, as it always has.
-local function GlowColor()
+--- `frame.sqGlowColor` overrides the shared setting for one frame, which is
+--- what lets the nameplate purge glow carry its own colour without every other
+--- glow in the addon following it.
+local function GlowColor(frame)
+    local own = frame and frame.sqGlowColor
+    if own then return own.r or own[1] or 1, own.g or own[2] or 0.82, own.b or own[3] or 0 end
     local s = (ns.BH and ns.BH.settings) or {}
     local c = s.glowColor or {}
     return c.r or 1, c.g or 0.82, c.b or 0.0
@@ -113,7 +118,7 @@ local function ApplyStyle(frame)
     if not glow then return end
 
     local s = (ns.BH and ns.BH.settings) or {}
-    local r, g, b = GlowColor()
+    local r, g, b = GlowColor(frame)
     glow:SetVertexColor(r, g, b, 1)
 
     if not anim then return end
@@ -208,7 +213,7 @@ local function ApplyAlertArt(frame)
             alert._sqLoopBlend  = alert._sqLoopBlend  or loopTex:GetBlendMode()
             alert._sqStartBlend = alert._sqStartBlend or startTex:GetBlendMode()
         end
-        local r, g, b = GlowColor()
+        local r, g, b = GlowColor(frame)
 
         loopTex:SetTexture(art.loop)
         loopTex:SetBlendMode("ADD")
@@ -259,7 +264,15 @@ function Glow.Show(frame, anchorTo, skipBirth)
     if not frame or frame.sqGlowing then return end
     frame.sqGlowing = true
 
-    if anchorTo then
+    -- `sqGlowSelfOnly` is for a frame that MAY NOT have Blizzard's alert at
+    -- all. Inside an aura-container button's subtree the alert template cannot
+    -- be created: the button carries secret aspects, so assigning the
+    -- template's OnHide handler there is refused --
+    -- "Cannot assign script handler for 'onhide' (blocked by secret aspects)",
+    -- once per button, which is what the nameplate purge glow produced in 1.78
+    -- testing. The self-drawn glow is textures plus an animation group, with no
+    -- script handler anywhere, so it is legal in that subtree.
+    if anchorTo or frame.sqGlowSelfOnly then
         local glow = EnsureFallback(frame, anchorTo)
         ApplyArt(frame, anchorTo)
         glow:Show()

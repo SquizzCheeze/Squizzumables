@@ -4,7 +4,7 @@
 ## Author: Squizz
 ## X-License: MIT
 ## X-Curse-Project-ID: 1483099
-## Version: 1.77
+## Version: 1.78
 ## SavedVariables: SquizzumablesDB
 ## IconTexture: Interface\Icons\INV_Misc_Food_15
 ## AddonCompartmentFunc: Squizzumables_OnAddonCompartmentClick
@@ -26,5 +26,6 @@ Core\Welcome.lua
 Core\TargetDistance.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
+#Squizzumables_Nameplates.lua
 Squizzumables_SpellAlerts.lua
 Squizzumables_StackDiag.lua

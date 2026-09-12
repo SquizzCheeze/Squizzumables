@@ -1723,26 +1723,33 @@ local function ResolveProxyTexture(spellID, equipSlot)
     return nil
 end
 
--- The glows draw one strata above the icons.
+-- The glows stay on the icons' own strata, high up its frame levels.
 --
 -- A glow spills past its icon by design (1.4x), so it overlaps whatever sits
--- next to the group. At the icons' own MEDIUM strata that is a frame-level
--- contest, and SquizzFrames' resource bar border (MEDIUM, bar level + 4) won
--- it, cutting the top off the glow on an icon row sitting just below the bar.
--- Raising our level would only win until the next addon went higher; a strata
--- settles it. The glow frames take no mouse input, so nothing under them
--- becomes unclickable.
+-- next to the group. At MEDIUM that is a frame-level contest, and SquizzFrames'
+-- resource bar border (MEDIUM, bar level + 4) won it, cutting the top off the
+-- glow on an icon row sitting just below the bar.
 --
--- Fixed as well as set: a child normally follows its parent's strata when that
--- changes, and PositionFreeIcon re-asserts MEDIUM on the proxy every time a
--- free icon is placed, which would drag the glow straight back down.
--- Blizzard's alert frame (the square-icon glow) is created as a child of the
--- glow frame, so it inherits this too.
-local GLOW_STRATA = "HIGH"
+-- 1.77 raised the strata to HIGH instead, and that was too far: HIGH is where
+-- the world map lives, so a glow drew over the open map. A big frame level
+-- inside MEDIUM beats any ordinary neighbour -- addons stack a handful of
+-- levels above their own frame, not hundreds -- while everything in a higher
+-- strata, the map included, still covers it.
+--
+-- Fixed as well as set: a child normally follows its parent when that changes,
+-- and PositionFreeIcon re-asserts MEDIUM on the proxy every time a free icon is
+-- placed, which would drag the glow straight back down. Blizzard's alert frame
+-- (the square-icon glow) is created as a child of the glow frame, so it
+-- inherits this too. The glow frames take no mouse input, so nothing under
+-- them becomes unclickable.
+local GLOW_STRATA = "MEDIUM"
+local GLOW_LEVEL  = 300
 
 local function RaiseGlowFrame(f)
     f:SetFrameStrata(GLOW_STRATA)
     f:SetFixedFrameStrata(true)
+    f:SetFrameLevel(GLOW_LEVEL)
+    f:SetFixedFrameLevel(true)
 end
 
 local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
