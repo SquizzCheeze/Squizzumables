@@ -14,3 +14,11 @@ V1.78
   Blades both Non-Lethal poisons too. Previously any single poison of a kind
   counted as done, so the second one was never asked for. A poison that is
   running low now brings up only its own button, not every poison of that kind
+
+- Reminder buttons can now take an icon shape -- Round, Diamond, Hexagon,
+  Shield, Heart or Star -- under Appearance, the same shapes as the Cooldown
+  Manager
+- Reminder button glows now play the game's proc animation, the one the
+  Cooldown Manager uses, and follow the icon's shape in your glow colour.
+  Glow style under Misc switches back to the pulsing ring, which the pulse
+  settings still tune

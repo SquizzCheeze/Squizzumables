@@ -32,9 +32,10 @@ ns.Glow = Glow
 local FALLBACK_TEXTURE = "Interface\\SpellActivationOverlay\\IconAlert"
 
 -- `anchorTo` is the region the ring should surround. Passing one matters when
--- the frame is bigger than the thing being highlighted: the reminder buttons
--- are icon + label + header in one frame, so a glow drawn to the frame boxes
--- the text instead of ringing the icon.
+-- the frame is bigger than the thing being highlighted. The reminder buttons
+-- (icon + label + header in one frame) used to pass their icon; since 1.78
+-- they glow a frame of their own sized over the icon instead, which is what
+-- lets them have the proc animation that anchorTo rules out.
 --
 -- Drawn at ARTWORK rather than OVERLAY on purpose. The icon is BACKGROUND and
 -- the timer, stack count and label are OVERLAY on the same frame, so ARTWORK
@@ -151,8 +152,9 @@ end
 -- for its round and hexagon skins (Masque/Core/Regions/SpellAlert.lua).
 --
 -- Safe to write to: GetAlertFrame creates the alert once per button, stores it
--- on the button as SpellActivationAlert and never pools it. Our buttons are the
--- CDM's own glow frames, so art set here cannot reach a real action button.
+-- on the button as SpellActivationAlert and never pools it. The frames we glow
+-- are our own -- the CDM's glow frames and each reminder button's glowHost --
+-- so art set here cannot reach a real action button.
 -- And these are widget calls on regions, not Blizzard Lua running on our stack,
 -- so nothing of Blizzard's is left tainted by them.
 --
@@ -364,8 +366,8 @@ end
 ---
 --- A glow already running is restarted so it changes over at once rather than
 --- when it next ends -- a proc glow can last a whole fight. The restart passes
---- no anchorTo, so this is for whole-frame glows like the CDM icons; the
---- reminder buttons, which glow one region, never set a shape.
+--- no anchorTo, so this is for whole-frame glows: the CDM icons, and the
+--- glowHost frame each reminder button sizes over its icon.
 function Glow.SetShape(frame, art)
     if not frame or frame.sqGlowShape == art then return end
     frame.sqGlowShape = art

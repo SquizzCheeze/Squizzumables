@@ -18,6 +18,7 @@ UI\Widgets.lua
 UI\SubTabs.lua
 UI\Rows.lua
 UI\Glow.lua
+UI\Shapes.lua
 Squizzumables.lua
 Core\ProfileIO.lua
 Core\EncounterTimeline.lua

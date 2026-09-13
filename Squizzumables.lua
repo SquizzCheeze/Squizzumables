@@ -168,6 +168,10 @@ BH.defaultSettings = {
     -- at directly.
     glowReminderButtons = true,
     glowColor = { r = 1.0, g = 0.82, b = 0.0 },
+    -- "animated" is the game's proc glow (shaped art for a shaped icon);
+    -- "ring" is the self-drawn pulse that the glowPulse* settings tune.
+    buttonGlowStyle = "animated",
+    buttonIconShape = "none",       -- a key of ns.Shapes.FILE, or "none"
     glowPulse = true,
     glowPulseSpeed = 0.6,
     glowMinAlpha = 0.35,
@@ -2286,6 +2290,20 @@ function BH:BuildSettingsTab(parent)
     })
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Icon Shape",
+        width = 160,
+        items = ns.Shapes.DropdownItems,
+        tooltip = "Cuts each reminder icon to a shape, and the glow follows it. The same shapes as the Cooldown Manager, so the two can match.",
+        get = function() return BH.settings.buttonIconShape or "none" end,
+        set = function(v)
+            BH.settings.buttonIconShape = v
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
         label = "Show Label Text",
         tooltip = "Show the name under each reminder button. Turn off for a more compact row of icons.",
@@ -2498,7 +2516,7 @@ function BH:BuildSettingsTab(parent)
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
         label = "Glow reminder buttons",
-        tooltip = "Pulses a highlight around each reminder button while it is showing, so they catch the eye without you having to look at them. Uses the same alert glow the game draws on your action bars.",
+        tooltip = "Glows each reminder button while it is showing, so they catch the eye without you having to look at them.",
         get = function() return BH.settings.glowReminderButtons ~= false end,
         set = function(v)
             BH.settings.glowReminderButtons = v
@@ -2508,9 +2526,27 @@ function BH:BuildSettingsTab(parent)
     })
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown",
+        label = "Glow style",
+        width = 160,
+        items = {
+            { text = "Animated",     value = "animated" },
+            { text = "Pulsing ring", value = "ring" },
+        },
+        tooltip = "Animated plays the game's proc glow, the same one the Cooldown Manager uses, in the icon's shape. Pulsing ring is a simple fading ring you can tune with the pulse settings below.",
+        get = function() return BH.settings.buttonGlowStyle or "animated" end,
+        set = function(v)
+            BH.settings.buttonGlowStyle = v
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+        disabled = function() return BH.settings.glowReminderButtons == false end,
+    })
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "color",
         label = "Glow colour",
-        tooltip = "Colour of the glow around reminder buttons.",
+        tooltip = "Colour of the glow around reminder buttons. The square animated glow keeps the game's own gold; shaped icons and the pulsing ring take this colour.",
         get = function()
             local c = BH.settings.glowColor or {}
             return c.r or 1.0, c.g or 0.82, c.b or 0.0
@@ -2526,14 +2562,17 @@ function BH:BuildSettingsTab(parent)
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
         label = "Pulse the glow",
-        tooltip = "Fade the glow in and out. Turn this off for a steady ring instead.",
+        tooltip = "Fade the pulsing ring in and out. Turn this off for a steady ring instead.",
         get = function() return BH.settings.glowPulse ~= false end,
         set = function(v)
             BH.settings.glowPulse = v
             BH:SaveSettings()
             BH:UpdateButtons()
         end,
-        disabled = function() return BH.settings.glowReminderButtons == false end,
+        disabled = function()
+            return BH.settings.glowReminderButtons == false
+                or BH.settings.buttonGlowStyle ~= "ring"
+        end,
     })
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
@@ -2549,6 +2588,7 @@ function BH:BuildSettingsTab(parent)
         end,
         disabled = function()
             return BH.settings.glowReminderButtons == false
+                or BH.settings.buttonGlowStyle ~= "ring"
                 or BH.settings.glowPulse == false
         end,
     })
@@ -2569,6 +2609,7 @@ function BH:BuildSettingsTab(parent)
         end,
         disabled = function()
             return BH.settings.glowReminderButtons == false
+                or BH.settings.buttonGlowStyle ~= "ring"
                 or BH.settings.glowPulse == false
         end,
     })
@@ -6009,6 +6050,13 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         -- Icon texture
         btn.icon = btn:CreateTexture(nil, "BACKGROUND")
 
+        -- The glow's own frame, sized over the icon. Blizzard's proc animation
+        -- sizes itself to the frame it is given, and the button is icon +
+        -- label + header, so glowing the button would box the text. It also
+        -- keeps the alert frame Blizzard builds off the secure button.
+        btn.glowHost = CreateFrame("Frame", nil, btn)
+        btn.glowHost:SetPoint("CENTER", btn.icon, "CENTER", 0, 0)
+
         -- Quality pip overlay
         btn.qualityPip = btn:CreateTexture(nil, "OVERLAY")
         btn.qualityPip:SetSize(30, 30)
@@ -6050,6 +6098,11 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     -- Size
     btn:SetSize(size, size + 26 + headerHeight)
     btn.icon:SetSize(size, size)
+    -- Sized explicitly rather than to the icon's anchors, so the size is
+    -- there to measure the instant the glow starts. Resize because Blizzard's
+    -- alert keeps whatever size it measured on its first show.
+    btn.glowHost:SetSize(size, size)
+    ns.Glow.Resize(btn.glowHost)
 
     -- Header text above icon (for MH/OH)
     btn.header:ClearAllPoints()
@@ -6068,6 +6121,12 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         btn.icon:SetPoint("TOP", btn, "TOP", 0, 0)
     end
     btn.icon:SetTexture(texture)
+
+    -- Icon shape, the same set as the Cooldown Manager's (UI/Shapes.lua). The
+    -- glow takes that shape's art, so a round icon gets a round glow.
+    local shape = (BH.settings and BH.settings.buttonIconShape) or "none"
+    ns.Shapes.SetMask(btn, shape, btn.icon)
+    ns.Glow.SetShape(btn.glowHost, ns.Shapes.GLOW[shape])
 
     -- Quality pip overlay on icon (anchored top left, inside icon)
     btn.qualityPip:ClearAllPoints()
@@ -6255,7 +6314,16 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     -- something needs doing -- whether the buff is missing outright or just
     -- running short. The point is to be noticeable from outside the eye
     -- line, so singling out a subset would defeat it.
-    ns.Glow.Set(btn, BH.settings and BH.settings.glowReminderButtons ~= false, btn.icon)
+    --
+    -- "ring" forces the self-drawn pulse; anything else is the proc animation.
+    -- Read on every build, which is enough for a style change to apply:
+    -- UpdateButtons stops every glow before a button is reused.
+    --
+    -- Always skipBirth: the start burst is a large bright flash meant for a
+    -- one-off proc, and UpdateButtons rebuilds every button every few seconds,
+    -- so each rebuild replayed it and the icons strobed. Straight to the loop.
+    btn.glowHost.sqGlowSelfOnly = (BH.settings and BH.settings.buttonGlowStyle) == "ring"
+    ns.Glow.Set(btn.glowHost, BH.settings and BH.settings.glowReminderButtons ~= false, nil, true)
 
     return btn
 end
@@ -8594,7 +8662,7 @@ function BH:UpdateButtons()
         btn:SetScript("OnUpdate", nil)
         -- Stop any glow before the frame goes back in the pool: it would
         -- otherwise still be glowing when reused for a different reminder.
-        ns.Glow.Hide(btn)
+        ns.Glow.Hide(btn.glowHost)
         btn.expirationTime = nil
         btn.isCombatBuff = nil
         UnregisterStateDriver(btn, "visibility")  -- remove any per-button combat-buff state driver
@@ -8757,6 +8825,7 @@ function BH:UpdateButtons()
             db.icon:SetTexture(dummyIcons[i])
             db.icon:SetDesaturated(true)
             db.icon:SetAlpha(0.5)
+            ns.Shapes.SetMask(db, (self.settings and self.settings.buttonIconShape) or "none", db.icon)
             if showLabel then
                 db.label = db:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 db.label:SetPoint("TOP", db.icon, "BOTTOM", 0, -2)
