@@ -8,3 +8,9 @@ V1.78
   them in the same layer the map uses. They now sit high within their own
   layer instead: still above anything next to them, and behind the map, bags
   and other windows
+
+- Rogue poison reminders now count how many poisons you can carry. Assassination
+  is reminded until both Lethal poisons are applied, and with Dragon-Tempered
+  Blades both Non-Lethal poisons too. Previously any single poison of a kind
+  counted as done, so the second one was never asked for. A poison that is
+  running low now brings up only its own button, not every poison of that kind

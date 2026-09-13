@@ -5264,7 +5264,7 @@ function BH:CreateItemRow(parent, yOffset, itemID, itemType, className, category
     minSuffix:SetTextColor(0.7, 0.7, 0.7)
     
     -- Hide min duration for class buffs (spell type) - not applicable
-    -- Exception: selfBuff spells (e.g. Rogue poisons) do have durations
+    -- Exception: timed class buffs (e.g. Rogue poisons, self shields) do have durations
     if itemType == "spell" and not showMinDuration then
         minLabel:Hide()
         minEdit:Hide()
@@ -8097,9 +8097,69 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                 earthShieldHandled = true  -- not known/enabled; skip tankBuff/selfBuff entries
             end
 
+            -- Rogue poisons, one pass per poisonGroup. The old per-entry check
+            -- treated a group as done once any one poison in it was up, which
+            -- never asked an Assassination rogue for their second Lethal.
+            --   Slots: Lethal 2 for Assassination or Dragon-Tempered Blades, else 1;
+            --          Non-Lethal 2 with Dragon-Tempered Blades, else 1. Capped by
+            --          how many poisons of that kind the player actually knows.
+            --   While a group has a free slot, every known, enabled poison of that
+            --   kind that is not already up gets a button, so the player picks.
+            --   An active poison gets a button only when it is running low.
+            -- Each poison is looked up on its own: a buffVariants list would
+            -- answer "one of these is up" and could not be counted.
+            if class == "ROGUE" then
+                local DRAGON_TEMPERED_BLADES_SPELL_ID = 381801
+                local isAssassination = self:GetCurrentSpecID() == 259
+                local hasDragonTempered = BH.PlayerKnowsSpell(DRAGON_TEMPERED_BLADES_SPELL_ID)
+                local poisonSlots = {
+                    lethal = (isAssassination or hasDragonTempered) and 2 or 1,
+                    nonLethal = hasDragonTempered and 2 or 1,
+                }
+                for _, group in ipairs({ "lethal", "nonLethal" }) do
+                    local known, activeExpiration, activeCount = {}, {}, 0
+                    for _, buffInfo in ipairs(buffList) do
+                        if buffInfo.poisonGroup == group then
+                            local hasBuff, expiration = UnitHasBuff("player", buffInfo.spellID)
+                            if hasBuff then
+                                -- nil expiration means permanent/unreadable: 0 never nags
+                                activeExpiration[buffInfo.spellID] = expiration or 0
+                                activeCount = activeCount + 1
+                            end
+                            if BH.PlayerKnowsSpell(buffInfo.spellID) then
+                                known[#known + 1] = buffInfo
+                            end
+                        end
+                    end
+                    local needed = math.min(poisonSlots[group], #known)
+                    for _, buffInfo in ipairs(known) do
+                        local spellID = buffInfo.spellID
+                        if self:IsEnabled(spellID) then
+                            local expArg = activeExpiration[spellID]
+                            local show
+                            if expArg then
+                                show = self:NeedsRefresh(spellID, expArg)
+                            else
+                                show = activeCount < needed
+                            end
+                            if show then
+                                local icon = GetSpellIcon(spellID)
+                                if icon then
+                                    self.buttons[id] = CreateButton(id, icon, "Apply poison", "spell", spellID, buffInfo.label, buffInfo.header, expArg)
+                                    classBuff_spellIDs_this_pass[spellID] = true
+                                    id = id + 1
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
             for _, buffInfo in ipairs(buffList) do
                 if buffInfo.spellID and self:IsEnabled(buffInfo.spellID) then
-                    if buffInfo.earthShield and earthShieldHandled then
+                    if buffInfo.poisonGroup then
+                        -- Already handled in the rogue poison batch above
+                    elseif buffInfo.earthShield and earthShieldHandled then
                         -- Already handled in multi-shaman Earth Shield batch above
                     elseif buffInfo.healthstoneCheck then
                         -- Warlocks make their own, so they get a button rather
@@ -8184,7 +8244,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                             end
                         end
                     elseif buffInfo.selfBuff then
-                        -- Self-buff check (e.g. Rogue poisons, Earth Shield self): show if spell is known but buff is missing or expiring
+                        -- Self-buff check (e.g. Water/Lightning Shield, Earth Shield self): show if spell is known but buff is missing or expiring
                         -- Use UnitHasBuff("player") rather than PlayerHasBuff: the latter uses
                         -- GetPlayerAuraBySpellID which doesn't detect toggle/stance auras like
                         -- Lightning Shield or Water Shield (same issue as Devotion Aura on paladins).

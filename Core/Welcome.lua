@@ -23,6 +23,8 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.78"] = {
         "Fixed Cooldown Manager glows drawing on top of the world map. They still draw above anything sitting next to them, but the map, bags and other windows now cover them again.",
+        "Rogue poison reminders now know how many poisons you can carry: Assassination is reminded until both Lethal poisons are on, and Dragon-Tempered Blades adds a second Non-Lethal. One poison of a kind used to count as done.",
+        "A poison running low now brings up only its own button instead of every poison of that kind.",
     },
     ["1.77"] = {
         "Fixed the Cooldown Manager disappearing in the middle of a fight when someone joined or left your group. It stayed gone until combat ended.",

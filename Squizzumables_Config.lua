@@ -111,15 +111,19 @@ BH.defaults = {
             { spellID = 369459, healerOnly = true },        -- Source of Magic (Healer only)
         },
         ROGUE = {
-            -- Lethal Poisons (player should have one active)
-            { spellID = 2823, selfBuff = true, buffVariants = { 2823, 8679, 315584, 381664 } },     -- Deadly Poison
-            { spellID = 8679, selfBuff = true, buffVariants = { 2823, 8679, 315584, 381664 } },     -- Wound Poison
-            { spellID = 315584, selfBuff = true, buffVariants = { 2823, 8679, 315584, 381664 } },   -- Instant Poison
-            { spellID = 381664, selfBuff = true, buffVariants = { 2823, 8679, 315584, 381664 } },   -- Amplifying Poison
-            -- Non-Lethal Poisons (player should have one active)
-            { spellID = 3408, selfBuff = true, buffVariants = { 3408, 5761, 381637 } },              -- Crippling Poison
-            { spellID = 5761, selfBuff = true, buffVariants = { 3408, 5761, 381637 } },              -- Numbing Poison
-            { spellID = 381637, selfBuff = true, buffVariants = { 3408, 5761, 381637 } },            -- Atrophic Poison
+            -- Poisons are counted per poisonGroup rather than as "any one is up":
+            -- Assassination carries two Lethal poisons, and Dragon-Tempered Blades
+            -- allows a second of each kind. The rogue batch in UpdateButtons
+            -- decides how many each group needs.
+            -- Lethal Poisons
+            { spellID = 2823, poisonGroup = "lethal" },       -- Deadly Poison
+            { spellID = 8679, poisonGroup = "lethal" },       -- Wound Poison
+            { spellID = 315584, poisonGroup = "lethal" },     -- Instant Poison
+            { spellID = 381664, poisonGroup = "lethal" },     -- Amplifying Poison
+            -- Non-Lethal Poisons
+            { spellID = 3408, poisonGroup = "nonLethal" },    -- Crippling Poison
+            { spellID = 5761, poisonGroup = "nonLethal" },    -- Numbing Poison
+            { spellID = 381637, poisonGroup = "nonLethal" },  -- Atrophic Poison
         },
         WARLOCK = {
             { spellID = 688, petCheck = true, label = "Imp" },          -- Summon Imp
