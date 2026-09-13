@@ -6042,8 +6042,17 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         -- and create all child objects once.  They are reconfigured on every reuse.
         btn = CreateFrame("Button", nil, BH.frame, "SecureActionButtonTemplate")
 
+        -- Everything written over the icon lives on this frame, not the button.
+        -- The glow is a child frame (glowHost, and Blizzard's alert under it),
+        -- and a child frame always draws above its parent's own regions -- so
+        -- text on the button itself sat underneath the glow. Levelled well
+        -- above the button in the sizing block below. No mouse, so clicks
+        -- still land on the secure button.
+        btn.textLayer = CreateFrame("Frame", nil, btn)
+        btn.textLayer:SetAllPoints(btn)
+
         -- Header font string (always created; hidden when not needed)
-        btn.header = btn:CreateFontString(nil, "OVERLAY")
+        btn.header = btn.textLayer:CreateFontString(nil, "OVERLAY")
         btn.header:SetJustifyH("CENTER")
         btn.header:SetTextColor(0.2, 0.8, 1)  -- Light blue
 
@@ -6058,26 +6067,26 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         btn.glowHost:SetPoint("CENTER", btn.icon, "CENTER", 0, 0)
 
         -- Quality pip overlay
-        btn.qualityPip = btn:CreateTexture(nil, "OVERLAY")
+        btn.qualityPip = btn.textLayer:CreateTexture(nil, "OVERLAY")
         btn.qualityPip:SetSize(30, 30)
 
         -- Timer font string
-        btn.timer = btn:CreateFontString(nil, "OVERLAY")
+        btn.timer = btn.textLayer:CreateFontString(nil, "OVERLAY")
         btn.timer:SetTextColor(1, 1, 0)  -- Yellow
 
         -- Bag count font string
-        btn.countText = btn:CreateFontString(nil, "OVERLAY")
+        btn.countText = btn.textLayer:CreateFontString(nil, "OVERLAY")
         btn.countText:SetTextColor(1, 1, 1)
 
         -- Label font string
-        btn.label = btn:CreateFontString(nil, "OVERLAY")
+        btn.label = btn.textLayer:CreateFontString(nil, "OVERLAY")
         btn.label:SetJustifyH("CENTER")
         btn.label:SetWordWrap(true)
         btn.label:SetMaxLines(3)
         btn.label:SetTextColor(1, 1, 1)
 
         -- Hearty food badge (top-right corner of icon)
-        btn.heartyBadge = btn:CreateFontString(nil, "OVERLAY")
+        btn.heartyBadge = btn.textLayer:CreateFontString(nil, "OVERLAY")
         btn.heartyBadge:SetTextColor(1, 0.82, 0.2)  -- Warm gold
     else
         -- Returning from pool: re-parent and make visible
@@ -6103,6 +6112,10 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     -- alert keeps whatever size it measured on its first show.
     btn.glowHost:SetSize(size, size)
     ns.Glow.Resize(btn.glowHost)
+    -- Text above the glow: glowHost sits one level over the button and
+    -- Blizzard's alert one over that, so +10 clears both with room to spare.
+    -- Re-asserted on every use because a pooled button is reparented.
+    btn.textLayer:SetFrameLevel(btn:GetFrameLevel() + 10)
 
     -- Header text above icon (for MH/OH)
     btn.header:ClearAllPoints()
