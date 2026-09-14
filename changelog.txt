@@ -1,24 +1,9 @@
 Squizzumables Changelog
 =======================
 
-V1.78
+V1.79
 
-- Fixed Cooldown Manager glows drawing on top of the world map. 1.77 moved
-  them up a layer so a neighbouring addon's bar could not clip them, which put
-  them in the same layer the map uses. They now sit high within their own
-  layer instead: still above anything next to them, and behind the map, bags
-  and other windows
-
-- Rogue poison reminders now count how many poisons you can carry. Assassination
-  is reminded until both Lethal poisons are applied, and with Dragon-Tempered
-  Blades both Non-Lethal poisons too. Previously any single poison of a kind
-  counted as done, so the second one was never asked for. A poison that is
-  running low now brings up only its own button, not every poison of that kind
-
-- Reminder buttons can now take an icon shape -- Round, Diamond, Hexagon,
-  Shield, Heart or Star -- under Appearance, the same shapes as the Cooldown
-  Manager
-- Reminder button glows now play the game's proc animation, the one the
-  Cooldown Manager uses, and follow the icon's shape in your glow colour.
-  Glow style under Misc switches back to the pulsing ring, which the pulse
-  settings still tune
+- Fixed update notes from Squizzumables, SquizzFrames and Avatar Continued
+  drawing on top of each other and flickering when more than one of them
+  updated at the same login. They now appear one after another: close one and
+  the next opens

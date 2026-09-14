@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.79"] = {
+        "When Squizzumables updates at the same time as SquizzFrames or Avatar Continued, their update notes now appear one after another instead of on top of each other.",
+    },
     ["1.78"] = {
         "Fixed Cooldown Manager glows drawing on top of the world map. They still draw above anything sitting next to them, but the map, bags and other windows now cover them again.",
         "Rogue poison reminders now know how many poisons you can carry: Assassination is reminded until both Lethal poisons are on, and Dragon-Tempered Blades adds a second Non-Lethal. One poison of a kind used to count as done.",
@@ -152,6 +155,46 @@ end
 
 local frame
 
+-- ONE UPDATE NOTE AT A TIME, across all of the Squizz addons.
+--
+-- SquizzFrames, Squizzumables and Avatar Continued each carry a copy of this
+-- window, and the copies were identical: same size, same spot, same DIALOG
+-- strata, same frame level. Frames that tie on strata and level have no defined
+-- draw order, so when two of them updated at the same login their notes drew
+-- through each other and flickered as the order flipped.
+--
+-- The queue lives in _G and is created by whichever addon loads first. Notes
+-- that come due at login wait behind one already on screen and appear when it
+-- closes; notes opened by hand (/sq notes) show straight away, on top.
+--
+-- KEEP THIS BLOCK IDENTICAL IN ALL THREE ADDONS. They share the table, so its
+-- shape is an interface between them.
+local NotesQueue = _G.SquizzNotesQueue or { pending = {} }
+_G.SquizzNotesQueue = NotesQueue
+
+local function PresentNotes(f, queued)
+    local active = NotesQueue.active
+    if queued and active and active ~= f and active:IsShown() then
+        for _, waiting in ipairs(NotesQueue.pending) do
+            if waiting == f then return end
+        end
+        table.insert(NotesQueue.pending, f)
+        return
+    end
+    NotesQueue.active = f
+    f:Show()
+    f:Raise()
+end
+
+local function OnNotesHidden(f)
+    if NotesQueue.active ~= f then return end
+    NotesQueue.active = nil
+    local nextFrame = table.remove(NotesQueue.pending, 1)
+    if nextFrame then
+        PresentNotes(nextFrame, false)
+    end
+end
+
 -- Narrower than the old 424 by the width of the scroll bar, so a long note is
 -- not drawn underneath it.
 local BODY_WIDTH = 404
@@ -169,6 +212,10 @@ local function BuildFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
+    -- Clicking a notes window brings it in front of any other one, and closing
+    -- it lets the next queued note through (see NotesQueue).
+    frame:SetToplevel(true)
+    frame:HookScript("OnHide", OnNotesHidden)
     ApplySQBackdrop(frame)
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -222,7 +269,9 @@ local function BuildFrame()
     return frame
 end
 
-local function Show(titleText, bodyText)
+-- queued: true for the automatic login note, which waits its turn behind
+-- another addon's note; false/nil when opened by hand.
+local function Show(titleText, bodyText, queued)
     local f = BuildFrame()
     f.title:SetText(titleText)
     f.body:SetText(bodyText)
@@ -237,7 +286,7 @@ local function Show(titleText, bodyText)
     -- would otherwise restore wherever the last read was left.
     f.scroll:SetVerticalScroll(0)
 
-    f:Show()
+    PresentNotes(f, queued)
 end
 
 --- The greeting for someone who has never run the addon.
@@ -246,7 +295,7 @@ end
 -- addon reads the player's class itself. So this explains what will happen and
 -- points at the settings, rather than asking questions whose answers it can
 -- already work out.
-local function ShowFirstRun()
+local function ShowFirstRun(queued)
     local _, class = UnitClass("player")
     local className = (BH.CLASS_NAMES and BH.CLASS_NAMES[class]) or class or "your class"
 
@@ -257,11 +306,11 @@ local function ShowFirstRun()
      .. "that go with it. Reminders appear in dungeons, raids and delves -- not out in the "
      .. "world -- and each one is a button you can click to fix the problem.\n\n"
      .. "Nothing needs configuring to start. When you do want to change something, everything "
-     .. "is under /sq config, or the minimap button, and there is a search box at the top.")
+     .. "is under /sq config, or the minimap button, and there is a search box at the top.", queued)
 end
 
 --- The note after updating.
-local function ShowUpdated(version)
+local function ShowUpdated(version, queued)
     local notes = RELEASE_NOTES[version]
     local body = "Squizzumables has been updated to " .. version .. ".\n\n"
     if notes then
@@ -272,7 +321,7 @@ local function ShowUpdated(version)
     else
         body = body .. "See changelog.txt in the addon folder for what changed."
     end
-    Show("Squizzumables updated", body)
+    Show("Squizzumables updated", body, queued)
 end
 
 -- Decide which, if either, to show.
@@ -290,12 +339,12 @@ local function CheckVersion()
         -- of a version that predates this file: an existing player already has
         -- settings saved.
         if SquizzumablesDB.settings then
-            ShowUpdated(version)
+            ShowUpdated(version, true)
         else
-            ShowFirstRun()
+            ShowFirstRun(true)
         end
     elseif seen ~= version then
-        ShowUpdated(version)
+        ShowUpdated(version, true)
     end
 
     SquizzumablesDB.lastSeenVersion = version
