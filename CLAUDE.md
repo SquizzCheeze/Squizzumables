@@ -424,7 +424,16 @@ model forbids addons from mutating protected/secure frames during combat:
   the buff's slot in `LayoutBorrowedBuffIcons`. Blizzard's frame for the buff still decides whether
   it is up — `IsShown` stays readable in combat — so packing, placeholders and the unlock mock are
   unchanged; that frame is parked off screen by `ParkBorrowedFrame`, never hidden, because the sound
-  alerts read it. Things that will break it if forgotten, most of them from SquizzFrames' CLAUDE.md:
+  alerts read it — **and, since 1.80, held at alpha 0, which is the part that actually works.**
+  Parking alone does not: Blizzard shows and re-anchors its own frame the instant the aura goes
+  active, and any correction of ours necessarily lands a frame later, so the bar appeared in
+  Blizzard's position every time the buff came up. On a fast-toggling buff (one that is only up
+  while moving) that reads as a second bar flickering behind the cooldown bars — reported
+  2026-09-16, and a `SetPoint`/`ClearAllPoints` re-park hook did **not** fix it, which is the
+  evidence for this note. Alpha survives any amount of re-anchoring. `HoldBorrowedParked` installs
+  both hooks; `UnparkBorrowedFrame` clears the flag and restores alpha the moment the layout uses
+  the frame as a real slot again, which matters because `hooksecurefunc` cannot be undone — an
+  ungated hook would strand a frame invisible and offscreen forever once it stopped being ours. Things that will break it if forgotten, most of them from SquizzFrames' CLAUDE.md:
   no calls on an aura button outside `initializeFrame`; style a font string before registering it
   (an unstyled one hard-errors and aborts the whole batch); host anchored before `AddAuraSlot`; slots
   declared before `SetUnit`; containers only out of combat; do **not** define

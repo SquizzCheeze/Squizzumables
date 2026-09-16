@@ -8,6 +8,13 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.79
+
+- Fixed update notes from Squizzumables, SquizzFrames and Avatar Continued
+  drawing on top of each other and flickering when more than one of them
+  updated at the same login. They now appear one after another: close one and
+  the next opens
+
 V1.78
 
 - Fixed Cooldown Manager glows drawing on top of the world map. 1.77 moved

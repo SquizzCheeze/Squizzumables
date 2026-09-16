@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.80"] = {
+        "Cooldown Manager Spacing now goes negative, so shaped icons -- the shield especially -- can be overlapped until they touch. A shape leaves empty space inside its own icon, so at a spacing of 0 there is still a visible gap.",
+    },
     ["1.79"] = {
         "When Squizzumables updates at the same time as SquizzFrames or Avatar Continued, their update notes now appear one after another instead of on top of each other.",
     },

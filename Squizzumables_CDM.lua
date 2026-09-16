@@ -973,9 +973,97 @@ end
 -- packing (IsShown) and the sound alerts read its live state. Re-applied on
 -- every pass, because Blizzard re-anchors its items on its own layout passes.
 -- SetPoint is the only kind of write this module makes to Blizzard's frames.
+local HoldBorrowedParked  -- defined just below; ParkBorrowedFrame installs it
+
 local function ParkBorrowedFrame(child)
+    BS(child).borrowParked = true
+    BS(child).borrowParkGuard = true
     child:ClearAllPoints()
     child:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", -2000, -2000)
+    -- ALPHA IS THE ONE THAT ACTUALLY HOLDS. Position can only ever be put back
+    -- a frame AFTER Blizzard moves it, so while its aura is up and its own
+    -- layout keeps running, chasing SetPoint leaves a one-frame ghost every
+    -- time -- which is the flicker this was meant to stop and did not.
+    -- Alpha survives any amount of re-anchoring.
+    --
+    -- Faded rather than hidden, deliberately, for the same reason the whole
+    -- viewers are (see HoldAlphaZero): the game stops updating a HIDDEN frame,
+    -- and this module reads live buff state from these very frames.
+    child:SetAlpha(0)
+    BS(child).borrowParkGuard = nil
+    HoldBorrowedParked(child)
+end
+
+--- Give a borrowed frame back: fully visible, and no longer chased.
+---
+--- Restores alpha to 1 rather than to whatever it was, matching how
+--- ApplyBlizzardVisibility restores a dimmed viewer -- Blizzard's own next
+--- refresh re-asserts the real value if it differs.
+local function UnparkBorrowedFrame(child)
+    if not BS(child).borrowParked then return end
+    BS(child).borrowParked = nil
+    BS(child).borrowParkGuard = true
+    child:SetAlpha(1)
+    BS(child).borrowParkGuard = nil
+end
+
+--- Keep a parked frame parked BETWEEN poll ticks.
+---
+--- Re-parking from the 0.2s layout pass is enough while nothing else moves the
+--- frame. Blizzard does: the moment its aura goes active it shows and
+--- re-anchors the item, which then draws at the viewer's real position until
+--- our next tick. On a buff that toggles quickly -- a movement aura, say --
+--- that reads as a SECOND copy of the bar flickering behind Blizzard's viewer,
+--- which is exactly what it is (user report 2026-09-16: a stray buff bar
+--- appearing behind the Essential bar, but only while moving).
+---
+--- Same shape as HoldParked, which solves the identical problem for whole
+--- viewers. Borrowed CHILDREN never reach that path, because
+--- ApplyBlizzardVisibility deliberately exempts both buff viewers -- their
+--- children are the icons we borrow, so dimming the parent would hide our own
+--- row -- and the exemption takes the re-park hook with it.
+---
+--- Three rules carried across, each load-bearing:
+---   * NEVER re-anchor inline. That layout pass goes on to move protected
+---     systems, so re-anchoring from inside it carries this addon's taint into
+---     the rest of it. C_Timer.After(0) runs with none of that lineage and
+---     coalesces the ClearAllPoints + SetPoint burst into a single re-park.
+---   * Gate on a flag that can be CLEARED. hooksecurefunc cannot be undone, so
+---     a hook that always re-parks would strand a frame offscreen forever once
+---     it stops being ours -- worse than the bug it fixes. borrowParked is set
+---     here and cleared by the layout the moment it uses the frame as a real
+---     slot again.
+---   * Ignore our own writes, via borrowParkGuard.
+function HoldBorrowedParked(child)
+    if BS(child).borrowPointHooked then return end
+    BS(child).borrowPointHooked = true
+
+    local function QueueRepark(self)
+        if not BS(self).borrowParked or BS(self).borrowParkGuard
+           or BS(self).borrowParkQueued then
+            return
+        end
+        BS(self).borrowParkQueued = true
+        C_Timer.After(0, function()
+            BS(self).borrowParkQueued = nil
+            if BS(self).borrowParked then ParkBorrowedFrame(self) end
+        end)
+    end
+
+    hooksecurefunc(child, "SetPoint", QueueRepark)
+    hooksecurefunc(child, "ClearAllPoints", QueueRepark)
+
+    -- The one that does the real work. Blizzard raises this frame's alpha
+    -- whenever its aura goes active; put it straight back while it is ours.
+    -- Inline is safe here, unlike the re-anchor above: SetAlpha touches no
+    -- protected system, and applying it a frame late is what would show.
+    hooksecurefunc(child, "SetAlpha", function(self, a)
+        if BS(self).borrowParked and a ~= 0 and not BS(self).borrowParkGuard then
+            BS(self).borrowParkGuard = true
+            self:SetAlpha(0)
+            BS(self).borrowParkGuard = nil
+        end
+    end)
 end
 
 -- Is this Blizzard buff item up because of a totem rather than an aura?
@@ -1083,7 +1171,15 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
                             and ItemDrivenByTotem(child)
                         local useCell = isNative and not byTotem
                         local cell = useCell and native:GetCell(groupName, cdID) or nil
-                        if useCell then ParkBorrowedFrame(child) end
+                        if useCell then
+                            ParkBorrowedFrame(child)
+                        else
+                            -- Blizzard's frame is the slot again (not native,
+                            -- or driven by a totem), so it must stop being
+                            -- chased AND get its alpha back -- the layout below
+                            -- is about to place it in the group for real.
+                            UnparkBorrowedFrame(child)
+                        end
                         local slotFrame = cell or ((not useCell) and child) or nil
                         if slotFrame then
                             if child:IsShown() then
@@ -6110,9 +6206,21 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         end)
     end
 
-    local spacingSlider = CreateSQSlider(content, "Spacing", 170, 0, 20, 1)
+    -- Goes NEGATIVE, which overlaps the icons rather than spacing them.
+    --
+    -- A shape does not fill its icon's square: the shield is 100 wide by 118
+    -- tall and is fitted by its height, so about 7.5% of the icon's width is
+    -- empty on each side and two neighbours stand that far apart even at zero.
+    -- That gap is the art, not the spacing, so no positive value could ever
+    -- close it (user report, shield row at spacing 0). Pulling the squares
+    -- into each other is what makes shaped icons touch.
+    local spacingSlider = CreateSQSlider(content, "Spacing", 170, -20, 20, 1)
     spacingSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(spacingSlider, "Spacing", "Gap between icons in this group, in pixels.")
+    ns.Rows.AddTooltip(spacingSlider, "Spacing",
+        "Gap between icons in this group, in pixels. Negative values overlap "
+        .. "them, which is how shaped icons -- the shield especially -- are "
+        .. "brought together: a shape leaves empty space inside its own icon, "
+        .. "so at 0 there is still a visible gap.")
     spacingSlider:SetValue(groupData.spacing or DEFAULT_SPACING)
     spacingSlider:SetAfterValueChanged(function(value)
         groupData.spacing = value

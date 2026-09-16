@@ -10737,6 +10737,42 @@ end)
 -- call every rendered frame for the whole session.
 
 -- slash command to move/reset
+-- /rl -> ReloadUI, claimed only if nothing else answers it.
+--
+-- Blizzard ships /reload, never /rl; the short form is an addon convention.
+-- Taking it from an addon that already provides it would be rude and might
+-- replace a richer version, so this checks first and skips quietly. Deferred
+-- to PLAYER_LOGIN so addons loading after this file are visible to the check.
+--
+-- Both registries are consulted: hash_SlashCmdList (uppercased, slash
+-- included) holds what has been imported, SlashCmdList holds what has been
+-- registered since -- the import wipes the latter as it moves entries over.
+do
+    local function TakenAlready()
+        local hash = _G.hash_SlashCmdList
+        if hash and hash['/RL'] then return true end
+        for name in pairs(SlashCmdList) do
+            local i = 1
+            local cmd = _G['SLASH_' .. name .. i]
+            while cmd do
+                if strupper(cmd) == '/RL' then return true end
+                i = i + 1
+                cmd = _G['SLASH_' .. name .. i]
+            end
+        end
+        return false
+    end
+
+    local f = CreateFrame('Frame')
+    f:RegisterEvent('PLAYER_LOGIN')
+    f:SetScript('OnEvent', function(self)
+        self:UnregisterEvent('PLAYER_LOGIN')
+        if TakenAlready() then return end
+        SLASH_SQUIZZUMABLESRELOAD1 = '/rl'
+        SlashCmdList['SQUIZZUMABLESRELOAD'] = function() ReloadUI() end
+    end)
+end
+
 SLASH_SQUIZZUMABLES1 = '/sq'
 SlashCmdList['SQUIZZUMABLES'] = function(msg)
     if msg == 'reset' then

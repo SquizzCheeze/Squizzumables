@@ -755,6 +755,37 @@ function Native:PrintDiagnostics()
         print(("  [%s] slots: %d   containers: %d (%d visible)   buttons: %d   built: %s")
             :format(groupName, active, #st.containers, visible, st.buttonCount or 0,
                 st.sig and "yes" or "no"))
+
+        -- A container that is BUILT BUT NOT VISIBLE stops listening for aura
+        -- events altogether -- the engine's ShouldRegisterForDynamicEvents is
+        -- IsVisible() and IsEnabled() -- and EnsureTicker's refresh skips it
+        -- for the same reason. The row then only redraws when something else
+        -- happens to poke it, which reads in game as icons that flicker while
+        -- you move and vanish while you stand still.
+        --
+        -- The container itself is never the culprit (it is SetAllPoints to its
+        -- group frame and explicitly Show()n), so walk UP and name the first
+        -- ancestor that is hidden or has no size. These frames are anonymous,
+        -- so the chain is the only way to identify which one.
+        for i, c in ipairs(st.containers) do
+            if not c:IsVisible() then
+                local chain, f, depth = {}, c, 0
+                while f and depth < 8 do
+                    local okS, shown = pcall(f.IsShown, f)
+                    local okW, w = pcall(f.GetWidth, f)
+                    local okH, h = pcall(f.GetHeight, f)
+                    chain[#chain + 1] = ("%s[shown=%s %dx%d]"):format(
+                        (f.GetName and f:GetName()) or "<anon>",
+                        okS and tostring(shown) or "?",
+                        okW and math.floor(w or 0) or -1,
+                        okH and math.floor(h or 0) or -1)
+                    local okP, parent = pcall(f.GetParent, f)
+                    f = okP and parent or nil
+                    depth = depth + 1
+                end
+                print(("    container %d NOT visible: %s"):format(i, table.concat(chain, " < ")))
+            end
+        end
     end
     if not any then print("  no group has been built yet") end
 
