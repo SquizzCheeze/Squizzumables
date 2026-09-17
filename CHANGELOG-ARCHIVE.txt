@@ -8,6 +8,28 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.80
+
+- Cooldown Manager group Spacing now goes negative, down to -20, so shaped
+  icons can be pulled together until they touch. A shape does not fill its
+  icon: the shield is taller than it is wide, so it is sized to the icon's
+  height and leaves about 7.5% of the width empty on each side. Two shields
+  therefore stand apart even at a spacing of 0, and that gap is the art rather
+  than the spacing, so no positive value could close it
+
+- "/rl" now reloads your interface, the same as /reload. It is only claimed if
+  no other addon already provides it, so an existing one keeps working
+
+- Fixed a second copy of a tracked buff bar flickering in Blizzard's own
+  position, behind the cooldown bars. When you borrow Blizzard's buff frames,
+  each one is moved off screen and its place taken by ours -- but the game
+  brings its own frame back the instant the buff goes up, and moving it away
+  again could only ever happen a moment later, so it showed every time. Most
+  visible on a buff that comes and goes quickly, such as one that is only up
+  while you are moving. Those frames are now made invisible while we are using
+  them, which nothing the game does can undo
+
+
 V1.79
 
 - Fixed update notes from Squizzumables, SquizzFrames and Avatar Continued

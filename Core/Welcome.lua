@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.81"] = {
+        "Fixed a spell that a talent replaces never showing its cooldown on the Cooldown Manager -- it stayed lit with no countdown text while the spellbook had it on cooldown. Lay on Hands with Empyreal Ward is one such spell.",
+        "Fixed a tracked cooldown briefly showing a buff's duration instead of its own cooldown. Cooldown icons now always show their cooldown; the Buffs and Buff Bars groups are what track the buff itself.",
+    },
     ["1.80"] = {
         "Cooldown Manager Spacing now goes negative, so shaped icons -- the shield especially -- can be overlapped until they touch. A shape leaves empty space inside its own icon, so at a spacing of 0 there is still a visible gap.",
         "Fixed a second copy of a tracked buff bar flickering behind Blizzard's own cooldown bars, most visible on a buff that is only up while you are moving.",

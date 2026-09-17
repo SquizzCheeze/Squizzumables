@@ -485,6 +485,38 @@ local function SpellIDForCooldown(cdID)
 end
 cdmModule.SpellIDForCooldown = SpellIDForCooldown
 
+-- The spell the player CASTS right now, following any talent override.
+--
+-- A talent can replace a spell with another, and the cooldown then lives on
+-- the replacement. Lay on Hands (633) with Empyreal Ward talented becomes
+-- 471195: 633 answers isActive=false, duration=0 forever while the spellbook
+-- shows a ten minute cooldown running (user report, confirmed by dump
+-- 2026-09-17). Reading the base ID is reading a spell nobody is casting, so
+-- the icon never greyed, never swept and never showed cooldown text.
+--
+-- Blizzard's own viewer does not hit this: it tracks the override at runtime,
+-- registering COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED and handing what that
+-- event carries to SetOverrideSpell.
+--
+-- NOT CACHED, deliberately. The override moves with talents, spec and
+-- loadout, so a cache would need invalidating on at least three events -- and
+-- this file already carries one permanently-poisoned cache
+-- (cooldownSpellIDCache above, which stores `false` on a single bad read and
+-- never retries). This is a plain C call returning a number; making it per
+-- pass is cheaper than being wrong until the next reload.
+--
+-- Documented to return the ID it was given when there is no override, so the
+-- ordinary case needs no branch. Guarded regardless: anything unreadable
+-- falls back to the spell we were asked about.
+local function LiveSpellID(spellID)
+    if not spellID then return nil end
+    if not (C_Spell and C_Spell.GetOverrideSpell) then return spellID end
+    local ok, override = pcall(C_Spell.GetOverrideSpell, spellID)
+    if not ok then return spellID end
+    return BH.Secrets.SafeNumber(override, nil) or spellID
+end
+cdmModule.LiveSpellID = LiveSpellID
+
 -- The key alerts are stored under: the spell, not the cooldown.
 local function AlertKey(cdID)
     return SpellIDForCooldown(cdID) or cdID
@@ -2066,7 +2098,7 @@ local function ApplyUsableTint(proxy, enabled)
         if proxy._outOfRange then
             tint = TINT_OUT_OF_RANGE
         elseif C_Spell.IsSpellUsable then
-            local usable, noMana = C_Spell.IsSpellUsable(proxy.spellID)
+            local usable, noMana = C_Spell.IsSpellUsable(LiveSpellID(proxy.spellID))
             -- Secret probe first: a bare truthiness test on a secret is a hard
             -- error, so these cannot simply be believed. Unreadable falls
             -- through to "looks usable", which is the quiet direction -- an
@@ -2110,6 +2142,27 @@ local function UpdateProxyCooldown(proxy)
         return
     end
 
+    -- AURA SWEEPS ARE FOR BUFF ENTRIES ONLY.
+    --
+    -- Both branches below read an AURA and draw its remaining time, then
+    -- return. That is right for a tracked buff and wrong for a cooldown entry
+    -- whose spell merely happens to apply one: the icon shows the buff's few
+    -- seconds and returns, so the real cooldown is never drawn and never gets
+    -- its countdown text.
+    --
+    -- Lay on Hands with Empyreal Ward talented is exactly that (user report,
+    -- reproduced 2026-09-17). The talent gives Lay on Hands an 8 second buff
+    -- on the target, which reaches auraIDs through overrideSpellID /
+    -- linkedSpellIDs -- so a ten minute cooldown rendered as eight seconds of
+    -- sweep and then lit back up, with no cooldown text at any point. Untalent
+    -- it and the same spell behaves perfectly, which is what made this look
+    -- like a per-player mystery for so long.
+    --
+    -- An Essential/Utility icon shows its COOLDOWN, full stop. Tracking the
+    -- buff is what the Buffs and Buff Bars groups are for, and they do it
+    -- properly -- through Blizzard's own frames, which survives combat.
+    local isBuffEntry = (proxy.viewerType == "buff" or proxy.viewerType == "buffbar")
+
     -- Buff duration, the only way that survives combat.
     --
     -- An aura's remaining time cannot be computed in combat: the fields are
@@ -2130,7 +2183,7 @@ local function UpdateProxyCooldown(proxy)
     --
     -- The instance ID can itself be secret on an actively updating frame, so it
     -- is checked before use rather than assumed.
-    if proxy.Cooldown.SetCooldownFromDurationObject and C_UnitAuras
+    if isBuffEntry and proxy.Cooldown.SetCooldownFromDurationObject and C_UnitAuras
        and C_UnitAuras.GetAuraDuration then
         for _, sid in ipairs(proxy.auraSpellIDs or { proxy.spellID }) do
             local item = cdmModule.buffItemForSpell[sid]
@@ -2163,7 +2216,7 @@ local function UpdateProxyCooldown(proxy)
     -- why buff icons drew no swipe -- the lookup found nothing and fell through
     -- to a spell cooldown that a buff-only entry does not have.
     local auraData
-    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+    if isBuffEntry and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
         for _, sid in ipairs(proxy.auraSpellIDs or { proxy.spellID }) do
             auraData = C_UnitAuras.GetPlayerAuraBySpellID(sid)
             if auraData then break end
@@ -2221,7 +2274,9 @@ local function UpdateProxyCooldown(proxy)
         -- `maxCharges > 1` on a secret value throws rather than misbehaving --
         -- the same crash class as the aura reads above. Unreadable means no
         -- number rather than an error.
-        local spellCharges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(proxy.spellID)
+        -- LiveSpellID for the same reason as the cooldown below: charges live
+        -- on the overridden spell when a talent replaces one.
+        local spellCharges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(LiveSpellID(proxy.spellID))
         local maxCharges = spellCharges and BH.Secrets.SafeNumber(spellCharges.maxCharges, nil)
         local curCharges = spellCharges and BH.Secrets.SafeNumber(spellCharges.currentCharges, nil)
         if maxCharges and curCharges and maxCharges > 1 then
@@ -2231,7 +2286,11 @@ local function UpdateProxyCooldown(proxy)
         end
     end
 
-    local durationObj = C_Spell.GetSpellCooldownDuration and C_Spell.GetSpellCooldownDuration(proxy.spellID)
+    -- Through LiveSpellID: a talent-overridden spell keeps its cooldown on the
+    -- replacement, and asking the base one returns nothing at all -- no sweep,
+    -- no countdown text. See LiveSpellID for the Lay on Hands case.
+    local liveID = LiveSpellID(proxy.spellID)
+    local durationObj = C_Spell.GetSpellCooldownDuration and C_Spell.GetSpellCooldownDuration(liveID)
     if durationObj then
         proxy.Cooldown:SetCooldown(0, 0)
         proxy.Cooldown:SetCooldownFromDurationObject(durationObj)
@@ -2612,7 +2671,9 @@ local function ApplyProxyVisuals(proxy, groupData)
     -- Desaturation: greyscale icon when spell is NOT on cooldown
     if proxy.Icon and proxy.spellID then
         local onCD = false
-        local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(proxy.spellID)
+        -- LiveSpellID: this is the read that decides "grey it out", and on a
+        -- talent-overridden spell the base ID reports permanently ready.
+        local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(LiveSpellID(proxy.spellID))
         if cdInfo then
             local start = cdInfo.startTime
             local dur = cdInfo.duration
@@ -2823,7 +2884,7 @@ local function FireCDSounds()
                 -- it gave us a secret. Fall back to the API, which works fine
                 -- out of combat.
                 cdReadable = true
-                local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(tracker.spellID)
+                local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(LiveSpellID(tracker.spellID))
                 if cdInfo then
                     local start, dur = cdInfo.startTime, cdInfo.duration
                     if start and dur then
@@ -3453,8 +3514,10 @@ function cdmModule:LayoutGroup(groupName)
         end)
     elseif sortBy == "cooldown" then
         table.sort(members, function(a, b)
-            local cdA = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(a.proxy.spellID)
-            local cdB = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(b.proxy.spellID)
+            -- LiveSpellID on both sides, so sort-by-cooldown orders by the
+            -- cooldown actually running rather than the base spell's.
+            local cdA = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(LiveSpellID(a.proxy.spellID))
+            local cdB = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(LiveSpellID(b.proxy.spellID))
             local remA, remB = 0, 0
             if cdA and cdA.startTime and cdA.duration then
                 local sOk = not BH.Secrets.IsSecret(cdA.startTime)
