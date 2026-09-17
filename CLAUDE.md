@@ -442,8 +442,20 @@ model forbids addons from mutating protected/secure frames during combat:
   harmful aura on an assistable unit and it would show every debuff. Style changes restyle our pieces
   only; a rebuild happens only when the set of buffs changes, because containers can never be freed.
   A buff whose Blizzard item is up with `totemData` and no `auraInstanceID` (totem-style: no aura
-  for a slot to show) keeps Blizzard's frame for that layout pass (`ItemDrivenByTotem`), and any slot
-  that failed to build stays on the borrowed path entirely. **Do not gate on
+  for a slot to show) cannot be drawn natively — an `AddAuraSlot` of ours has nothing to bind to and
+  would render empty — so `ItemDrivenByTotem` diverts it every layout pass, and any slot that failed
+  to build stays on the borrowed path entirely.
+  **On a BAR group it is no longer handed back to Blizzard's frame (1.82).** Blizzard's own bar
+  already holds the right fill whatever drives it, so the slot takes a placeholder bar of OURS and
+  mirrors `child.Bar`'s min/max/value and countdown onto it (`CanMirrorBlizzardBar` /
+  `MirrorBlizzardBar` / `MirrorBlizzardBarText` in `Squizzumables_CDM.lua`). That means we never have
+  to know what drives the bar, which covers Consecration, Death and Decay and every other ground
+  effect with no totem API at all. It is EllesmereUI's approach —
+  `EllesmereUICdmBuffBars.lua`, *"reads min/max/value from Blizzard's Bar, zero duration
+  computation"* — and worth reading there before changing any of it. Icon groups keep the old
+  behaviour: `child.Bar` is nil on those children, confirmed via `/sq cdmbuff`, which reports a
+  `Bar=` field per entry for exactly this. Guarded end to end: anything unmirrorable falls through to
+  Blizzard's frame, so the worst case is the pre-1.82 look rather than a broken bar. **Do not gate on
   `cooldownInfo.hasAura`:** Blizzard's own viewer code never reads it, so it is evidence of nothing,
   and gating on it is the likely reason the first in-game test drew every buff on Blizzard's frames.
   Discovery keeps a buff that duplicates an Essential/Utility entry (by spell or name) out of the
@@ -634,6 +646,24 @@ and do not reach for `pcall`.**
     spell names and icons).
   - `BH.Secrets.AurasAreSecret()` wraps `C_Secrets.ShouldAurasBeSecret()` if you want to skip work
     entirely rather than scan and discard.
+
+⚠ **Do NOT sanitise a value you only need to pass along.** The `Safe*` accessors return `nil` for an
+unreadable value *by design* — that is what makes the result safe to compare — so laundering a
+secret you were only ever going to hand to a widget setter destroys it instead of protecting it.
+A secret survives `SetText`, `SetValue`, `SetMinMaxValues` and `SetTexture` untouched, because the
+widget consumes it C-side and it never enters Lua.
+
+The tell is a value that renders as nothing while everything around it works. A mirrored buff bar's
+fill animated correctly while its countdown stayed permanently blank, because the text went through
+`SafeString` first (user report 2026-09-17). The fix is to go from getter to setter **in one
+expression** — `dest:SetText(src:GetText())`, no intermediate local, nothing to inspect — which is
+what `MirrorBlizzardBarText` does and why it does it that way.
+
+So the rule splits on what you intend to do with the value: **comparing, measuring or slicing it →
+`Safe*` accessor. Forwarding it to a widget → raw, in one expression.** Note that string operations
+are the same hazard class as arithmetic: `#s`, `s:sub()` and even `s ~= ""` all throw on a secret
+string, which is why the CDM text builders track presence with plain booleans from nil-checks and
+only ever concatenate.
 
 These are built on the client's real predicates — `issecretvalue`, `issecrettable`,
 `hasanysecretvalues`, `C_Secrets.ShouldAurasBeSecret` — which is why the check happens **once**,
