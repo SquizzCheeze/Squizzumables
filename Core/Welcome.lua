@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.82"] = {
+        "Tracked buff bars for ground effects -- Consecration, Death and Decay -- now use this addon's own bar instead of Blizzard's. They stood out in a row of bars with the wrong look, no border and no spacing, because a ground effect puts no buff on you for a bar of ours to attach to.",
+        "Buff bar placeholders (\"Always Show Buffs\") now draw their border, so a row mixing held slots and live buffs looks the same throughout.",
+    },
     ["1.81"] = {
         "Fixed a spell that a talent replaces never showing its cooldown on the Cooldown Manager -- it stayed lit with no countdown text while the spellbook had it on cooldown. Lay on Hands with Empyreal Ward is one such spell.",
         "Fixed a tracked cooldown briefly showing a buff's duration instead of its own cooldown. Cooldown icons now always show their cooldown; the Buffs and Buff Bars groups are what track the buff itself.",

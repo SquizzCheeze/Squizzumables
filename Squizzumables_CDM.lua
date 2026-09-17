@@ -856,32 +856,148 @@ end
 -- Returned as a table rather than set as fields here, so they are assigned in
 -- GetBuffPlaceholder where the frame is built -- the linter types the frame as
 -- a plain Frame everywhere else and reports every field added from outside.
+-- Matching the native bars' look (Squizzumables_CDMAuras.lua's FONT and
+-- DEFAULT_BAR_COLOR). A placeholder can sit in the same row as a natively drawn
+-- bar, so it has to wear the same font, size rule and colour or the row shows
+-- two styles.
+local PLACEHOLDER_BAR_FONT  = "Fonts\\FRIZQT__.TTF"
+local PLACEHOLDER_BAR_COLOR = { 1.0, 0.7, 0.0, 1 }
+
+-- Is there a StatusBar of Blizzard's here worth mirroring?
+local function CanMirrorBlizzardBar(child)
+    local src = child and child.Bar
+    if src == nil or BH.Secrets.IsSecret(src) then return false end
+    local ok, objType = pcall(src.GetObjectType, src)
+    return ok and objType == "StatusBar"
+end
+
+-- Copy Blizzard's own bar onto one of ours.
+--
+-- THE VALUES ARE NEVER TOUCHED IN LUA. They go straight from Blizzard's getter
+-- into our setter, because a tracked bar's remaining time is SECRET in
+-- instanced combat: a secret survives SetMinMaxValues/SetValue untouched, while
+-- any arithmetic or comparison on one is a hard error. That single property is
+-- what makes this work at all, and it is how EllesmereUI draws every tracked
+-- bar (EllesmereUICdmBuffBars.lua, "reads min/max/value from Blizzard's Bar,
+-- zero duration computation").
+--
+-- It also means we never have to know WHAT drives the bar. A totem-driven entry
+-- (Consecration) has no aura for an AuraSlot of ours to bind to, but Blizzard's
+-- bar already holds the right fill -- which is why Ellesmere handles those
+-- without reading the totem API at all, and why this needs no totem code.
+local function MirrorBlizzardBar(sb, child)
+    local src = child and child.Bar
+    if not src then return false end
+    -- Interpolated when the client offers it: the layout pass that drives this
+    -- runs on the 0.2s poll, and easing between ticks is what keeps a fill that
+    -- updates five times a second from stepping visibly.
+    local smooth = Enum and Enum.StatusBarInterpolation
+        and Enum.StatusBarInterpolation.ExponentialEaseOut
+    return (pcall(function()
+        sb:SetMinMaxValues(src:GetMinMaxValues())
+        if smooth then sb:SetValue(src:GetValue(), smooth)
+        else sb:SetValue(src:GetValue()) end
+    end))
+end
+
+-- Mirror Blizzard's own countdown onto one of our FontStrings.
+--
+-- THE STRING IS NEVER INSPECTED. It goes straight from their getter into our
+-- setter, for exactly the reason the fill does (see MirrorBlizzardBar): the
+-- rendered time is SECRET in instanced combat, and a secret survives SetText
+-- untouched while ANY test on it turns it into nothing -- laundering it through
+-- SafeString included.
+--
+-- That laundering was the first attempt here, and it is precisely why the
+-- mirrored bar drew its fill correctly and left its countdown blank: SafeString
+-- nil'd the secret, the helper returned nothing, and the caller had nothing to
+-- write (user report 2026-09-17, "not displaying the same info as our own
+-- bars"). EllesmereUI does the whole thing in one expression for this reason
+-- (EllesmereUICdmBuffBars.lua:5528) -- which is the shape to copy, not just the
+-- idea.
+--
+-- Blizzard's bar owns two FontStrings: the first is the spell name, the second
+-- the countdown (their GetBlizzBarFontStrings discovers them the same way).
+local function MirrorBlizzardBarText(dest, child)
+    local src = child and child.Bar
+    if not (src and dest) then return false end
+    local ok, regions = pcall(function() return { src:GetRegions() } end)
+    if not ok then return false end
+    local seen = 0
+    for _, rgn in ipairs(regions) do
+        local okType, objType = pcall(rgn.GetObjectType, rgn)
+        if okType and objType == "FontString" then
+            seen = seen + 1
+            if seen == 2 then
+                -- One expression, no local: nothing here may look at the value.
+                return (pcall(function() dest:SetText(rgn:GetText()) end))
+            end
+        end
+    end
+    return false
+end
+
+-- The border colour a group asks for, matching the native bars' BorderColor in
+-- Squizzumables_CDMAuras.lua -- which is a file-local there, so this is a second
+-- copy rather than a call. Keep the two reading the SAME keys: a placeholder can
+-- share a row with a natively drawn bar, and two different answers show up as
+-- two different borders side by side.
+local function PlaceholderBorderColor(gd)
+    local bc = gd.borderColor or DEFAULT_BORDER_COLOR or { 0, 0, 0, 0.9 }
+    local r, g, b, a = bc[1], bc[2], bc[3], bc[4]
+    if gd.borderClassColor then
+        local _, class = UnitClass("player")
+        local cc = class and C_ClassColor and C_ClassColor.GetClassColor
+            and C_ClassColor.GetClassColor(class)
+        if cc then r, g, b = cc.r, cc.g, cc.b end
+    end
+    return r, g, b, a
+end
+
 local function BuildPlaceholderBar(ph, icon)
-    local bg = ph:CreateTexture(nil, "BACKGROUND")
-    bg:SetPoint("TOPLEFT", icon, "TOPRIGHT", 1, 0)
-    bg:SetPoint("BOTTOMRIGHT", ph, "BOTTOMRIGHT", 0, 0)
+    -- A real StatusBar, not a texture stretched with SetWidth.
+    --
+    -- SetWidth needs the remaining time as a NUMBER, and that number is secret
+    -- in instanced combat -- so a width-driven fill could never show a live bar
+    -- there. A StatusBar takes the secret straight from Blizzard's bar (see
+    -- MirrorBlizzardBar) and renders it without ever exposing it to Lua.
+    local sb = CreateFrame("StatusBar", nil, ph)
+    sb:SetPoint("TOPLEFT", icon, "TOPRIGHT", 1, 0)
+    sb:SetPoint("BOTTOMRIGHT", ph, "BOTTOMRIGHT", 0, 0)
+    sb:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    sb:SetMinMaxValues(0, 1)
+    sb:SetValue(0)
+
+    local bg = sb:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(sb)
     bg:SetColorTexture(0, 0, 0, 0.5)
 
-    local fill = ph:CreateTexture(nil, "ARTWORK")
-    fill:SetTexture("Interface\\TargetingFrame\\UI-StatusBar")
-    fill:SetVertexColor(0.9, 0.6, 0.1)
-    fill:SetPoint("TOPLEFT", bg, "TOPLEFT", 0, 0)
-    fill:SetPoint("BOTTOMLEFT", bg, "BOTTOMLEFT", 0, 0)
+    local timer = sb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    timer:SetPoint("RIGHT", sb, "RIGHT", -4, 0)
 
-    local timer = ph:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    timer:SetPoint("RIGHT", bg, "RIGHT", -4, 0)
-    timer:SetText("12s")
-
-    local name = ph:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    name:SetPoint("LEFT", bg, "LEFT", 4, 0)
+    local name = sb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    name:SetPoint("LEFT", sb, "LEFT", 4, 0)
     name:SetPoint("RIGHT", timer, "LEFT", -4, 0)
     name:SetJustifyH("LEFT")
     name:SetWordWrap(false)
 
-    return { bg = bg, fill = fill, timer = timer, name = name }
+    -- The border a native bar gets from StyleBorder, which a placeholder never
+    -- had -- so a mirrored bar sat in the row with no outline while the bar
+    -- beside it had one (user report 2026-09-17). Anchored to PH, not to the
+    -- StatusBar: a bar's border wraps the whole button, icon included, which is
+    -- what StyleBorder's `d.border:GetParent()` resolves to on that side.
+    local border = CreateFrame("Frame", nil, ph, "BackdropTemplate")
+    border:SetFrameLevel(sb:GetFrameLevel() + 1)
+
+    return { sb = sb, bg = bg, timer = timer, name = name, border = border }
 end
 
-function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
+-- `mirrorSource`, when given, is Blizzard's item frame whose bar this
+-- placeholder stands in for: the slot is LIVE and its fill and countdown are
+-- mirrored from that frame rather than left empty. Used for a tracked bar that
+-- cannot be drawn natively because nothing bound an aura to it -- a totem-driven
+-- one like Consecration. Absent, the placeholder behaves as it always has.
+function cdmModule:GetBuffPlaceholder(group, cdID, groupData, mirrorSource)
     group.placeholders = group.placeholders or {}
     local ph = group.placeholders[cdID]
     if not ph then
@@ -924,7 +1040,6 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
     local preview = self.previewMode
     local bar = ph.bar
     if isBar and bar then
-        local barW = groupData.barWidth  or DEFAULT_BAR_WIDTH
         local barH = groupData.barHeight or DEFAULT_BAR_HEIGHT
         ph.Icon:SetWidth(barH)
         if not ph._nameSet then
@@ -935,19 +1050,54 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
                 ph._nameSet = true
             end
         end
-        bar.bg:Show()
+        bar.sb:Show()
         bar.name:Show()
-        -- A running bar in the preview, so the fill and timer are part of what
-        -- is being positioned; an empty one for Always Show Buffs, because
-        -- that placeholder stands for a buff that is not up.
-        bar.fill:SetWidth(math.max(1, (barW - barH - 1) * 0.65))
-        bar.fill:SetShown(preview)
-        bar.timer:SetShown(preview)
+
+        -- Dressed like the native bars it shares a row with, not like itself.
+        local textSize = math.max(8, math.floor(barH * 0.55 + 0.5))
+        bar.name:SetFont(PLACEHOLDER_BAR_FONT, textSize, "OUTLINE")
+        bar.timer:SetFont(PLACEHOLDER_BAR_FONT, textSize, "OUTLINE")
+        local c = groupData.barColor or PLACEHOLDER_BAR_COLOR
+        bar.sb:SetStatusBarColor(c[1] or 1, c[2] or 0.7, c[3] or 0, c[4] or 1)
+
+        -- Same rectangle StyleBorder draws for a native bar: the whole frame,
+        -- icon included, grown by the thickness on every side.
+        if bar.border then
+            local thickness = groupData.borderThickness or DEFAULT_BORDER_THICKNESS or 1
+            local br, bgc, bb, ba = PlaceholderBorderColor(groupData)
+            bar.border:ClearAllPoints()
+            bar.border:SetPoint("TOPLEFT", ph, "TOPLEFT", -thickness, thickness)
+            bar.border:SetPoint("BOTTOMRIGHT", ph, "BOTTOMRIGHT", thickness, -thickness)
+            bar.border:SetBackdrop({ edgeFile = "Interface\\BUTTONS\\WHITE8X8", edgeSize = thickness })
+            bar.border:SetBackdropBorderColor(br, bgc, bb, ba)
+            bar.border:SetShown(groupData.showBorder ~= false)
+        end
+
+        if mirrorSource then
+            -- Live: Blizzard's bar drives ours, values untouched.
+            MirrorBlizzardBar(bar.sb, mirrorSource)
+            -- Shown only when the countdown actually mirrored: a bar with no
+            -- FontString to read would otherwise sit there with stale text.
+            bar.timer:SetShown(MirrorBlizzardBarText(bar.timer, mirrorSource))
+        elseif preview then
+            -- A running bar in the preview, so the fill and timer are part of
+            -- what is being positioned.
+            bar.sb:SetMinMaxValues(0, 1)
+            bar.sb:SetValue(0.65)
+            bar.timer:SetText("12s")
+            bar.timer:Show()
+        else
+            -- Empty, for Always Show Buffs: this one stands for a buff that is
+            -- not up.
+            bar.sb:SetMinMaxValues(0, 1)
+            bar.sb:SetValue(0)
+            bar.timer:Hide()
+        end
     elseif bar then
-        bar.bg:Hide()
-        bar.fill:Hide()
+        bar.sb:Hide()
         bar.name:Hide()
         bar.timer:Hide()
+        if bar.border then bar.border:Hide() end
     end
 
     local zoom = groupData.iconZoom or DEFAULT_ICON_ZOOM
@@ -975,7 +1125,7 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData)
     -- Drawn as a live buff while previewing: the point is to show how the
     -- group will look when it is up. Dimmed and greyed only when it stands for
     -- a buff that is genuinely not there.
-    if preview then
+    if preview or mirrorSource then
         ph.Icon:SetDesaturated(false)
         ph:SetAlpha(1)
     else
@@ -1197,22 +1347,48 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
                     local cdID = child and child.cooldownID
                     if cdID then
                         local isNative = nativeOn and native:IsNative(cdID)
-                        -- Up because of a totem: the slot has no aura to show,
-                        -- so Blizzard's frame keeps it for this pass.
+                        -- Up because of a totem: the slot has no aura for a
+                        -- cell of ours to bind to.
                         local byTotem = isNative and child:IsShown()
                             and ItemDrivenByTotem(child)
+                        -- ... but Blizzard's own bar still holds the right
+                        -- fill, so a BAR group draws one of ours and mirrors
+                        -- that bar instead of handing the slot back. Without
+                        -- this, one row shows two different looks: Consecration
+                        -- (totem-driven) in Blizzard's style beside Shield of
+                        -- the Righteous in ours (user report 2026-09-17).
+                        --
+                        -- Bar groups only. An icon group has nothing to mirror
+                        -- -- Bar is nil on those children, confirmed by
+                        -- /sq cdmbuff -- so those keep the old behaviour.
+                        local mirrorTotem = byTotem and groupData.isBarGroup
+                            and CanMirrorBlizzardBar(child) and true or false
                         local useCell = isNative and not byTotem
-                        local cell = useCell and native:GetCell(groupName, cdID) or nil
-                        if useCell then
+                        local cell = (useCell or mirrorTotem)
+                            and native:GetCell(groupName, cdID) or nil
+                        if useCell or mirrorTotem then
                             ParkBorrowedFrame(child)
                         else
                             -- Blizzard's frame is the slot again (not native,
-                            -- or driven by a totem), so it must stop being
-                            -- chased AND get its alpha back -- the layout below
-                            -- is about to place it in the group for real.
+                            -- or driven by a totem with no bar to mirror), so
+                            -- it must stop being chased AND get its alpha back
+                            -- -- the layout below is about to place it in the
+                            -- group for real.
                             UnparkBorrowedFrame(child)
                         end
-                        local slotFrame = cell or ((not useCell) and child) or nil
+                        local slotFrame
+                        if mirrorTotem then
+                            -- A live placeholder: its fill and countdown come
+                            -- from the frame we just parked.
+                            local ph = self:GetBuffPlaceholder(group, cdID, groupData, child)
+                            -- The (permanently empty) native cell rides along
+                            -- invisibly, exactly as it does for an inactive
+                            -- buff -- see SettleNativeCells.
+                            ph._sqCell = cell
+                            slotFrame = ph
+                        else
+                            slotFrame = cell or ((not useCell) and child) or nil
+                        end
                         if slotFrame then
                             if child:IsShown() then
                                 shown[#shown + 1] = slotFrame
@@ -1223,8 +1399,9 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
                             end
                         end
                         -- Its cell waits out of sight while Blizzard's frame
-                        -- stands in.
-                        if byTotem then
+                        -- stands in. Not needed when we mirror instead: the
+                        -- placeholder carries the cell itself.
+                        if byTotem and not mirrorTotem then
                             local standby = native:GetCell(groupName, cdID)
                             if standby then idle[#idle + 1] = standby end
                         end
@@ -4455,12 +4632,33 @@ function cdmModule:PrintBuffDiagnostics()
                         else mirrorTxt = "|cFFFF5555NOT hooked|r" end
                         local proxyTxt = cdmModule.proxyFrames[cdID] and "yes" or "|cFFFF5555none|r"
 
-                        print(("    %s (cd %s, spell %s) IsActive=%s auraInstanceID=%s unit=%s dur=%s tracked=%s mirror=%s proxy=%s"):format(
+                        -- Is there a StatusBar of Blizzard's to MIRROR?
+                        --
+                        -- A tracked bar that is up because of a totem has no aura
+                        -- for a slot of ours to bind to, so it cannot be drawn
+                        -- natively -- but Blizzard's own bar already holds the
+                        -- right fill whatever drives it. Mirroring that bar's
+                        -- min/max/value is how EllesmereUI draws every tracked
+                        -- bar, and it is why theirs handles Consecration without
+                        -- ever reading the totem API. `Bar` is a plain field on
+                        -- the item frame there; this reports whether it is one
+                        -- here too, which is the whole premise.
+                        local barTxt
+                        local blzBar = child.Bar
+                        if blzBar == nil then barTxt = "|cFFFF5555nil|r"
+                        elseif BH.Secrets.IsSecret(blzBar) then barTxt = "|cFFFFD100SECRET|r"
+                        else
+                            local okType, objType = pcall(blzBar.GetObjectType, blzBar)
+                            barTxt = okType and ("|cFF33FF33" .. tostring(objType) .. "|r")
+                                or "|cFFFF5555threw|r"
+                        end
+
+                        print(("    %s (cd %s, spell %s) IsActive=%s auraInstanceID=%s unit=%s dur=%s tracked=%s mirror=%s proxy=%s Bar=%s"):format(
                             name, tostring(cdID), tostring(sid), activeTxt, iidTxt,
                             tostring(child.auraDataUnit),
                             durTxt,
                             tostring(sid and cdmModule.buffItemForSpell[sid] ~= nil),
-                            mirrorTxt, proxyTxt))
+                            mirrorTxt, proxyTxt, barTxt))
                     end
                 end
             end

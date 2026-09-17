@@ -8,6 +8,26 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.81
+
+- Fixed a spell that a talent replaces never showing its cooldown on the
+  Cooldown Manager. It stayed lit and showed no countdown text while the
+  spellbook clearly had it on cooldown.
+
+  Some talents swap a spell for another version of itself, and the cooldown
+  then belongs to the replacement. Lay on Hands with Empyreal Ward is one:
+  the game reports it as a different spell entirely, and the original answers
+  "ready, no cooldown" forever. Every cooldown, charge, usability and sorting
+  check now follows the replacement, so a talented spell reads exactly like an
+  untalented one. Spells that no talent replaces are unaffected
+
+- Fixed a tracked cooldown briefly showing a buff's duration instead of its
+  own cooldown. If the spell also applied a buff, the icon swept for the few
+  seconds of that buff and then lit back up, never showing the real cooldown
+  or its text. Cooldown icons now always show their cooldown; tracking the
+  buff itself is what the Buffs and Buff Bars groups are for
+
+
 V1.80
 
 - Cooldown Manager group Spacing now goes negative, down to -20, so shaped
