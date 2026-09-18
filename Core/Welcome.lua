@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.83"] = {
+        "Fixed creating a new profile doing nothing -- typing a name and clicking Create left no profile behind. The game changed how these popup windows hand over what you typed, so the name never arrived. Pressing Enter in the box was broken the same way.",
+    },
     ["1.82"] = {
         "Tracked buff bars for ground effects -- Consecration, Death and Decay -- now use this addon's own bar instead of Blizzard's. They stood out in a row of bars with the wrong look, no border and no spacing, because a ground effect puts no buff on you for a bar of ours to attach to.",
         "Buff bar placeholders (\"Always Show Buffs\") now draw their border, so a row mixing held slots and live buffs looks the same throughout.",

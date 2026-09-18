@@ -8,6 +8,25 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.82
+
+- Fixed a tracked buff bar drawn in Blizzard's style instead of this addon's
+  whenever the buff comes from a ground effect. In a row of bars, Consecration
+  looked nothing like the bars beside it: Blizzard's own rounded outline and
+  fill rather than yours, with no border and no spacing of its own.
+
+  A ground effect puts no buff on you -- the game tracks it as a totem instead
+  -- so there was no aura for this addon to attach its own bar to, and the slot
+  was handed back to Blizzard's frame every pass. Those bars now mirror
+  Blizzard's own fill and countdown onto a bar of ours, so a ground effect
+  reads exactly like every other tracked buff: your bar texture, your colour,
+  your font, your border. Death Knight Death and Decay and anything else driven
+  the same way are fixed by the same change
+
+- Tracked buff bar placeholders draw their border. The "Always Show Buffs"
+  slots were drawing without one, so a row mixing held slots and live buffs
+  showed two different looks
+
 V1.81
 
 - Fixed a spell that a talent replaces never showing its cooldown on the

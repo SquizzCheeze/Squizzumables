@@ -1924,38 +1924,44 @@ end
 -- ============================================================================
 
 -- StaticPopup for New Profile name input
+-- 12.x dialogs expose their edit box through GetEditBox(); the old dialog.editBox
+-- field no longer exists, so reading it errored and Create appeared to do nothing.
+local function CreateProfileFromPopup(name)
+    name = name and name:match("^%s*(.-)%s*$") or ""
+    if name == "" then return end
+
+    local copyFrom = BH:GetActiveProfileName()
+    -- Save current state before copying
+    BH:SaveToProfile()
+    if BH:CreateProfile(name, copyFrom) then
+        BH:SwitchToProfile(name)
+        BH:LoadAllFramePositions()
+        BH:ApplyAllFrameScales()
+        BH:UpdateFrameLock()
+        BH:UpdateButtons()
+        BH:RefreshSettingsTab()
+        print("Squizzumables: Created and switched to profile '" .. name .. "'")
+    else
+        print("Squizzumables: Profile '" .. name .. "' already exists.")
+    end
+end
+
 StaticPopupDialogs["SQUIZZUMABLES_NEW_PROFILE"] = {
     text = "Enter a name for the new profile:",
     button1 = "Create",
     button2 = "Cancel",
     hasEditBox = true,
     maxLetters = 32,
-    OnAccept = function(self)
-        local name = self.editBox:GetText():match("^%s*(.-)%s*$")
-        if name and name ~= "" then
-            local copyFrom = BH:GetActiveProfileName()
-            -- Save current state before copying
-            BH:SaveToProfile()
-            if BH:CreateProfile(name, copyFrom) then
-                BH:SwitchToProfile(name)
-                BH:LoadAllFramePositions()
-                BH:ApplyAllFrameScales()
-                BH:UpdateFrameLock()
-                BH:UpdateButtons()
-                BH:RefreshSettingsTab()
-                print("Squizzumables: Created and switched to profile '" .. name .. "'")
-            else
-                print("Squizzumables: Profile '" .. name .. "' already exists.")
-            end
-        end
+    OnAccept = function(dialog)
+        local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.EditBox or dialog.editBox
+        CreateProfileFromPopup(editBox and editBox:GetText())
     end,
-    EditBoxOnEnterPressed = function(self)
-        local parent = self:GetParent()
-        StaticPopupDialogs["SQUIZZUMABLES_NEW_PROFILE"].OnAccept(parent)
-        parent:Hide()
+    EditBoxOnEnterPressed = function(editBox)
+        CreateProfileFromPopup(editBox:GetText())
+        editBox:GetParent():Hide()
     end,
-    EditBoxOnEscapePressed = function(self)
-        self:GetParent():Hide()
+    EditBoxOnEscapePressed = function(editBox)
+        editBox:GetParent():Hide()
     end,
     timeout = 0,
     whileDead = true,
