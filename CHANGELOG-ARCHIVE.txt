@@ -8,6 +8,16 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.83
+
+- Fixed creating a new profile doing nothing. Typing a name and clicking
+  Create left no profile behind and printed nothing at all.
+
+  The game changed how these small popup windows hand over what you typed:
+  the box is no longer reachable the way it was, so reading the name failed
+  before anything else could run. Pressing Enter in the box was broken the
+  same way. Both work again
+
 V1.82
 
 - Fixed a tracked buff bar drawn in Blizzard's style instead of this addon's

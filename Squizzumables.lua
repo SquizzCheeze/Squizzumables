@@ -10493,6 +10493,12 @@ BH.frame:RegisterEvent("PLAYER_ALIVE")     -- resurrection accepted (before or a
 BH.frame:RegisterEvent("PLAYER_UNGHOST")   -- leaving ghost form (corpse run / spirit healer)
 BH.frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")  -- spec swap → may switch profiles
 BH.frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")  -- feast: player's own cast
+-- Temporary weapon enchants (rogue poisons, weapon oils, sharpening stones).
+-- Nothing else reports them: they put no aura on the player, so UNIT_AURA never
+-- fires, and once applied they consume nothing, so BAG_UPDATE_DELAYED does not
+-- either. Without this the reminder cleared only when some unrelated event
+-- happened along.
+BH.frame:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
 C_ChatInfo.RegisterAddonMessagePrefix("SQ_FEAST")
 C_ChatInfo.RegisterAddonMessagePrefix("SQ_CALLOUT")
 BH.frame:RegisterEvent("CHAT_MSG_ADDON")
@@ -10689,6 +10695,11 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
                 BH:UpdateDeathTallyDisplay()
             end
         end
+    elseif event == "UNIT_INVENTORY_CHANGED" then
+        -- A temporary weapon enchant went on or fell off -- see the registration
+        -- comment. Debounced rather than immediate: this arrives in bursts when
+        -- gear or bag contents shift, and one rebuild covers the whole burst.
+        BH:ScheduleUpdateButtons()
     elseif event == "UNIT_AURA" then
         -- Fires for every unit in the group; debounce to avoid rebuilding buttons on every party member aura change
         BH:ScheduleUpdateButtons()
@@ -10721,6 +10732,12 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         if arg1 == "player" then
             BH:OnFeastSpellcast(arg1, castGUID, spellID)
             BH:OnReminderSpellcast(spellID)
+            -- Rogue poisons are spells that leave no aura and consume nothing,
+            -- so the cast itself is the earliest signal that a reminder may now
+            -- be satisfied -- earlier than the weapon-enchant event above.
+            -- Debounced, and UpdateButtons does not rebuild in combat anyway,
+            -- so this costs nothing during a fight.
+            BH:ScheduleUpdateButtons()
         end
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, payload, _, sender = arg1, ...

@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.84"] = {
+        "Reminder buttons for poisons, oils, flasks and food now clear the moment you apply them, instead of lingering for several seconds.",
+        "Weapon enchants like rogue poisons and oils put no buff on you and consume nothing from your bags, so nothing was telling the addon they had been applied - the reminder only cleared when some unrelated event happened along. That is why it felt quick in a group and slow on your own.",
+    },
     ["1.83"] = {
         "Fixed creating a new profile doing nothing -- typing a name and clicking Create left no profile behind. The game changed how these popup windows hand over what you typed, so the name never arrived. Pressing Enter in the box was broken the same way.",
     },

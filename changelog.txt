@@ -1,12 +1,20 @@
 Squizzumables Changelog
 =======================
 
-V1.83
+V1.84
 
-- Fixed creating a new profile doing nothing. Typing a name and clicking
-  Create left no profile behind and printed nothing at all.
+- Reminder buttons now clear the moment you apply something. Poisons, oils,
+  flasks and food could sit there for several seconds after you had already
+  used them, which read as the addon simply not noticing.
 
-  The game changed how these small popup windows hand over what you typed:
-  the box is no longer reachable the way it was, so reading the name failed
-  before anything else could run. Pressing Enter in the box was broken the
-  same way. Both work again
+  Rogue poisons and weapon oils are temporary weapon enchants, and nothing was
+  telling this addon they had been applied. An enchant puts no buff on you, so
+  the buff event never fires; and once applied it consumes nothing from your
+  bags, so the bag event never fires either. The reminder only cleared when
+  some unrelated event happened along -- in a group that was usually somebody
+  else's buffs changing, which is why it felt quick in a raid and slow on your
+  own.
+
+  It now watches for the enchant itself, and also refreshes on your own casts,
+  so a poison clears its reminder as the cast lands rather than whenever the
+  next thing happens to occur
