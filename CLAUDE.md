@@ -382,6 +382,19 @@ registration) — see the "Options Panel" / "Main Options Panel" / per-feature "
 sections in `Squizzumables.lua`. Each feature area (raid tools, text reminders, sounds, class
 buffs, dungeon callouts, CDM) has its own tab-building function.
 
+**`StaticPopup`: the edit box is `dialog:GetEditBox()`, NOT `dialog.editBox`.** The old field no
+longer exists on 12.x, so reading it raises inside the popup's own callback — and an error there
+produces no visible feedback at all, so the symptom is that the accept button *does nothing*.
+That is how New Profile was broken (fixed 1.83), and Avatar hit the identical bug first. Use the
+defensive form, since only the last of these is current:
+
+    local editBox = dialog.GetEditBox and dialog:GetEditBox() or dialog.EditBox or dialog.editBox
+
+Note `EditBoxOnEnterPressed` receives the **edit box**, not the dialog, so route both it and
+`OnAccept` through one shared handler rather than having Enter reach back into `OnAccept` — the
+old code did that and was broken by the same change. More generally: when a button appears
+inert, suspect an error swallowed inside its handler before suspecting the logic behind it.
+
 **Taint safety** is a first-order design constraint, not an afterthought — WoW's combat lockdown
 model forbids addons from mutating protected/secure frames during combat:
 - The CDM module (`Squizzumables_CDM.lua`) **never reparents** Blizzard's Cooldown Viewer frames.
@@ -940,6 +953,19 @@ clickable reminder buttons. Class buff entries support flags like `petCheck`, `s
 `tankBuff`, `weaponImbue`, `auraCheck`, and `buffVariants` (mutually-exclusive/equivalent buff
 IDs) — follow the existing per-class entry shape in `Squizzumables_Config.lua` when adding new
 class/spec handling rather than inventing a new flag scheme.
+
+**A TEMPORARY WEAPON ENCHANT FIRES NEITHER OF THE OBVIOUS EVENTS.** Rogue poisons, weapon oils
+and sharpening stones put no aura on the player (so `UNIT_AURA` never fires) and consume nothing
+from bags once applied (so `BAG_UPDATE_DELAYED` never fires either). `UNIT_INVENTORY_CHANGED` is
+the one that does, and it was registered nowhere until 1.84 — so those reminders cleared only
+when some unrelated event wandered past. In a group that was usually another member's
+`UNIT_AURA`, which is exactly why the bug read as "instant in a raid, seconds-long solo" and hid
+for so long. Rogue poisons are also *spells*, so the player's own `UNIT_SPELLCAST_SUCCEEDED` is
+the earliest signal of all and is routed to the same debounced `ScheduleUpdateButtons`.
+
+The lesson generalises: before assuming a reminder's *detection* is broken, check that something
+actually tells it to look. The detection half here (`HasFlaskBuff`, the `GetWeaponEnchantInfo`
+readers, the bag cache) was unchanged since the 1.59 baseline and was never at fault.
 
 **Text reminder registry and gates** (`Squizzumables.lua`, "Text reminder registry"): every
 standalone text reminder is one record in `BH.REMINDERS`. Frame construction, the options-tab
