@@ -13,14 +13,17 @@ V1.86
   Off by default. It is "Show While Active", beside Glow On Ready in a
   group's settings.
 
-  This existed once and was removed in V1.81, because an icon that draws an
-  aura's duration in place of its cooldown gets it badly wrong for something
-  like Lay on Hands with Empyreal Ward talented: a few seconds of sweep, then
-  the icon lights up again with the real cooldown never drawn at all. What is
-  different now is that only a buff landing on YOU counts. Empyreal Ward sits
-  on the person you healed, so Lay on Hands keeps showing its cooldown;
-  Avenging Wrath sits on you, so it does not.
+  This is the game's own behaviour for these icons, borrowed rather than
+  rebuilt. Blizzard's Cooldown Manager already gives a self buff precedence
+  over the spell's cooldown until it is gone; this addon now shows the result
+  on its own icons instead of drawing only the cooldown. Borrowing is also
+  what makes it work in combat -- a buff's remaining time cannot be looked up
+  once auras are secret, but the game's own frames can still be copied from
+  without any of it being read.
 
-  In combat this needs the ability to also be in Blizzard's Tracked Buffs --
-  once auras are secret, that is the only way left to read how long a running
-  one has left. Out of combat it always works.
+  Only a buff that lands on YOU counts. This behaviour existed once and was
+  removed in V1.81 because it got Lay on Hands with Empyreal Ward talented
+  badly wrong -- a few seconds of sweep, then the icon lighting back up with
+  the real cooldown never drawn. Empyreal Ward sits on the person you healed,
+  so Lay on Hands keeps showing its cooldown; Avenging Wrath sits on you, so
+  it does not.
