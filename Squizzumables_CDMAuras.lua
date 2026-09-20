@@ -101,6 +101,13 @@ local groups = {}
 -- the layout asks, so a failed build falls back to the borrowed path by itself.
 local nativeCooldowns = {}
 
+-- Active-state overlays, keyed by cooldownID. Deliberately NOT part of
+-- `groups`: an overlay belongs to one cooldown icon rather than to a group's
+-- layout, it is built from a different trigger, and keeping it separate means
+-- the buff path cannot be disturbed by it. Declared up here so EnsureTicker,
+-- below, can refresh these containers too.
+local activeOverlays = {}
+
 local availability     -- nil = not checked yet
 local refreshTicker
 Native.lastError = nil
@@ -585,6 +592,14 @@ local function EnsureTicker()
                 if c:IsVisible() then pcall(c.UpdateAllAuras, c) end
             end
         end
+        -- Active overlays need this for the same reason and more so: a big
+        -- cooldown is reapplied rather than refreshed, and a slot that has
+        -- locked onto the previous instance would show nothing the second time
+        -- the ability was pressed.
+        for _, st in pairs(activeOverlays) do
+            local c = st.container
+            if c and c:IsVisible() then pcall(c.UpdateAllAuras, c) end
+        end
     end)
 end
 
@@ -652,6 +667,135 @@ local function Build(groupName, st, entries, groupFrame)
         if not st.active[cdID] then cell:Hide() end
     end
     if #st.containers > 0 then EnsureTicker() end
+end
+
+-- ============================================================================
+-- Active-state overlays -- Essential/Utility "Show While Active"
+-- ============================================================================
+--
+-- The same engine and the same one-slot shape as a tracked buff, with a
+-- different host: the button covers a COOLDOWN proxy's icon, and the engine
+-- shows it only while that ability's own buff is on the player. So the aura's
+-- swipe and countdown are drawn C-side for exactly as long as the ability is
+-- running, and the moment it drops the button goes with it, leaving the
+-- proxy's real cooldown -- which was being drawn underneath the whole time --
+-- as what remains. Nothing has to switch the two over.
+--
+-- This is the ONLY route that survives combat, and the reason is worth
+-- recording. Blizzard's own active icons cache values taken from the aura, so
+-- those numbers are AURA-aspect secrets; every numeric cooldown setter
+-- (SetCooldown, SetCooldownFromExpirationTime, SetCooldownUNIX) accepts a
+-- secret from tainted code only when it carries the COOLDOWN aspect. So the
+-- values can neither be read nor passed on -- forwarding them is what produced
+-- "Secret values are only allowed during untainted execution", ~114 times a
+-- fight. Handing the slot to the engine sidesteps the question entirely: the
+-- duration object never enters Lua.
+--
+-- EllesmereUI arrived at the same shape for the same problem, for the same
+-- reason (EllesmereUICdmFakeActive.lua, its "engine-slot driver").
+local function ReleaseOverlay(cdID)
+    local st = activeOverlays[cdID]
+    if not st then return end
+    -- Containers cannot be destroyed, only switched off -- as in Retire.
+    if st.container then
+        pcall(st.container.SetEnabled, st.container, false)
+        pcall(st.container.Hide, st.container)
+    end
+    activeOverlays[cdID] = nil
+end
+
+local function BuildOverlay(cdID, proxy, gd, ids)
+    local c = NewContainer(proxy)
+    if not c then return nil end
+    -- Above everything the proxy draws -- its icon, its swipe and its countdown
+    -- text -- because while the buff is up this stands in for all three.
+    pcall(c.SetFrameLevel, c, proxy:GetFrameLevel() + 10)
+
+    local st = { groupData = gd, buttons = setmetatable({}, { __mode = "k" }) }
+    -- A fresh host every build: the slot makes the button-to-host binding
+    -- immutable, so a reused one would still be anchored to the old proxy.
+    local host = NewHost(proxy)
+    -- HELPFUL only, and on the player, which is what lets includeSpellIDs work
+    -- at all: identity filtering is permitted for a helpful aura on an
+    -- assistable unit, and the player always is -- regardless of whether the
+    -- spell itself is secret.
+    local ok, slot = pcall(c.AddAuraSlot, c, "sqactive" .. tostring(cdID), FILTERS.player[1], {
+        candidateFilters = { includeSpellIDs = ids },
+        initializeFrame = MakeInitializer(st, host, false),
+    })
+    if not (ok and slot) then
+        Note(ok and ("AddAuraSlot returned nothing for active " .. tostring(cdID)) or slot)
+        pcall(c.Hide, c)
+        return nil
+    end
+
+    -- Unit LAST: before the slot exists, UNIT_AURA is never registered.
+    local okU, err = pcall(function()
+        c:SetUnit("player")
+        c:SetEnabled(true)
+        c:Show()
+        c:UpdateAllAuras()
+    end)
+    if not okU then
+        Note(err)
+        pcall(c.SetEnabled, c, false)
+        pcall(c.Hide, c)
+        return nil
+    end
+
+    st.container, st.host, st.proxy = c, host, proxy
+    return st
+end
+
+--- wanted: [cooldownID] = { proxy = frame, groupData = table, entry = registry entry }
+function Native:SyncActiveOverlays(wanted)
+    if InCombatLockdown() then return end
+    for cdID in pairs(activeOverlays) do
+        if not (wanted and wanted[cdID]) then ReleaseOverlay(cdID) end
+    end
+    if not (wanted and self:IsEnabled()) then return end
+
+    for cdID, w in pairs(wanted) do
+        -- One overlay at a time, each pcall'd: a failure drops that icon back
+        -- to showing only its cooldown rather than escaping into Reconcile.
+        local ok, err = pcall(function()
+            local ids, idSig = AuraSpellIDs(w.entry)
+            if idSig == "" then ReleaseOverlay(cdID) return end
+
+            -- Rebuild only when WHAT is shown changes, or when the proxy itself
+            -- has been replaced -- the button is bound to a host anchored to
+            -- that exact frame, so a new proxy needs a new overlay. Every
+            -- rebuild strands its container for the session, so this matters.
+            local st = activeOverlays[cdID]
+            if st and (st.sig ~= idSig or st.proxy ~= w.proxy) then
+                ReleaseOverlay(cdID)
+                st = nil
+            end
+            if not st then
+                st = BuildOverlay(cdID, w.proxy, w.groupData, ids)
+                if not st then return end
+                st.sig = idSig
+                activeOverlays[cdID] = st
+            end
+
+            st.groupData = w.groupData
+            local styleSig = StyleSignature(w.groupData)
+            if styleSig ~= st.styleSig then
+                for _, d in pairs(st.buttons) do Style(d, w.groupData) end
+                st.styleSig = styleSig
+            end
+        end)
+        if not ok then
+            Note(err)
+            ReleaseOverlay(cdID)
+        end
+    end
+
+    if next(activeOverlays) then EnsureTicker() end
+end
+
+function Native:ReleaseAllActiveOverlays()
+    for cdID in pairs(activeOverlays) do ReleaseOverlay(cdID) end
 end
 
 -- ============================================================================
@@ -732,6 +876,7 @@ end
 
 function Native:ReleaseAll()
     for groupName in pairs(groups) do Release(groupName) end
+    self:ReleaseAllActiveOverlays()
 end
 
 -- /sq cdmnative -- unlisted; see CLAUDE.md.

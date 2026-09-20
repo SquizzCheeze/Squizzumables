@@ -792,23 +792,19 @@ end
 
 -- Does Blizzard's own item frame drive this proxy's sweep, rather than us?
 --
--- A tracked buff: always. It has no spell cooldown of its own to draw, so
+-- Tracked buffs only. A buff has no spell cooldown of its own to draw, so
 -- there is nothing to give up, and this is how V1.85 made buff sweeps survive
 -- combat at all.
 --
--- An Essential/Utility icon: only under "Show While Active", because handing
--- the widget over means Blizzard's rules apply -- and Blizzard gives a self
--- buff PRECEDENCE over the spell's cooldown until it is gone (its own comment
--- on CheckCacheCooldownValuesFromAura). That is precisely the requested
--- behaviour, and precisely the V1.81 regression when it is not wanted, which
--- is why it is opt-in and still gated on selfAura: Blizzard will just as
--- happily draw a TARGET aura's duration there (Empyreal Ward on Lay on Hands),
--- and that is the case the option must never resurrect.
+-- An Essential/Utility icon was briefly included here, under "Show While
+-- Active", and it could not work: Blizzard hands a COOLDOWN item plain
+-- start/duration numbers, and in combat those are aura-derived secrets that a
+-- numeric setter refuses from tainted code. That display is an engine-drawn
+-- overlay now instead (Native:SyncActiveOverlays), which needs nothing from
+-- this mirror -- the proxy simply keeps drawing its cooldown underneath.
 local function MirrorOwnsProxy(proxy)
     if not proxy then return false end
-    if proxy.viewerType == "buff" or proxy.viewerType == "buffbar" then return true end
-    if not proxy._sqShowActiveBuff then return false end
-    return proxy.selfAura ~= false
+    return proxy.viewerType == "buff" or proxy.viewerType == "buffbar"
 end
 cdmModule.MirrorOwnsProxy = MirrorOwnsProxy
 cdmModule.AuraDisplayActive = AuraDisplayActive
@@ -864,21 +860,11 @@ local function MirrorBlizzardCooldown(child)
         end
     end
 
-    -- Which way the sweep runs is a property of what is being drawn, not of
-    -- the frame: an aura winds down as a filling sweep the way our own buff
-    -- icons do, a cooldown unwinds the normal way. Blizzard tells us which it
-    -- just cached, so the same hook serves both instead of the buff-only
-    -- SetReverse(true) this had when only buffs could reach it.
-    local function Reverse(p)
-        if p.viewerType == "buff" or p.viewerType == "buffbar" then return true end
-        return AuraDisplayActive(child)
-    end
-
     if cdw.SetCooldownFromDurationObject then
         hooksecurefunc(cdw, "SetCooldownFromDurationObject",
             MirrorTo(function(p, durObj, ...)
                 if durObj and p.Cooldown.SetCooldownFromDurationObject then
-                    p.Cooldown:SetReverse(Reverse(p))
+                    p.Cooldown:SetReverse(true)
                     p.Cooldown:SetCooldownFromDurationObject(durObj, ...)
                 end
             end))
@@ -898,24 +884,15 @@ local function MirrorBlizzardCooldown(child)
     -- numbers (CooldownFrame_Set), which in combat are derived from secret
     -- data and therefore arrive secret.
     --
-    -- So mirror while the numbers are readable -- which is out of combat, and
-    -- is when the aura countdown genuinely appears -- and otherwise stand down
-    -- and let UpdateProxyCooldown draw the spell's own cooldown from its
-    -- duration object, which stays legal in combat. Marked on the proxy rather
-    -- than inferred there, because only this hook ever sees the values.
-    --
-    -- The "is it running" signals are NOT affected: the glow and the
-    -- un-greying read cooldownUseAuraDisplayTime, which Blizzard assigns from
-    -- plain literals and is never secret. So in combat the icon still says the
-    -- ability is up; it is only the number that falls back to the cooldown.
+    -- Only tracked buffs reach this hook now (MirrorOwnsProxy), and Blizzard
+    -- drives those through the duration-object setter above, so in practice
+    -- this one either fires with readable numbers or does not fire at all.
+    -- The guard stays regardless: the cost of being wrong once is an error
+    -- every time Blizzard refreshes the frame, for the rest of the fight.
     hooksecurefunc(cdw, "SetCooldown",
         MirrorTo(function(p, start, duration, ...)
-            if BH.Secrets.HasAnySecret(start, duration) then
-                p._sqMirrorBlocked = true
-                return
-            end
-            p._sqMirrorBlocked = nil
-            p.Cooldown:SetReverse(Reverse(p))
+            if BH.Secrets.HasAnySecret(start, duration) then return end
+            p.Cooldown:SetReverse(true)
             p.Cooldown:SetCooldown(start, duration, ...)
         end))
 
@@ -1698,18 +1675,18 @@ end
 -- up within a fifth of a second, rather than waiting for a reconcile that will
 -- not happen until combat ends.
 --
--- All FOUR viewers, not just the two buff ones: "Show While Active" borrows an
--- Essential/Utility item's sweep the same way. Installing the hook is not the
--- same as using it -- MirrorOwnsProxy decides that per proxy, every call -- so
--- a group without the option set is completely unaffected.
+-- The two BUFF viewers only. Essential/Utility items were briefly included,
+-- when "Show While Active" was going to borrow their sweep; that could never
+-- work (see MirrorOwnsProxy) and the display is an engine-drawn overlay now,
+-- so hooking them would install a closure on every cooldown widget in the game
+-- for a mirror that always declines.
 --
--- Through ForEachViewerItem rather than GetChildren: the Essential and Utility
--- viewers pool their item frames and hand them out lazily, and a plain child
--- sweep can easily run before either has acquired any. That is the same reason
--- the "available" alert on a utility spell needed the pool walk.
-local function MirrorAllViewerCooldowns()
-    for _, viewerInfo in ipairs(ALL_VIEWERS) do
-        local viewer = _G[viewerInfo.name]
+-- Through ForEachViewerItem rather than GetChildren: item frames are pooled
+-- and handed out lazily, so a plain child sweep can run before a viewer has
+-- acquired any.
+local function MirrorAllBuffCooldowns()
+    for _, viewerName in ipairs(BUFF_VIEWERS) do
+        local viewer = _G[viewerName]
         if viewer then
             ForEachViewerItem(viewer, function(child)
                 if child and child.cooldownID then
@@ -2537,32 +2514,28 @@ local function UpdateProxyCooldown(proxy)
     -- once auras are secret. Both paths fell through exactly when the feature
     -- mattered, which is what "it doesn't work in combat" was.
     --
-    -- Blizzard's own Essential/Utility item already draws this. Its
+    -- Nor is it copied off Blizzard's own active icon, which was the second
+    -- attempt. Blizzard does draw exactly this (its
     -- CheckCacheCooldownValuesFromAura gives a self buff precedence over the
-    -- spell's cooldown until the buff is gone, then reverts -- the behaviour
-    -- asked for, written by the people whose code is not tainted and can
-    -- therefore read the aura in combat. So we borrow the result rather than
-    -- recomputing it: MirrorBlizzardCooldown forwards the values Blizzard
-    -- hands its widget, opaque duration objects and secrets alike, and nothing
-    -- is ever read into Lua. Same mechanism that made tracked buff sweeps work
-    -- in combat in V1.85.
+    -- spell's cooldown until it is gone), but the values it caches are taken
+    -- from the aura and are therefore AURA-aspect secrets, while a numeric
+    -- cooldown setter accepts a secret from tainted code only when it carries
+    -- the COOLDOWN aspect. Forwarding them raised an error on every refresh.
     --
-    -- Handing the widget over means not fighting it: the pass below would wipe
-    -- the mirrored sweep within a fifth of a second, which is the bug the
-    -- tracked-buff early return further down exists for.
+    -- The COUNTDOWN while active is not drawn here at all: it is an
+    -- engine-drawn overlay that covers this icon while the buff is up
+    -- (Native:SyncActiveOverlays). This pass therefore keeps drawing the real
+    -- cooldown underneath, unchanged and uninterrupted, which is exactly what
+    -- should be showing the instant the overlay goes away.
     --
-    -- Ownership is given up the moment the mirror reports it cannot forward
-    -- Blizzard's numbers (_sqMirrorBlocked, set in the SetCooldown hook for
-    -- secret values). Active state is tracked either way: that is what keeps
-    -- the glow and the colour right in combat even when the countdown has
-    -- fallen back to the spell's own cooldown.
-    local mirrorOwned, activeNow = false, nil
-    if not isBuffEntry and MirrorOwnsProxy(proxy) then
+    -- What IS needed here is whether the ability is running, because the glow
+    -- and the un-greying are ours. Blizzard's item frame answers that with
+    -- cooldownUseAuraDisplayTime, a flag it assigns from plain literals, so it
+    -- stays readable in combat when nothing else about the aura does.
+    local activeNow = nil
+    if not isBuffEntry and proxy._sqShowActiveBuff and proxy.selfAura ~= false then
         local item = cdmModule.viewerItems[proxy.cooldownID]
-        if item then
-            activeNow = AuraDisplayActive(item) or nil
-            mirrorOwned = not proxy._sqMirrorBlocked
-        end
+        if item then activeNow = AuraDisplayActive(item) or nil end
     end
     proxy._sqActiveNow = activeNow
 
@@ -2669,7 +2642,7 @@ local function UpdateProxyCooldown(proxy)
     if proxy.viewerType == "buff" then return end
 
     -- No active buff â€” show normal spell cooldown
-    if not mirrorOwned then proxy.Cooldown:SetReverse(false) end
+    proxy.Cooldown:SetReverse(false)
     if proxy.Count then
         -- Show spell charges if applicable.
         --
@@ -2692,11 +2665,6 @@ local function UpdateProxyCooldown(proxy)
     -- Through LiveSpellID: a talent-overridden spell keeps its cooldown on the
     -- replacement, and asking the base one returns nothing at all -- no sweep,
     -- no countdown text. See LiveSpellID for the Lay on Hands case.
-    -- Charges above still apply when the mirror owns the sweep -- Blizzard
-    -- draws those on a separate region we do not borrow -- but the sweep
-    -- itself is no longer ours to set.
-    if mirrorOwned then return end
-
     local liveID = LiveSpellID(proxy.spellID)
     local durationObj = C_Spell.GetSpellCooldownDuration and C_Spell.GetSpellCooldownDuration(liveID)
     if durationObj then
@@ -4550,6 +4518,10 @@ function cdmModule:Reconcile()
     -- Buff entries each group will draw natively, handed to the native module
     -- once the loop is done (Squizzumables_CDMAuras.lua).
     local nativeByGroup = {}
+    -- [cooldownID] = { proxy, groupData, entry } -- the Essential/Utility icons
+    -- that want an engine-drawn active overlay. Collected here and handed over
+    -- whole, so an icon that stops wanting one is released by its absence.
+    local activeWanted = {}
 
     -- Process each discovered cooldown (pure API data, no frame references)
     for cdID, cdData in pairs(discovered) do
@@ -4648,6 +4620,21 @@ function cdmModule:Reconcile()
                     -- "Show While Active" -- see UpdateProxyCooldown.
                     proxy.selfAura = entry.selfAura
                     group.members[cdID] = proxy
+
+                    -- "Show While Active": ask for the engine-drawn overlay
+                    -- that draws this ability's own buff while it is running.
+                    --
+                    -- selfAura is checked here as well as at display time, so
+                    -- an ability whose buff lands on the TARGET (Lay on Hands
+                    -- with Empyreal Ward) never has a slot built for it at
+                    -- all, rather than building one that must not be shown.
+                    if groupData and groupData.showActiveBuff
+                       and entry.viewerType ~= "buff" and entry.viewerType ~= "buffbar"
+                       and entry.selfAura ~= false then
+                        activeWanted[cdID] = {
+                            proxy = proxy, groupData = groupData, entry = entry,
+                        }
+                    end
                 end
             end
         else
@@ -4681,6 +4668,12 @@ function cdmModule:Reconcile()
     -- the layout below finds their cells. Every group is passed through, even
     -- those with nothing native, so one that lost its buffs is released.
     if self.native then self.native:SyncAll(nativeByGroup) end
+
+    -- The active overlays, from the same pass and released the same way: every
+    -- icon that still wants one is passed every time, so one whose option was
+    -- switched off -- or whose proxy has been rebuilt underneath it -- is torn
+    -- down by its absence rather than needing to be noticed.
+    if self.native then self.native:SyncActiveOverlays(activeWanted) end
 
     -- Position, then lay out. Positioning first means an anchored group is
     -- already attached to its target before sizes are computed, so nothing
@@ -4769,7 +4762,7 @@ function cdmModule:Reconcile()
                 -- the "no swipe on anything applied in combat" report.
                 --
                 -- Idempotent per frame, so running it at poll rate is cheap.
-                MirrorAllViewerCooldowns()
+                MirrorAllBuffCooldowns()
                 -- Borrowed icons are Blizzard's, and Blizzard re-anchors them
                 -- on its own layout passes -- which would drag them back to its
                 -- bar. Re-asserting our anchors at poll rate keeps them in the
@@ -7197,11 +7190,9 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         .. "keep the icon at full colour, and ring it with a glow distinct from the proc highlight. "
         .. "The real cooldown takes over the moment it ends.\n\nOnly applies to abilities whose buff "
         .. "lands on you -- one that buffs your target keeps showing its cooldown, which is what "
-        .. "stops a short buff hiding a long cooldown.\n\nThis is the game's own behaviour for these "
-        .. "icons, borrowed rather than recreated.\n\nIn combat the icon still stays lit and glowing "
-        .. "for as long as the ability is running, but the NUMBER falls back to the spell's cooldown: "
-        .. "the game hands these icons their remaining time in a form an addon is not allowed to "
-        .. "pass on once auras are secret.")
+        .. "stops a short buff hiding a long cooldown.\n\nWorks in combat: the active display is the "
+        .. "real aura, drawn by the game's own aura engine and shown only while the buff is up, so "
+        .. "the cooldown underneath is what is left the moment it ends.")
     activeCB:SetChecked(groupData.showActiveBuff)
     yOffset = yOffset - 24
 
