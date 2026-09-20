@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.86"] = {
+        "Essential and Utility icons can now show an ability while it is RUNNING, not only while it is on cooldown. Avenging Wrath and the like count down how long is left of the buff, stay at full colour, and glow differently from a proc. The real cooldown takes over the moment it ends.",
+        "It is \"Show While Active\", beside Glow On Ready in a group's settings, and off by default. Only a buff that lands on YOU counts - which is what keeps something like Lay on Hands with Empyreal Ward showing its cooldown rather than a few seconds of sweep.",
+    },
     ["1.85"] = {
         "Tracked buffs drawn on Blizzard's own frames now take your group's icon shape, zoom and swipe. A buff row could previously come out half round and half square, depending on which icons this addon could draw itself.",
         "Icon Zoom now works on the buff groups. It only ever reached this addon's own icons, so on a group showing Blizzard's frames the slider did nothing.",

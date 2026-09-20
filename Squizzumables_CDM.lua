@@ -2185,6 +2185,22 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     RaiseGlowFrame(procGlow)
     proxy.ProcGlow = procGlow
 
+    -- Active glow, on a third frame for the same reason ProcGlow has a second.
+    --
+    -- This one is held for as long as the buff is up, so it overlaps both of
+    -- the others routinely rather than rarely -- and ActionButtonSpellAlertManager
+    -- keys by frame, so sharing would have whichever ended first take the
+    -- other down with it.
+    --
+    -- Deliberately the SELF-DRAWN tier: ns.Glow.Show/Set force it whenever an
+    -- anchorTo is passed, giving a pulsing halo in the glow colour rather than
+    -- Blizzard's proc art. That is the point -- "the ability is running" has to
+    -- read differently at a glance from "the ability just procced".
+    local activeGlow = CreateFrame("Frame", nil, proxy)
+    activeGlow:SetAllPoints()
+    RaiseGlowFrame(activeGlow)
+    proxy.ActiveGlow = activeGlow
+
     -- Default on, so a free-positioned icon -- which never goes through
     -- ApplyProxyVisuals, having no group to read settings from -- still behaves
     -- the way Blizzard's own icons do rather than silently missing both.
@@ -2226,6 +2242,9 @@ local function ResizeSpellAlert(proxy)
     proxy._alertSizedFor = w
     if proxy.ProcGlow then ns.Glow.Resize(proxy.ProcGlow) end
     if proxy.GlowFrame then ns.Glow.Resize(proxy.GlowFrame) end
+    -- The active glow is held for the whole duration of a buff, so it is the
+    -- one most likely to still be running when the size slider moves.
+    if proxy.ActiveGlow then ns.Glow.Resize(proxy.ActiveGlow) end
 end
 
 -- Does this proxy answer to `spellID` for proc purposes?
@@ -2388,6 +2407,59 @@ local function UpdateProxyCooldown(proxy)
     -- buff is what the Buffs and Buff Bars groups are for, and they do it
     -- properly -- through Blizzard's own frames, which survives combat.
     local isBuffEntry = (proxy.viewerType == "buff" or proxy.viewerType == "buffbar")
+
+    -- "Show While Active" on an Essential/Utility icon.
+    --
+    -- Opt-in per group, and OFF by default, because this is the behaviour V1.81
+    -- removed: an Essential icon that draws an aura's duration instead of its
+    -- cooldown shows a few seconds of sweep and then lights back up, with the
+    -- real cooldown never drawn and no countdown text at any point. Lay on
+    -- Hands with Empyreal Ward talented was the reported case.
+    --
+    -- What makes it safe to offer again is proxy.selfAura. Empyreal Ward is on
+    -- the TARGET, so selfAura is false there, while a genuine "this ability is
+    -- running" buff -- Avenging Wrath, Metamorphosis, Combustion -- sits on the
+    -- player. Gating on that excludes the whole Lay on Hands class BY
+    -- CONSTRUCTION rather than by a spell list that would need maintaining.
+    --
+    -- The base spellID only, never auraSpellIDs: overrideSpellID and
+    -- linkedSpellIDs are exactly how Empyreal Ward reached the lookup in the
+    -- first place.
+    local wantActive = proxy._sqShowActiveBuff and not isBuffEntry
+        and proxy.selfAura ~= false
+    if wantActive and proxy.Cooldown.SetCooldownFromDurationObject and C_UnitAuras
+       and C_UnitAuras.GetAuraDuration then
+        -- Combat-safe path, and the ONLY one that survives a pull: it needs a
+        -- Tracked Buffs twin for this spell, since the instance id comes off
+        -- Blizzard's own buff item. Without one this falls through and the
+        -- readable-aura path below covers it out of combat only.
+        local item = cdmModule.buffItemForSpell[proxy.spellID]
+        local iid = item and item.auraInstanceID
+        local aunit = item and item.auraDataUnit
+        if iid and aunit and not BH.Secrets.HasAnySecret(iid, aunit) then
+            local ok, durObj = pcall(C_UnitAuras.GetAuraDuration, aunit, iid)
+            if ok and durObj then
+                proxy.Cooldown:SetReverse(true)
+                proxy.Cooldown:SetCooldown(0, 0)
+                proxy.Cooldown:SetCooldownFromDurationObject(durObj)
+                proxy._sqActiveNow = true
+                return
+            end
+        end
+    end
+    if wantActive and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        local ad = C_UnitAuras.GetPlayerAuraBySpellID(proxy.spellID)
+        local d = ad and BH.Secrets.SafeAuraDuration(ad)
+        local e = ad and BH.Secrets.SafeAuraExpiration(ad)
+        if d and e and d > 0 then
+            proxy.Cooldown:SetReverse(true)
+            proxy.Cooldown:SetCooldown(e - d, d)
+            proxy._sqActiveNow = true
+            return
+        end
+    end
+    -- Not running: the cooldown below is the truth again.
+    proxy._sqActiveNow = nil
 
     -- Buff duration, the only way that survives combat.
     --
@@ -2968,6 +3040,15 @@ local function ApplyProxyVisuals(proxy, groupData)
     proxy._usableTintAllowed = isCooldownType and (groupData.usableTint ~= false)
     ApplyUsableTint(proxy, proxy._usableTintAllowed)
 
+    -- Cached here for the same reason as the two above: the duration pass runs
+    -- per icon with no group in hand. Cooldown-type only -- a tracked buff
+    -- already draws its aura's duration, so there is nothing for this to add.
+    proxy._sqShowActiveBuff = isCooldownType and groupData.showActiveBuff or nil
+    if not proxy._sqShowActiveBuff and proxy.ActiveGlow then
+        ns.Glow.Set(proxy.ActiveGlow, false)
+        proxy._sqActiveNow = nil
+    end
+
     -- Alpha
     local alpha = groupData.alpha or DEFAULT_ALPHA
     proxy:SetAlpha(alpha)
@@ -3151,8 +3232,14 @@ local function ApplyProxyVisuals(proxy, groupData)
         -- which for a tracked buff means the icon would grey out exactly when
         -- the buff was active. The question here is only "is the spell on
         -- cooldown".
+        --
+        -- Running beats on-cooldown. A big cooldown starts its own timer the
+        -- moment it is cast, so without this exception the icon greys out at
+        -- exactly the moment the ability is doing its work -- which is the
+        -- opposite of what the setting is for.
+        local runningNow = proxy._sqShowActiveBuff and proxy._sqActiveNow and hasAura
         if groupData.desaturateOnCooldown then
-            proxy.Icon:SetDesaturated(onCD and true or false)
+            proxy.Icon:SetDesaturated(onCD and not runningNow and true or false)
         elseif groupData.desaturateReady then
             proxy.Icon:SetDesaturated(not isActive)
         else
@@ -3170,6 +3257,20 @@ local function ApplyProxyVisuals(proxy, groupData)
         local justBecameReady  = not isActive and proxy._wasOnCD
         local justBecameActive = hasAura and not proxy._wasHasAura
         local justStartedCD    = isActive and not proxy._wasOnCD
+
+        -- Held for as long as the ability is running, so this is a state sync
+        -- rather than a transition -- Glow.Set is idempotent, and Show
+        -- early-returns on an already-glowing frame, so this costs nothing on
+        -- the passes where nothing changed.
+        --
+        -- The third argument is the anchor, and passing it is what forces the
+        -- self-drawn halo instead of Blizzard's proc art (ns.Glow.Show). That
+        -- is the whole point of a separate glow: "running" must not look like
+        -- "procced".
+        if proxy.ActiveGlow then
+            ns.Glow.Set(proxy.ActiveGlow, runningNow and true or false,
+                        proxy.ActiveGlow, true)
+        end
 
         -- Glow when CD finishes (group setting).
         --
@@ -4400,6 +4501,7 @@ function cdmModule:Reconcile()
                 local proxy = GetOrCreateProxy(cdID, entry.spellID, DEFAULT_ICON_SIZE, entry.equipSlot)
                 proxy.auraSpellIDs = entry.auraIDs
                 proxy.viewerType = entry.viewerType
+                proxy.selfAura = entry.selfAura
                 self.freeIcons[cdID] = proxy
                 self:PositionFreeIcon(cdID)
             else
@@ -4411,6 +4513,9 @@ function cdmModule:Reconcile()
                     local proxy = GetOrCreateProxy(cdID, entry.spellID, iconSize, entry.equipSlot)
                     proxy.auraSpellIDs = entry.auraIDs
                     proxy.viewerType = entry.viewerType
+                    -- Which unit the aura lands on. THE discriminator for
+                    -- "Show While Active" -- see UpdateProxyCooldown.
+                    proxy.selfAura = entry.selfAura
                     group.members[cdID] = proxy
                 end
             end
@@ -5278,6 +5383,11 @@ function cdmModule:CreateGroup(groupName)
         -- exclusive in the settings UI.
         desaturateOnCooldown = false,
         glowOnReady = false,
+        -- Off by default on purpose: this is the behaviour V1.81 removed, and
+        -- turning it on for everyone would put an aura's countdown back on a
+        -- cooldown icon. See the note in the duration pass for why it is safe
+        -- to offer at all now.
+        showActiveBuff = false,
         hideOutOfCombat = false,
         -- Blizzard parity, on by default: these are things the Cooldown Manager
         -- already does on its own bars, so a group that replaces one should do
@@ -6941,11 +7051,25 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         groupData.glowOnReady = checked
         BH.cdm:ScheduleReconcile()
     end)
-    -- Left column: the desaturate pair took the row above, so this would
-    -- otherwise sit on the right with nothing beside it.
     glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
     glowCB:SetChecked(groupData.glowOnReady)
+
+    -- Pairs with Glow On Ready in the right column: the two are the group's
+    -- glow settings and belong on one row.
+    local activeCB = CreateSQCheckbox(content, "Show While Active", function(checked)
+        groupData.showActiveBuff = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    activeCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(activeCB, "Show While Active",
+        "While the ability is running, count down how long is LEFT OF IT instead of its cooldown, "
+        .. "keep the icon at full colour, and ring it with a glow distinct from the proc highlight. "
+        .. "The real cooldown takes over the moment it ends.\n\nOnly applies to abilities whose buff "
+        .. "lands on you -- one that buffs your target keeps showing its cooldown, which is what "
+        .. "stops a short buff hiding a long cooldown.\n\nIn combat this needs the ability to also be "
+        .. "in Blizzard's Tracked Buffs; without that the countdown is only available out of combat.")
+    activeCB:SetChecked(groupData.showActiveBuff)
     yOffset = yOffset - 24
 
     local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)

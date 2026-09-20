@@ -1,39 +1,26 @@
 Squizzumables Changelog
 =======================
 
-V1.85
+V1.86
 
-- Tracked buffs drawn on Blizzard's own frames now take your group's icon
-  shape, zoom and swipe, instead of staying square while the icons beside them
-  were round.
+- Essential and Utility icons can now show an ability while it is RUNNING,
+  not only while it is on cooldown. Avenging Wrath, Combustion, Metamorphosis
+  and the like count down how long is left of the buff, stay at full colour
+  instead of greying out, and carry a glow deliberately different from the
+  proc highlight. The moment the buff ends the real cooldown takes over and
+  the icon greys out exactly as before.
 
-  A buff group draws two kinds of icon: this addon's own, and Blizzard's
-  frames borrowed in place for anything it cannot draw itself. Only the first
-  kind was ever styled, so a row could come out half round and half square
-  with nothing in the settings to explain which was which. Whatever is in the
-  slot is styled now -- Blizzard's frame, a placeholder, or one of ours.
+  Off by default. It is "Show While Active", beside Glow On Ready in a
+  group's settings.
 
-  Three things had to change for that, and each was invisible on its own.
-  Blizzard masks its own icons with a rounded square, and masks combine rather
-  than replace, so a circle laid over it came out as the overlap. Its icons
-  are drawn at full size, so the square art's corners showed through a round
-  cut. And each icon carries a square border drawn OUTSIDE the frame that no
-  mask can reach at all
+  This existed once and was removed in V1.81, because an icon that draws an
+  aura's duration in place of its cooldown gets it badly wrong for something
+  like Lay on Hands with Empyreal Ward talented: a few seconds of sweep, then
+  the icon lights up again with the real cooldown never drawn at all. What is
+  different now is that only a buff landing on YOU counts. Empyreal Ward sits
+  on the person you healed, so Lay on Hands keeps showing its cooldown;
+  Avenging Wrath sits on you, so it does not.
 
-- Icon Zoom now does something on the buff groups. It only ever reached this
-  addon's own icons, so on a group showing Blizzard's frames the slider moved
-  and nothing happened
-
-- Fixed a tracked buff disappearing entirely instead of being drawn.
-
-  A buff whose name matches one of your cooldowns -- Bone Shield on a Death
-  Knight, which is both -- could end up expected to use one of this addon's
-  icons while no such icon existed for it, and the slot was then dropped in
-  silence. Blizzard was still drawing it perfectly the whole time. Blizzard's
-  own frame is now the floor: if there is nothing of ours to put in a slot,
-  the game's own frame goes there rather than nothing at all
-
-- Buff groups no longer depend on this addon having recognised a buff before
-  they will show Blizzard's. A group that had never been handed one of our
-  entries never looked at the game's own list at all, so its buffs were
-  invisible while the game was plainly showing them
+  In combat this needs the ability to also be in Blizzard's Tracked Buffs --
+  once auras are secret, that is the only way left to read how long a running
+  one has left. Out of combat it always works.

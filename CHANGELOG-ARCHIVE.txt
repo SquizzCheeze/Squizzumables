@@ -8,6 +8,43 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.85
+
+- Tracked buffs drawn on Blizzard's own frames now take your group's icon
+  shape, zoom and swipe, instead of staying square while the icons beside them
+  were round.
+
+  A buff group draws two kinds of icon: this addon's own, and Blizzard's
+  frames borrowed in place for anything it cannot draw itself. Only the first
+  kind was ever styled, so a row could come out half round and half square
+  with nothing in the settings to explain which was which. Whatever is in the
+  slot is styled now -- Blizzard's frame, a placeholder, or one of ours.
+
+  Three things had to change for that, and each was invisible on its own.
+  Blizzard masks its own icons with a rounded square, and masks combine rather
+  than replace, so a circle laid over it came out as the overlap. Its icons
+  are drawn at full size, so the square art's corners showed through a round
+  cut. And each icon carries a square border drawn OUTSIDE the frame that no
+  mask can reach at all
+
+- Icon Zoom now does something on the buff groups. It only ever reached this
+  addon's own icons, so on a group showing Blizzard's frames the slider moved
+  and nothing happened
+
+- Fixed a tracked buff disappearing entirely instead of being drawn.
+
+  A buff whose name matches one of your cooldowns -- Bone Shield on a Death
+  Knight, which is both -- could end up expected to use one of this addon's
+  icons while no such icon existed for it, and the slot was then dropped in
+  silence. Blizzard was still drawing it perfectly the whole time. Blizzard's
+  own frame is now the floor: if there is nothing of ours to put in a slot,
+  the game's own frame goes there rather than nothing at all
+
+- Buff groups no longer depend on this addon having recognised a buff before
+  they will show Blizzard's. A group that had never been handed one of our
+  entries never looked at the game's own list at all, so its buffs were
+  invisible while the game was plainly showing them
+
 V1.84
 
 - Reminder buttons now clear the moment you apply something. Poisons, oils,
