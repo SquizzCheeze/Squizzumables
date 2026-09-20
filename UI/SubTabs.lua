@@ -41,6 +41,168 @@ local BTN_PAD_X    = 12   -- padding either side of the label
 local BTN_GAP      = 4
 local STRIP_INSET  = 12   -- left inset, lining the strip up with row labels
 
+--- Build a sub-tab strip and one PLAIN page per entry, inside a page that is
+--- already scrolling.
+---
+--- The difference from Create is the absence of a ScrollFrame, and that is the
+--- whole reason this exists: a third level of tabs is wanted on pages that are
+--- themselves scroll children, and a ScrollFrame inside a ScrollFrame scrolls
+--- badly and swallows the wheel. So these pages are plain frames that are
+--- shown and hidden, and the HOST's height follows whichever is showing --
+--- the outer scroller then scrolls exactly the visible section rather than the
+--- sum of all of them.
+---
+--- `host` is the frame to build into, `startY` the offset to put the strip at
+--- (so a caller can leave a header above it), and `opts.initial` the key to
+--- open on -- pass the previously selected one, because a rebuild reparents
+--- everything here and the selection would otherwise snap back to the first
+--- tab every time any setting changed.
+---
+--- `opts.section` is the host page's own search descriptor. Each page gets a
+--- descriptor of its own that selects the outer sub-tab AND this inner one, so
+--- a search hit still lands on something visible.
+---
+--- Returns a table mapping each key to its page frame, plus `Select(key)`,
+--- `GetSelected()` and `SetPageHeight(key, height)` -- call that last one after
+--- filling a page, or the host cannot know how tall to be.
+function SubTabs.CreateInline(host, defs, startY, opts)
+    opts = opts or {}
+    local pages, buttons = {}, {}
+    local heights = {}
+    local selectedKey
+    local headerY = math.abs(startY or 0)
+
+    local strip = CreateFrame("Frame", nil, host)
+    strip:SetPoint("TOPLEFT", host, "TOPLEFT", 0, startY or 0)
+    strip:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, startY or 0)
+    strip:SetHeight(STRIP_H)
+
+    local underline = strip:CreateTexture(nil, "ARTWORK")
+    underline:SetHeight(1)
+    underline:SetPoint("BOTTOMLEFT", strip, "BOTTOMLEFT", 0, 0)
+    underline:SetPoint("BOTTOMRIGHT", strip, "BOTTOMRIGHT", -10, 0)
+    underline:SetColorTexture(SQ_COLORS.border[1], SQ_COLORS.border[2],
+                              SQ_COLORS.border[3], 0.5)
+
+    local function ApplyHeight()
+        local h = heights[selectedKey] or 0
+        host:SetHeight(headerY + STRIP_H + 4 + h + 20)
+    end
+
+    local function Select(key)
+        selectedKey = key
+        for _, def in ipairs(defs) do
+            local on = (def.key == key)
+            if buttons[def.key] then buttons[def.key]:SetActive(on) end
+            if pages[def.key] then pages[def.key]:SetShown(on) end
+        end
+        ApplyHeight()
+    end
+
+    local x, rows = STRIP_INSET, 1
+    local availW = 600
+
+    for _, def in ipairs(defs) do
+        local btn = CreateFrame("Button", nil, strip, "BackdropTemplate")
+        btn:SetHeight(BTN_H)
+        btn:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
+        btn:SetBackdropColor(0, 0, 0, 0)
+
+        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("CENTER", btn, "CENTER", 0, 0)
+        label:SetText(def.label or def.key)
+        btn.label = label
+
+        local w = math.ceil(label:GetStringWidth()) + BTN_PAD_X * 2
+        btn:SetWidth(w)
+
+        if x > STRIP_INSET and (x + w) > availW then
+            rows = rows + 1
+            x = STRIP_INSET
+        end
+        btn:SetPoint("TOPLEFT", strip, "TOPLEFT", x, -((rows - 1) * STRIP_H) - 2)
+        x = x + w + BTN_GAP
+
+        local marker = btn:CreateTexture(nil, "OVERLAY")
+        marker:SetHeight(2)
+        marker:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 2, -2)
+        marker:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -2, -2)
+        ns.ApplyAccent(marker, "texture", 1)
+        marker:Hide()
+        btn.marker = marker
+
+        btn:SetScript("OnEnter", function(self)
+            if not self.isActive then
+                self:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2],
+                                      SQ_COLORS.controlHi[3], 0.5)
+            end
+        end)
+        btn:SetScript("OnLeave", function(self)
+            if not self.isActive then self:SetBackdropColor(0, 0, 0, 0) end
+        end)
+
+        btn.SetActive = function(self, active)
+            self.isActive = active
+            if active then
+                self:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2],
+                                      SQ_COLORS.controlHi[3], 0.35)
+                self.label:SetTextColor(SQ_COLORS.textBright[1], SQ_COLORS.textBright[2],
+                                        SQ_COLORS.textBright[3])
+                self.marker:Show()
+            else
+                self:SetBackdropColor(0, 0, 0, 0)
+                self.label:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2],
+                                        SQ_COLORS.textDim[3])
+                self.marker:Hide()
+            end
+        end
+
+        btn:SetScript("OnClick", function()
+            Select(def.key)
+            if opts.onSelect then opts.onSelect(def.key) end
+        end)
+        buttons[def.key] = btn
+    end
+
+    strip:SetHeight(rows * STRIP_H)
+
+    for _, def in ipairs(defs) do
+        local page = CreateFrame("Frame", nil, host)
+        page:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", 0, -4)
+        page:SetPoint("TOPRIGHT", strip, "BOTTOMRIGHT", 0, -4)
+        page:SetHeight(1)
+        page:Hide()
+
+        -- Selecting this page means selecting the tab it lives on too, or a
+        -- search hit lands on a page whose own parent tab is not showing.
+        local outer = opts.section
+        page.section = {
+            key    = (outer and outer.key or "") .. "/" .. def.key,
+            label  = (outer and (outer.label .. " - ") or "") .. (def.label or def.key),
+            select = function()
+                if outer and outer.select then outer.select() end
+                Select(def.key)
+                if opts.onSelect then opts.onSelect(def.key) end
+            end,
+        }
+
+        pages[def.key] = page
+    end
+
+    pages.Select = Select
+    pages.GetSelected = function() return selectedKey end
+    pages.SetPageHeight = function(key, h)
+        heights[key] = h or 0
+        if key == selectedKey then ApplyHeight() end
+    end
+
+    local want = opts.initial
+    if not (want and pages[want]) then want = defs[1] and defs[1].key end
+    if want then Select(want) end
+
+    return pages
+end
+
 --- Build a sub-tab strip and one scrolling page per entry.
 ---
 --- `defs` is an ordered list of { key, label }. Returns a table mapping each

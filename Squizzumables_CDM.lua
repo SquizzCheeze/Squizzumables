@@ -6445,6 +6445,14 @@ local LEFT_PANEL_W = 210
 local cdmTabState = {}
 local cdmCustomTabState = {}
 
+-- Which inner tab each group page was last showing, keyed by group name.
+--
+-- Kept out here rather than on the widget because ClearCDMPage reparents every
+-- child of a page away on each rebuild, and a rebuild happens every time any
+-- setting on it changes. Without this the tab would snap back to Layout the
+-- instant you ticked anything, which reads as the panel fighting you.
+local cdmGroupTab = {}
+
 local function BuildCDMScroller(parent, state)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
     ns.TuneScrollStep(scrollFrame)
@@ -6750,9 +6758,12 @@ function BH:RebuildCDMPage(state, mode)
             if page then
                 -- On its own sub-tab, from the top of that page.
                 if page.section then ns.Rows.currentSection = page.section end
-                local pageY = self:BuildGroupSection(page, leftPad, -14,
-                    groupName, specData.groups[groupName], specData)
-                page:SetHeight(math.abs(pageY) + 20)
+                -- Tabbed, and the page height is the widget's business from
+                -- here: it sizes the page to whichever section is showing, so
+                -- setting it again from a returned offset would fight that and
+                -- cut the taller sections off.
+                self:BuildGroupSection(page, leftPad, -14,
+                    groupName, specData.groups[groupName], specData, true)
                 ns.Rows.currentSection = content.section
             else
                 yOffset = self:BuildGroupSection(content, leftPad, yOffset,
@@ -6908,61 +6919,66 @@ function BH:RebuildCDMPage(state, mode)
     ns.Rows.currentSection = prevSection
 end
 
--- ===== Build a single group's settings section =====
-function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, specData)
-    local indent = leftPad + 10
+-- ============================================================================
+-- Group settings, in sections
+-- ============================================================================
+--
+-- One group used to be ~50 controls in a single column: every sizing, colour,
+-- text, glow and visibility option stacked end to end. Everything worked --
+-- nothing here was dead -- but finding any one of them meant scrolling past
+-- forty others, which is indistinguishable from the settings being broken.
+--
+-- So each group page carries its own strip of sections. The builders below are
+-- the sections; each takes the running yOffset and returns it, so the SAME
+-- code serves both layouts: a group with a page to itself gets tabs, while the
+-- Custom Cooldowns tab -- which stacks several groups in one scroller, where
+-- tabs per group would be worse than the column ever was -- gets them one
+-- after another under headings.
 
-    -- Group name header row with delete button
-    local groupRow = CreateFrame("Frame", nil, content)
-    groupRow:SetSize(380, 24)
-    groupRow:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+-- A heading, for the stacked layout only. On a tabbed page the tab is the
+-- heading, and a second copy of the same word under it is just noise.
+local function SectionHeading(content, indent, yOffset, text)
+    local fs = content:CreateFontString(nil, "OVERLAY")
+    fs:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+    fs:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    fs:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    fs:SetText(text:upper())
+    return yOffset - 18
+end
 
-    local gLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    gLabel:SetPoint("LEFT", 4, 0)
-    gLabel:SetText(groupName)
-    gLabel:SetTextColor(TEXT_R, TEXT_G, TEXT_B)
+-- Position, offset X and offset Y for one piece of icon text. One helper for
+-- all three, so the charge number, the countdown and the keybind behave
+-- identically rather than drifting apart.
+local function AddTextPlacement(content, indent, yOffset, groupData,
+                                label, posKey, oxKey, oyKey, defPos, defX, defY, tip)
+    local dd = CreateSQDropdown(content, label .. " Position", 160, TEXT_POSITION_ITEMS, function(val)
+        groupData[posKey] = val
+        BH.cdm:ScheduleReconcile()
+    end)
+    dd:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    dd:SetSelectedValue(groupData[posKey] or defPos)
+    ns.Rows.AddTooltip(dd, label .. " Position", tip)
+    yOffset = yOffset - 50
 
-    -- Assigned count
-    local countLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    countLabel:SetPoint("LEFT", gLabel, "RIGHT", 8, 0)
-    local assignedCount = groupData.cooldownIDs and #groupData.cooldownIDs or 0
-    countLabel:SetText("(" .. assignedCount .. " assigned)")
-    countLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
+    local sx = CreateSQSlider(content, label .. " Offset X", 220, -30, 30, 1)
+    sx:SetValue(groupData[oxKey] or defX)
+    sx:SetAfterValueChanged(function(v) groupData[oxKey] = v; BH.cdm:ScheduleReconcile() end)
+    sx:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(sx, label .. " Offset X", "Nudge it sideways from that position.")
+    yOffset = yOffset - 46
 
-    -- The frame name other addons anchor to.
-    --
-    -- Shown because the alternative is asking: an addon that anchors by typing
-    -- a frame name cannot call our Lua accessor, and the obvious guess --
-    -- EssentialCooldownViewer -- is Blizzard's frame, which this addon parks
-    -- offscreen when "Hide Blizzard's Cooldown Manager" is on. Anchoring to
-    -- that drags the anchored frame off with it, which is a confusing way to
-    -- find out you picked the wrong frame.
-    local anchorLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    anchorLabel:SetPoint("LEFT", countLabel, "RIGHT", 8, 0)
-    anchorLabel:SetText("SQZ_CDMGroup_" .. groupName)
-    anchorLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
-    ns.Rows.AddTooltip(anchorLabel, "Anchor name",
-        "The frame name to give another addon that anchors to this group.\n\n"
-     .. "Do not use Blizzard's EssentialCooldownViewer or similar: those are separate frames, "
-     .. "and with Hide Blizzard's Cooldown Manager on they are parked far offscreen, which "
-     .. "takes anything anchored to them along too.")
+    local sy = CreateSQSlider(content, label .. " Offset Y", 220, -30, 30, 1)
+    sy:SetValue(groupData[oyKey] or defY)
+    sy:SetAfterValueChanged(function(v) groupData[oyKey] = v; BH.cdm:ScheduleReconcile() end)
+    sy:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(sy, label .. " Offset Y", "Nudge it up or down from that position.")
+    return yOffset - 46
+end
 
-    -- Delete button. Not offered for the three built-in groups: they are
-    -- recreated on the next reconcile anyway, so a Delete that visibly does
-    -- nothing is worse than no button. Their contents can still be emptied by
-    -- reassigning spells elsewhere.
-    if not groupData.builtin then
-        local delBtn = CreateSQButton(groupRow, "Delete", 60, 20, {0.75, 0.25, 0.25, 1})
-        delBtn:SetPoint("RIGHT", groupRow, "RIGHT", 0, 0)
-        delBtn:SetScript("OnClick", function()
-            BH.cdm:DeleteGroup(groupName)
-            C_Timer.After(0.1, function() BH:RebuildCDMTabContent() end)
-        end)
-    end
-
-    yOffset = yOffset - 28
-
-    -- ===== ROW 1: size + Spacing =====
+-- ---------------------------------------------------------------------------
+-- Layout: where the group sits, how big it is, and how it grows.
+-- ---------------------------------------------------------------------------
+local function BuildGroupLayoutSection(content, indent, yOffset, groupName, groupData, specData)
     -- A bar group is sized in two dimensions, so it gets width and height where
     -- an icon group gets one square Icon Size. Same slot on the page either way.
     local isBarGroup = groupData.isBarGroup and true or false
@@ -7008,7 +7024,6 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     end)
     yOffset = yOffset - 50
 
-    -- ===== ROW 2: Per Row / Bar Height + Alpha =====
     -- Bars always stack one per row -- that is how Blizzard draws them and how
     -- a name and a timer stay readable -- so Per Row has nothing to say here and
     -- the slot goes to the bar's other dimension instead.
@@ -7042,7 +7057,6 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     end)
     yOffset = yOffset - 50
 
-    -- ===== ROW 3: Orientation + Growth Direction =====
     local orientItems = {
         { text = "Horizontal", value = "horizontal" },
         { text = "Vertical",   value = "vertical" },
@@ -7072,7 +7086,6 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     growDD:SetSelectedValue(groupData.growDirection or DEFAULT_GROW_DIRECTION)
     yOffset = yOffset - 50
 
-    -- ===== ROW 4: Sort By =====
     local sortItems = {
         { text = "Assignment Order", value = "assignment" },
         { text = "Spell Name",      value = "name" },
@@ -7087,7 +7100,6 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     sortDD:SetSelectedValue(groupData.sortBy or DEFAULT_SORT)
     yOffset = yOffset - 50
 
-    -- ===== ROW 5: Checkboxes (2 columns) =====
     local lockCB = CreateSQCheckbox(content, "Lock (click-through)", function(checked)
         groupData.locked = checked
         local group = BH.cdm.groups[groupName]
@@ -7107,434 +7119,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     lockCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     ns.Rows.AddTooltip(lockCB, "Lock (click-through)", "Stops the group being dragged and lets mouse clicks pass through to whatever is behind it. Tooltips still work.")
     lockCB:SetChecked(groupData.locked)
-
-    local tooltipCB = CreateSQCheckbox(content, "Show Tooltip", function(checked)
-        groupData.showTooltip = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    tooltipCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(tooltipCB, "Show Tooltip", "Show the spell tooltip when hovering an icon in this group.")
-    tooltipCB:SetChecked(groupData.showTooltip ~= false)
-    yOffset = yOffset - 24
-
-    local borderCB = CreateSQCheckbox(content, "Show Border", function(checked)
-        groupData.showBorder = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    borderCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(borderCB, "Show Border", "Draw a border around each icon in this group.")
-    borderCB:SetChecked(groupData.showBorder ~= false)
-
-    local cdTextCB = CreateSQCheckbox(content, "Cooldown Text", function(checked)
-        groupData.showCooldownText = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    cdTextCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(cdTextCB, "Cooldown Text", "Show the remaining cooldown as a number on the icon.")
-    cdTextCB:SetChecked(groupData.showCooldownText ~= false)
-    yOffset = yOffset - 24
-
-    -- The two desaturate options are opposites, so ticking one unticks the
-    -- other. Leaving both on screen and independently settable would allow a
-    -- combination that greys the icon in every state, which is not a look
-    -- anyone wants and is hard to diagnose from the settings alone.
-    local desatCB, desatCdCB
-
-    desatCB = CreateSQCheckbox(content, "Grey Out When Ready", function(checked)
-        groupData.desaturateReady = checked
-        if checked then
-            groupData.desaturateOnCooldown = false
-            if desatCdCB then desatCdCB:SetChecked(false) end
-        end
-        BH.cdm:ScheduleReconcile()
-    end)
-    desatCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(desatCB, "Grey Out When Ready",
-        "Grey the icon out while the ability is READY, so a full-colour icon means it is on "
-        .. "cooldown. The inverse of the usual arrangement, for a group used as an \"these are "
-        .. "up\" display.")
-    desatCB:SetChecked(groupData.desaturateReady)
-
-    desatCdCB = CreateSQCheckbox(content, "Grey Out On Cooldown", function(checked)
-        groupData.desaturateOnCooldown = checked
-        if checked then
-            groupData.desaturateReady = false
-            if desatCB then desatCB:SetChecked(false) end
-        end
-        BH.cdm:ScheduleReconcile()
-    end)
-    desatCdCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(desatCdCB, "Grey Out On Cooldown",
-        "Grey the icon out while the ability is on cooldown, which is what Blizzard's own bars "
-        .. "do. Only the cooldown counts here, not whether the buff it applies is up.")
-    desatCdCB:SetChecked(groupData.desaturateOnCooldown)
-    yOffset = yOffset - 24
-
-    local glowCB = CreateSQCheckbox(content, "Glow On Ready", function(checked)
-        groupData.glowOnReady = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
-    glowCB:SetChecked(groupData.glowOnReady)
-
-    -- Pairs with Glow On Ready in the right column: the two are the group's
-    -- glow settings and belong on one row.
-    local activeCB = CreateSQCheckbox(content, "Show While Active", function(checked)
-        groupData.showActiveBuff = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    activeCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(activeCB, "Show While Active",
-        "While the ability is running, count down how long is LEFT OF IT instead of its cooldown, "
-        .. "keep the icon at full colour, and ring it with a glow distinct from the proc highlight. "
-        .. "The real cooldown takes over the moment it ends.\n\nOnly applies to abilities whose buff "
-        .. "lands on you -- one that buffs your target keeps showing its cooldown, which is what "
-        .. "stops a short buff hiding a long cooldown.\n\nWorks in combat: the active display is the "
-        .. "real aura, drawn by the game's own aura engine and shown only while the buff is up, so "
-        .. "the cooldown underneath is what is left the moment it ends.")
-    activeCB:SetChecked(groupData.showActiveBuff)
-    yOffset = yOffset - 24
-
-    local agInit = ActiveGlowColor(groupData)
-    local activeGlowPicker = CreateSQColorPicker(content, "Active Glow Colour",
-        agInit[1], agInit[2], agInit[3], agInit[4] or 1, function(r, g, b, a)
-            groupData.activeGlowColor = { r, g, b, a }
-            BH.cdm:ScheduleReconcile()
-        end)
-    activeGlowPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(activeGlowPicker, "Active Glow Colour",
-        "Colour of the glow shown by \"Show While Active\". Separate from the proc glow and from "
-        .. "Glow On Ready, both of which use your main glow colour, so \"the ability is running\" "
-        .. "and \"the ability just lit up\" do not look the same.")
-    yOffset = yOffset - 28
-
-    local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)
-        groupData.procGlow = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    procCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(procCB, "Proc Glow",
-        "Show the game's own proc highlight on an icon when the ability lights up, the same animation you get on an action bar and on Blizzard's own cooldown bars.")
-    procCB:SetChecked(groupData.procGlow ~= false)
-
-    local usableCB = CreateSQCheckbox(content, "Dim When Unusable", function(checked)
-        groupData.usableTint = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    usableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(usableCB, "Dim When Unusable",
-        "Colour the icon by whether you can cast it right now, exactly as Blizzard's own bars do: dimmed when it is unusable, blue when you lack the power for it, and red when the target is out of range.")
-    usableCB:SetChecked(groupData.usableTint ~= false)
-    yOffset = yOffset - 24
-
-    local enableCB = CreateSQCheckbox(content, "Enable Group", function(checked)
-        groupData.enabled = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    enableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(enableCB, "Enable Group",
-        "Show this group at all. Unticking hides it without unassigning anything, which is how you switch off one of the built-in groups you do not want.")
-    enableCB:SetChecked(groupData.enabled ~= false)
-    yOffset = yOffset - 24
-
-    local combatCB = CreateSQCheckbox(content, "Hide Out of Combat", function(checked)
-        groupData.hideOutOfCombat = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    combatCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(combatCB, "Hide Out of Combat", "Only show this group while you are in combat.")
-    combatCB:SetChecked(groupData.hideOutOfCombat)
-
-    local activeOnlyCB = CreateSQCheckbox(content, "Hide Until Active", function(checked)
-        groupData.hideUntilActive = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    activeOnlyCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(activeOnlyCB, "Hide Until Active", "Only show an icon once its ability is on cooldown or its buff is active.")
-    activeOnlyCB:SetChecked(groupData.hideUntilActive)
-    yOffset = yOffset - 28
-
-    -- Icon look. Border thickness/colour, icon crop and background were all
-    -- hardcoded before 1.69; they are per group so two groups can look
-    -- completely different, which is most of the point of having groups.
-    local thickSlider = CreateSQSlider(content, "Border Thickness", 220, 0, 4, 1)
-    thickSlider:SetValue(groupData.borderThickness or DEFAULT_BORDER_THICKNESS)
-    thickSlider:SetAfterValueChanged(function(value)
-        groupData.borderThickness = value
-        BH.cdm:ScheduleReconcile()
-    end)
-    thickSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(thickSlider, "Border Thickness",
-        "How heavy the border around each icon is, in pixels. 0 removes it without unticking Show Border.")
-    yOffset = yOffset - 46
-
-    local zoomSlider = CreateSQSlider(content, "Icon Zoom %", 220, 0, 20, 1)
-    zoomSlider:SetValue(math.floor(((groupData.iconZoom or DEFAULT_ICON_ZOOM) * 100) + 0.5))
-    zoomSlider:SetAfterValueChanged(function(value)
-        groupData.iconZoom = value / 100
-        BH.cdm:ScheduleReconcile()
-    end)
-    zoomSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(zoomSlider, "Icon Zoom %",
-        "How much is cropped from each edge of the icon art. Higher values trim the default border off the artwork.")
-    yOffset = yOffset - 46
-
-    local bcInit = groupData.borderColor or DEFAULT_BORDER_COLOR
-    local borderColorPicker = CreateSQColorPicker(content, "Border Colour",
-        bcInit[1], bcInit[2], bcInit[3], bcInit[4], function(r, g, b, a)
-            groupData.borderColor = { r, g, b, a }
-            BH.cdm:ScheduleReconcile()
-        end)
-    borderColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(borderColorPicker, "Border Colour", "Colour of the icon border for this group.")
-
-    local classColorCB = CreateSQCheckbox(content, "Use Class Colour", function(checked)
-        groupData.borderClassColor = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    classColorCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(classColorCB, "Use Class Colour",
-        "Colour the border with your class colour, overriding the colour picked above.")
-    classColorCB:SetChecked(groupData.borderClassColor)
-    yOffset = yOffset - 28
-
-    local bgCB = CreateSQCheckbox(content, "Icon Background", function(checked)
-        groupData.bgEnabled = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    bgCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(bgCB, "Icon Background",
-        "Draw a filled square behind each icon. Mainly useful with Hide Until Active, so the group keeps a visible footprint while its icons are hidden.")
-    bgCB:SetChecked(groupData.bgEnabled)
-
-    local bgInit = groupData.bgColor or DEFAULT_BG_COLOR
-    local bgColorPicker = CreateSQColorPicker(content, "Background Colour",
-        bgInit[1], bgInit[2], bgInit[3], bgInit[4], function(r, g, b, a)
-            groupData.bgColor = { r, g, b, a }
-            BH.cdm:ScheduleReconcile()
-        end)
-    bgColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(bgColorPicker, "Background Colour", "Colour and opacity of the icon background.")
-    yOffset = yOffset - 28
-
-    -- Icon shape and the whole-group backdrop.
-    -- Built from ICON_SHAPES, so a new shape is one line there plus its image.
-    local shapeItems = {}
-    for _, s in ipairs(ICON_SHAPES) do
-        shapeItems[#shapeItems + 1] = { text = s.text, value = s.value }
-    end
-    local shapeDD = CreateSQDropdown(content, "Icon Shape", 160, shapeItems, function(val)
-        groupData.iconShape = val
-        BH.cdm:ScheduleReconcile()
-    end)
-    shapeDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    shapeDD:SetSelectedValue(groupData.iconShape or "none")
-    ns.Rows.AddTooltip(shapeDD, "Icon Shape",
-        "Cuts each icon, its cooldown sweep and its border to a shape. Tracked buffs follow it too while Draw Buffs Ourselves is on; Blizzard's own buff frames keep their look.")
-    yOffset = yOffset - 50
-
-    local barBgCB = CreateSQCheckbox(content, "Group Background", function(checked)
-        groupData.barBgEnabled = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    barBgCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(barBgCB, "Group Background",
-        "A panel behind the whole group rather than behind each icon. It grows and shrinks with the row, "
-     .. "including as a Hide Until Active group packs down.")
-    barBgCB:SetChecked(groupData.barBgEnabled)
-
-    local barBgInit = groupData.barBgColor or { 0, 0, 0, 0.4 }
-    local barBgPicker = CreateSQColorPicker(content, "Group Background Colour",
-        barBgInit[1], barBgInit[2], barBgInit[3], barBgInit[4], function(r, g, b, a)
-            groupData.barBgColor = { r, g, b, a }
-            BH.cdm:ScheduleReconcile()
-        end)
-    barBgPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(barBgPicker, "Group Background Colour", "Colour and opacity of the group panel.")
-    yOffset = yOffset - 28
-
-    local barBgPad = CreateSQSlider(content, "Group Background Padding", 220, 0, 20, 1)
-    barBgPad:SetValue(groupData.barBgPadding or 2)
-    barBgPad:SetAfterValueChanged(function(value)
-        groupData.barBgPadding = value
-        BH.cdm:ScheduleReconcile()
-    end)
-    barBgPad:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(barBgPad, "Group Background Padding", "How far the panel extends past the icons.")
-    yOffset = yOffset - 46
-
-    -- Text placement. One helper for all three, so they behave identically.
-    local function AddTextPlacement(label, posKey, oxKey, oyKey, defPos, defX, defY, tip)
-        local dd = CreateSQDropdown(content, label .. " Position", 160, TEXT_POSITION_ITEMS, function(val)
-            groupData[posKey] = val
-            BH.cdm:ScheduleReconcile()
-        end)
-        dd:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-        dd:SetSelectedValue(groupData[posKey] or defPos)
-        ns.Rows.AddTooltip(dd, label .. " Position", tip)
-        yOffset = yOffset - 50
-
-        local sx = CreateSQSlider(content, label .. " Offset X", 220, -30, 30, 1)
-        sx:SetValue(groupData[oxKey] or defX)
-        sx:SetAfterValueChanged(function(v) groupData[oxKey] = v; BH.cdm:ScheduleReconcile() end)
-        sx:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-        ns.Rows.AddTooltip(sx, label .. " Offset X", "Nudge it sideways from that position.")
-        yOffset = yOffset - 46
-
-        local sy = CreateSQSlider(content, label .. " Offset Y", 220, -30, 30, 1)
-        sy:SetValue(groupData[oyKey] or defY)
-        sy:SetAfterValueChanged(function(v) groupData[oyKey] = v; BH.cdm:ScheduleReconcile() end)
-        sy:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-        ns.Rows.AddTooltip(sy, label .. " Offset Y", "Nudge it up or down from that position.")
-        yOffset = yOffset - 46
-    end
-
-    -- Charge / stack count.
-    local countCB = CreateSQCheckbox(content, "Show Charges", function(checked)
-        groupData.showCount = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    countCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(countCB, "Show Charges",
-        "Show the charge or stack number on icons that have one.")
-    countCB:SetChecked(groupData.showCount ~= false)
-    yOffset = yOffset - 24
-
-    local countSize = CreateSQSlider(content, "Charge Text Size", 220, 6, 24, 1)
-    countSize:SetValue(groupData.countSize or 12)
-    countSize:SetAfterValueChanged(function(v) groupData.countSize = v; BH.cdm:ScheduleReconcile() end)
-    countSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(countSize, "Charge Text Size", "Font size of the charge number.")
-    yOffset = yOffset - 46
-
-    AddTextPlacement("Charges", "countPosition", "countOffsetX", "countOffsetY",
-        "BOTTOMRIGHT", -1, 1, "Where the charge number sits on the icon.")
-
-    AddTextPlacement("Cooldown Text", "cooldownTextPosition",
-        "cooldownTextOffsetX", "cooldownTextOffsetY", "CENTER", 0, 0,
-        "Where the countdown sits on the icon. Centre leaves the game's own placement alone; "
-     .. "any other choice moves the countdown the game draws, which it does not officially "
-     .. "support, so it is ignored rather than erroring if a patch stops exposing it.")
-
-    -- Keybind text.
-    local kbCB = CreateSQCheckbox(content, "Show Keybind", function(checked)
-        groupData.showKeybind = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    kbCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(kbCB, "Show Keybind",
-        "Show the key that casts each ability on its icon.\n\n"
-     .. "Read from your action bars, so an ability that is not on a bar has no key to show. "
-     .. "It deliberately does not follow bar swaps from stealth, druid forms or dragonriding: "
-     .. "a keybind that rewrites itself every time you shapeshift is less use than a steady one.")
-    kbCB:SetChecked(groupData.showKeybind)
-
-    local kbColor = groupData.keybindColor or { 1, 1, 1, 0.9 }
-    local kbPicker = CreateSQColorPicker(content, "Keybind Colour",
-        kbColor[1], kbColor[2], kbColor[3], kbColor[4], function(r, g, b, a)
-            groupData.keybindColor = { r, g, b, a }
-            BH.cdm:ScheduleReconcile()
-        end)
-    kbPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(kbPicker, "Keybind Colour", "Colour of the keybind text.")
-    yOffset = yOffset - 28
-
-    local kbSize = CreateSQSlider(content, "Keybind Text Size", 220, 6, 20, 1)
-    kbSize:SetValue(groupData.keybindSize or 10)
-    kbSize:SetAfterValueChanged(function(value)
-        groupData.keybindSize = value
-        BH.cdm:ScheduleReconcile()
-    end)
-    kbSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(kbSize, "Keybind Text Size", "Font size of the keybind text.")
-    yOffset = yOffset - 46
-
-    AddTextPlacement("Keybind", "keybindPosition", "keybindOffsetX", "keybindOffsetY",
-        "TOPRIGHT", -1, -1, "Where the keybind sits on the icon.")
-
-    -- Tracked-buff options. Only meaningful for a group holding buffs, so they
-    -- are only offered on one: on any other group they would be dead controls.
-    local grp = BH.cdm.groups[groupName]
-    local holdsBuffs = (grp and grp.usesBlizzardIcons)
-        or groupName == BUILTIN_FOR_VIEWERTYPE["buff"]
-        or groupName == BUILTIN_FOR_VIEWERTYPE["buffbar"]
-    if holdsBuffs then
-        local alwaysCB = CreateSQCheckbox(content, "Always Show Buffs", function(checked)
-            groupData.showInactiveBuffs = checked
-            BH.cdm:ScheduleReconcile()
-        end)
-        alwaysCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-        ns.Rows.AddTooltip(alwaysCB, "Always Show Buffs",
-            "Keep a slot for every tracked buff, showing a dimmed placeholder while it is not up, "
-         .. "instead of the row shrinking to only the active ones.")
-        alwaysCB:SetChecked(groupData.showInactiveBuffs)
-
-        local desatBuffCB = CreateSQCheckbox(content, "Grey Out Inactive", function(checked)
-            groupData.desaturateInactiveBuffs = checked
-            BH.cdm:ScheduleReconcile()
-        end)
-        desatBuffCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-        ns.Rows.AddTooltip(desatBuffCB, "Grey Out Inactive",
-            "Draw those placeholders in greyscale. Untick to keep them in colour and rely on the "
-         .. "dimming alone.")
-        desatBuffCB:SetChecked(groupData.desaturateInactiveBuffs ~= false)
-        yOffset = yOffset - 24
-
-        local phAlpha = CreateSQSlider(content, "Inactive Buff Opacity %", 220, 5, 100, 5)
-        phAlpha:SetValue(math.floor(((groupData.inactiveBuffAlpha or 0.45) * 100) + 0.5))
-        phAlpha:SetAfterValueChanged(function(value)
-            groupData.inactiveBuffAlpha = value / 100
-            BH.cdm:ScheduleReconcile()
-        end)
-        phAlpha:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-        ns.Rows.AddTooltip(phAlpha, "Inactive Buff Opacity %",
-            "How visible the placeholder for a buff that is not up should be.")
-        yOffset = yOffset - 46
-
-        -- Only the native bars have a fill of ours to colour; Blizzard's
-        -- borrowed bars keep their own.
-        if groupData.isBarGroup then
-            local bc = groupData.barColor or { 1.0, 0.7, 0.0, 1 }
-            local barColorPicker = CreateSQColorPicker(content, "Bar Colour",
-                bc[1], bc[2], bc[3], bc[4] or 1, function(r, g, b, a)
-                    groupData.barColor = { r, g, b, a }
-                    BH.cdm:ScheduleReconcile()
-                end)
-            barColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-            ns.Rows.AddTooltip(barColorPicker, "Bar Colour",
-                "Fill colour of the buff bars. Applies when Draw Buffs Ourselves is on.")
-            yOffset = yOffset - 28
-        end
-    end
-
-    -- Visibility conditions. All default off, so a group shows everywhere
-    -- unless told otherwise.
-    local visRows = {
-        { key = "hideMounted",     label = "Hide While Mounted",
-          tip = "Hide this group while you are on a mount." },
-        { key = "onlyInInstances", label = "Only In Instances",
-          tip = "Only show this group in a dungeon, raid, delve, scenario or battleground." },
-        { key = "hideInHousing",   label = "Hide In Housing",
-          tip = "Hide this group while you are inside your house or on your plot." },
-        { key = "hideNoTarget",    label = "Hide Without A Target",
-          tip = "Hide this group whenever you have nothing targeted." },
-        { key = "hideNoEnemy",     label = "Hide Without An Enemy",
-          tip = "Hide this group unless your target is something you can attack." },
-    }
-    for i, row in ipairs(visRows) do
-        local cb = CreateSQCheckbox(content, row.label, function(checked)
-            groupData[row.key] = checked
-            BH.cdm:ScheduleReconcile()
-        end)
-        -- Two columns, same as the toggles above.
-        local col = ((i - 1) % 2 == 0) and indent or (indent + 190)
-        cb:SetPoint("TOPLEFT", content, "TOPLEFT", col, yOffset)
-        ns.Rows.AddTooltip(cb, row.label, row.tip)
-        cb:SetChecked(groupData[row.key])
-        if (i % 2) == 0 or i == #visRows then yOffset = yOffset - 24 end
-    end
-    yOffset = yOffset - 4
+    yOffset = yOffset - 32
 
     -- Anchor this group to another, so a stack of bars can be positioned by
     -- moving only the one at the top of the chain.
@@ -7590,16 +7175,560 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     end)
     aySlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     ns.Rows.AddTooltip(aySlider, "Anchor Offset Y", "Nudge this group up or down from its anchor.")
+    return yOffset - 46
+end
+
+-- ---------------------------------------------------------------------------
+-- Appearance: what an icon looks like before anything happens to it.
+-- ---------------------------------------------------------------------------
+local function BuildGroupLookSection(content, indent, yOffset, groupName, groupData, specData)
+    -- Built from ICON_SHAPES, so a new shape is one line there plus its image.
+    local shapeItems = {}
+    for _, s in ipairs(ICON_SHAPES) do
+        shapeItems[#shapeItems + 1] = { text = s.text, value = s.value }
+    end
+    local shapeDD = CreateSQDropdown(content, "Icon Shape", 160, shapeItems, function(val)
+        groupData.iconShape = val
+        BH.cdm:ScheduleReconcile()
+    end)
+    shapeDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    shapeDD:SetSelectedValue(groupData.iconShape or "none")
+    ns.Rows.AddTooltip(shapeDD, "Icon Shape",
+        "Cuts each icon, its cooldown sweep and its border to a shape. Tracked buffs follow it too while Draw Buffs Ourselves is on; Blizzard's own buff frames keep their look.")
+    yOffset = yOffset - 50
+
+    local zoomSlider = CreateSQSlider(content, "Icon Zoom %", 220, 0, 20, 1)
+    zoomSlider:SetValue(math.floor(((groupData.iconZoom or DEFAULT_ICON_ZOOM) * 100) + 0.5))
+    zoomSlider:SetAfterValueChanged(function(value)
+        groupData.iconZoom = value / 100
+        BH.cdm:ScheduleReconcile()
+    end)
+    zoomSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(zoomSlider, "Icon Zoom %",
+        "How much is cropped from each edge of the icon art. Higher values trim the default border off the artwork.")
     yOffset = yOffset - 46
 
-    -- Thin separator
-    local sep = content:CreateTexture(nil, "ARTWORK")
-    sep:SetHeight(1)
-    sep:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    sep:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, yOffset)
-    sep:SetColorTexture(0.25, 0.25, 0.30, 0.5)
-    yOffset = yOffset - 10
+    local borderCB = CreateSQCheckbox(content, "Show Border", function(checked)
+        groupData.showBorder = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    borderCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(borderCB, "Show Border", "Draw a border around each icon in this group.")
+    borderCB:SetChecked(groupData.showBorder ~= false)
 
+    local classColorCB = CreateSQCheckbox(content, "Use Class Colour", function(checked)
+        groupData.borderClassColor = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    classColorCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(classColorCB, "Use Class Colour",
+        "Colour the border with your class colour, overriding the colour picked above.")
+    classColorCB:SetChecked(groupData.borderClassColor)
+    yOffset = yOffset - 32
+
+    local thickSlider = CreateSQSlider(content, "Border Thickness", 220, 0, 4, 1)
+    thickSlider:SetValue(groupData.borderThickness or DEFAULT_BORDER_THICKNESS)
+    thickSlider:SetAfterValueChanged(function(value)
+        groupData.borderThickness = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    thickSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(thickSlider, "Border Thickness",
+        "How heavy the border around each icon is, in pixels. 0 removes it without unticking Show Border.")
+    yOffset = yOffset - 46
+
+    local bcInit = groupData.borderColor or DEFAULT_BORDER_COLOR
+    local borderColorPicker = CreateSQColorPicker(content, "Border Colour",
+        bcInit[1], bcInit[2], bcInit[3], bcInit[4], function(r, g, b, a)
+            groupData.borderColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    borderColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(borderColorPicker, "Border Colour", "Colour of the icon border for this group.")
+    yOffset = yOffset - 32
+
+    local bgCB = CreateSQCheckbox(content, "Icon Background", function(checked)
+        groupData.bgEnabled = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    bgCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(bgCB, "Icon Background",
+        "Draw a filled square behind each icon. Mainly useful with Hide Until Active, so the group keeps a visible footprint while its icons are hidden.")
+    bgCB:SetChecked(groupData.bgEnabled)
+
+    local bgInit = groupData.bgColor or DEFAULT_BG_COLOR
+    local bgColorPicker = CreateSQColorPicker(content, "Background Colour",
+        bgInit[1], bgInit[2], bgInit[3], bgInit[4], function(r, g, b, a)
+            groupData.bgColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    bgColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(bgColorPicker, "Background Colour", "Colour and opacity of the icon background.")
+    yOffset = yOffset - 32
+
+    local barBgCB = CreateSQCheckbox(content, "Group Background", function(checked)
+        groupData.barBgEnabled = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    barBgCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(barBgCB, "Group Background",
+        "A panel behind the whole group rather than behind each icon. It grows and shrinks with the row, "
+     .. "including as a Hide Until Active group packs down.")
+    barBgCB:SetChecked(groupData.barBgEnabled)
+
+    local barBgInit = groupData.barBgColor or { 0, 0, 0, 0.4 }
+    local barBgPicker = CreateSQColorPicker(content, "Group Background Colour",
+        barBgInit[1], barBgInit[2], barBgInit[3], barBgInit[4], function(r, g, b, a)
+            groupData.barBgColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    barBgPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(barBgPicker, "Group Background Colour", "Colour and opacity of the group panel.")
+    yOffset = yOffset - 32
+
+    local barBgPad = CreateSQSlider(content, "Group Background Padding", 220, 0, 20, 1)
+    barBgPad:SetValue(groupData.barBgPadding or 2)
+    barBgPad:SetAfterValueChanged(function(value)
+        groupData.barBgPadding = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    barBgPad:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(barBgPad, "Group Background Padding", "How far the panel extends past the icons.")
+    return yOffset - 46
+end
+
+-- ---------------------------------------------------------------------------
+-- Text: the three things that can be written on an icon.
+-- ---------------------------------------------------------------------------
+local function BuildGroupTextSection(content, indent, yOffset, groupName, groupData, specData)
+    local cdTextCB = CreateSQCheckbox(content, "Cooldown Text", function(checked)
+        groupData.showCooldownText = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    cdTextCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(cdTextCB, "Cooldown Text", "Show the remaining cooldown as a number on the icon.")
+    cdTextCB:SetChecked(groupData.showCooldownText ~= false)
+    yOffset = yOffset - 32
+
+    yOffset = AddTextPlacement(content, indent, yOffset, groupData,
+        "Cooldown Text", "cooldownTextPosition",
+        "cooldownTextOffsetX", "cooldownTextOffsetY", "CENTER", 0, 0,
+        "Where the countdown sits on the icon. Centre leaves the game's own placement alone; "
+     .. "any other choice moves the countdown the game draws, which it does not officially "
+     .. "support, so it is ignored rather than erroring if a patch stops exposing it.")
+    yOffset = yOffset - 6
+
+    local countCB = CreateSQCheckbox(content, "Show Charges", function(checked)
+        groupData.showCount = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    countCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(countCB, "Show Charges",
+        "Show the charge or stack number on icons that have one.")
+    countCB:SetChecked(groupData.showCount ~= false)
+    yOffset = yOffset - 32
+
+    local countSize = CreateSQSlider(content, "Charge Text Size", 220, 6, 24, 1)
+    countSize:SetValue(groupData.countSize or 12)
+    countSize:SetAfterValueChanged(function(v) groupData.countSize = v; BH.cdm:ScheduleReconcile() end)
+    countSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(countSize, "Charge Text Size", "Font size of the charge number.")
+    yOffset = yOffset - 46
+
+    yOffset = AddTextPlacement(content, indent, yOffset, groupData,
+        "Charges", "countPosition", "countOffsetX", "countOffsetY",
+        "BOTTOMRIGHT", -1, 1, "Where the charge number sits on the icon.")
+    yOffset = yOffset - 6
+
+    local kbCB = CreateSQCheckbox(content, "Show Keybind", function(checked)
+        groupData.showKeybind = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    kbCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(kbCB, "Show Keybind",
+        "Show the key that casts each ability on its icon.\n\n"
+     .. "Read from your action bars, so an ability that is not on a bar has no key to show. "
+     .. "It deliberately does not follow bar swaps from stealth, druid forms or dragonriding: "
+     .. "a keybind that rewrites itself every time you shapeshift is less use than a steady one.")
+    kbCB:SetChecked(groupData.showKeybind)
+
+    local kbColor = groupData.keybindColor or { 1, 1, 1, 0.9 }
+    local kbPicker = CreateSQColorPicker(content, "Keybind Colour",
+        kbColor[1], kbColor[2], kbColor[3], kbColor[4], function(r, g, b, a)
+            groupData.keybindColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    kbPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(kbPicker, "Keybind Colour", "Colour of the keybind text.")
+    yOffset = yOffset - 32
+
+    local kbSize = CreateSQSlider(content, "Keybind Text Size", 220, 6, 20, 1)
+    kbSize:SetValue(groupData.keybindSize or 10)
+    kbSize:SetAfterValueChanged(function(value)
+        groupData.keybindSize = value
+        BH.cdm:ScheduleReconcile()
+    end)
+    kbSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(kbSize, "Keybind Text Size", "Font size of the keybind text.")
+    yOffset = yOffset - 46
+
+    return AddTextPlacement(content, indent, yOffset, groupData,
+        "Keybind", "keybindPosition", "keybindOffsetX", "keybindOffsetY",
+        "TOPRIGHT", -1, -1, "Where the keybind sits on the icon.")
+end
+
+-- ---------------------------------------------------------------------------
+-- Behaviour: what the icon does as the ability changes state.
+-- ---------------------------------------------------------------------------
+local function BuildGroupBehaviourSection(content, indent, yOffset, groupName, groupData, specData)
+    local tooltipCB = CreateSQCheckbox(content, "Show Tooltip", function(checked)
+        groupData.showTooltip = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    tooltipCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(tooltipCB, "Show Tooltip", "Show the spell tooltip when hovering an icon in this group.")
+    tooltipCB:SetChecked(groupData.showTooltip ~= false)
+    yOffset = yOffset - 32
+
+    -- The two desaturate options are opposites, so ticking one unticks the
+    -- other. Leaving both on screen and independently settable would allow a
+    -- combination that greys the icon in every state, which is not a look
+    -- anyone wants and is hard to diagnose from the settings alone.
+    local desatCB, desatCdCB
+
+    desatCB = CreateSQCheckbox(content, "Grey Out When Ready", function(checked)
+        groupData.desaturateReady = checked
+        if checked then
+            groupData.desaturateOnCooldown = false
+            if desatCdCB then desatCdCB:SetChecked(false) end
+        end
+        BH.cdm:ScheduleReconcile()
+    end)
+    desatCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(desatCB, "Grey Out When Ready",
+        "Grey the icon out while the ability is READY, so a full-colour icon means it is on "
+        .. "cooldown. The inverse of the usual arrangement, for a group used as an \"these are "
+        .. "up\" display.")
+    desatCB:SetChecked(groupData.desaturateReady)
+
+    desatCdCB = CreateSQCheckbox(content, "Grey Out On Cooldown", function(checked)
+        groupData.desaturateOnCooldown = checked
+        if checked then
+            groupData.desaturateReady = false
+            if desatCB then desatCB:SetChecked(false) end
+        end
+        BH.cdm:ScheduleReconcile()
+    end)
+    desatCdCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(desatCdCB, "Grey Out On Cooldown",
+        "Grey the icon out while the ability is on cooldown, which is what Blizzard's own bars "
+        .. "do. Only the cooldown counts here, not whether the buff it applies is up.")
+    desatCdCB:SetChecked(groupData.desaturateOnCooldown)
+    yOffset = yOffset - 32
+
+    local glowCB = CreateSQCheckbox(content, "Glow On Ready", function(checked)
+        groupData.glowOnReady = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    glowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
+    glowCB:SetChecked(groupData.glowOnReady)
+
+    local activeCB = CreateSQCheckbox(content, "Show While Active", function(checked)
+        groupData.showActiveBuff = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    activeCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(activeCB, "Show While Active",
+        "While the ability is running, count down how long is LEFT OF IT instead of its cooldown, "
+        .. "keep the icon at full colour, and ring it with a glow distinct from the proc highlight. "
+        .. "The real cooldown takes over the moment it ends.\n\nOnly applies to abilities whose buff "
+        .. "lands on you -- one that buffs your target keeps showing its cooldown, which is what "
+        .. "stops a short buff hiding a long cooldown.\n\nWorks in combat: the active display is the "
+        .. "real aura, drawn by the game's own aura engine and shown only while the buff is up, so "
+        .. "the cooldown underneath is what is left the moment it ends.")
+    activeCB:SetChecked(groupData.showActiveBuff)
+    yOffset = yOffset - 32
+
+    local agInit = ActiveGlowColor(groupData)
+    local activeGlowPicker = CreateSQColorPicker(content, "Active Glow Colour",
+        agInit[1], agInit[2], agInit[3], agInit[4] or 1, function(r, g, b, a)
+            groupData.activeGlowColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    activeGlowPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(activeGlowPicker, "Active Glow Colour",
+        "Colour of the glow shown by \"Show While Active\". Separate from the proc glow and from "
+        .. "Glow On Ready, both of which use your main glow colour, so \"the ability is running\" "
+        .. "and \"the ability just lit up\" do not look the same.")
+    yOffset = yOffset - 32
+
+    local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)
+        groupData.procGlow = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    procCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(procCB, "Proc Glow",
+        "Show the game's own proc highlight on an icon when the ability lights up, the same animation you get on an action bar and on Blizzard's own cooldown bars.")
+    procCB:SetChecked(groupData.procGlow ~= false)
+
+    local usableCB = CreateSQCheckbox(content, "Dim When Unusable", function(checked)
+        groupData.usableTint = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    usableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(usableCB, "Dim When Unusable",
+        "Colour the icon by whether you can cast it right now, exactly as Blizzard's own bars do: dimmed when it is unusable, blue when you lack the power for it, and red when the target is out of range.")
+    usableCB:SetChecked(groupData.usableTint ~= false)
+    return yOffset - 32
+end
+
+-- ---------------------------------------------------------------------------
+-- Visibility: when the group is on screen at all.
+-- ---------------------------------------------------------------------------
+local function BuildGroupVisibilitySection(content, indent, yOffset, groupName, groupData, specData)
+    local enableCB = CreateSQCheckbox(content, "Enable Group", function(checked)
+        groupData.enabled = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    enableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(enableCB, "Enable Group",
+        "Show this group at all. Unticking hides it without unassigning anything, which is how you switch off one of the built-in groups you do not want.")
+    enableCB:SetChecked(groupData.enabled ~= false)
+    yOffset = yOffset - 32
+
+    local combatCB = CreateSQCheckbox(content, "Hide Out of Combat", function(checked)
+        groupData.hideOutOfCombat = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    combatCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(combatCB, "Hide Out of Combat", "Only show this group while you are in combat.")
+    combatCB:SetChecked(groupData.hideOutOfCombat)
+
+    local activeOnlyCB = CreateSQCheckbox(content, "Hide Until Active", function(checked)
+        groupData.hideUntilActive = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    activeOnlyCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(activeOnlyCB, "Hide Until Active", "Only show an icon once its ability is on cooldown or its buff is active.")
+    activeOnlyCB:SetChecked(groupData.hideUntilActive)
+    yOffset = yOffset - 32
+
+    -- Visibility conditions. All default off, so a group shows everywhere
+    -- unless told otherwise.
+    local visRows = {
+        { key = "hideMounted",     label = "Hide While Mounted",
+          tip = "Hide this group while you are on a mount." },
+        { key = "onlyInInstances", label = "Only In Instances",
+          tip = "Only show this group in a dungeon, raid, delve, scenario or battleground." },
+        { key = "hideInHousing",   label = "Hide In Housing",
+          tip = "Hide this group while you are inside your house or on your plot." },
+        { key = "hideNoTarget",    label = "Hide Without A Target",
+          tip = "Hide this group whenever you have nothing targeted." },
+        { key = "hideNoEnemy",     label = "Hide Without An Enemy",
+          tip = "Hide this group unless your target is something you can attack." },
+    }
+    for i, row in ipairs(visRows) do
+        local cb = CreateSQCheckbox(content, row.label, function(checked)
+            groupData[row.key] = checked
+            BH.cdm:ScheduleReconcile()
+        end)
+        -- Two columns, same as the toggles above.
+        local col = ((i - 1) % 2 == 0) and indent or (indent + 190)
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", col, yOffset)
+        ns.Rows.AddTooltip(cb, row.label, row.tip)
+        cb:SetChecked(groupData[row.key])
+        if (i % 2) == 0 or i == #visRows then yOffset = yOffset - 26 end
+    end
+    return yOffset - 6
+end
+
+-- ---------------------------------------------------------------------------
+-- Buffs: only meaningful for a group that holds them. Offered nowhere else,
+-- because on any other group every control here would be dead.
+-- ---------------------------------------------------------------------------
+local function GroupHoldsBuffs(groupName)
+    local grp = BH.cdm.groups[groupName]
+    return (grp and grp.usesBlizzardIcons)
+        or groupName == BUILTIN_FOR_VIEWERTYPE["buff"]
+        or groupName == BUILTIN_FOR_VIEWERTYPE["buffbar"]
+        or false
+end
+
+local function BuildGroupBuffSection(content, indent, yOffset, groupName, groupData, specData)
+    local alwaysCB = CreateSQCheckbox(content, "Always Show Buffs", function(checked)
+        groupData.showInactiveBuffs = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    alwaysCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(alwaysCB, "Always Show Buffs",
+        "Keep a slot for every tracked buff, showing a dimmed placeholder while it is not up, "
+     .. "instead of the row shrinking to only the active ones.")
+    alwaysCB:SetChecked(groupData.showInactiveBuffs)
+
+    local desatBuffCB = CreateSQCheckbox(content, "Grey Out Inactive", function(checked)
+        groupData.desaturateInactiveBuffs = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    desatBuffCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(desatBuffCB, "Grey Out Inactive",
+        "Draw those placeholders in greyscale. Untick to keep them in colour and rely on the "
+     .. "dimming alone.")
+    desatBuffCB:SetChecked(groupData.desaturateInactiveBuffs ~= false)
+    yOffset = yOffset - 32
+
+    local phAlpha = CreateSQSlider(content, "Inactive Buff Opacity %", 220, 5, 100, 5)
+    phAlpha:SetValue(math.floor(((groupData.inactiveBuffAlpha or 0.45) * 100) + 0.5))
+    phAlpha:SetAfterValueChanged(function(value)
+        groupData.inactiveBuffAlpha = value / 100
+        BH.cdm:ScheduleReconcile()
+    end)
+    phAlpha:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(phAlpha, "Inactive Buff Opacity %",
+        "How visible the placeholder for a buff that is not up should be.")
+    yOffset = yOffset - 46
+
+    -- Only the native bars have a fill of ours to colour; Blizzard's
+    -- borrowed bars keep their own.
+    if groupData.isBarGroup then
+        local bc = groupData.barColor or { 1.0, 0.7, 0.0, 1 }
+        local barColorPicker = CreateSQColorPicker(content, "Bar Colour",
+            bc[1], bc[2], bc[3], bc[4] or 1, function(r, g, b, a)
+                groupData.barColor = { r, g, b, a }
+                BH.cdm:ScheduleReconcile()
+            end)
+        barColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(barColorPicker, "Bar Colour",
+            "Fill colour of the buff bars. Applies when Draw Buffs Ourselves is on.")
+        yOffset = yOffset - 32
+    end
+
+    return yOffset
+end
+
+-- The sections, in the order they appear. Buffs is last and conditional.
+local GROUP_SECTIONS = {
+    { key = "layout",     label = "Layout",     build = BuildGroupLayoutSection },
+    { key = "look",       label = "Appearance", build = BuildGroupLookSection },
+    { key = "text",       label = "Text",       build = BuildGroupTextSection },
+    { key = "behaviour",  label = "Behaviour",  build = BuildGroupBehaviourSection },
+    { key = "visibility", label = "Visibility", build = BuildGroupVisibilitySection },
+    { key = "buffs",      label = "Buffs",      build = BuildGroupBuffSection, buffsOnly = true },
+}
+
+--- Build one group's settings.
+---
+--- `tabbed` means this group has a page to itself, so the sections become a
+--- strip of tabs and only one is on screen at a time. Without it the sections
+--- are stacked under headings and the running yOffset is returned, which is
+--- what the Custom Cooldowns tab needs: it puts several groups in one scroller,
+--- where a tab strip per group would be worse than the single column ever was.
+function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, specData, tabbed)
+    local indent = leftPad + 10
+
+    -- Group name header row with delete button
+    local groupRow = CreateFrame("Frame", nil, content)
+    groupRow:SetSize(380, 24)
+    groupRow:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+
+    local gLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    gLabel:SetPoint("LEFT", 4, 0)
+    gLabel:SetText(groupName)
+    gLabel:SetTextColor(TEXT_R, TEXT_G, TEXT_B)
+
+    -- Assigned count
+    local countLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    countLabel:SetPoint("LEFT", gLabel, "RIGHT", 8, 0)
+    local assignedCount = groupData.cooldownIDs and #groupData.cooldownIDs or 0
+    countLabel:SetText("(" .. assignedCount .. " assigned)")
+    countLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
+
+    -- The frame name other addons anchor to.
+    --
+    -- Shown because the alternative is asking: an addon that anchors by typing
+    -- a frame name cannot call our Lua accessor, and the obvious guess --
+    -- EssentialCooldownViewer -- is Blizzard's frame, which this addon parks
+    -- offscreen when "Hide Blizzard's Cooldown Manager" is on. Anchoring to
+    -- that drags the anchored frame off with it, which is a confusing way to
+    -- find out you picked the wrong frame.
+    local anchorLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    anchorLabel:SetPoint("LEFT", countLabel, "RIGHT", 8, 0)
+    anchorLabel:SetText("SQZ_CDMGroup_" .. groupName)
+    anchorLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    ns.Rows.AddTooltip(anchorLabel, "Anchor name",
+        "The frame name to give another addon that anchors to this group.\n\n"
+     .. "Do not use Blizzard's EssentialCooldownViewer or similar: those are separate frames, "
+     .. "and with Hide Blizzard's Cooldown Manager on they are parked far offscreen, which "
+     .. "takes anything anchored to them along too.")
+
+    -- Delete button. Not offered for the three built-in groups: they are
+    -- recreated on the next reconcile anyway, so a Delete that visibly does
+    -- nothing is worse than no button. Their contents can still be emptied by
+    -- reassigning spells elsewhere.
+    if not groupData.builtin then
+        local delBtn = CreateSQButton(groupRow, "Delete", 60, 20, {0.75, 0.25, 0.25, 1})
+        delBtn:SetPoint("RIGHT", groupRow, "RIGHT", 0, 0)
+        delBtn:SetScript("OnClick", function()
+            BH.cdm:DeleteGroup(groupName)
+            C_Timer.After(0.1, function() BH:RebuildCDMTabContent() end)
+        end)
+    end
+
+    yOffset = yOffset - 28
+
+    local holdsBuffs = GroupHoldsBuffs(groupName)
+
+    if not tabbed then
+        -- Stacked, under headings.
+        for _, sec in ipairs(GROUP_SECTIONS) do
+            if not sec.buffsOnly or holdsBuffs then
+                yOffset = SectionHeading(content, indent, yOffset, sec.label)
+                yOffset = sec.build(content, indent, yOffset, groupName, groupData, specData)
+                yOffset = yOffset - 6
+            end
+        end
+
+        -- Thin separator
+        local sep = content:CreateTexture(nil, "ARTWORK")
+        sep:SetHeight(1)
+        sep:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        sep:SetPoint("TOPRIGHT", content, "TOPRIGHT", -10, yOffset)
+        sep:SetColorTexture(0.25, 0.25, 0.30, 0.5)
+        return yOffset - 10
+    end
+
+    local defs = {}
+    for _, sec in ipairs(GROUP_SECTIONS) do
+        if not sec.buffsOnly or holdsBuffs then
+            defs[#defs + 1] = { key = sec.key, label = sec.label }
+        end
+    end
+
+    -- The page owns its own height from here: the widget sets it to whichever
+    -- section is showing, so the outer scroller scrolls that section rather
+    -- than the sum of all of them.
+    local pages = ns.SubTabs.CreateInline(content, defs, yOffset, {
+        initial = cdmGroupTab[groupName],
+        section = content.section,
+        onSelect = function(key) cdmGroupTab[groupName] = key end,
+    })
+
+    -- Each section files its rows under its own tab, so a search hit can bring
+    -- that tab forward instead of landing on a hidden one.
+    local prev = ns.Rows.currentSection
+    for _, sec in ipairs(GROUP_SECTIONS) do
+        local page = pages[sec.key]
+        if page then
+            ns.Rows.currentSection = page.section or prev
+            -- Indented to line up with the tab labels above it.
+            local endY = sec.build(page, 12, -8, groupName, groupData, specData)
+            pages.SetPageHeight(sec.key, math.abs(endY))
+        end
+    end
+    ns.Rows.currentSection = prev
+
+    -- The host height is the widget's business now, so there is nothing
+    -- meaningful to return; the caller stops using it for a tabbed page.
     return yOffset
 end
 

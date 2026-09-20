@@ -25,9 +25,25 @@ V1.86
   is exactly why it cannot break in combat. Tracked buff bars have worked this
   way since V1.76.
 
-  Only a buff that lands on YOU counts. This behaviour existed once and was
+  Only a buff that lands on YOU counts. This existed once and was
   removed in V1.81 because it got Lay on Hands with Empyreal Ward talented
   badly wrong -- a few seconds of sweep, then the icon lighting back up with
   the real cooldown never drawn. Empyreal Ward sits on the person you healed,
   so Lay on Hands keeps showing its cooldown; Avenging Wrath sits on you, so
   it does not.
+
+- Each cooldown group's settings are now split into sections -- Layout,
+  Appearance, Text, Behaviour, Visibility, and Buffs on the groups that hold
+  them -- instead of one column of about fifty controls.
+
+  Nothing was removed and nothing was broken: every setting that was there is
+  still there, and every one of them was already doing its job. The problem
+  was only that finding any single one meant scrolling past forty others,
+  which is hard to tell apart from the setting not working.
+
+  The section you were last on is remembered per group, so changing something
+  no longer bounces you back to the top.
+
+  The Custom Cooldowns tab keeps the stacked layout, now under headings. It
+  shows several groups in one list, where a row of tabs per group would be
+  worse than the single column ever was.
