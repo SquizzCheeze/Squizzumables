@@ -5,10 +5,10 @@ V1.86
 
 - Essential and Utility icons can now show an ability while it is RUNNING,
   not only while it is on cooldown. Avenging Wrath, Combustion, Metamorphosis
-  and the like count down how long is left of the buff, stay at full colour
-  instead of greying out, and carry a glow deliberately different from the
-  proc highlight. The moment the buff ends the real cooldown takes over and
-  the icon greys out exactly as before.
+  and the like stay at full colour instead of greying out, carry a glow
+  deliberately different from the proc highlight, and count down how long is
+  left of the buff rather than of the cooldown. The moment the buff ends the
+  real cooldown takes over and the icon greys out exactly as before.
 
   Off by default. It is "Show While Active", beside Glow On Ready in a
   group's settings.
@@ -16,10 +16,14 @@ V1.86
   This is the game's own behaviour for these icons, borrowed rather than
   rebuilt. Blizzard's Cooldown Manager already gives a self buff precedence
   over the spell's cooldown until it is gone; this addon now shows the result
-  on its own icons instead of drawing only the cooldown. Borrowing is also
-  what makes it work in combat -- a buff's remaining time cannot be looked up
-  once auras are secret, but the game's own frames can still be copied from
-  without any of it being read.
+  on its own icons instead of drawing only the cooldown.
+
+  One limit, in combat only: the icon still stays lit and glowing for as long
+  as the ability is running, but the number falls back to the spell's
+  cooldown. The game hands these particular icons their remaining time as
+  plain numbers, and once auras are secret an addon is not allowed to pass
+  those on -- unlike the tracked buff bars, which get a form that can be
+  handed straight through and so keep their exact countdown in combat.
 
   Only a buff that lands on YOU counts. This behaviour existed once and was
   removed in V1.81 because it got Lay on Hands with Empyreal Ward talented

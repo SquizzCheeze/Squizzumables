@@ -868,10 +868,37 @@ local function MirrorBlizzardCooldown(child)
             end))
     end
 
+    -- SECRET NUMBERS CANNOT BE FORWARDED HERE.
+    --
+    -- Not a guard that could be written more cleverly -- it is a hard rule.
+    -- Handing a secret to SetCooldown from our own (tainted) code raises
+    -- "Secret values are only allowed during untainted execution for this
+    -- argument", once per refresh, which is ~114 errors a fight.
+    --
+    -- The duration-object hook above has no such limit, because an opaque
+    -- handle is not a value. That asymmetry is the whole story of why tracked
+    -- buffs mirror perfectly in combat and this does not: Blizzard hands a
+    -- BUFF item a duration object, and a COOLDOWN item plain start/duration
+    -- numbers (CooldownFrame_Set), which in combat are derived from secret
+    -- data and therefore arrive secret.
+    --
+    -- So mirror while the numbers are readable -- which is out of combat, and
+    -- is when the aura countdown genuinely appears -- and otherwise stand down
+    -- and let UpdateProxyCooldown draw the spell's own cooldown from its
+    -- duration object, which stays legal in combat. Marked on the proxy rather
+    -- than inferred there, because only this hook ever sees the values.
+    --
+    -- The "is it running" signals are NOT affected: the glow and the
+    -- un-greying read cooldownUseAuraDisplayTime, which Blizzard assigns from
+    -- plain literals and is never secret. So in combat the icon still says the
+    -- ability is up; it is only the number that falls back to the cooldown.
     hooksecurefunc(cdw, "SetCooldown",
         MirrorTo(function(p, start, duration, ...)
-            -- Passed straight through: widget setters accept secret values,
-            -- and it is comparing or doing arithmetic on them that throws.
+            if BH.Secrets.HasAnySecret(start, duration) then
+                p._sqMirrorBlocked = true
+                return
+            end
+            p._sqMirrorBlocked = nil
             p.Cooldown:SetReverse(Reverse(p))
             p.Cooldown:SetCooldown(start, duration, ...)
         end))
@@ -2507,15 +2534,21 @@ local function UpdateProxyCooldown(proxy)
     -- Handing the widget over means not fighting it: the pass below would wipe
     -- the mirrored sweep within a fifth of a second, which is the bug the
     -- tracked-buff early return further down exists for.
-    local mirrorOwned = false
+    --
+    -- Ownership is given up the moment the mirror reports it cannot forward
+    -- Blizzard's numbers (_sqMirrorBlocked, set in the SetCooldown hook for
+    -- secret values). Active state is tracked either way: that is what keeps
+    -- the glow and the colour right in combat even when the countdown has
+    -- fallen back to the spell's own cooldown.
+    local mirrorOwned, activeNow = false, nil
     if not isBuffEntry and MirrorOwnsProxy(proxy) then
         local item = cdmModule.viewerItems[proxy.cooldownID]
         if item then
-            mirrorOwned = true
-            proxy._sqActiveNow = AuraDisplayActive(item) or nil
+            activeNow = AuraDisplayActive(item) or nil
+            mirrorOwned = not proxy._sqMirrorBlocked
         end
     end
-    if not mirrorOwned then proxy._sqActiveNow = nil end
+    proxy._sqActiveNow = activeNow
 
     -- Buff duration, the only way that survives combat.
     --
@@ -7134,7 +7167,10 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         .. "The real cooldown takes over the moment it ends.\n\nOnly applies to abilities whose buff "
         .. "lands on you -- one that buffs your target keeps showing its cooldown, which is what "
         .. "stops a short buff hiding a long cooldown.\n\nThis is the game's own behaviour for these "
-        .. "icons, borrowed rather than recreated, so it keeps working in combat.")
+        .. "icons, borrowed rather than recreated.\n\nIn combat the icon still stays lit and glowing "
+        .. "for as long as the ability is running, but the NUMBER falls back to the spell's cooldown: "
+        .. "the game hands these icons their remaining time in a form an addon is not allowed to "
+        .. "pass on once auras are secret.")
     activeCB:SetChecked(groupData.showActiveBuff)
     yOffset = yOffset - 24
 
