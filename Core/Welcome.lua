@@ -21,6 +21,12 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.85"] = {
+        "Tracked buffs drawn on Blizzard's own frames now take your group's icon shape, zoom and swipe. A buff row could previously come out half round and half square, depending on which icons this addon could draw itself.",
+        "Icon Zoom now works on the buff groups. It only ever reached this addon's own icons, so on a group showing Blizzard's frames the slider did nothing.",
+        "Fixed a tracked buff vanishing instead of being drawn - Bone Shield on a Death Knight, which is both a buff and a cooldown, was the reported case. Blizzard's own frame is now used whenever there is nothing of ours to put in the slot.",
+        "Buff groups no longer wait for this addon to recognise a buff before showing the game's own. A group that had never been handed one of our entries never looked at the game's list at all.",
+    },
     ["1.84"] = {
         "Reminder buttons for poisons, oils, flasks and food now clear the moment you apply them, instead of lingering for several seconds.",
         "Weapon enchants like rogue poisons and oils put no buff on you and consume nothing from your bags, so nothing was telling the addon they had been applied - the reminder only cleared when some unrelated event happened along. That is why it felt quick in a group and slow on your own.",

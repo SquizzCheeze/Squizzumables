@@ -332,6 +332,12 @@ local GroupAlpha
 local ApplyBarBackground
 local ApplyKeybindText
 
+-- Borrowed frames currently masked to a group's icon shape, so they can be put
+-- back square when we let go of them. WEAK KEYS: Blizzard pools these item
+-- frames and we must never be the reason one stays alive.
+local shapedBorrowed = setmetatable({}, { __mode = "k" })
+local ApplyShapeToBorrowedChild
+
 -- The two buff-type CDM viewers: category 2 = buff icons, category 3 = tracked bars
 local BUFF_VIEWERS = { "BuffIconCooldownViewer", "BuffBarCooldownViewer" }
 
@@ -1387,7 +1393,42 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
                             ph._sqCell = cell
                             slotFrame = ph
                         else
-                            slotFrame = cell or ((not useCell) and child) or nil
+                            -- NEVER DROP A CHILD WE CANNOT PLACE.
+                            --
+                            -- This was `cell or ((not useCell) and child) or nil`,
+                            -- which is nil when useCell is true and the cell is
+                            -- missing -- and a nil slotFrame is skipped
+                            -- entirely below, so the buff vanished while
+                            -- Blizzard was plainly still drawing it.
+                            --
+                            -- That combination is reachable: IsNative reads
+                            -- `nativeCooldowns[cdID]`, which is GLOBAL, while
+                            -- GetCell only answers for the group that claimed
+                            -- it (`st.active[cdID]`). Retire clears the claim
+                            -- only when it matches its own group name, so a
+                            -- claim left by another group strands the entry --
+                            -- IsNative true everywhere, cell nil here.
+                            --
+                            -- Bone Shield on a Death Knight is the reported
+                            -- case (2026-09-20): active, present in
+                            -- BuffIconCooldownViewer, tracked, and invisible,
+                            -- while Blood Debt beside it drew fine -- the
+                            -- difference being that Bone Shield is a same-name
+                            -- duplicate of its own cooldown and so travels via
+                            -- buffExtras rather than discovered.
+                            --
+                            -- Blizzard's frame is the floor. If we have no cell
+                            -- of our own for a child, show Blizzard's: the
+                            -- group then looks like Blizzard's until our cell
+                            -- turns up, instead of losing the buff outright.
+                            slotFrame = cell or child
+                            if not cell then
+                                -- It may have been parked a few lines above on
+                                -- the strength of useCell. Placing a parked
+                                -- frame puts it in the row at alpha 0, which
+                                -- looks identical to the bug being unfixed.
+                                UnparkBorrowedFrame(child)
+                            end
                         end
                         if slotFrame then
                             if child:IsShown() then
@@ -1486,6 +1527,14 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
         -- Works on a borrowed Blizzard frame as well as a placeholder: adding a
         -- font string to one is an ordinary region write, not a protected call.
         ApplyKeybindText(child, SpellIDForCooldown(child.cooldownID), groupData)
+        -- ONE STYLING PASS OVER WHATEVER IS IN THE SLOT, which is the whole
+        -- point: a Blizzard item, a placeholder of ours and a native cell all
+        -- take the group's shape here, so the row cannot come out half round
+        -- and half square depending on which renderer won each slot.
+        -- Bar groups are deliberately excluded (see the branch above) -- a
+        -- shape is an icon idea and a bar has no silhouette to cut.
+        ApplyShapeToBorrowedChild(child, groupData.iconShape or "none",
+            groupData.iconZoom or DEFAULT_ICON_ZOOM)
         if centered then
             local itemsThisLine = math.min(#shown - row * perRow, perRow)
             local rowW = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
@@ -2579,6 +2628,191 @@ local function ApplyIconShape(proxy, shape)
     local glowArt = SHAPE_GLOW[shape]
     ns.Glow.SetShape(proxy.ProcGlow, glowArt)
     ns.Glow.SetShape(proxy.GlowFrame, glowArt)
+end
+
+-- The icon texture and cooldown of a frame we did NOT build.
+--
+-- Blizzard's own accessor first: CooldownViewerItemMixin:GetIconTexture returns
+-- self.Icon, and the buff-bar mixin overrides it with its own. Some item types
+-- wrap the texture in a frame, which is why EllesmereUI reaches through
+-- frame.Icon.Icon -- same dance here. Returns nil rather than guessing if
+-- nothing that accepts a mask turns up.
+local function BorrowedIconRegions(child)
+    if not child then return nil end
+    local icon = child.Icon
+    if not icon and child.GetIconTexture then
+        local ok, tex = pcall(child.GetIconTexture, child)
+        if ok then icon = tex end
+    end
+    if icon and not icon.AddMaskTexture and icon.Icon then icon = icon.Icon end
+    if icon and not icon.AddMaskTexture then icon = nil end
+    local cd = child.Cooldown or (child.GetCooldownFrame and child:GetCooldownFrame())
+    return icon, cd
+end
+
+-- Cut a BORROWED frame to the group's icon shape -- Blizzard's own CDM item, or
+-- one of our placeholders, whichever is standing in the slot.
+--
+-- ApplyIconShape above does this for a proxy, but reaches proxy.Icon / proxy.Bg
+-- / proxy.ShapeBorder by name, which a Blizzard item does not have.
+--
+-- MASKING A FRAME WE DO NOT OWN IS SANCTIONED. AddMaskTexture and
+-- RemoveMaskTexture are ordinary region writes, the same class as the font
+-- string ApplyKeybindText already puts on these very children. EllesmereUI has
+-- masked Blizzard's CDM items -- buff-viewer frames included -- all along
+-- (EllesmereUICdmHooks.lua, _AC.SetMask + ApplyExtra, taking frame.Icon and
+-- frame.Cooldown straight off the item). The belief that they could not be
+-- masked is what left a single group drawing some icons round and some square,
+-- decided only by whether an entry happened to get one of our cells -- which is
+-- exactly what a user saw on a Death Knight's buff row (2026-09-20).
+--
+-- No ShapeBorder: that is a proxy-only texture, created at its own sublevel and
+-- sized and tinted by ApplyProxyVisuals, with nothing on a Blizzard item to
+-- hang it on. Mask and swipe only -- which is what decides the silhouette.
+--
+-- Passing nil for `shape` is the UNDO, and it is what puts a pooled frame back
+-- square before Blizzard gets it again (see ReleaseAll). ns.Shapes.SetMask
+-- removes before it adds, so re-applying can never stack two masks.
+ApplyShapeToBorrowedChild = function(child, shape, zoom)
+    local icon, cd = BorrowedIconRegions(child)
+    if not icon then return end
+    if shape == "none" then shape = nil end
+
+    -- ICON ZOOM, which a borrowed frame never had.
+    --
+    -- The art on a spell icon is a square that runs edge to edge, corners and
+    -- all, so a round mask cuts straight through the square border baked into
+    -- the image. Cropping the outer fraction of the texture is what makes a
+    -- shaped icon look deliberate rather than clipped -- the proxy path has
+    -- always done it (ApplyProxyVisuals) and so has the placeholder path
+    -- (GetBuffPlaceholder), but Blizzard's own frames were left at full coords.
+    --
+    -- That is also the whole reason the Icon Zoom slider looked broken on the
+    -- buff groups (user report 2026-09-20): those groups draw borrowed frames,
+    -- and the setting only ever reached proxies and placeholders. It was doing
+    -- nothing because nothing was reading it here.
+    --
+    -- Reset to full coords on the unwind, not left cropped: Blizzard's
+    -- RefreshSpellTexture sets the texture but never the coords, so a frame
+    -- handed back would keep our crop until it happened to be rebuilt.
+    if zoom == nil then zoom = DEFAULT_ICON_ZOOM end
+    if shape or child._sqZoomed then
+        local z = shape and zoom or 0
+        pcall(icon.SetTexCoord, icon, z, 1 - z, z, 1 - z)
+        child._sqZoomed = shape and true or nil
+    end
+
+    -- BLIZZARD ALREADY MASKS THIS ICON, AND MASKS INTERSECT.
+    --
+    -- Every CDM item template ships its own MaskTexture -- the rounded square
+    -- UI-HUD-CoolDownManager-Mask, setAllPoints, permanently applied to Icon
+    -- (CooldownViewer.xml, the <MaskedTextures> block on each item template).
+    -- Adding ours does not replace it: the two COMBINE, and the icon comes out
+    -- as the intersection -- mostly Blizzard's rounded square, with our circle
+    -- biting only where it is tighter.
+    --
+    -- That is exactly what was seen (2026-09-20): icons still square while the
+    -- swipe went round. The swipe looked right because it is not masked at all
+    -- -- we substitute its texture outright, so it never meets Blizzard's mask.
+    --
+    -- So Blizzard's mask comes OFF while ours is on, and goes back when we let
+    -- the frame go. They are anonymous XML regions with no parentKey, so they
+    -- are found by walking the frame's regions once, then cached per frame.
+    local blizz = child._sqBlizzMasks
+    if not blizz then
+        blizz = {}
+        -- Blizzard's SQUARE ICON BORDER, which no mask can ever reach.
+        --
+        -- Each item template also carries an OVERLAY texture atlassed
+        -- UI-HUD-CoolDownManager-IconOverlay, anchored deliberately OUTSIDE the
+        -- frame (TOPLEFT -8,7 to BOTTOMRIGHT 8,-7 on the buff-icon template)
+        -- and pointedly NOT listed in its <MaskedTextures> -- only Icon is. So
+        -- it is not masked by Blizzard's own mask, and it cannot be masked by
+        -- ours either: it draws a square outline sitting outside our circle,
+        -- which is what was still visible once the icon itself went round
+        -- (user report 2026-09-20).
+        --
+        -- Nothing for it but to hide the texture while a shape is on, and show
+        -- it again on the unwind. It is anonymous -- no parentKey -- so it is
+        -- found by atlas on the frame's own regions, once, and cached.
+        local overlays = {}
+        local ok, regions = pcall(function() return { child:GetRegions() } end)
+        if ok and regions then
+            for _, r in ipairs(regions) do
+                local okT, t = pcall(r.GetObjectType, r)
+                if okT and t == "MaskTexture" then
+                    blizz[#blizz + 1] = r
+                elseif okT and t == "Texture" then
+                    local okA, atlas = pcall(r.GetAtlas, r)
+                    if okA and type(atlas) == "string"
+                       and atlas:find("IconOverlay", 1, true) then
+                        overlays[#overlays + 1] = r
+                    end
+                end
+            end
+        end
+        child._sqBlizzMasks = blizz
+        child._sqBlizzOverlays = overlays
+    end
+    for _, o in ipairs(child._sqBlizzOverlays or {}) do
+        pcall(o.SetShown, o, not shape)
+    end
+    for _, m in ipairs(blizz) do
+        -- Remove first in BOTH directions: AddMaskTexture is additive, so a
+        -- repeated unwind would otherwise stack Blizzard's own mask twice.
+        pcall(icon.RemoveMaskTexture, icon, m)
+        if not shape then pcall(icon.AddMaskTexture, icon, m) end
+    end
+
+    local file = ns.Shapes.SetMask(child, shape, icon)
+
+    -- RE-POINT THE MASK EVERY PASS, AND TO THE FRAME RATHER THAN THE ICON.
+    --
+    -- ns.Shapes.SetMask anchors the mask once, at creation, to the first region
+    -- it is handed (`if not m then ... m:SetAllPoints((...)) end`). That is fine
+    -- for a proxy, whose Icon is SetAllPoints on the proxy itself, so the two
+    -- rects can never diverge. It is wrong here: these are Blizzard's POOLED
+    -- item frames, which it resizes and re-anchors as it reuses them, and which
+    -- this layout also resizes to the group's iconSize. A mask left on the rect
+    -- the icon happened to have when we first saw it then covers only part of
+    -- the icon, and the shape gets cut off flat where the mask runs out -- seen
+    -- as a straight left edge on an otherwise round icon (user report
+    -- 2026-09-20: Bone Shield and Death and Decay, the two borrowed frames in
+    -- a row whose other icons are our own cells and were correctly round).
+    --
+    -- The frame is the stable rect: we have just set its size, and the shape is
+    -- meant to describe the SLOT, not whatever sub-rect the art occupies inside
+    -- it. EllesmereUI anchors to a button-sized host for the same reason, and
+    -- re-points on every apply rather than only at creation.
+    local mask = child._sqMask
+    if mask and file then
+        mask:ClearAllPoints()
+        mask:SetAllPoints(child)
+    end
+
+    -- Only ever touched on a frame we have actually shaped, so one that never
+    -- was keeps whatever swipe Blizzard gave it.
+    if cd and (file or child._sqShapedSwipe) then
+        pcall(cd.SetSwipeTexture, cd, file or SQUARE_SWIPE)
+        if cd.SetUseCircularEdge then
+            pcall(cd.SetUseCircularEdge, cd, shape == "round")
+        end
+        if cd.SetDrawEdge then
+            pcall(cd.SetDrawEdge, cd, file == nil or shape == "round")
+        end
+        child._sqShapedSwipe = file and true or nil
+    end
+
+    shapedBorrowed[child] = file and true or nil
+end
+
+-- Put every borrowed frame back square. Called when this module lets go of
+-- them; without it the shape rides along to Blizzard's own bar.
+local function UnshapeAllBorrowed()
+    for child in pairs(shapedBorrowed) do
+        ApplyShapeToBorrowedChild(child, nil)
+    end
+    wipe(shapedBorrowed)
 end
 
 -- ============================================================================
@@ -4035,6 +4269,52 @@ function cdmModule:Reconcile()
         end
     end
 
+    -- WHICH GROUPS BORROW BLIZZARD'S FRAMES, decided before discovery is
+    -- consulted at all.
+    --
+    -- This flag used to be set only when an ENTRY of ours landed in a group
+    -- (in the loop below, and again for buffExtras), and was never cleared.
+    -- Two faults followed, and the second is the one that gets reported:
+    --
+    --   * STICKY. Once a group had ever held a buff it borrowed forever, so a
+    --     custom group kept borrowing after its buffs were moved out of it.
+    --   * A built-in buff group whose entries discovery did not hand over --
+    --     because they were dropped as same-name duplicates of a cooldown --
+    --     never had the flag set at all, so LayoutBorrowedBuffIcons was never
+    --     called for it and Blizzard's viewer children were INVISIBLE. Not
+    --     mis-styled: absent, while Blizzard was plainly showing them.
+    --
+    --     Bone Shield on a Death Knight is exactly that (user report
+    --     2026-09-20): it is a tracked buff AND a cooldown, so the buff copy
+    --     is deduped away (see the "One ability, two categories" note in
+    --     DiscoverCooldowns), and the Buffs group then never looked at
+    --     Blizzard's viewer. It survived as a BAR only because some other
+    --     entry happened to flag that group.
+    --
+    -- The built-in buff groups ARE "whatever Blizzard is showing" -- that is
+    -- their entire definition -- so they borrow whenever borrowing is on,
+    -- regardless of what our own discovery found. The registry still decides
+    -- whether a buff gets one of our styled cells; it no longer decides
+    -- whether the buff is VISIBLE. Those are different questions and conflating
+    -- them is what made a display bug out of a bookkeeping one.
+    --
+    -- Note this covers native mode too: "borrowing" here means the layout walks
+    -- Blizzard's viewer children, substituting one of our cells per child where
+    -- there is one. Only cdmProxyBuffIcons (proxy buff icons) opts out, and
+    -- those entries take the ordinary proxy path below.
+    --
+    -- Cleared first, so the flag is re-derived every pass instead of latching.
+    for _, group in pairs(self.groups) do
+        group.usesBlizzardIcons = false
+    end
+    if BorrowBuffIcons() then
+        for _, vt in ipairs({ "buff", "buffbar" }) do
+            local builtinName = BUILTIN_FOR_VIEWERTYPE[vt]
+            local builtinGroup = builtinName and self.groups[builtinName]
+            if builtinGroup then builtinGroup.usesBlizzardIcons = true end
+        end
+    end
+
     -- Buff entries each group will draw natively, handed to the native module
     -- once the loop is done (Squizzumables_CDMAuras.lua).
     local nativeByGroup = {}
@@ -4865,6 +5145,12 @@ function cdmModule:ApplyBlizzardVisibility()
 end
 
 function cdmModule:ReleaseAll()
+    -- Borrowed frames go back square FIRST. These are Blizzard's own pooled
+    -- items; a mask left on one rides along to Blizzard's bar and stays there
+    -- until a reload, which would be our shape appearing on a UI we no longer
+    -- claim to be drawing.
+    UnshapeAllBorrowed()
+
     -- Destroy all proxy frames
     for cdID, _ in pairs(self.proxyFrames) do
         DestroyProxy(cdID)
