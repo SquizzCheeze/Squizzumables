@@ -89,6 +89,24 @@ without a fundamentally different detection approach that doesn't depend on read
   Reversing that makes any `" -- "` inside a string read as a comment marker and truncate the
   line; this codebase's diagnostics are full of them. That exact bug has been written twice.
 
+  **A grep audit lies in two specific ways, and both produced confidently wrong findings in 1.86.**
+  Asked whether any options setting was dead, two sweeps of this file each reported one — and
+  neither was real:
+
+  - **A key at END OF LINE.** `groupData\.showKeybind[^A-Za-z0-9_]` never matches
+    `local want = groupData and groupData.showKeybind`, because there is no trailing character.
+    It scored zero reads and looked like a dead control. Always allow end of line:
+    `([^A-Za-z0-9_]|$)`.
+  - **Table-driven writes.** Grepping `groupData%.<key> = ` misses every setting written as
+    `groupData[def.key] = value`, which is how the five visibility conditions and all three text
+    placements are set. They looked like honoured-but-unreachable features with no UI at all; they
+    have had controls the whole time.
+
+  A static audit cannot be trusted while settings are reached through indirection. The check that
+  actually held was set-based: extract the old function verbatim first, then diff the SET OF
+  SETTING KEYS before and after (58 to 58, nothing missing either direction). Do that before
+  claiming anything is dead, and before claiming a refactor dropped nothing.
+
   Validate a new check against a known-bad file *and* a known-good one. Note that the corruption
   can hit the test as easily as the code: bash `printf` and Perl both read `\226` as octal, so a
   control file has to be written with explicit `chr(92)` to contain a real backslash.
@@ -307,6 +325,27 @@ The `.toc` also carries `UI/SubTabs.lua` (after Widgets, before Rows), `Core/Tar
 (after Welcome) and `Squizzumables_StackDiag.lua` (last, and temporary — see above), none of which
 the numbered list above describes.
 
+**`UI/SubTabs.lua` has two constructors and they are not interchangeable.** `Create` builds a
+strip plus **one ScrollFrame per page**, for a top-level tab. `CreateInline` (1.86) builds a strip
+plus **plain show/hide frames** and no scroller at all, for a third level inside a page that is
+already a scroll child — a ScrollFrame nested in a ScrollFrame scrolls badly and swallows the
+wheel. Instead the HOST's height follows whichever section is showing (`SetPageHeight(key, h)`
+after filling one), so the outer scroller scrolls just the open section rather than the sum of all
+of them. A caller that sets the host height itself afterwards will fight the widget and cut the
+taller sections off.
+
+Each group's CDM settings use it: one page per group, sections Layout / Appearance / Text /
+Behaviour / Visibility, plus Buffs on groups that hold them (`GROUP_SECTIONS` in
+`Squizzumables_CDM.lua`). `BH:BuildGroupSection`'s `tabbed` argument picks between that and the old
+stacked column — the Custom Cooldowns tab keeps stacking, under headings, because it shows several
+groups in one scroller where a strip per group would be worse than the column ever was. **Both
+layouts run the same six builder functions**, so they cannot drift apart.
+
+⚠ **The selected section is remembered OUTSIDE the widget** (`cdmGroupTab`, keyed by group name).
+`ClearCDMPage` reparents every child of a page away on each rebuild, and a rebuild happens whenever
+any setting on it changes — so a widget-held selection would snap back to the first tab on every
+click. Any future nested-tab page needs the same treatment.
+
 **`Squizzumables_Nameplates.lua` is on disk but NOT loaded**: its `.toc` line is commented out
 (`#Squizzumables_Nameplates.lua`). It is a real file with real code, so grep will find it and the
 linter still checks it — do not be misled into thinking it runs. See the Nameplate purge glow
@@ -415,6 +454,30 @@ model forbids addons from mutating protected/secure frames during combat:
   frame — which pooling makes unreliable, since a buff applied mid-fight lands on a freshly
   acquired frame.
 
+  **A fourth way, learned in 1.86, and it is a RULE rather than a quirk: secrets carry an ASPECT,
+  and a setter accepts one only if the aspect matches.** In the generated docs
+  (`FrameAPICooldownDocumentation.lua`) `SetCooldown`, `SetCooldownDuration`,
+  `SetCooldownFromExpirationTime` and `SetCooldownUNIX` all read
+  `SecretArguments = "AllowedWhenTainted"` **with**
+  `SecretArgumentsAddAspect = { Enum.SecretAspect.Cooldown }`. So "allowed when tainted" is not
+  blanket permission: a secret whose aspect is *Aura* handed to one of those arguments is refused,
+  with
+
+      bad argument #1 to 'SetCooldown' … Secret values are only allowed during untainted
+      execution for this argument.
+
+  once per refresh — ~114 errors a fight when it was hooked to a cooldown item's widget.
+  Blizzard's own active icons cache `auraData.expirationTime - auraData.duration`, so their
+  numbers are Aura-aspect and can be neither read nor **forwarded**. `SetCooldownFromDurationObject`
+  is the exception and the reason the buff mirror works: it takes a `LuaDurationObject`, which is an
+  opaque handle rather than a secret, so no aspect test applies. That asymmetry is the whole story
+  of why Blizzard hands a BUFF item a duration object (mirrorable) and a COOLDOWN item plain
+  numbers (not).
+
+  Do not reach for `SetCooldownFromExpirationTime` as a way around it; it carries the identical
+  flags. Check `SecretArgumentsAddAspect` in the generated docs before assuming any setter will
+  take a value that came from an aura.
+
   Borrowing sidesteps all of it: Blizzard keeps driving cooldown, icon, stacks and active state
   C-side, exactly as for its own bars. `LayoutBorrowedBuffIcons` owns only the anchors, and
   re-applies them from the 0.2s poll because Blizzard re-anchors on its own layout passes and the
@@ -477,6 +540,34 @@ model forbids addons from mutating protected/secure frames during combat:
   `cooldown`/`utility` are the cooldown side of that divide: `buffbar` was too until 1.76 (a
   `~= "buff"` test written before bars were split out), which dropped any buff icon sharing a name
   with a tracked bar. `/sq cdmnative` lists every Blizzard buff item not drawn by us, by name.
+- **"Show While Active" (1.86) puts an ENGINE-DRAWN OVERLAY on an Essential/Utility icon**
+  (`Native:SyncActiveOverlays` in `Squizzumables_CDMAuras.lua`, `groupData.showActiveBuff`, off by
+  default). While the ability's own buff is on the player, a one-slot `HELPFUL` AuraContainer
+  bound to `"player"` — `includeSpellIDs` = the entry's aura IDs — draws the aura's icon, swipe and
+  countdown C-side over the proxy, and the engine shows the button only while the buff is up. The
+  proxy keeps drawing its real cooldown underneath the whole time, so when the overlay goes there is
+  nothing to switch back: the cooldown is simply what is left.
+
+  Two earlier attempts are worth not repeating. Looking the aura up (the Tracked Buffs twin's
+  `auraInstanceID`, then `GetPlayerAuraBySpellID`) cannot work in combat — the instance id is secret
+  and the lookup answers nothing. Mirroring Blizzard's own cooldown item, which *does* draw this
+  natively (`CooldownViewerCooldownItemMixin:CheckCacheCooldownValuesFromAura` gives a self buff
+  precedence over the spell's cooldown until it is gone), fails on the aspect rule above. Handing
+  the slot to the engine is the only route, and it is what EllesmereUI does for the same problem —
+  read `EllesmereUICdmFakeActive.lua` ("engine-slot driver") before changing any of it.
+
+  Gated on `entry.selfAura` at BUILD time as well as display time, because Blizzard would just as
+  happily draw a TARGET aura's duration there — Lay on Hands with Empyreal Ward talented, which is
+  exactly the regression V1.81 removed this behaviour for. The "is it running" signal for the glow
+  and the un-greying is **`cooldownUseAuraDisplayTime`** on Blizzard's item frame: it is assigned
+  from plain `true`/`false` literals rather than derived from the aura, so unlike everything else
+  there it is never secret and stays readable in combat. `_sqActiveNow` caches it per proxy.
+
+  The overlay glow is a THIRD glow host (`proxy.ActiveGlow`, beside `GlowFrame` and `ProcGlow`):
+  `ActionButtonSpellAlertManager` keys by frame, and this one is held for a whole buff duration so
+  it overlaps the other two routinely. Passing `anchorTo` to `ns.Glow.Show`/`Set` forces the
+  self-drawn halo tier, and `sqGlowColor` (`groupData.activeGlowColor`, default teal) keeps it from
+  looking like the proc glow — which is the entire point of it being separate.
 - When adding new features that touch frames, action buttons, or secure state, check
   `InCombatLockdown()` and queue mutations rather than assuming they'll succeed mid-combat.
 
