@@ -813,6 +813,22 @@ end
 cdmModule.MirrorOwnsProxy = MirrorOwnsProxy
 cdmModule.AuraDisplayActive = AuraDisplayActive
 
+-- The active glow's colour, with its fallback in ONE place.
+--
+-- Deliberately not a field in CreateGroup's defaults: a profile is a deep copy
+-- of those, so a colour added there would reach nobody who has already run the
+-- addon, and making it reach them would need a migration. An absent field that
+-- resolves here needs neither -- existing groups get the new colour, and any
+-- group that has picked one keeps it.
+--
+-- Teal rather than the shared glow colour (gold), because the whole point of
+-- this glow is to NOT read as the proc glow. Whoever wants them to match can
+-- say so with the picker.
+local DEFAULT_ACTIVE_GLOW_COLOR = { 0.2, 0.9, 1.0, 1 }
+local function ActiveGlowColor(groupData)
+    return (groupData and groupData.activeGlowColor) or DEFAULT_ACTIVE_GLOW_COLOR
+end
+
 -- Mirror Blizzard's own duration object onto our matching proxy icon.
 --
 -- A buff's remaining time cannot be FETCHED in combat. /sq cdmbuff settled
@@ -3142,6 +3158,21 @@ local function ApplyProxyVisuals(proxy, groupData)
     if not proxy._sqShowActiveBuff and proxy.ActiveGlow then
         ns.Glow.Set(proxy.ActiveGlow, false)
         proxy._sqActiveNow = nil
+    end
+
+    -- Its own colour, so it does not read as the proc glow. sqGlowColor is the
+    -- per-frame override Glow.lua already honours (the nameplate purge glow
+    -- uses the same door), so nothing else in the addon follows this.
+    if proxy.ActiveGlow then
+        local c = ActiveGlowColor(groupData)
+        local prev = proxy.ActiveGlow.sqGlowColor
+        local changed = not prev or prev[1] ~= c[1] or prev[2] ~= c[2] or prev[3] ~= c[3]
+        proxy.ActiveGlow.sqGlowColor = c
+        -- A glow is tinted when it STARTS, and this one is held for a whole
+        -- buff, so without a restart a colour change would not show up until
+        -- the next time the ability was used. The state sync further down
+        -- brings it straight back on the same pass when it should be lit.
+        if changed then ns.Glow.Set(proxy.ActiveGlow, false) end
     end
 
     -- Alpha
@@ -7173,6 +7204,19 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         .. "pass on once auras are secret.")
     activeCB:SetChecked(groupData.showActiveBuff)
     yOffset = yOffset - 24
+
+    local agInit = ActiveGlowColor(groupData)
+    local activeGlowPicker = CreateSQColorPicker(content, "Active Glow Colour",
+        agInit[1], agInit[2], agInit[3], agInit[4] or 1, function(r, g, b, a)
+            groupData.activeGlowColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    activeGlowPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(activeGlowPicker, "Active Glow Colour",
+        "Colour of the glow shown by \"Show While Active\". Separate from the proc glow and from "
+        .. "Glow On Ready, both of which use your main glow colour, so \"the ability is running\" "
+        .. "and \"the ability just lit up\" do not look the same.")
+    yOffset = yOffset - 28
 
     local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)
         groupData.procGlow = checked

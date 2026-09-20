@@ -11,7 +11,9 @@ V1.86
   real cooldown takes over and the icon greys out exactly as before.
 
   Off by default. It is "Show While Active", beside Glow On Ready in a
-  group's settings.
+  group's settings, with its own "Active Glow Colour" under it -- the proc
+  glow and Glow On Ready use your main glow colour, and this one does not, so
+  "the ability is running" and "the ability just lit up" do not look alike.
 
   This is the game's own behaviour for these icons, borrowed rather than
   rebuilt. Blizzard's Cooldown Manager already gives a self buff precedence
