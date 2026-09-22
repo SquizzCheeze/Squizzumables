@@ -925,6 +925,7 @@ local function PrintDiagnosticsBody(self)
                     local function Readable(ok, v)
                         return ok and v ~= nil and not BH.Secrets.IsSecret(v)
                     end
+                    ---@param v any
                     local function SizeText(ok, v)
                         if not Readable(ok, v) or type(v) ~= "number" then return "?" end
                         return tostring(math.floor(v))
