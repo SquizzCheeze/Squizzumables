@@ -8,6 +8,53 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.86
+
+- Essential and Utility icons can now show an ability while it is RUNNING,
+  not only while it is on cooldown. Avenging Wrath, Combustion, Metamorphosis
+  and the like count down how long is left OF THE BUFF, with their own swipe,
+  stay at full colour instead of greying out, and carry a glow deliberately
+  different from the proc highlight. The moment the buff ends the real
+  cooldown is there underneath, greyed out, exactly as before.
+
+  Off by default. It is "Show While Active", beside Glow On Ready in a
+  group's settings, with its own "Active Glow Colour" under it -- the proc
+  glow and Glow On Ready use your main glow colour, and this one does not, so
+  "the ability is running" and "the ability just lit up" do not look alike.
+
+  It keeps working in combat, which took some doing. A buff's remaining time
+  is secret there: it cannot be read, and it cannot be copied from the game's
+  own icons either, because the numbers they hold are secret in a way an addon
+  is not permitted to pass on. So the active display is not drawn by this
+  addon at all -- it is a real aura, handed to the game's own aura engine,
+  which draws the icon, the swipe and the countdown itself and shows it only
+  while the buff is up. Nothing about the aura ever reaches this addon, which
+  is exactly why it cannot break in combat. Tracked buff bars have worked this
+  way since V1.76.
+
+  Only a buff that lands on YOU counts. This existed once and was
+  removed in V1.81 because it got Lay on Hands with Empyreal Ward talented
+  badly wrong -- a few seconds of sweep, then the icon lighting back up with
+  the real cooldown never drawn. Empyreal Ward sits on the person you healed,
+  so Lay on Hands keeps showing its cooldown; Avenging Wrath sits on you, so
+  it does not.
+
+- Each cooldown group's settings are now split into sections -- Layout,
+  Appearance, Text, Behaviour, Visibility, and Buffs on the groups that hold
+  them -- instead of one column of about fifty controls.
+
+  Nothing was removed and nothing was broken: every setting that was there is
+  still there, and every one of them was already doing its job. The problem
+  was only that finding any single one meant scrolling past forty others,
+  which is hard to tell apart from the setting not working.
+
+  The section you were last on is remembered per group, so changing something
+  no longer bounces you back to the top.
+
+  The Custom Cooldowns tab keeps the stacked layout, now under headings. It
+  shows several groups in one list, where a row of tabs per group would be
+  worse than the single column ever was.
+
 V1.85
 
 - Tracked buffs drawn on Blizzard's own frames now take your group's icon

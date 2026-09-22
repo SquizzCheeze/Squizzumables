@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.87"] = {
+        "Trinkets in Essential and Utility show their cooldown properly again - the swipe, the countdown, and greying out while on cooldown, going back to full colour the moment it ends.",
+        "\"Show While Active\" now works for trinkets too: while a trinket's buff is up, its icon shows the buff and glows.",
+        "\"Show While Active\" is no longer offered on the Buffs and Buff Bars groups, where it never did anything. Turn it on in Essential or Utility instead.",
+    },
     ["1.86"] = {
         "Essential and Utility icons can now show an ability while it is RUNNING, not only while it is on cooldown. Avenging Wrath and the like count down how long is left of the buff, stay at full colour, and glow differently from a proc. The real cooldown takes over the moment it ends.",
         "It is \"Show While Active\", beside Glow On Ready in a group's settings, and off by default. Its glow has its own colour setting, so it does not have to look like the proc glow. Only a buff that lands on YOU counts - which is what keeps something like Lay on Hands with Empyreal Ward showing its cooldown rather than a few seconds of sweep.",
