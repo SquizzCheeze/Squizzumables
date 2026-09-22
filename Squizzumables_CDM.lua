@@ -2436,7 +2436,10 @@ local function ApplyUsableTint(proxy, enabled)
     if not proxy or not proxy.Icon then return end
 
     local tint = TINT_USABLE
-    if enabled and proxy.spellID then
+    -- Not for an equip-slot entry: the spellID a trinket carries is its use
+    -- effect, and asking IsSpellUsable about that answers for the spell, not the
+    -- item -- see EquipSlotCooldown.
+    if enabled and proxy.spellID and not proxy.equipSlot then
         if proxy._outOfRange then
             tint = TINT_OUT_OF_RANGE
         elseif C_Spell.IsSpellUsable then
@@ -2463,26 +2466,52 @@ local function ApplyUsableTint(proxy, enabled)
     end
 end
 
+-- An equip-slot entry's cooldown (a trinket), read off the inventory slot the
+-- way Blizzard's CheckCacheCooldownValuesFromEquippedItem reads it.
+--
+-- EQUIP SLOT WINS OVER spellID. Until 1.87 both callers branched on
+-- `not proxy.spellID`, on the belief that a trinket entry carries no spell. It
+-- can: the spellID is the trinket's use effect (Blizzard's own
+-- ShouldDisplaySpellCooldown tests `isOnGCD and self:GetEquipSlot()`, which
+-- only makes sense if both are set). Such an entry took the spell path, where
+-- the use effect has no cooldown of its own -- so no swipe, never greyed out,
+-- while Blizzard's icon showed the item cooldown perfectly.
+--
+-- Unlike GetSpellCooldown (SecretWhenCooldownsRestricted in the generated
+-- docs), the item cooldown APIs carry no secret-return flag, so these should
+-- stay readable in combat. SafeNumber anyway: unreadable means "not on
+-- cooldown", never an error.
+--
+-- Returns start, duration, onCD; nil when there is nothing to read.
+local function EquipSlotCooldown(proxy)
+    if not (proxy.equipSlot and GetInventoryItemCooldown) then return nil end
+    local start, duration, enable = GetInventoryItemCooldown("player", proxy.equipSlot)
+    start = BH.Secrets.SafeNumber(start, nil)
+    duration = BH.Secrets.SafeNumber(duration, nil)
+    if not (start and duration) then return nil end
+    -- enable 0 is a cooldown that has not started yet (it waits for combat to
+    -- end); Blizzard draws nothing for it either.
+    local enabled = BH.Secrets.SafeNumber(enable, 1) ~= 0
+    local onCD = enabled and duration > 1.5 and (start + duration) > GetTime()
+    return start, duration, onCD
+end
+
 local function UpdateProxyCooldown(proxy)
     if not proxy or not proxy.Cooldown then return end
 
-    -- Trinkets and the like: no spell, so the cooldown comes off the inventory
-    -- slot. Blizzard reads it exactly this way in
-    -- CheckCacheCooldownValuesFromEquippedItem. Through SafeNumber because
-    -- these are ordinary numbers that go secret in combat like any other, and
-    -- `start + duration` on a secret throws rather than misbehaving.
-    if not proxy.spellID then
-        if proxy.equipSlot and GetInventoryItemCooldown then
-            local start, duration = GetInventoryItemCooldown("player", proxy.equipSlot)
-            start = BH.Secrets.SafeNumber(start, nil)
-            duration = BH.Secrets.SafeNumber(duration, nil)
-            if start and duration then
-                proxy.Cooldown:SetReverse(false)
-                proxy.Cooldown:SetCooldown(start, duration)
-            end
+    -- Trinkets and the like -- see EquipSlotCooldown for why this is tested
+    -- before, and instead of, the spell.
+    if proxy.equipSlot then
+        local start, duration, onCD = EquipSlotCooldown(proxy)
+        proxy.Cooldown:SetReverse(false)
+        if onCD then
+            proxy.Cooldown:SetCooldown(start, duration)
+        else
+            proxy.Cooldown:SetCooldown(0, 0)
         end
         return
     end
+    if not proxy.spellID then return end
 
     -- AURA SWEEPS ARE FOR BUFF ENTRIES ONLY.
     --
@@ -3255,11 +3284,18 @@ local function ApplyProxyVisuals(proxy, groupData)
     end
 
     -- Desaturation: greyscale icon when spell is NOT on cooldown
-    if proxy.Icon and proxy.spellID then
+    -- An equip-slot entry (a trinket) reads the item cooldown instead of the
+    -- spell, and may have no spellID at all -- see EquipSlotCooldown.
+    if proxy.Icon and (proxy.spellID or proxy.equipSlot) then
         local onCD = false
+        if proxy.equipSlot then
+            local _, _, itemOnCD = EquipSlotCooldown(proxy)
+            onCD = itemOnCD and true or false
+        end
         -- LiveSpellID: this is the read that decides "grey it out", and on a
         -- talent-overridden spell the base ID reports permanently ready.
-        local cdInfo = C_Spell.GetSpellCooldown and C_Spell.GetSpellCooldown(LiveSpellID(proxy.spellID))
+        local cdInfo = not proxy.equipSlot and C_Spell.GetSpellCooldown
+            and C_Spell.GetSpellCooldown(LiveSpellID(proxy.spellID))
         if cdInfo then
             local start = cdInfo.startTime
             local dur = cdInfo.duration
@@ -3874,6 +3910,7 @@ end
 local function GetOrCreateProxy(cooldownID, spellID, iconSize, equipSlot)
     local proxy = cdmModule.proxyFrames[cooldownID]
     if proxy then
+        if equipSlot then proxy.equipSlot = equipSlot end
         proxy:SetSize(iconSize, iconSize)
         proxy.Icon:SetAllPoints()
         proxy.Cooldown:SetAllPoints()

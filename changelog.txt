@@ -1,6 +1,12 @@
 Squizzumables Changelog
 =======================
 
+V1.87
+
+- Trinkets in Essential and Utility show their cooldown again: the swipe, the
+  countdown, and greying out while on cooldown. Some trinkets were being
+  treated as a spell, and asking about the spell always said "ready".
+
 V1.86
 
 - Essential and Utility icons can now show an ability while it is RUNNING,
