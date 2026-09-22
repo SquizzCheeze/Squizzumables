@@ -880,7 +880,7 @@ function Native:ReleaseAll()
 end
 
 -- /sq cdmnative -- unlisted; see CLAUDE.md.
-function Native:PrintDiagnostics()
+local function PrintDiagnosticsBody(self)
     local s = BH.settings or {}
     print("|cff00ccffSquizzumables|r native buffs (Draw Buffs Ourselves):")
     print(("  setting: %s   proxy-icon override: %s   Blizzard_AuraContainer loaded: %s")
@@ -919,11 +919,20 @@ function Native:PrintDiagnostics()
                     local okS, shown = pcall(f.IsShown, f)
                     local okW, w = pcall(f.GetWidth, f)
                     local okH, h = pcall(f.GetHeight, f)
-                    chain[#chain + 1] = ("%s[shown=%s %dx%d]"):format(
+                    -- Sizes can come back SECRET (a frame sized off aura
+                    -- layout), and math.floor on a secret throws -- that took
+                    -- this whole command down mid-print (2026-09-22).
+                    local function Readable(ok, v)
+                        return ok and v ~= nil and not BH.Secrets.IsSecret(v)
+                    end
+                    local function SizeText(ok, v)
+                        if not Readable(ok, v) or type(v) ~= "number" then return "?" end
+                        return tostring(math.floor(v))
+                    end
+                    chain[#chain + 1] = ("%s[shown=%s %sx%s]"):format(
                         (f.GetName and f:GetName()) or "<anon>",
-                        okS and tostring(shown) or "?",
-                        okW and math.floor(w or 0) or -1,
-                        okH and math.floor(h or 0) or -1)
+                        Readable(okS, shown) and tostring(shown) or "?",
+                        SizeText(okW, w), SizeText(okH, h))
                     local okP, parent = pcall(f.GetParent, f)
                     f = okP and parent or nil
                     depth = depth + 1
@@ -963,4 +972,49 @@ function Native:PrintDiagnostics()
             end
         end
     end
+
+    -- "Show While Active" overlays: one per Essential/Utility icon that asked
+    -- for one. No line for an icon means no overlay was built for it at all.
+    print("  Show While Active overlays:")
+    local anyOverlay = false
+    for cdID, st in pairs(activeOverlays) do
+        anyOverlay = true
+        local okV, vis = pcall(function() return st.container and st.container:IsVisible() end)
+        print(("    cd %s: ids {%s}   container visible: %s   buttons: %d")
+            :format(tostring(cdID), tostring(st.sig),
+                (okV and not BH.Secrets.IsSecret(vis)) and tostring(vis) or "?",
+                st.buttonCount or 0))
+    end
+    if not anyOverlay then print("    none built") end
+
+    -- Equip-slot entries (trinkets): what discovery handed us, and what the
+    -- running check reads. The aura IDs are what an overlay matches the buff by.
+    print("  Equip-slot entries:")
+    local anyEquip = false
+    for cdID, e in pairs(cdm.registry or {}) do
+        if e.equipSlot then
+            anyEquip = true
+            local proxy = cdm.proxyFrames and cdm.proxyFrames[cdID]
+            local item = cdm.viewerItems and cdm.viewerItems[cdID]
+            local auraFlag = item and item.cooldownUseAuraDisplayTime
+            print(("    cd %s: slot %s  type %s  spellID %s  selfAura %s  auraIDs {%s}")
+                :format(tostring(cdID), tostring(e.equipSlot), tostring(e.viewerType),
+                    tostring(e.spellID), tostring(e.selfAura),
+                    table.concat(e.auraIDs or {}, ",")))
+            print(("      proxy: %s  showActive: %s  activeNow: %s  Blizzard aura flag: %s")
+                :format(proxy and "yes" or "no",
+                    tostring(proxy and proxy._sqShowActiveBuff),
+                    tostring(proxy and proxy._sqActiveNow),
+                    BH.Secrets.IsSecret(auraFlag) and "secret" or tostring(auraFlag)))
+        end
+    end
+    if not anyEquip then print("    none") end
+end
+
+-- Wrapped so a failure part-way is reported rather than silently cutting the
+-- output short, and ends with a terminator so a truncated dump is obvious.
+function Native:PrintDiagnostics()
+    local ok, err = pcall(PrintDiagnosticsBody, self)
+    if not ok then print("  |cffff4444diagnostics failed:|r " .. tostring(err)) end
+    print("  -- end of cdmnative --")
 end
