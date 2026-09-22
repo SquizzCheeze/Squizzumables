@@ -7558,34 +7558,46 @@ local function BuildGroupBehaviourSection(content, indent, yOffset, groupName, g
     ns.Rows.AddTooltip(glowCB, "Glow On Ready", "Highlight the icon when the ability comes off cooldown.")
     glowCB:SetChecked(groupData.glowOnReady)
 
-    local activeCB = CreateSQCheckbox(content, "Show While Active", function(checked)
-        groupData.showActiveBuff = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    activeCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(activeCB, "Show While Active",
-        "While the ability is running, count down how long is LEFT OF IT instead of its cooldown, "
-        .. "keep the icon at full colour, and ring it with a glow distinct from the proc highlight. "
-        .. "The real cooldown takes over the moment it ends.\n\nOnly applies to abilities whose buff "
-        .. "lands on you -- one that buffs your target keeps showing its cooldown, which is what "
-        .. "stops a short buff hiding a long cooldown.\n\nWorks in combat: the active display is the "
-        .. "real aura, drawn by the game's own aura engine and shown only while the buff is up, so "
-        .. "the cooldown underneath is what is left the moment it ends.")
-    activeCB:SetChecked(groupData.showActiveBuff)
-    yOffset = yOffset - 32
-
-    local agInit = ActiveGlowColor(groupData)
-    local activeGlowPicker = CreateSQColorPicker(content, "Active Glow Colour",
-        agInit[1], agInit[2], agInit[3], agInit[4] or 1, function(r, g, b, a)
-            groupData.activeGlowColor = { r, g, b, a }
+    -- "Show While Active" and its colour mean nothing on the built-in buff
+    -- groups: it is applied to cooldown-type icons only (see
+    -- proxy._sqShowActiveBuff), and a tracked buff already shows its duration.
+    -- Offering it there got it ticked on Buffs instead of Essential, which
+    -- reads as the feature not working (2026-09-22). Custom groups keep it:
+    -- they can mix cooldowns and buffs.
+    local buffOnlyGroup = groupName == BUILTIN_FOR_VIEWERTYPE["buff"]
+        or groupName == BUILTIN_FOR_VIEWERTYPE["buffbar"]
+    if buffOnlyGroup then
+        yOffset = yOffset - 32
+    else
+        local activeCB = CreateSQCheckbox(content, "Show While Active", function(checked)
+            groupData.showActiveBuff = checked
             BH.cdm:ScheduleReconcile()
         end)
-    activeGlowPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(activeGlowPicker, "Active Glow Colour",
-        "Colour of the glow shown by \"Show While Active\". Separate from the proc glow and from "
-        .. "Glow On Ready, both of which use your main glow colour, so \"the ability is running\" "
-        .. "and \"the ability just lit up\" do not look the same.")
-    yOffset = yOffset - 32
+        activeCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+        ns.Rows.AddTooltip(activeCB, "Show While Active",
+            "While the ability is running, count down how long is LEFT OF IT instead of its cooldown, "
+            .. "keep the icon at full colour, and ring it with a glow distinct from the proc highlight. "
+            .. "The real cooldown takes over the moment it ends.\n\nOnly applies to abilities whose buff "
+            .. "lands on you -- one that buffs your target keeps showing its cooldown, which is what "
+            .. "stops a short buff hiding a long cooldown.\n\nWorks in combat: the active display is the "
+            .. "real aura, drawn by the game's own aura engine and shown only while the buff is up, so "
+            .. "the cooldown underneath is what is left the moment it ends.")
+        activeCB:SetChecked(groupData.showActiveBuff)
+        yOffset = yOffset - 32
+
+        local agInit = ActiveGlowColor(groupData)
+        local activeGlowPicker = CreateSQColorPicker(content, "Active Glow Colour",
+            agInit[1], agInit[2], agInit[3], agInit[4] or 1, function(r, g, b, a)
+                groupData.activeGlowColor = { r, g, b, a }
+                BH.cdm:ScheduleReconcile()
+            end)
+        activeGlowPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(activeGlowPicker, "Active Glow Colour",
+            "Colour of the glow shown by \"Show While Active\". Separate from the proc glow and from "
+            .. "Glow On Ready, both of which use your main glow colour, so \"the ability is running\" "
+            .. "and \"the ability just lit up\" do not look the same.")
+        yOffset = yOffset - 32
+    end
 
     local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)
         groupData.procGlow = checked
