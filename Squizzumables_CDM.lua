@@ -2519,6 +2519,20 @@ local function UpdateProxyCooldown(proxy)
         proxy.Cooldown:SetReverse(false)
         if onCD then
             proxy.Cooldown:SetCooldown(start, duration)
+            -- Nothing reports an item cooldown ENDING (BAG_UPDATE_COOLDOWN
+            -- fires as it starts), so without this the swipe ran out on its own
+            -- while the icon stayed greyed out until some unrelated refresh.
+            -- One timer per end time, however often this pass runs.
+            local endsAt = start + duration
+            if proxy._sqItemCDEnd ~= endsAt then
+                proxy._sqItemCDEnd = endsAt
+                C_Timer.After(endsAt - GetTime() + 0.1, function()
+                    if proxy._sqItemCDEnd == endsAt then
+                        proxy._sqItemCDEnd = nil
+                        UpdateAllProxyCooldowns()
+                    end
+                end)
+            end
         else
             proxy.Cooldown:SetCooldown(0, 0)
         end
