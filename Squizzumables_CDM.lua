@@ -2147,6 +2147,47 @@ local function DiscoverCooldowns()
             end
         end
     end
+
+    -- A trinket's Essential/Utility entry may not know which aura it applies.
+    --
+    -- Blizzard fills linkedSpellIDs for the TRACKED equip-slot entry (the buff
+    -- bar's), which is how the Vile Vial of Volatile Venom showed its buff there
+    -- and nowhere on its Essential icon (user report 2026-09-22): "Show While
+    -- Active" matches the aura by these IDs, and the Essential entry carried
+    -- none that matched. So an equip-slot cooldown entry also takes the aura IDs
+    -- of every buff entry on the same slot, plus the item's own use spell,
+    -- which is usually the buff it applies.
+    local trackedBySlot = {}
+    local function CollectTracked(records)
+        for _, r in pairs(records) do
+            if r.equipSlot and (r.viewerType == "buff" or r.viewerType == "buffbar") then
+                local ids = trackedBySlot[r.equipSlot] or {}
+                trackedBySlot[r.equipSlot] = ids
+                for _, id in ipairs(r.auraIDs) do ids[#ids + 1] = id end
+            end
+        end
+    end
+    CollectTracked(discovered)
+    CollectTracked(buffExtras)
+    for _, r in pairs(discovered) do
+        if r.equipSlot and (r.viewerType == "cooldown" or r.viewerType == "utility") then
+            local seen = {}
+            for _, id in ipairs(r.auraIDs) do seen[id] = true end
+            local function Add(id)
+                id = BH.Secrets.SafeNumber(id, nil)
+                if id and id > 0 and not seen[id] then
+                    seen[id] = true
+                    r.auraIDs[#r.auraIDs + 1] = id
+                end
+            end
+            for _, id in ipairs(trackedBySlot[r.equipSlot] or {}) do Add(id) end
+            local itemID = GetInventoryItemID("player", r.equipSlot)
+            if itemID and C_Item and C_Item.GetItemSpell then
+                local _, useSpellID = C_Item.GetItemSpell(itemID)
+                Add(useSpellID)
+            end
+        end
+    end
     return discovered, buffExtras
 end
 
@@ -2542,6 +2583,17 @@ local function UpdateProxyCooldown(proxy)
         if proxy._sqShowActiveBuff then
             local item = cdmModule.viewerItems[proxy.cooldownID]
             if item then activeNow = AuraDisplayActive(item) or nil end
+            -- Blizzard's Essential item can be as blind to the trinket's buff
+            -- as our entry was (see the equip-slot merge at the end of
+            -- discovery), so also ask the buff viewer's items, which track it.
+            if not activeNow then
+                for _, sid in ipairs(proxy.auraSpellIDs or {}) do
+                    if CooldownAuraActive(nil, sid) then
+                        activeNow = true
+                        break
+                    end
+                end
+            end
         end
         proxy._sqActiveNow = activeNow
         return
