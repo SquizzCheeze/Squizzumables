@@ -7,6 +7,9 @@ V1.87
   countdown, and greying out while on cooldown. Some trinkets were being
   treated as a spell, and asking about the spell always said "ready".
 
+- "Show While Active" now works for trinkets: while a trinket's buff is up
+  its icon shows the buff, glows and stays in colour, like an ability does.
+
 V1.86
 
 - Essential and Utility icons can now show an ability while it is RUNNING,

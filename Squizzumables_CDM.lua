@@ -2496,6 +2496,19 @@ local function EquipSlotCooldown(proxy)
     return start, duration, onCD
 end
 
+-- May "Show While Active" apply to this entry at all? selfAura false means the
+-- spell's aura lands on the target (Lay on Hands with Empyreal Ward), which
+-- this display must not show -- see UpdateProxyCooldown.
+--
+-- NOT for an equip-slot entry. A trinket has no spell to carry that flag, so
+-- selfAura false says nothing about where its buff goes, and Blizzard does not
+-- consult it either: its item scans player then target for the linked spells
+-- (CooldownViewerItemDataMixin:GetAuraData). Honouring it here left trinkets
+-- never showing while active (user report 2026-09-22).
+local function ShowActiveAllowed(entryOrProxy)
+    return entryOrProxy.equipSlot ~= nil or entryOrProxy.selfAura ~= false
+end
+
 local function UpdateProxyCooldown(proxy)
     if not proxy or not proxy.Cooldown then return end
 
@@ -2509,6 +2522,14 @@ local function UpdateProxyCooldown(proxy)
         else
             proxy.Cooldown:SetCooldown(0, 0)
         end
+        -- Still needed on this early return: the glow and the un-greying for
+        -- "Show While Active" read it. Same source as the spell path below.
+        local activeNow = nil
+        if proxy._sqShowActiveBuff then
+            local item = cdmModule.viewerItems[proxy.cooldownID]
+            if item then activeNow = AuraDisplayActive(item) or nil end
+        end
+        proxy._sqActiveNow = activeNow
         return
     end
     if not proxy.spellID then return end
@@ -2562,7 +2583,7 @@ local function UpdateProxyCooldown(proxy)
     -- cooldownUseAuraDisplayTime, a flag it assigns from plain literals, so it
     -- stays readable in combat when nothing else about the aura does.
     local activeNow = nil
-    if not isBuffEntry and proxy._sqShowActiveBuff and proxy.selfAura ~= false then
+    if not isBuffEntry and proxy._sqShowActiveBuff and ShowActiveAllowed(proxy) then
         local item = cdmModule.viewerItems[proxy.cooldownID]
         if item then activeNow = AuraDisplayActive(item) or nil end
     end
@@ -4667,7 +4688,7 @@ function cdmModule:Reconcile()
                     -- all, rather than building one that must not be shown.
                     if groupData and groupData.showActiveBuff
                        and entry.viewerType ~= "buff" and entry.viewerType ~= "buffbar"
-                       and entry.selfAura ~= false then
+                       and ShowActiveAllowed(entry) then
                         activeWanted[cdID] = {
                             proxy = proxy, groupData = groupData, entry = entry,
                         }
