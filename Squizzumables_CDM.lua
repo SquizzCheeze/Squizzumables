@@ -825,6 +825,13 @@ local function ActiveGlowColor(groupData)
     return (groupData and groupData.activeGlowColor) or DEFAULT_ACTIVE_GLOW_COLOR
 end
 
+-- The proc glow's colour, per group. The default is the gold of Blizzard's own
+-- proc animation, so a group that never picks one looks as it always did.
+local DEFAULT_PROC_GLOW_COLOR = { 1, 0.82, 0, 1 }
+local function ProcGlowColor(groupData)
+    return (groupData and groupData.procGlowColor) or DEFAULT_PROC_GLOW_COLOR
+end
+
 -- Mirror Blizzard's own duration object onto our matching proxy icon.
 --
 -- A buff's remaining time cannot be FETCHED in combat. /sq cdmbuff settled
@@ -2890,8 +2897,13 @@ local function ApplyIconShape(proxy, shape)
 
     -- Both glows follow the shape: Blizzard's alert still plays, with its art
     -- swapped for animated sheets in this shape (see ns.Glow, ApplyAlertArt).
-    -- Square keeps Blizzard's art. A glow already running switches at once.
-    local glowArt = SHAPE_GLOW[shape]
+    -- A glow already running switches at once.
+    --
+    -- Square falls back to art of its own rather than to Blizzard's, which is
+    -- what lets the proc glow take a colour on EVERY shape: Blizzard's art is a
+    -- fixed gold that cannot be tinted, so a square icon was the one shape
+    -- whose proc colour could not be chosen. See Shapes.SQUARE_GLOW.
+    local glowArt = SHAPE_GLOW[shape] or ns.Shapes.SQUARE_GLOW
     ns.Glow.SetShape(proxy.ProcGlow, glowArt)
     ns.Glow.SetShape(proxy.GlowFrame, glowArt)
     ns.Glow.SetShape(proxy.ActiveGlow, glowArt)
@@ -3226,6 +3238,23 @@ local function ApplyProxyVisuals(proxy, groupData)
     -- would not be parity but invention -- and a buff has no meaningful "can
     -- you cast this right now" to colour by in the first place.
     local isCooldownType = (proxy.viewerType ~= "buff")
+
+    -- The proc glow's colour, through the same per-frame door the active glow
+    -- uses below. A glow is tinted when it STARTS and a proc glow can last a
+    -- whole fight, so a colour change has to restart it or it would not show
+    -- until the next proc.
+    --
+    -- BEFORE SyncProcGlow, deliberately: that call re-lights a glow that should
+    -- still be running, so the icon is dark for no frame at all. After it, the
+    -- icon would stay dark until the next proc -- the very thing the restart is
+    -- here to avoid.
+    if proxy.ProcGlow then
+        local c = ProcGlowColor(groupData)
+        local prev = proxy.ProcGlow.sqGlowColor
+        local changed = not prev or prev[1] ~= c[1] or prev[2] ~= c[2] or prev[3] ~= c[3]
+        proxy.ProcGlow.sqGlowColor = c
+        if changed then SetProcGlow(proxy, false) end
+    end
 
     local procGlowOn = isCooldownType and (groupData.procGlow ~= false)
     proxy._procGlowAllowed = procGlowOn
@@ -7599,24 +7628,47 @@ local function BuildGroupBehaviourSection(content, indent, yOffset, groupName, g
         yOffset = yOffset - 32
     end
 
-    local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)
-        groupData.procGlow = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    procCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
-    ns.Rows.AddTooltip(procCB, "Proc Glow",
-        "Show the game's own proc highlight on an icon when the ability lights up, the same animation you get on an action bar and on Blizzard's own cooldown bars.")
-    procCB:SetChecked(groupData.procGlow ~= false)
+    -- Proc Glow and Dim When Unusable are cooldown-only for the same reason
+    -- Show While Active is (ApplyProxyVisuals' isCooldownType): Blizzard's buff
+    -- items have neither a proc highlight nor a "can you cast this". Offering
+    -- them on the buff groups only invited them to be ticked where they do
+    -- nothing, which is how Show While Active got turned on in the wrong place.
+    if not buffOnlyGroup then
+        local procCB = CreateSQCheckbox(content, "Proc Glow", function(checked)
+            groupData.procGlow = checked
+            BH.cdm:ScheduleReconcile()
+        end)
+        procCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(procCB, "Proc Glow",
+            "Highlight an icon when the ability lights up, the same moment Blizzard's own bars and your action bars do.")
+        procCB:SetChecked(groupData.procGlow ~= false)
 
-    local usableCB = CreateSQCheckbox(content, "Dim When Unusable", function(checked)
-        groupData.usableTint = checked
-        BH.cdm:ScheduleReconcile()
-    end)
-    usableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
-    ns.Rows.AddTooltip(usableCB, "Dim When Unusable",
-        "Colour the icon by whether you can cast it right now, exactly as Blizzard's own bars do: dimmed when it is unusable, blue when you lack the power for it, and red when the target is out of range.")
-    usableCB:SetChecked(groupData.usableTint ~= false)
-    return yOffset - 32
+        local usableCB = CreateSQCheckbox(content, "Dim When Unusable", function(checked)
+            groupData.usableTint = checked
+            BH.cdm:ScheduleReconcile()
+        end)
+        usableCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+        ns.Rows.AddTooltip(usableCB, "Dim When Unusable",
+            "Colour the icon by whether you can cast it right now, exactly as Blizzard's own bars do: dimmed when it is unusable, blue when you lack the power for it, and red when the target is out of range.")
+        usableCB:SetChecked(groupData.usableTint ~= false)
+        yOffset = yOffset - 32
+
+        local pgInit = ProcGlowColor(groupData)
+        local procGlowPicker = CreateSQColorPicker(content, "Proc Glow Colour",
+            pgInit[1], pgInit[2], pgInit[3], pgInit[4] or 1, function(r, g, b, a)
+                groupData.procGlowColor = { r, g, b, a }
+                BH.cdm:ScheduleReconcile()
+            end)
+        procGlowPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        ns.Rows.AddTooltip(procGlowPicker, "Proc Glow Colour",
+            "Colour of the proc glow, defaulting to the gold of the game's own. The glow is drawn by "
+            .. "this addon in your icon's shape, square included, so the colour applies whatever shape "
+            .. "the group uses.")
+        yOffset = yOffset - 32
+    end
+    -- Each row closes itself above, so a buff group's section simply ends after
+    -- Glow On Ready rather than leaving the gap its hidden rows used to fill.
+    return yOffset
 end
 
 -- ---------------------------------------------------------------------------

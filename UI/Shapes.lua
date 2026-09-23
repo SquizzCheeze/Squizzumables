@@ -59,6 +59,23 @@ for _, s in ipairs(Shapes.LIST) do
     end
 end
 
+-- Square's glow art, deliberately NOT in GLOW (and its fill not in FILE).
+--
+-- A square icon needs no mask, no shaped swipe and no border image -- that is
+-- what "square" means here -- but it still has a proc glow, and until 1.88 that
+-- was Blizzard's own art, which is a fixed gold nothing can tint. Generating
+-- square art alongside the other shapes makes every CDM proc glow ours and so
+-- every one of them tintable, which is what a per-group Proc Glow Colour needs.
+--
+-- Kept out of GLOW so nothing picks it up by looking a shape up: the reminder
+-- buttons index GLOW directly and their square glow is meant to stay Blizzard's.
+-- Only the CDM asks for this, by name.
+Shapes.SQUARE_GLOW = {
+    start = SHAPE_DIR .. "square_proc_start.png",
+    loop  = SHAPE_DIR .. "square_proc_loop.png",
+    halo  = SHAPE_DIR .. "square_glow.png",
+}
+
 --- Dropdown items for a shape picker.
 function Shapes.DropdownItems()
     local items = {}

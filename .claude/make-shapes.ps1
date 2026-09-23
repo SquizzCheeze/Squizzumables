@@ -329,6 +329,24 @@ $p.AddBezier(50, 118, 25, 102, 0, 85, 0, 50)
 $p.CloseFigure()
 $shapes['shield'] = $p
 
+# Square, for the glow art only -- a square icon needs no mask, no shaped swipe
+# and no border image, so square.png goes unused (UI/Shapes.lua keeps square out
+# of FILE and points only SQUARE_GLOW at these). Its proc glow is generated all
+# the same, so every shape's proc glow is ours and therefore tintable, rather
+# than square alone being stuck with Blizzard's gold art.
+#
+# Corners rounded very slightly (4 of 100): a razor-sharp corner makes the
+# halo's layered strokes collide into a bright spike, and an icon's own art has
+# a soft corner anyway.
+$r = 4.0
+$p = New-Object System.Drawing.Drawing2D.GraphicsPath
+$p.AddArc(0, 0, 2 * $r, 2 * $r, 180, 90)
+$p.AddArc((100 - 2 * $r), 0, 2 * $r, 2 * $r, 270, 90)
+$p.AddArc((100 - 2 * $r), (100 - 2 * $r), 2 * $r, 2 * $r, 0, 90)
+$p.AddArc(0, (100 - 2 * $r), 2 * $r, 2 * $r, 90, 90)
+$p.CloseFigure()
+$shapes['square'] = $p
+
 # The classic parametric heart, y flipped so the point is at the bottom.
 $pts = for ($i = 0; $i -lt 240; $i++) {
     $t = 2 * [Math]::PI * $i / 240
