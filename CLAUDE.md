@@ -341,6 +341,15 @@ stacked column — the Custom Cooldowns tab keeps stacking, under headings, beca
 groups in one scroller where a strip per group would be worse than the column ever was. **Both
 layouts run the same six builder functions**, so they cannot drift apart.
 
+⚠ **A control that only applies to cooldown icons must be HIDDEN on the built-in buff groups**, not
+merely inert there (1.88). `ApplyProxyVisuals`' `isCooldownType` gates Show While Active, Proc Glow
+and Dim When Unusable — a tracked buff has no proc highlight, no "can you cast this", and already
+draws its own duration. All three were still offered on Buffs and Buff Bars, and a user ticked Show
+While Active there instead of on Essential, which reads exactly like the feature being broken and
+cost a session of diagnosis. `buffOnlyGroup` in `BuildGroupBehaviourSection` skips them; custom
+groups keep them, since a custom group can mix cooldowns and buffs. Each row closes its own
+`yOffset` so a hidden one leaves no gap.
+
 ⚠ **The selected section is remembered OUTSIDE the widget** (`cdmGroupTab`, keyed by group name).
 `ClearCDMPage` reparents every child of a page away on each rebuild, and a rebuild happens whenever
 any setting on it changes — so a widget-held selection would snap back to the first tab on every
@@ -568,6 +577,34 @@ model forbids addons from mutating protected/secure frames during combat:
   it overlaps the other two routinely. Passing `anchorTo` to `ns.Glow.Show`/`Set` forces the
   self-drawn halo tier, and `sqGlowColor` (`groupData.activeGlowColor`, default teal) keeps it from
   looking like the proc glow — which is the entire point of it being separate.
+
+  **`selfAura` is NOT consulted for an equip-slot entry** (1.87). A trinket has no spell to carry
+  that flag, so `false` there says nothing about where its buff lands, and Blizzard does not consult
+  it either — `CooldownViewerItemDataMixin:GetAuraData` scans `player` then `target` regardless.
+  Honouring it kept trinkets out of this display entirely. `ShowActiveAllowed` is the one gate.
+- **EQUIP-SLOT ENTRIES (trinkets) ARE NOT SPELLS, AND THE SLOT WINS** (1.87, four bugs in a row).
+  Everything cooldown-shaped in `Squizzumables_CDM.lua` used to branch on `not proxy.spellID` to
+  mean "this is an item". That is wrong and every symptom points elsewhere:
+  - **A trinket entry can carry BOTH `spellID` and `equipSlot`.** The spell is its use effect, which
+    has no cooldown of its own, so the spell path answered "ready" forever: no swipe, never greyed
+    out, while Blizzard's own icon was perfect. Blizzard's `ShouldDisplaySpellCooldown` tests
+    `isOnGCD and self:GetEquipSlot()`, which only makes sense if both are set. `EquipSlotCooldown`
+    is now the first test in `UpdateProxyCooldown` and in the desaturation pass.
+  - **Item cooldowns stay READABLE in combat.** `GetInventoryItemCooldown`/`C_Item.GetItemCooldown`
+    carry no secret-return flag in the generated docs, unlike `GetSpellCooldown`
+    (`SecretWhenCooldownsRestricted`). Don't assume the spell rules apply.
+  - **Nothing fires when an item cooldown ENDS.** `BAG_UPDATE_COOLDOWN` fires as it starts. The
+    swipe runs out on its own while the icon stays greyed until some unrelated refresh, so
+    `UpdateProxyCooldown` schedules one `C_Timer` per end time.
+  - **The Essential entry may not know its own buff.** Blizzard fills `linkedSpellIDs` on the
+    TRACKED equip-slot entry (the buff bar's) — *"only doing linked spells for now because that's
+    what items like trinkets will always use"*. Discovery therefore merges every buff entry's aura
+    IDs on the same slot, plus `C_Item.GetItemSpell` of the equipped item, into the cooldown entry's
+    `auraIDs`. (The reported trinket, Vile Vial of Volatile Venom, turned out to use one ID for
+    both, so this was belt and braces — but the asymmetry is real in Blizzard's source.)
+  - **`ApplyUsableTint` skips them**: `IsSpellUsable` on a use effect answers for the spell.
+  `/sq cdmnative` has an "Equip-slot entries" section listing slot, type, spellID, `selfAura`,
+  aura IDs and the running state, plus a "Show While Active overlays" section. Read it first.
 - When adding new features that touch frames, action buttons, or secure state, check
   `InCombatLockdown()` and queue mutations rather than assuming they'll succeed mid-combat.
 
@@ -1037,6 +1074,17 @@ per button and never pools it, so art set on our `ProcGlow` frame cannot leak on
 action bars. `<name>_glow.png` is a static halo for the self-drawn fallback tier. Shapes are set
 per frame with `Glow.SetShape` from `ApplyIconShape`. The generator's `GlowScale` and sheet
 constants must match `SHAPED_SCALE` and `SHEET_*` in Glow.lua.
+
+**Square has its own glow art too, since 1.88 — `Shapes.SQUARE_GLOW`, deliberately NOT in
+`Shapes.GLOW`.** Blizzard's art is a fixed gold that cannot be tinted, so while square fell back to
+it, square was the one shape whose proc colour could not be chosen; that is what
+`groupData.procGlowColor` (per group, default Blizzard's gold) needed. It stays out of the `GLOW`
+table because the reminder buttons index that table directly and their square glow is meant to stay
+Blizzard's — only `ApplyIconShape` asks for the square art, by name. Square's `square.png` fill is
+generated but unused: square needs no mask, swipe or border image, which is what square *means*
+here. **A glow is tinted when it STARTS**, so a colour change must restart a running one — and the
+restart has to happen *before* `SyncProcGlow`, which lights it straight back up if it should still
+be lit. After it, the icon stays dark until the next proc.
 
 **Encounter timeline** (`Core/EncounterTimeline.lua`, `BH.Timeline`): only the **write** side of
 `C_EncounterTimeline` is usable. On the read side, `EncounterTimelineEventInfo` exposes just `id`,

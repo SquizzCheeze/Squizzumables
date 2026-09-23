@@ -8,6 +8,19 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.87
+
+- Trinkets in Essential and Utility show their cooldown again: the swipe, the
+  countdown, and greying out while on cooldown. Some trinkets were being
+  treated as a spell, and asking about the spell always said "ready".
+
+- "Show While Active" now works for trinkets: while a trinket's buff is up
+  its icon shows the buff, glows and stays in colour, like an ability does.
+
+- "Show While Active" is no longer offered on the Buffs and Buff Bars groups,
+  where it never did anything. Turn it on in Essential or Utility (or a custom
+  group) instead.
+
 V1.86
 
 - Essential and Utility icons can now show an ability while it is RUNNING,

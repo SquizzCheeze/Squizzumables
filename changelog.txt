@@ -1,15 +1,17 @@
 Squizzumables Changelog
 =======================
 
-V1.87
+V1.88
 
-- Trinkets in Essential and Utility show their cooldown again: the swipe, the
-  countdown, and greying out while on cooldown. Some trinkets were being
-  treated as a spell, and asking about the spell always said "ready".
+- The proc glow on cooldown icons can now be coloured, per group, under
+  "Proc Glow Colour" beside the Proc Glow tick. It defaults to the gold of
+  the game's own glow, so nothing changes until you pick a colour.
 
-- "Show While Active" now works for trinkets: while a trinket's buff is up
-  its icon shows the buff, glows and stays in colour, like an ability does.
+  Square icons used to get the game's own glow art, which is a fixed gold
+  nothing could recolour. Square now has glow art of this addon's own, drawn
+  the same way the round, shield and other shapes already were, so the colour
+  applies whatever shape a group uses. Reminder buttons are unchanged.
 
-- "Show While Active" is no longer offered on the Buffs and Buff Bars groups,
-  where it never did anything. Turn it on in Essential or Utility (or a custom
-  group) instead.
+- "Proc Glow" and "Dim When Unusable" no longer appear on the Buffs and Buff
+  Bars groups, where they never did anything - a tracked buff has no proc
+  highlight and nothing to dim.

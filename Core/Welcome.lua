@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.88"] = {
+        "The proc glow on cooldown icons can be coloured now, per group - \"Proc Glow Colour\", beside the Proc Glow tick. It defaults to the gold of the game's own glow, so nothing changes until you pick a colour.",
+        "Square icons used to get the game's own glow art, a fixed gold nothing could recolour. Square now has glow art of this addon's own, like the round and shield shapes already had, so the colour applies whatever shape a group uses.",
+        "\"Proc Glow\" and \"Dim When Unusable\" no longer appear on the Buffs and Buff Bars groups, where they never did anything.",
+    },
     ["1.87"] = {
         "Trinkets in Essential and Utility show their cooldown properly again - the swipe, the countdown, and greying out while on cooldown, going back to full colour the moment it ends.",
         "\"Show While Active\" now works for trinkets too: while a trinket's buff is up, its icon shows the buff and glows.",
