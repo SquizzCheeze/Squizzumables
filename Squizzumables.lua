@@ -1733,7 +1733,7 @@ function BH:CreateOptionsPanel()
     local classBuffsTabBtn = CreateTab("Class Buffs")
     local raidToolsTabBtn = CreateTab("Raid Tools")
     local textRemindersTabBtn = CreateTab("Reminders")
-    local cdmTabBtn = CreateTab("Cooldowns")
+    local cdmTabBtn = CreateTab("CDM")
     local cdmCustomTabBtn = CreateTab("Custom Icons")
     local soundsTabBtn = CreateTab("Sounds")
     local calloutsTabBtn = CreateTab("Callouts")
@@ -1859,7 +1859,7 @@ function BH:CreateOptionsPanel()
         { key = "settings",   label = "Settings",    frame = settingsTab,      build = "BuildSettingsTab" },
         { key = "raidtools",  label = "Raid Tools",  frame = raidToolsTab,     build = "BuildRaidToolsTab" },
         { key = "reminders",  label = "Reminders",   frame = textRemindersTab, build = "BuildTextRemindersTab" },
-        { key = "cdm",        label = "Cooldowns",   frame = cdmTab,           build = "BuildCDMTab" },
+        { key = "cdm",        label = "CDM",         frame = cdmTab,           build = "BuildCDMTab" },
         { key = "cdmcustom",  label = "Custom Icons", frame = cdmCustomTab,    build = "BuildCustomCooldownsTab" },
         { key = "sounds",     label = "Sounds",      frame = soundsTab,        build = "BuildSoundsTab" },
         { key = "classbuffs", label = "Class Buffs", frame = classBuffsTab,    build = "BuildClassBuffsTab" },

@@ -1243,7 +1243,10 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData, mirrorSource)
         end
     end
 
-    local preview = self.previewMode
+    -- group.previewLook is the options preview (UI/CDMPreview.lua) asking for
+    -- this slot drawn as a live buff; it sets the flag per placeholder, so one
+    -- preview row can show live and inactive slots side by side.
+    local preview = self.previewMode or group.previewLook
     local bar = ph.bar
     if isBar and bar then
         local barH = groupData.barHeight or DEFAULT_BAR_HEIGHT
@@ -3272,8 +3275,13 @@ ApplyKeybindText = function(frame, spellID, groupData)
     fs:Show()
 end
 
--- Apply per-group visual settings to a proxy frame
-local function ApplyProxyVisuals(proxy, groupData)
+-- Apply per-group visual settings to a proxy frame.
+--
+-- `preview` (the options preview, UI/CDMPreview.lua) applies the STYLE only
+-- and skips everything that reads live state: the real proc, the usable
+-- tint, and the cooldown/aura pass -- which also fires the CDM sound alerts,
+-- so a preview icon must never reach it. The preview mocks that state itself.
+local function ApplyProxyVisuals(proxy, groupData, preview)
     if not proxy or not groupData then return end
 
     -- Fill in an icon that was not available when the proxy was built.
@@ -3326,10 +3334,14 @@ local function ApplyProxyVisuals(proxy, groupData)
     local procGlowOn = isCooldownType and (groupData.procGlow ~= false)
     proxy._procGlowAllowed = procGlowOn
     ResizeSpellAlert(proxy)
-    SyncProcGlow(proxy, procGlowOn)
+    if not preview then
+        SyncProcGlow(proxy, procGlowOn)
+    end
 
     proxy._usableTintAllowed = isCooldownType and (groupData.usableTint ~= false)
-    ApplyUsableTint(proxy, proxy._usableTintAllowed)
+    if not preview then
+        ApplyUsableTint(proxy, proxy._usableTintAllowed)
+    end
 
     -- Cached here for the same reason as the two above: the duration pass runs
     -- per icon with no group in hand. Cooldown-type only -- a tracked buff
@@ -3469,7 +3481,7 @@ local function ApplyProxyVisuals(proxy, groupData)
     -- Desaturation: greyscale icon when spell is NOT on cooldown
     -- An equip-slot entry (a trinket) reads the item cooldown instead of the
     -- spell, and may have no spellID at all -- see EquipSlotCooldown.
-    if proxy.Icon and (proxy.spellID or proxy.equipSlot) then
+    if not preview and proxy.Icon and (proxy.spellID or proxy.equipSlot) then
         local onCD = false
         if proxy.equipSlot then
             local _, _, itemOnCD = EquipSlotCooldown(proxy)
@@ -6651,6 +6663,14 @@ function BH:BuildCDMTab(parent)
     cdmTabState.pages = pages
     cdmTabState.content = pages.general
     cdmTabState.parent = parent
+    -- A 1:1 preview pinned above each group's settings (UI/CDMPreview.lua).
+    -- Once, here: the pane lives on the tab, not on the page content the
+    -- rebuild below clears.
+    if ns.CDMPreview then
+        for _, b in ipairs(BUILTIN_GROUPS) do
+            ns.CDMPreview.AttachToSubTab(pages[b.name], b.name)
+        end
+    end
     self:RebuildCDMTabContent()
 end
 
@@ -7825,8 +7845,18 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     -- Assigned count
     local countLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     countLabel:SetPoint("LEFT", gLabel, "RIGHT", 8, 0)
-    local assignedCount = groupData.cooldownIDs and #groupData.cooldownIDs or 0
-    countLabel:SetText("(" .. assignedCount .. " assigned)")
+    -- A built-in group fills itself from Blizzard's Cooldown Manager, so its
+    -- own cooldownIDs list stays empty and this always read "0 assigned"
+    -- (user report 2026-09-24). Count what the group actually holds instead --
+    -- the same list the preview draws. Custom groups keep counting their own
+    -- assignments, which is exactly what they are.
+    if groupData.builtin then
+        local held = #BH.cdm:PreviewMembers(groupName).items
+        countLabel:SetText("(" .. held .. " tracked)")
+    else
+        local assignedCount = groupData.cooldownIDs and #groupData.cooldownIDs or 0
+        countLabel:SetText("(" .. assignedCount .. " assigned)")
+    end
     countLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
 
     -- The frame name other addons anchor to.
@@ -7861,6 +7891,12 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     end
 
     yOffset = yOffset - 28
+
+    -- Custom Icons: a preview under each group's heading (the Cooldowns tab
+    -- pins one above each sub-tab instead -- see BuildCDMTab).
+    if not tabbed and ns.CDMPreview then
+        yOffset = ns.CDMPreview.PlaceInline(content, groupName, leftPad, yOffset)
+    end
 
     local holdsBuffs = GroupHoldsBuffs(groupName)
 
@@ -8510,4 +8546,85 @@ function BH:RebuildCDMSoundsRight()
     end
 
     content:SetHeight(math.abs(yOff) + 20)
+end
+
+-- ============================================================================
+-- Options preview kit (UI/CDMPreview.lua)
+-- ============================================================================
+-- The preview draws a group with the REAL builders and stylers, never copies
+-- of them -- the rule that keeps SquizzFrames' previews honest. Assembled at
+-- the very end of the file because several of these are forward-declared
+-- locals assigned further up, and a table captures the value at assignment.
+-- Fields on an existing table, so this costs the chunk no locals.
+cdmModule.PreviewKit = {
+    CreateProxyIcon           = CreateProxyIcon,
+    ApplyProxyVisuals         = ApplyProxyVisuals,
+    SetProcGlow               = SetProcGlow,
+    ApplyKeybindText          = ApplyKeybindText,
+    ApplyShapeToBorrowedChild = ApplyShapeToBorrowedChild,
+    ApplyBarBackground        = ApplyBarBackground,
+    SpellIDForCooldown        = SpellIDForCooldown,
+    GetSpecData               = GetSpecData,
+    DEFAULT_ICON_ZOOM         = DEFAULT_ICON_ZOOM,
+}
+
+-- What a group would show, in the order it would show it, for the preview.
+--
+-- Returns { borrowed = bool, items = { {cdID, spellID, equipSlot, viewerType} } }.
+-- A proxy group lists its members in Blizzard's (assignment) order -- the
+-- default sort; name and cooldown sorts depend on live state, so the preview
+-- keeps assignment order for those too. A borrowed group lists every buff its
+-- viewers track, which is the full row unlock mode would show.
+function cdmModule:PreviewMembers(groupName)
+    local out = { borrowed = false, items = {} }
+    local group = self.groups[groupName]
+    if not group then
+        -- No live group (the module is off, or it has not reconciled yet).
+        -- Still say what KIND of group it is, so an empty Buff Bars previews
+        -- as bars rather than as icons.
+        out.borrowed = BORROW_VIEWERS[groupName] ~= nil
+        return out
+    end
+
+    if group.usesBlizzardIcons then
+        out.borrowed = true
+        local seen = {}
+        for _, viewerName in ipairs(BORROW_VIEWERS[groupName] or BUFF_VIEWERS) do
+            local viewer = _G[viewerName]
+            if viewer then
+                local ok, children = pcall(function() return { viewer:GetChildren() } end)
+                if ok and children then
+                    for _, child in ipairs(children) do
+                        local cdID = child and child.cooldownID
+                        if cdID and not seen[cdID] then
+                            seen[cdID] = true
+                            out.items[#out.items + 1] = {
+                                cdID = cdID, spellID = SpellIDForCooldown(cdID),
+                                viewerType = "buff",
+                            }
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(out.items, function(a, b) return a.cdID < b.cdID end)
+        return out
+    end
+
+    for cdID, proxy in pairs(group.members or {}) do
+        out.items[#out.items + 1] = {
+            cdID = cdID, spellID = proxy.spellID, equipSlot = proxy.equipSlot,
+            viewerType = proxy.viewerType,
+        }
+    end
+    local registry = self.registry or {}
+    table.sort(out.items, function(a, b)
+        local ea, eb = registry[a.cdID], registry[b.cdID]
+        local oa, ob = ea and ea.order, eb and eb.order
+        if oa and ob and oa ~= ob then return oa < ob end
+        if oa and not ob then return true end
+        if ob and not oa then return false end
+        return a.cdID < b.cdID
+    end)
+    return out
 end

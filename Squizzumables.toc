@@ -27,6 +27,7 @@ Core\Welcome.lua
 Core\TargetDistance.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
+UI\CDMPreview.lua
 #Squizzumables_Nameplates.lua
 Squizzumables_SpellAlerts.lua
 Squizzumables_StackDiag.lua

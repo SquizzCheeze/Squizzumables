@@ -25,3 +25,19 @@ V1.89
 
 - The list of your sounds now sits below the add form instead of drawing
   over it.
+
+- The CDM settings now show a live preview of each group, drawn at the same
+  size as on your screen: pinned above the settings on the Essential,
+  Utility, Buffs and Buff Bars tabs, and under each group on Custom Icons.
+  It is drawn by the same code as the real groups, so every setting -
+  size, spacing, rows, growth, shape, border, zoom, text, colours - shows up
+  in it as you change it. What only happens in play is shown as an example:
+  one icon glowing, one on cooldown, one with stacks, and buffs as they look
+  while up. An empty group shows stand-in icons, and a group too big for the
+  pane is scaled down to fit and says so.
+
+- The "Cooldowns" tab is now called "CDM".
+
+- The CDM tab's groups no longer all say "0 assigned". They fill themselves
+  from Blizzard's Cooldown Manager, so the count looked at a list that is
+  always empty; they now show how many they actually hold.
