@@ -257,6 +257,14 @@ this — worth doing before that happens rather than after.
 - `C_CombatAudioAlert.SpeakText(text, category, allowOverlap)` makes the client speak, and
   `IsEnabled()` reports whether the system is on. An alternative to sound files anywhere in the
   addon, not just here, and it inherits the player's accessibility settings.
+- **"Copy" a cooldown into a second group** (offered 2026-09-24, not started; proposed as V1.90).
+  The user wanted a spell in Essential AND a custom group. Today a cooldown has exactly one group
+  (`assignments[cdID]`) and exactly one proxy (`cdmModule.proxyFrames` is keyed by cooldownID, ~14
+  sites across `Squizzumables_CDM.lua` and `Squizzumables_CDMAuras.lua`). The plan: a Move / Copy
+  choice per spell on Custom Icons; a copy gets its own proxy, styled by its own group, fed by the
+  same cooldown/proc/active-buff updates. Sound alerts would not double — `ClaimAlert` already
+  dedupes per spell and trigger. Touches the code that drives every cooldown icon, so it wants its
+  own release and a proper in-game test.
 ---
 
 ## Appendix — Reference addon file map

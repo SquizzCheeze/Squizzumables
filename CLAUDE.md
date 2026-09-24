@@ -322,7 +322,8 @@ initialized `BH`. `perl .claude/check-toc.pl` verifies every listed path exists 
     + sound on an aura), and the M+ Death Tally.
 
 The `.toc` also carries `UI/SubTabs.lua` (after Widgets, before Rows), `Core/TargetDistance.lua`
-(after Welcome) and `Squizzumables_StackDiag.lua` (last, and temporary — see above), none of which
+(after Welcome), `UI/CDMPreview.lua` (straight after `Squizzumables_CDMAuras.lua` — see "CDM options
+preview" below) and `Squizzumables_StackDiag.lua` (last, and temporary — see above), none of which
 the numbered list above describes.
 
 **`UI/SubTabs.lua` has two constructors and they are not interchangeable.** `Create` builds a
@@ -337,9 +338,16 @@ taller sections off.
 Each group's CDM settings use it: one page per group, sections Layout / Appearance / Text /
 Behaviour / Visibility, plus Buffs on groups that hold them (`GROUP_SECTIONS` in
 `Squizzumables_CDM.lua`). `BH:BuildGroupSection`'s `tabbed` argument picks between that and the old
-stacked column — the Custom Cooldowns tab keeps stacking, under headings, because it shows several
-groups in one scroller where a strip per group would be worse than the column ever was. **Both
-layouts run the same six builder functions**, so they cannot drift apart.
+stacked column; **both layouts run the same six builder functions**, so they cannot drift apart.
+
+**Custom Icons is tabbed too since 1.89** (user request), and that needed a layout change, not
+just `tabbed = true`. That page lays out by a running `yOffset`, and a tabbed group's height follows
+its selected sub-tab — so a group cannot sit at a fixed offset. `RebuildCDMPage` builds each custom
+group into its **own host frame** stacked under the previous one, and everything after the groups
+(Available Cooldowns, Refresh) into a **tail frame** anchored below the last host: from that point
+`content` IS the tail and `yOffset` restarts at 0. `ResizeCustomPage` sums hosts + tail into the
+page height, from each host's `OnSizeChanged` and once directly at the end (a frame not yet shown
+may not fire it). The stacked column is still what `tabbed = false` builds; nothing calls it today.
 
 ⚠ **A control that only applies to cooldown icons must be HIDDEN on the built-in buff groups**, not
 merely inert there (1.88). `ApplyProxyVisuals`' `isCooldownType` gates Show While Active, Proc Glow
@@ -354,6 +362,70 @@ groups keep them, since a custom group can mix cooldowns and buffs. Each row clo
 `ClearCDMPage` reparents every child of a page away on each rebuild, and a rebuild happens whenever
 any setting on it changes — so a widget-held selection would snap back to the first tab on every
 click. Any future nested-tab page needs the same treatment.
+
+**CDM options preview (`UI/CDMPreview.lua`, 1.89).** A true-size picture of each group: pinned
+above each built-in sub-tab (`Preview.AttachToSubTab`, which re-anchors that page's scroller below
+the pane), and under each custom group's heading (`Preview.PlaceInline`, fixed height). Rules that
+are load-bearing:
+
+- **It draws with the real code, never a copy.** Everything comes through `cdmModule.PreviewKit`,
+  assembled at the very END of `Squizzumables_CDM.lua` — several of its members are forward-declared
+  locals assigned further up, and a table captures the value at assignment, so building it earlier
+  captures nils. Icons are `CreateProxyIcon` + `ApplyProxyVisuals`; buffs are `GetBuffPlaceholder`;
+  placement is `cdmModule.Grid`. `cdmModule:PreviewMembers(groupName)` lists what a group would show,
+  in order.
+- **`ApplyProxyVisuals(proxy, groupData, preview)`** — the third argument skips everything that
+  reads live state: the real proc (`SyncProcGlow`), the usable tint and the whole cooldown/aura
+  pass. That pass **fires the CDM sound alerts**, so a preview icon must never reach it. The preview
+  mocks state itself: icon 1 procced, icon 2 on a repeating 12s cooldown, icon 3 with stacks.
+- **`group.previewLook`** makes `GetBuffPlaceholder` draw a slot as a live buff (bar at 65%, "12s").
+  The preview hands it a fake group table (`{ container = host, placeholders = {} }`) and sets the
+  flag per placeholder, so one row can show live and inactive slots side by side.
+- **Glow frames are pinned to MEDIUM strata** (`RaiseGlowFrame`, fixed strata AND level 300), which
+  would draw a preview's glows under the DIALOG-strata options window. `LiftToStrata` unpins and
+  re-pins them to the pane's strata — preview icons only. The pane's button and scroll bars sit at
+  level 400 to stay above those glows.
+- **Always 1:1, never scaled to fit** (user request). The host takes
+  `UIParent:GetEffectiveScale() / pane:GetEffectiveScale()`; a group that does not fit scrolls in a
+  `ScrollFrame` that runs to the pane's bottom edge, UNDER the button row, with the button overlaid.
+  The canvas carries `FOOTER_H` of extra height so an overflowing group's last row can scroll clear
+  of the button. The wheel is captured only while something overflows, so otherwise it still
+  scrolls the page.
+- **Inline panes are cached per group** (`inlinePanes`) and reparented on each rebuild:
+  `ClearCDMPage` orphans every child it finds and a frame cannot be destroyed, so a pane built per
+  rebuild would leak.
+- It redraws every 0.25s while visible — which is why no settings control needs to know it exists.
+
+The pane's **Blizzard CDM Settings** button toggles `CooldownViewerSettings` through Blizzard's own
+`ShowUIPanel` / `HideUIPanel` (what `/cdm` from CooldownManagerCentered calls), refusing in combat.
+Blizzard's window has no strata of its own (MEDIUM) and ours is DIALOG, so it is lifted to DIALOG
+while open and restored from an `OnHide` hook — nothing about it changes outside this button.
+
+**Group geometry is shared: `cdmModule.Grid` (1.89).** `Grid.Icons(count, groupData, vertical)` /
+`Grid.IconSlot(g, i)` and `Grid.Bars` / `Grid.BarSlot` are the only copy of the icon-grid and
+bar-stack maths; `LayoutGroup`, `LayoutBorrowedBuffIcons` and the preview all call them. Before
+1.89 the two layout passes each carried their own copy and they had drifted: **the borrowed Buffs
+layout ignored the Orientation dropdown it offered** (always horizontal). It honours it now, which
+moved anyone who had once picked Vertical there.
+
+⚠ **`Squizzumables_CDM.lua` is ~21 locals short of Lua's 200-per-chunk limit** (179 top-level names
+at 1.89, counted as `local` names plus `local function`s at column 0). New shared helpers go in ONE
+table (`Grid` is the example: one local however much it holds) or on `cdmModule`; new UI goes in its
+own file, as `CDMPreview.lua` does.
+
+**One group per cooldown — enforced in `Reconcile`, not in `AssignToGroup`.** A built-in member has
+`assignments[cdID] == nil`: it sits in Essential/Utility by default. `AssignToGroup` only clears the
+PREVIOUS assignment's group, so moving a default member into a custom group left it in the built-in
+group's `members` too. Both groups laid out the one shared proxy (proxies are keyed by cooldownID),
+the custom group placed it last and kept it, and the built-in group kept its slot — an empty gap
+(user screenshot, fixed 1.89). `Reconcile` now drops each cooldown from every group except its
+assignment before placing it, which covers every route a cooldown can move by.
+
+**Blizzard's Cooldown Manager decides WHAT exists; Squizzumables decides WHERE.** A spell the
+player removes from Blizzard's bars is not discovered at all (see `BlizzardFilteredIDs` for why the
+hidden list cannot be read taint-free), so it cannot be put in a custom group; re-enabling it in
+Blizzard's settings brings it back into whatever group it was assigned to. Users have tried
+"disable in Blizzard, then assign to custom" — that is the expected no-op, not a bug.
 
 **`Squizzumables_Nameplates.lua` is on disk but NOT loaded**: its `.toc` line is commented out
 (`#Squizzumables_Nameplates.lua`). It is a real file with real code, so grep will find it and the
@@ -961,6 +1033,25 @@ Both handlers now require `unit == "player"`, and the CDM defers any teardown to
 unverified for this event — if it did not apply, your own spec change would stop arriving. More
 generally: **nothing may tear the CDM down in combat**, because nothing can put it back until
 combat ends.
+
+**Sounds: bundled vs custom, and where the files live** (`Squizzumables.lua`, "LibSharedMedia-3.0
+helper"). Bundled sounds are `SQ_BUNDLED_SOUNDS`, shipped in `Media\Sounds\` (OGG or MP3 — the
+client plays both; `ChemicalX.mp3` is the author's own recording). **Only ship audio the project
+owns or may redistribute**: anything in that list is in the CurseForge zip.
+
+Custom (user) sounds live in **`Interface\AddOns\SquizzumablesMedia\Sounds\`** since 1.89 — a sibling
+folder with no `.toc`, so it is not an addon and no updater installed it, which is the point: an
+addon update REPLACES `Squizzumables\`, and custom files kept in `Media\Sounds\` were deleted on
+every update. An entry carries `dir = "media"`; one without it predates the move, still resolves
+to the old folder (`CustomSoundPath`), and is flagged "(old folder)" in the list.
+
+Addons get no file-exists or directory API, so the Sounds tab finds a typed file by PLAYING
+candidates (`FindCustomSound`: new folder then old, `.ogg` then `.mp3`, any folder part stripped)
+until `PlaySoundFile` reports `willPlay`. **Confirmed in game (1.89): `willPlay` is false for a
+missing file, and a file copied in while the game runs is found after `/reload` — no restart.**
+With game sound switched off `willPlay` is false for everything, so that case is checked first
+(`Sound_EnableAllSound`) and reported rather than read as "missing". The old Add handler appended
+`.ogg` to any other name, which is what had silently blocked MP3.
 
 **Cooldown Manager sound alerts** (`Squizzumables_CDM.lua`): five findings here cost a long
 debugging session each; none are guessable from the API docs.
