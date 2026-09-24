@@ -109,6 +109,109 @@ local isInCombat = InCombatLockdown()
 local cdmModule = {}
 BH.cdm = cdmModule
 
+-- ============================================================================
+-- Group geometry -- where each icon or bar sits inside a group's container
+-- ============================================================================
+-- Shared by LayoutGroup (our proxy icons), LayoutBorrowedBuffIcons (Blizzard's
+-- buff frames and our placeholders) and the options preview (UI/CDMPreview.lua,
+-- through cdmModule.Grid). Before V1.89 the two layout passes each carried
+-- their own copy of this maths; one copy is what lets the preview promise to
+-- match the real group exactly.
+--
+-- ONE local on purpose: this file sits about twenty locals short of Lua's
+-- 200-per-chunk limit, and a table costs one however much it holds.
+local Grid = {}
+cdmModule.Grid = Grid
+
+-- Everything about a group's grid that does not depend on which slot is being
+-- placed. `vertical` is passed rather than read from groupData because the
+-- borrowed-buff layout has only ever laid out horizontally, whatever the
+-- Orientation setting says.
+function Grid.Icons(count, groupData, vertical)
+    local g = {}
+    g.size    = groupData.iconSize or DEFAULT_ICON_SIZE
+    g.spacing = groupData.spacing or DEFAULT_SPACING
+    g.perRow  = groupData.perRow or DEFAULT_PER_ROW
+    g.count   = count
+    g.vertical = vertical and true or false
+    local growDir = groupData.growDirection or DEFAULT_GROW_DIRECTION
+    g.centered   = (growDir == "centereddown" or growDir == "centeredup")
+    g.centeredUp = (growDir == "centeredup")
+    g.colMul, g.rowMul = 1, -1  -- rightdown
+    if not g.centered then
+        if growDir == "leftdown" then g.colMul, g.rowMul = -1, -1
+        elseif growDir == "rightup" then g.colMul, g.rowMul = 1, 1
+        elseif growDir == "leftup" then g.colMul, g.rowMul = -1, 1 end
+    end
+    -- An empty group still measures one icon: floored at one row and column.
+    local cols = math.max(1, math.min(count, g.perRow))
+    local rows = math.max(1, math.ceil(math.max(count, 1) / g.perRow))
+    local step = g.size + g.spacing
+    if g.vertical then
+        g.width, g.height = rows * step - g.spacing, cols * step - g.spacing
+    else
+        g.width, g.height = cols * step - g.spacing, rows * step - g.spacing
+    end
+    return g
+end
+
+-- Slot i (1-based) as SetPoint arguments against the container:
+-- point, relativePoint, x, y.
+--
+-- Centred growth measures from the MIDDLE of an edge, so it anchors to that
+-- edge's midpoint; anchoring it to a corner once put half the row outside the
+-- container (see the note that used to live in LayoutGroup).
+function Grid.IconSlot(g, i)
+    local col = (i - 1) % g.perRow
+    local row = math.floor((i - 1) / g.perRow)
+    local step = g.size + g.spacing
+    if g.centered then
+        local sign = g.centeredUp and 1 or -1
+        local itemsThisLine = math.min(g.count - row * g.perRow, g.perRow)
+        local lineLen = itemsThisLine * g.size + (itemsThisLine - 1) * g.spacing
+        if g.vertical then
+            -- Columns march sideways; icons centre vertically.
+            local x = (g.size / 2 + row * step) * -sign
+            local y = lineLen / 2 - col * step - g.size / 2
+            return "CENTER", g.centeredUp and "RIGHT" or "LEFT", x, y
+        end
+        -- Rows march up or down; icons centre horizontally.
+        local x = -lineLen / 2 + col * step + g.size / 2
+        local y = (g.size / 2 + row * step) * sign
+        return "CENTER", g.centeredUp and "BOTTOM" or "TOP", x, y
+    end
+    local x, y
+    if g.vertical then
+        x, y = row * step * g.colMul, col * step * g.rowMul
+    else
+        x, y = col * step * g.colMul, row * step * g.rowMul
+    end
+    local anchor = "TOPLEFT"
+    if g.colMul < 0 and g.rowMul < 0 then anchor = "TOPRIGHT"
+    elseif g.colMul > 0 and g.rowMul > 0 then anchor = "BOTTOMLEFT"
+    elseif g.colMul < 0 and g.rowMul > 0 then anchor = "BOTTOMRIGHT" end
+    return anchor, anchor, x, y
+end
+
+-- Bar groups stack one bar per row -- perRow is an icon idea (see
+-- LayoutBorrowedBuffIcons). Growth is only ever up or down.
+function Grid.Bars(count, groupData)
+    local g = {}
+    g.width   = groupData.barWidth  or DEFAULT_BAR_WIDTH
+    g.barH    = groupData.barHeight or DEFAULT_BAR_HEIGHT
+    g.spacing = groupData.spacing or DEFAULT_SPACING
+    local growDir = groupData.growDirection or DEFAULT_GROW_DIRECTION
+    g.up = (growDir == "centeredup" or growDir == "rightup" or growDir == "leftup")
+    g.height = math.max(count, 1) * (g.barH + g.spacing) - g.spacing
+    return g
+end
+
+function Grid.BarSlot(g, i)
+    local offset = (i - 1) * (g.barH + g.spacing)
+    local edge = g.up and "BOTTOM" or "TOP"
+    return edge, edge, 0, g.up and offset or -offset
+end
+
 -- Runtime group data: { [groupName] = { container, members = { [cdID] = proxy } } }
 cdmModule.groups = {}
 -- Free icons: { [cooldownID] = proxy }
@@ -1408,11 +1511,6 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     local groupData = specData and specData.groups[groupName]
     if not group or not group.container or not groupData then return end
 
-    local iconSize = groupData.iconSize or DEFAULT_ICON_SIZE
-    local spacing  = groupData.spacing or DEFAULT_SPACING
-    local perRow   = groupData.perRow or DEFAULT_PER_ROW
-    local growDir  = groupData.growDirection or DEFAULT_GROW_DIRECTION
-
     -- Blizzard hides an inactive tracked buff itself, so the row packs down to
     -- what is really up without any active-state logic of ours -- which is the
     -- part that kept breaking before buffs were borrowed.
@@ -1579,22 +1677,17 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     -- One per row always. perRow is an icon idea, and side-by-side bars are not
     -- how Blizzard draws these or how anyone reads them.
     if groupData.isBarGroup then
-        local barW    = groupData.barWidth  or DEFAULT_BAR_WIDTH
-        local barH    = groupData.barHeight or DEFAULT_BAR_HEIGHT
-        local up      = (growDir == "centeredup" or growDir == "rightup" or growDir == "leftup")
-        local fullH   = math.max(#shown, 1) * (barH + spacing) - spacing
-
+        local g = Grid.Bars(#shown, groupData)
         for i, child in ipairs(shown) do
-            child:SetSize(barW, barH)
+            child:SetSize(g.width, g.barH)
             child:ClearAllPoints()
             ApplyKeybindText(child, SpellIDForCooldown(child.cooldownID), groupData)
-            local offset = (i - 1) * (barH + spacing)
-            child:SetPoint(up and "BOTTOM" or "TOP", group.container,
-                up and "BOTTOM" or "TOP", 0, up and offset or -offset)
+            local point, relPoint, x, y = Grid.BarSlot(g, i)
+            child:SetPoint(point, group.container, relPoint, x, y)
         end
 
         if not InCombatLockdown() then
-            group.container:SetSize(barW, fullH)
+            group.container:SetSize(g.width, g.height)
         end
         self:SettleNativeCells(groupName, group, shown, idle)
         group.container:SetShown(#shown > 0 or self.previewMode)
@@ -1603,22 +1696,12 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
         return
     end
 
-    local centered   = (growDir == "centereddown" or growDir == "centeredup")
-    local centeredUp = (growDir == "centeredup")
-    local colMul, rowMul = 1, -1
-    if not centered then
-        if growDir == "leftdown" then colMul, rowMul = -1, -1
-        elseif growDir == "rightup" then colMul, rowMul = 1, 1
-        elseif growDir == "leftup" then colMul, rowMul = -1, 1 end
-    end
+    -- Always horizontal here: this pass has never honoured Orientation (the
+    -- `false`), and the shared Grid keeps that exactly as it was.
+    local g = Grid.Icons(#shown, groupData, false)
+    local iconSize = g.size
 
-    local cols = math.max(1, math.min(#shown, perRow))
-    local rows = math.max(1, math.ceil(math.max(#shown, 1) / perRow))
-    local fullW = cols * (iconSize + spacing) - spacing
-    local fullH = rows * (iconSize + spacing) - spacing
-
-    local col, row = 0, 0
-    for _, child in ipairs(shown) do
+    for i, child in ipairs(shown) do
         child:SetSize(iconSize, iconSize)
         child:ClearAllPoints()
         -- Works on a borrowed Blizzard frame as well as a placeholder: adding a
@@ -1632,28 +1715,12 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
         -- shape is an icon idea and a bar has no silhouette to cut.
         ApplyShapeToBorrowedChild(child, groupData.iconShape or "none",
             groupData.iconZoom or DEFAULT_ICON_ZOOM)
-        if centered then
-            local itemsThisLine = math.min(#shown - row * perRow, perRow)
-            local rowW = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
-            local x = -rowW / 2 + col * (iconSize + spacing) + iconSize / 2
-            local y = (iconSize / 2 + row * (iconSize + spacing)) * (centeredUp and 1 or -1)
-            child:SetPoint("CENTER", group.container,
-                centeredUp and "BOTTOM" or "TOP", x, y)
-        else
-            local anchor = "TOPLEFT"
-            if colMul < 0 and rowMul < 0 then anchor = "TOPRIGHT"
-            elseif colMul > 0 and rowMul > 0 then anchor = "BOTTOMLEFT"
-            elseif colMul < 0 and rowMul > 0 then anchor = "BOTTOMRIGHT" end
-            child:SetPoint(anchor, group.container, anchor,
-                col * (iconSize + spacing) * colMul,
-                row * (iconSize + spacing) * rowMul)
-        end
-        col = col + 1
-        if col >= perRow then col = 0; row = row + 1 end
+        local point, relPoint, x, y = Grid.IconSlot(g, i)
+        child:SetPoint(point, group.container, relPoint, x, y)
     end
 
     if not InCombatLockdown() then
-        group.container:SetSize(fullW, fullH)
+        group.container:SetSize(g.width, g.height)
     end
     -- Empty but previewing still has to be draggable. See the note on
     -- cdmModule.previewMode: this pass runs on a 0.2s poll, so hiding an empty
@@ -4254,10 +4321,7 @@ function cdmModule:LayoutGroup(groupName)
     if not groupData then return end
 
     local iconSize = groupData.iconSize or DEFAULT_ICON_SIZE
-    local spacing = groupData.spacing or DEFAULT_SPACING
-    local perRow = groupData.perRow or DEFAULT_PER_ROW
     local orientation = groupData.orientation or DEFAULT_ORIENTATION
-    local growDir = groupData.growDirection or DEFAULT_GROW_DIRECTION
     local sortBy = groupData.sortBy or DEFAULT_SORT
 
     -- Get ordered members (proxy frames)
@@ -4317,17 +4381,6 @@ function cdmModule:LayoutGroup(groupName)
         end)
     end
 
-    -- Determine growth multipliers from growDirection
-    local centered = (growDir == "centereddown" or growDir == "centeredup")
-    local centeredUp = (growDir == "centeredup")
-    local colMul, rowMul = 1, -1  -- Default: rightdown
-    if not centered then
-        if growDir == "leftdown" then colMul, rowMul = -1, -1
-        elseif growDir == "rightup" then colMul, rowMul = 1, 1
-        elseif growDir == "leftup" then colMul, rowMul = -1, 1
-        end
-    end
-
     -- Hide Until Active packs the row: only the icons actually showing take a
     -- slot, so they sit together instead of being stranded at fixed positions
     -- with gaps where the inactive ones would be. With a Centered growth
@@ -4353,22 +4406,19 @@ function cdmModule:LayoutGroup(groupName)
         members = shown
     end
 
-    -- Pre-calculate container dimensions for centered mode
-    local totalColsCalc = math.min(#members, perRow)
-    local totalRowsCalc = math.ceil(math.max(#members, 1) / perRow)
-    if totalColsCalc < 1 then totalColsCalc = 1 end
-    if totalRowsCalc < 1 then totalRowsCalc = 1 end
-    local fullW, fullH
-    if orientation == "vertical" then
-        fullW = totalRowsCalc * (iconSize + spacing) - spacing
-        fullH = totalColsCalc * (iconSize + spacing) - spacing
-    else
-        fullW = totalColsCalc * (iconSize + spacing) - spacing
-        fullH = totalRowsCalc * (iconSize + spacing) - spacing
-    end
+    -- Geometry from the shared Grid (top of this file), so the options preview
+    -- places its icons with exactly this maths.
+    --
+    -- Centred growth used to anchor to TOPLEFT/BOTTOMLEFT, which put a centred
+    -- row around the container's LEFT EDGE -- half the row outside the frame,
+    -- so dragging moved icons nowhere near the drag region and clicks missed.
+    -- Grid.IconSlot anchors centred slots to the edge MIDPOINT for that reason.
+    local g = Grid.Icons(#members, groupData, orientation == "vertical")
+    local fullW, fullH = g.width, g.height
 
-    -- Position each proxy
-    local col, row = 0, 0
+    -- Position each proxy. `slot` counts placed icons, not members, so a nil
+    -- proxy leaves no gap -- the same as the old col/row counters did.
+    local slot = 0
     for _, member in ipairs(members) do
         local proxy = member.proxy
         if proxy then
@@ -4378,55 +4428,9 @@ function cdmModule:LayoutGroup(groupName)
             proxy.Cooldown:SetAllPoints()
             proxy:ClearAllPoints()
 
-            local xOff, yOff
-            if centered then
-                -- Centred growth: the offsets below are measured from the
-                -- middle of an edge, so they must be anchored to the middle of
-                -- that edge.
-                --
-                -- They were anchored to TOPLEFT/BOTTOMLEFT, which put a
-                -- centred row of icons around the container's LEFT EDGE rather
-                -- than its centre -- half the row hanging outside the frame --
-                -- and with no half-icon inset the first row straddled the top
-                -- edge too. For five 36px icons that is the container sitting
-                -- ~98px right and ~18px below its own icons: dragging the group
-                -- moved icons that were nowhere near the drag region, and
-                -- clicking the icons hit nothing. TOP/BOTTOM (and LEFT/RIGHT
-                -- when vertical) are the edge midpoints these offsets assume.
-                local sign = centeredUp and 1 or -1
-                local itemsThisLine = math.min(#members - row * perRow, perRow)
-                if orientation == "vertical" then
-                    -- Columns march sideways; icons centre vertically.
-                    local colH = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
-                    xOff = (iconSize / 2 + row * (iconSize + spacing)) * -sign
-                    yOff = colH / 2 - col * (iconSize + spacing) - iconSize / 2
-                    proxy:SetPoint("CENTER", group.container,
-                        centeredUp and "RIGHT" or "LEFT", xOff, yOff)
-                else
-                    -- Rows march up or down; icons centre horizontally.
-                    local rowW = itemsThisLine * iconSize + (itemsThisLine - 1) * spacing
-                    xOff = -rowW / 2 + col * (iconSize + spacing) + iconSize / 2
-                    yOff = (iconSize / 2 + row * (iconSize + spacing)) * sign
-                    proxy:SetPoint("CENTER", group.container,
-                        centeredUp and "BOTTOM" or "TOP", xOff, yOff)
-                end
-            else
-                if orientation == "vertical" then
-                    xOff = row * (iconSize + spacing) * colMul
-                    yOff = col * (iconSize + spacing) * rowMul
-                else
-                    xOff = col * (iconSize + spacing) * colMul
-                    yOff = row * (iconSize + spacing) * rowMul
-                end
-
-                local anchor = "TOPLEFT"
-                if colMul < 0 and rowMul < 0 then anchor = "TOPRIGHT"
-                elseif colMul > 0 and rowMul > 0 then anchor = "BOTTOMLEFT"
-                elseif colMul < 0 and rowMul > 0 then anchor = "BOTTOMRIGHT"
-                end
-
-                proxy:SetPoint(anchor, group.container, anchor, xOff, yOff)
-            end
+            slot = slot + 1
+            local point, relPoint, xOff, yOff = Grid.IconSlot(g, slot)
+            proxy:SetPoint(point, group.container, relPoint, xOff, yOff)
             proxy:Show()
 
             -- Forward drag from proxy icon to the group container
@@ -4457,12 +4461,6 @@ function cdmModule:LayoutGroup(groupName)
 
             -- Apply visual settings
             ApplyProxyVisuals(proxy, groupData)
-
-            col = col + 1
-            if col >= perRow then
-                col = 0
-                row = row + 1
-            end
         end
     end
 
