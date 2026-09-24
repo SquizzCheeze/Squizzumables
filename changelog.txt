@@ -51,3 +51,8 @@ V1.89
   dropdown but laid out horizontally regardless. If you had set it to
   Vertical at some point, your buffs will now stack vertically - set it back
   to Horizontal to keep the old look.
+
+- Fixed moving a spell from Essential or Utility into a custom group leaving
+  an empty gap where it used to be. The spell was never taken out of the
+  group it came from, so that group kept its slot; the two groups shared one
+  icon, and the custom group won it. The old group now closes up.

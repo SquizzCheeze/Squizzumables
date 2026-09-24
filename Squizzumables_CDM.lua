@@ -4727,6 +4727,23 @@ function cdmModule:Reconcile()
         -- assigned every spell by hand.
         local assignment = specData.assignments[cdID]
             or BUILTIN_FOR_VIEWERTYPE[cdData.viewerType]
+
+        -- One group per cooldown: drop it from every group it is no longer
+        -- assigned to, BEFORE placing it below.
+        --
+        -- AssignToGroup only clears the PREVIOUS assignment, and a built-in
+        -- member has none -- it sits in Essential/Utility by default, with
+        -- assignments[cdID] nil. So moving a default Essential spell into a
+        -- custom group left it in Essential's members too. Both groups then
+        -- laid out the one shared proxy; the custom group placed it last and
+        -- kept it, and Essential kept its slot, drawing an empty gap where the
+        -- spell used to be (user screenshot 2026-09-24). Clearing here covers
+        -- every route a cooldown can move by, not only that one.
+        for otherName, other in pairs(self.groups) do
+            if otherName ~= assignment and other.members[cdID] then
+                other.members[cdID] = nil
+            end
+        end
         -- Tracked buffs use Blizzard's own icons, not a proxy of them.
         --
         -- Every attempt to reproduce a buff's sweep on our own icon failed in
