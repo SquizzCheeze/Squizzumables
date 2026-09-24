@@ -483,13 +483,6 @@ local function CreatePane(parent, groupName)
     local blizzBtn = ns.CreateSQButton(pane, "Blizzard CDM Settings", 150, BUTTON_H)
     blizzBtn:SetPoint("BOTTOMLEFT", pane, "BOTTOMLEFT", PAD - 4, 5)
     blizzBtn:SetScript("OnClick", ToggleBlizzardCDMSettings)
-    -- Transparent fill (user request 2026-09-24): just the border and label
-    -- on the pane. CreateSQButton repaints its fill on every hover, so it is
-    -- cleared again after each; the border still lights up on hover.
-    local function ClearFill(self) self:SetBackdropColor(0, 0, 0, 0) end
-    ClearFill(blizzBtn)
-    blizzBtn:HookScript("OnEnter", ClearFill)
-    blizzBtn:HookScript("OnLeave", ClearFill)
     if ns.Rows and ns.Rows.AddTooltip then
         ns.Rows.AddTooltip(blizzBtn, "Blizzard CDM Settings",
             "Opens Blizzard's Cooldown Manager settings, where you choose which spells "
