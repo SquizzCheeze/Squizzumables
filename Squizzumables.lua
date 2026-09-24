@@ -4265,7 +4265,7 @@ function BH:BuildSoundsTab(parent)
     csHint:SetText("Put your .ogg or .mp3 files in |cFFFFFF00Interface\\AddOns\\SquizzumablesMedia\\Sounds\\|r"
         .. " - make the folders if they are not there yet. Addon updates never touch that folder, so your sounds stay put."
         .. "\n\nType the filename (the extension is optional), press Test to hear it, then Add."
-        .. " If a file you have just copied in is not found, restart the game.")
+        .. " If a file you have just copied in is not found, type /reload and try again.")
     csHint:SetTextColor(0.55, 0.55, 0.55)
     -- Floor on the measurement: a page built before it is first shown can
     -- report a string height of 0, which would put the form on the hint.
@@ -4343,7 +4343,7 @@ function BH:BuildSoundsTab(parent)
         if reason == "off" then
             return "Game sound is switched off (System > Sound), so the file cannot be checked. Turn it on and try again."
         end
-        return "Could not find \"" .. file .. "\" in SquizzumablesMedia\\Sounds\\. Check the spelling, and restart the game if you have just copied it in."
+        return "Could not find \"" .. file .. "\" in SquizzumablesMedia\\Sounds\\. Check the spelling, and /reload if you have just copied it in."
     end
 
     csTestBtn:SetScript("OnClick", function()
