@@ -23,8 +23,8 @@ local addonName, ns = ...
 --
 -- 1:1 means the icons match the size they are on screen, whatever the options
 -- window's own scale is: the host frame is scaled by UIParent's effective scale
--- over the pane's. A group too big for the pane is scaled down to fit, and the
--- pane says so.
+-- over the pane's. It is never scaled down: a group too big for the pane
+-- scrolls inside it, with the title, note and button left where they are.
 -- ============================================================================
 
 local BH = ns.BH
@@ -255,6 +255,32 @@ end
 -- Refresh
 -- ----------------------------------------------------------------------------
 
+local BAR_W = 6          -- scroll bar thickness
+local WHEEL_STEP = 24    -- pixels per mouse-wheel notch
+
+-- Fit a view scroll bar to what is visible (viewLen) against what there is
+-- (canvasLen). No overflow: hidden, and the view put back to its start.
+local function UpdateScrollBar(bar, viewLen, canvasLen, apply)
+    local range = canvasLen - viewLen
+    if range < 1 then
+        bar:SetMinMaxValues(0, 0)
+        bar:SetValue(0)
+        apply(0)
+        bar:Hide()
+        return false
+    end
+    bar:SetMinMaxValues(0, range)
+    if bar:GetValue() > range then bar:SetValue(range) end
+    local len = math.max(14, viewLen * viewLen / canvasLen)
+    if bar.horizontal then
+        bar.thumb:SetSize(len, BAR_W)
+    else
+        bar.thumb:SetSize(BAR_W, len)
+    end
+    bar:Show()
+    return true
+end
+
 function Preview.Refresh(pane)
     local kit, cdm = Kit()
     if not kit or not pane:IsVisible() then return end
@@ -301,26 +327,37 @@ function Preview.Refresh(pane)
     pane.host:SetSize(g.width, g.height)
     kit.ApplyBarBackground(pane.group, gd)
 
-    -- Scale: true size first, then shrink to fit if it must.
+    -- Always true size: the host takes UIParent's effective scale relative to
+    -- the pane, and nothing shrinks it. What does not fit scrolls.
     local trueScale = UIParent:GetEffectiveScale() / pane:GetEffectiveScale()
+    pane.host:SetScale(trueScale)
     local needW = (g.width + GLOW_MARGIN * 2) * trueScale
     local needH = (g.height + GLOW_MARGIN * 2) * trueScale
-    local availW = width - PAD * 2
-    local maxH = (pane.fixedHeight or MAX_PINNED_H) - TITLE_H - FOOTER_H - PAD * 2
-    local fit = math.min(1, availW / needW, maxH / needH)
-    pane.host:SetScale(trueScale * fit)
 
-    if not pane.fixedHeight then
-        local h = math.floor(TITLE_H + FOOTER_H + PAD * 2 + needH * fit + 0.5)
-        if math.abs((pane:GetHeight() or 0) - h) >= 1 then pane:SetHeight(h) end
+    -- A pinned pane grows with its group up to its cap; an inline one has a
+    -- fixed height. The view's size is worked out here rather than read back,
+    -- because a height set this pass is not laid out until the next frame.
+    local chromeH = (TITLE_H + 2) + (PAD - 2 + FOOTER_H)
+    local paneH = pane.fixedHeight
+    if not paneH then
+        paneH = math.floor(math.min(MAX_PINNED_H, chromeH + needH) + 0.5)
+        if math.abs((pane:GetHeight() or 0) - paneH) >= 1 then pane:SetHeight(paneH) end
     end
+    local viewW = width - PAD * 2
+    local viewH = paneH - chromeH
+    local canvasW = math.max(viewW, needW)
+    local canvasH = math.max(viewH, needH)
+    pane.canvas:SetSize(canvasW, canvasH)
 
-    local notes = {}
-    if fit < 0.999 then
-        notes[#notes + 1] = ("Scaled to %d%% to fit"):format(math.floor(fit * 100 + 0.5))
-    else
-        notes[#notes + 1] = "Actual size"
-    end
+    local view = pane.view
+    local scrollsX = UpdateScrollBar(pane.hbar, viewW, canvasW,
+        function(v) view:SetHorizontalScroll(v) end)
+    local scrollsY = UpdateScrollBar(pane.vbar, viewH, canvasH,
+        function(v) view:SetVerticalScroll(v) end)
+    view:EnableMouseWheel(scrollsX or scrollsY)
+
+    local notes = { "Actual size" }
+    if scrollsX or scrollsY then notes[#notes + 1] = "scroll to see it all" end
     if sample then notes[#notes + 1] = "no spells in this group yet" end
     if gd.enabled == false then notes[#notes + 1] = "group is switched off" end
     pane.note:SetText(table.concat(notes, " - "))
@@ -332,6 +369,27 @@ end
 -- ----------------------------------------------------------------------------
 -- Construction
 -- ----------------------------------------------------------------------------
+
+-- A slim scroll bar for the view: a plain Slider whose thumb is sized to the
+-- visible fraction. Hidden, and the view reset, when nothing overflows.
+local function MakeScrollBar(pane, horizontal, apply)
+    local bar = CreateFrame("Slider", nil, pane)
+    bar:SetOrientation(horizontal and "HORIZONTAL" or "VERTICAL")
+    bar:SetObeyStepOnDrag(false)
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(1, 1, 1, 0.08)
+    local thumb = bar:CreateTexture(nil, "OVERLAY")
+    thumb:SetColorTexture(0.65, 0.65, 0.7, 0.85)
+    bar:SetThumbTexture(thumb)
+    bar.thumb = thumb
+    bar.horizontal = horizontal
+    bar:SetMinMaxValues(0, 0)
+    bar:SetValue(0)
+    bar:SetScript("OnValueChanged", function(_, v) apply(v) end)
+    bar:Hide()
+    return bar
+end
 
 local function CreatePane(parent, groupName)
     local pane = CreateFrame("Frame", nil, parent, "BackdropTemplate")
@@ -362,11 +420,42 @@ local function CreatePane(parent, groupName)
     note:SetTextColor(0.55, 0.55, 0.55)
     pane.note = note
 
-    -- The area below the title, at scale 1; the host centres in it. Offsets on
-    -- the host itself would be in its own (scaled) units, so it takes none.
-    local holder = CreateFrame("Frame", nil, pane)
-    holder:SetPoint("TOPLEFT", pane, "TOPLEFT", PAD, -(TITLE_H + 2))
-    holder:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -PAD, PAD - 2 + FOOTER_H)
+    -- The view: a ScrollFrame between the title line and the button row. The
+    -- group is ALWAYS drawn at true size inside it -- never scaled to fit
+    -- (user request 2026-09-24); a group bigger than the view scrolls, and
+    -- only the view moves: the title, the note and the button stay put.
+    --
+    -- The canvas is the scroll child, at scale 1 and at least as big as the
+    -- view; the host centres in it. Offsets on the host itself would be in its
+    -- own (scaled) units, so it takes none.
+    local view = CreateFrame("ScrollFrame", nil, pane)
+    view:SetPoint("TOPLEFT", pane, "TOPLEFT", PAD, -(TITLE_H + 2))
+    view:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -PAD, PAD - 2 + FOOTER_H)
+    local canvas = CreateFrame("Frame", nil, view)
+    canvas:SetSize(1, 1)
+    view:SetScrollChild(canvas)
+    pane.view, pane.canvas = view, canvas
+
+    pane.hbar = MakeScrollBar(pane, true, function(v) view:SetHorizontalScroll(v) end)
+    pane.hbar:SetPoint("TOPLEFT", view, "BOTTOMLEFT", 0, -2)
+    pane.hbar:SetPoint("TOPRIGHT", view, "BOTTOMRIGHT", 0, -2)
+    pane.hbar:SetHeight(BAR_W)
+    pane.vbar = MakeScrollBar(pane, false, function(v) view:SetVerticalScroll(v) end)
+    pane.vbar:SetPoint("TOPLEFT", view, "TOPRIGHT", 2, 0)
+    pane.vbar:SetPoint("BOTTOMLEFT", view, "BOTTOMRIGHT", 2, 0)
+    pane.vbar:SetWidth(BAR_W)
+
+    -- Wheel scrolls the view; Shift, or a view that only overflows sideways,
+    -- scrolls horizontally. Only enabled while something overflows (Refresh),
+    -- so otherwise the wheel still scrolls the settings page underneath.
+    view:SetScript("OnMouseWheel", function(_, delta)
+        local horiz = IsShiftKeyDown() or not pane.vbar:IsShown()
+        local bar = horiz and pane.hbar or pane.vbar
+        if bar:IsShown() then
+            bar:SetValue(bar:GetValue() - delta * WHEEL_STEP)
+        end
+    end)
+    view:EnableMouseWheel(false)
 
     -- Bottom left: straight to Blizzard's Cooldown Manager settings, which is
     -- where what a group CONTAINS is decided. Toggles, so the same button
@@ -381,8 +470,8 @@ local function CreatePane(parent, groupName)
          .. "Click again to close it.")
     end
 
-    local host = CreateFrame("Frame", nil, holder)
-    host:SetPoint("CENTER", holder, "CENTER")
+    local host = CreateFrame("Frame", nil, canvas)
+    host:SetPoint("CENTER", canvas, "CENTER")
     host:SetSize(1, 1)
     pane.host = host
 
@@ -431,8 +520,8 @@ function Preview.AttachToSubTab(page, groupName)
 end
 
 -- Inline under a group's heading on Custom Icons. Fixed height, because that
--- page is laid out once by running offsets; a group too big for it is scaled
--- to fit, like any other. Returns the offset below the pane.
+-- page is laid out once by running offsets; a group too big for it scrolls,
+-- like any other. Returns the offset below the pane.
 function Preview.PlaceInline(content, groupName, leftPad, yOffset)
     local pane = inlinePanes[groupName]
     if not pane then

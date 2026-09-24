@@ -33,8 +33,9 @@ V1.89
   size, spacing, rows, growth, shape, border, zoom, text, colours - shows up
   in it as you change it. What only happens in play is shown as an example:
   one icon glowing, one on cooldown, one with stacks, and buffs as they look
-  while up. An empty group shows stand-in icons, and a group too big for the
-  pane is scaled down to fit and says so.
+  while up. An empty group shows stand-in icons. The preview is always true
+  size: a group too big for it scrolls (mouse wheel, Shift+wheel sideways)
+  while the title and button stay where they are.
 
 - The "Cooldowns" tab is now called "CDM".
 
