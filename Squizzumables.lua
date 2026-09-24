@@ -3229,7 +3229,90 @@ end
 -- LibSharedMedia-3.0 helper (optional -- gracefully absent if LSM not loaded)
 -- ============================================================================
 
+-- The addon's own sound folder: the bundled sounds, and where custom sounds
+-- used to have to go. An addon updater replaces this whole folder, so custom
+-- files dropped in here were deleted on every update.
 local CUSTOM_SOUNDS_PATH = "Interface\\AddOns\\Squizzumables\\Media\\Sounds\\"
+
+-- Where custom sounds go now (V1.89): a sibling folder the updater never
+-- installed and so never touches. It has no .toc, so it is not an addon and
+-- never shows in the addon list; the client reads loose files by path.
+local USER_SOUNDS_PATH = "Interface\\AddOns\\SquizzumablesMedia\\Sounds\\"
+
+-- Custom sound entries carry dir = "media" once added under V1.89 or later.
+-- An entry without it predates the move and still points at the old folder,
+-- so nobody's existing sound goes quiet.
+local function CustomSoundPath(entry)
+    if entry.dir == "media" then return USER_SOUNDS_PATH .. entry.file end
+    return CUSTOM_SOUNDS_PATH .. entry.file
+end
+
+-- Search order for a sound being added: the new folder first, then the old
+-- one, so a file somebody already has in Media\Sounds is still found.
+local CUSTOM_SOUND_DIRS = {
+    { key = "media",  path = USER_SOUNDS_PATH },
+    { key = "legacy", path = CUSTOM_SOUNDS_PATH },
+}
+
+-- The filenames worth trying for what was typed. Any folder part is dropped
+-- (people paste full paths), and with no extension both formats are tried,
+-- .ogg first because it is the game's own format.
+local function CustomSoundCandidates(input)
+    local file = input:gsub("^.*[\\/]", "")
+    local lower = file:lower()
+    if lower:match("%.ogg$") or lower:match("%.mp3$") then return { file } end
+    return { file .. ".ogg", file .. ".mp3" }
+end
+
+-- "powerpuff_girls-intro.mp3" -> "Powerpuff Girls Intro".
+local function CustomSoundNameFromFile(input)
+    local base = input:gsub("^.*[\\/]", "")
+    base = base:gsub("%.[Oo][Gg][Gg]$", ""):gsub("%.[Mm][Pp]3$", "")
+    base = base:gsub("[_%-]+", " "):gsub("%s+", " ")
+    base = base:match("^%s*(.-)%s*$") or ""
+    base = base:gsub("(%a)([%w']*)", function(first, rest) return first:upper() .. rest end)
+    return base
+end
+
+-- One test sound at a time: a new test or preview stops the last one, which
+-- matters for anything longer than a ping (a theme tune plays for a while).
+local customSoundTestHandle
+local function StopCustomSoundTest()
+    if customSoundTestHandle then
+        StopSound(customSoundTestHandle)
+        customSoundTestHandle = nil
+    end
+end
+
+local function PlayCustomSoundTest(path)
+    StopCustomSoundTest()
+    local willPlay, handle = PlaySoundFile(path, "Master")
+    if willPlay then customSoundTestHandle = handle end
+    return willPlay
+end
+
+-- Finds a typed sound by PLAYING each candidate until one starts. Addons get
+-- no file-exists or directory API, and PlaySoundFile reporting it will not
+-- play is the only signal there is (DandersFrames' SoundEngine reads it the
+-- same way). The one that is found plays, which doubles as the preview.
+--
+-- Returns dirKey, file on success, or nil, reason where reason is "off"
+-- (sound disabled in the game settings, so nothing can be checked) or
+-- "missing".
+local function FindCustomSound(input)
+    if not GetCVarBool("Sound_EnableAllSound") then
+        StopCustomSoundTest()
+        return nil, "off"
+    end
+    for _, dir in ipairs(CUSTOM_SOUND_DIRS) do
+        for _, file in ipairs(CustomSoundCandidates(input)) do
+            if PlayCustomSoundTest(dir.path .. file) then
+                return dir.key, file
+            end
+        end
+    end
+    return nil, "missing"
+end
 
 local function GetLSM()
     return LibStub and LibStub("LibSharedMedia-3.0", true)
@@ -3338,7 +3421,7 @@ local function RegisterCustomSoundsWithLSM()
     if not sounds then return end
     for _, entry in ipairs(sounds) do
         if entry.name and entry.file and entry.name ~= "" and entry.file ~= "" then
-            lsm:Register("sound", entry.name, CUSTOM_SOUNDS_PATH .. entry.file)
+            lsm:Register("sound", entry.name, CustomSoundPath(entry))
         end
     end
 end
@@ -4040,8 +4123,23 @@ function BH:RefreshCustomSoundsList()
             f.fileLabel:SetJustifyH("LEFT")
             f.fileLabel:SetTextColor(0.5, 0.5, 0.5)
 
+            -- Same speaker button the bundled sounds have. Custom sounds had
+            -- none, so checking one worked meant wiring it to an alert first.
+            f.playBtn = CreateFrame("Button", nil, f)
+            f.playBtn:SetSize(20, 20)
+            f.playBtn:SetPoint("LEFT", f, "LEFT", 332, 0)
+            local pNorm = f.playBtn:CreateTexture(nil, "BACKGROUND")
+            pNorm:SetAllPoints()
+            pNorm:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+            local pHi = f.playBtn:CreateTexture(nil, "HIGHLIGHT")
+            pHi:SetAllPoints()
+            pHi:SetTexture("Interface\\Common\\VoiceChat-Speaker")
+            pHi:SetAlpha(0.6)
+            f.playBtn:SetScript("OnEnter", function() pNorm:SetAlpha(0.7) end)
+            f.playBtn:SetScript("OnLeave", function() pNorm:SetAlpha(1.0) end)
+
             f.removeBtn = CreateSQButton(f, "X", 22, 18, SQ_COLORS.danger)
-            f.removeBtn:SetPoint("LEFT", f, "LEFT", 334, 0)
+            f.removeBtn:SetPoint("LEFT", f, "LEFT", 358, 0)
             return f
         end)
         local _ = isNew
@@ -4049,7 +4147,18 @@ function BH:RefreshCustomSoundsList()
         rowFrame:Show()
         rowFrame:SetPoint("TOPLEFT", self.customSoundsListFrame, "TOPLEFT", 0, rowY)
         rowFrame.nameLabel:SetText(entry.name or "")
-        rowFrame.fileLabel:SetText(entry.file or "")
+        -- An entry from before V1.89 still reads the old folder, which the
+        -- next addon update will empty. Say so, so it can be moved in time.
+        if entry.dir == "media" then
+            rowFrame.fileLabel:SetText(entry.file or "")
+        else
+            rowFrame.fileLabel:SetText((entry.file or "") .. " |cFFFF8844(old folder)|r")
+        end
+
+        local path = CustomSoundPath(entry)
+        rowFrame.playBtn:SetScript("OnClick", function()
+            PlayCustomSoundTest(path)
+        end)
 
         local idx = i
         rowFrame.removeBtn:SetScript("OnClick", function()
@@ -4063,6 +4172,11 @@ function BH:RefreshCustomSoundsList()
         rowY = rowY - 24
     end
     self.customSoundsListFrame:SetHeight(math.abs(rowY) + 4)
+
+    -- The list is the last thing on the page, so the page grows with it.
+    if self.customSoundsContent and self.customSoundsListTop then
+        self.customSoundsContent:SetHeight(math.abs(self.customSoundsListTop) + math.abs(rowY) + 24)
+    end
 end
 
 -- ============================================================================
@@ -4123,6 +4237,14 @@ function BH:BuildSoundsTab(parent)
     end
 
     -- === Custom Sounds ===
+    --
+    -- Reworked in V1.89. It used to take a display name AND an exact filename,
+    -- forced ".ogg" onto anything else (so "song.mp3" became "song.mp3.ogg"
+    -- and could never be found), never checked the file existed, ignored a
+    -- duplicate name without a word, and kept the files inside the addon's
+    -- own folder, which every addon update empties. Now: type the filename,
+    -- Test plays it, Add finds it in either folder (new one first) and names
+    -- it from the file unless a name is given.
     yOffset = yOffset - 6
     local csDivider = CreateSQDivider(content, yOffset)
     csDivider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -4139,89 +4261,175 @@ function BH:BuildSoundsTab(parent)
     csHint:SetWidth(400)
     csHint:SetJustifyH("LEFT")
     csHint:SetWordWrap(true)
-    csHint:SetText("Place .ogg files in: |cFFFFFF00Interface\\AddOns\\Squizzumables\\Media\\Sounds\\|r then enter the display name and filename below.")
+    csHint:SetText("Put your .ogg or .mp3 files in |cFFFFFF00Interface\\AddOns\\SquizzumablesMedia\\Sounds\\|r"
+        .. " - make the folders if they are not there yet. Addon updates never touch that folder, so your sounds stay put."
+        .. "\n\nType the filename (the extension is optional), press Test to hear it, then Add."
+        .. " If a file you have just copied in is not found, restart the game.")
     csHint:SetTextColor(0.55, 0.55, 0.55)
-    yOffset = yOffset - 34
+    -- Floor on the measurement: a page built before it is first shown can
+    -- report a string height of 0, which would put the form on the hint.
+    yOffset = yOffset - (math.max(csHint:GetStringHeight(), 64) + 12)
 
-    -- Column headers
-    local csNameHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    csNameHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    csNameHdr:SetText("Display Name")
-    csNameHdr:SetTextColor(0.6, 0.6, 0.6)
-
+    -- Form: filename first, since that is the one thing that has to be right.
     local csFileHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    csFileHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 160, yOffset)
+    csFileHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     csFileHdr:SetText("Filename")
     csFileHdr:SetTextColor(0.6, 0.6, 0.6)
+
+    local csNameHdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    csNameHdr:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 166, yOffset)
+    csNameHdr:SetText("Name (optional)")
+    csNameHdr:SetTextColor(0.6, 0.6, 0.6)
+    yOffset = yOffset - 16
+
+    local csFileEdit = CreateSQEditBox(content, 160, 20, { maxLetters = 128 })
+    csFileEdit:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    csFileEdit.placeholder = csFileEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    csFileEdit.placeholder:SetPoint("LEFT", csFileEdit, "LEFT", 6, 0)
+    csFileEdit.placeholder:SetText("my_sound.mp3")
+    csFileEdit.placeholder:SetTextColor(0.4, 0.4, 0.4)
+
+    local csNameEdit = CreateSQEditBox(content, 140, 20, { maxLetters = 64 })
+    csNameEdit:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 166, yOffset)
+    csNameEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus() end)
+    csNameEdit.placeholder = csNameEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    csNameEdit.placeholder:SetPoint("LEFT", csNameEdit, "LEFT", 6, 0)
+    csNameEdit.placeholder:SetPoint("RIGHT", csNameEdit, "RIGHT", -6, 0)
+    csNameEdit.placeholder:SetJustifyH("LEFT")
+    csNameEdit.placeholder:SetWordWrap(false)
+    csNameEdit.placeholder:SetTextColor(0.4, 0.4, 0.4)
+
+    -- The name box shows, greyed out, the name the file would get, so leaving
+    -- it empty is visibly a choice rather than a missing field.
+    local function RefreshPlaceholders()
+        local file = csFileEdit:GetText():match("^%s*(.-)%s*$") or ""
+        csFileEdit.placeholder:SetShown(csFileEdit:GetText() == "")
+        local derived = (file ~= "") and CustomSoundNameFromFile(file) or ""
+        csNameEdit.placeholder:SetText(derived ~= "" and derived or "e.g. My Alert")
+        csNameEdit.placeholder:SetShown(csNameEdit:GetText() == "")
+    end
+    csFileEdit:SetScript("OnTextChanged", RefreshPlaceholders)
+    csFileEdit:SetScript("OnShow", RefreshPlaceholders)
+    csNameEdit:SetScript("OnTextChanged", RefreshPlaceholders)
+    csNameEdit:SetScript("OnShow", RefreshPlaceholders)
+
+    local csTestBtn = CreateSQButton(content, "Test", 44, 22)
+    csTestBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 312, yOffset + 1)
+
+    local csAddBtn = CreateSQButton(content, "Add", 50, 22)
+    csAddBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 360, yOffset + 1)
+    yOffset = yOffset - 26
+
+    -- One line of feedback under the form. Every outcome says something: the
+    -- old form's silent failures were the unfriendly part.
+    local csStatus = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    csStatus:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    csStatus:SetWidth(400)
+    csStatus:SetJustifyH("LEFT")
+    csStatus:SetWordWrap(true)
+    csStatus:SetText("")
+    local function SetStatus(text, good)
+        csStatus:SetText(text or "")
+        if good then
+            csStatus:SetTextColor(0.4, 0.9, 0.4)
+        else
+            csStatus:SetTextColor(1, 0.45, 0.35)
+        end
+    end
+    yOffset = yOffset - 30
+
+    local function StatusForFailure(reason, file)
+        if reason == "off" then
+            return "Game sound is switched off (System > Sound), so the file cannot be checked. Turn it on and try again."
+        end
+        return "Could not find \"" .. file .. "\" in SquizzumablesMedia\\Sounds\\. Check the spelling, and restart the game if you have just copied it in."
+    end
+
+    csTestBtn:SetScript("OnClick", function()
+        local input = csFileEdit:GetText():match("^%s*(.-)%s*$") or ""
+        if input == "" then SetStatus("Type a filename first.") return end
+        local dir, fileOrReason = FindCustomSound(input)
+        if not dir then
+            SetStatus(StatusForFailure(fileOrReason, input))
+        elseif dir == "legacy" then
+            SetStatus("Found " .. fileOrReason .. " in the old Squizzumables\\Media\\Sounds\\ folder. It works, but the next addon update will delete it - move it to SquizzumablesMedia\\Sounds\\.", false)
+        else
+            SetStatus("Found " .. fileOrReason .. " - playing.", true)
+        end
+    end)
+
+    local function AddCustomSound()
+        local input = csFileEdit:GetText():match("^%s*(.-)%s*$") or ""
+        if input == "" then SetStatus("Type a filename first.") return end
+
+        local dir, fileOrReason = FindCustomSound(input)
+        if not dir then
+            SetStatus(StatusForFailure(fileOrReason, input))
+            return
+        end
+        local file = fileOrReason
+
+        local label = csNameEdit:GetText():match("^%s*(.-)%s*$") or ""
+        if label == "" then label = CustomSoundNameFromFile(file) end
+        if label == "" then SetStatus("Give the sound a name.") return end
+        local name = "Squizzumables: " .. label
+
+        self.settings.customSounds = self.settings.customSounds or {}
+        for _, e in ipairs(self.settings.customSounds) do
+            if e.name == name then
+                SetStatus("You already have a sound called \"" .. label .. "\". Pick another name.")
+                return
+            end
+        end
+        for _, e in ipairs(SQ_BUNDLED_SOUNDS) do
+            if e.name == name then
+                SetStatus("\"" .. label .. "\" is the name of a bundled sound. Pick another name.")
+                return
+            end
+        end
+
+        local entry = { name = name, file = file }
+        if dir == "media" then entry.dir = "media" end
+        table.insert(self.settings.customSounds, entry)
+        self:SaveSettings()
+        local lsm = GetLSM()
+        if lsm then
+            lsm:Register("sound", name, CustomSoundPath(entry))
+        end
+
+        csFileEdit:SetText("")
+        csNameEdit:SetText("")
+        csFileEdit:ClearFocus()
+        csNameEdit:ClearFocus()
+        RefreshPlaceholders()
+        if dir == "legacy" then
+            SetStatus("Added \"" .. label .. "\" from the OLD folder. Move the file to SquizzumablesMedia\\Sounds\\ and add it again, or the next addon update will delete it.", false)
+        else
+            SetStatus("Added \"" .. label .. "\". It is now in every sound list.", true)
+        end
+        self:RefreshCustomSoundsList()
+        if self.scrollChild then self:RefreshItemList() end
+    end
+    csAddBtn:SetScript("OnClick", AddCustomSound)
+    csFileEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); AddCustomSound() end)
+
+    -- The list of sounds already added, last on the page so it can grow.
+    local csListTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    csListTitle:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    csListTitle:SetText("YOUR SOUNDS")
+    csListTitle:SetTextColor(0.6, 0.6, 0.6)
     yOffset = yOffset - 18
 
-    -- Dynamic list of user sounds
     local csListFrame = CreateFrame("Frame", nil, content)
     csListFrame:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     csListFrame:SetSize(410, 4)
     self.customSoundsListFrame = csListFrame
+    self.customSoundsContent = content
+    self.customSoundsListTop = yOffset
     self:RefreshCustomSoundsList()
-    yOffset = yOffset - 8
 
-    -- Add row: name input + file input + Add button
-    local csNameEdit = CreateSQEditBox(content, 150, 20, { maxLetters = 64 })
-    csNameEdit:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    csNameEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    csNameEdit.placeholder = csNameEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    csNameEdit.placeholder:SetPoint("LEFT", csNameEdit, "LEFT", 6, 0)
-    csNameEdit.placeholder:SetText("e.g. My Alert")
-    csNameEdit.placeholder:SetTextColor(0.4, 0.4, 0.4)
-    csNameEdit:SetScript("OnTextChanged", function(self)
-        csNameEdit.placeholder:SetShown(self:GetText() == "")
-    end)
-    csNameEdit:SetScript("OnShow", function(self)
-        csNameEdit.placeholder:SetShown(self:GetText() == "")
-    end)
-
-    local csFileEdit = CreateSQEditBox(content, 160, 20, { maxLetters = 128 })
-    csFileEdit:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 158, yOffset)
-    csFileEdit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    csFileEdit.placeholder = csFileEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    csFileEdit.placeholder:SetPoint("LEFT", csFileEdit, "LEFT", 6, 0)
-    csFileEdit.placeholder:SetText("mysound.ogg")
-    csFileEdit.placeholder:SetTextColor(0.4, 0.4, 0.4)
-    csFileEdit:SetScript("OnTextChanged", function(self)
-        csFileEdit.placeholder:SetShown(self:GetText() == "")
-    end)
-    csFileEdit:SetScript("OnShow", function(self)
-        csFileEdit.placeholder:SetShown(self:GetText() == "")
-    end)
-
-    local csAddBtn = CreateSQButton(content, "Add", 60, 22)
-    csAddBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 326, yOffset - 1)
-    csAddBtn:SetScript("OnClick", function()
-        local nameSuffix = csNameEdit:GetText():match("^%s*(.-)%s*$")
-        local file = csFileEdit:GetText():match("^%s*(.-)%s*$")
-        if nameSuffix == "" or file == "" then return end
-        local name = "Squizzumables: " .. nameSuffix
-        if not file:lower():match("%.ogg$") then
-            file = file .. ".ogg"
-        end
-        self.settings.customSounds = self.settings.customSounds or {}
-        for _, e in ipairs(self.settings.customSounds) do
-            if e.name == name then return end
-        end
-        table.insert(self.settings.customSounds, { name = name, file = file })
-        self:SaveSettings()
-        local lsm = GetLSM()
-        if lsm then
-            lsm:Register("sound", name, CUSTOM_SOUNDS_PATH .. file)
-        end
-        csNameEdit:SetText("")
-        csFileEdit:SetText("")
-        csNameEdit.placeholder:Show()
-        csFileEdit.placeholder:Show()
-        self:RefreshCustomSoundsList()
-        if self.scrollChild then self:RefreshItemList() end
-    end)
-    yOffset = yOffset - 30
-
-    content:SetHeight(math.abs(yOffset) + 20)
+    -- Leaving the tab stops a test that is still playing.
+    content:SetScript("OnHide", StopCustomSoundTest)
 end
 
 -- ============================================================================

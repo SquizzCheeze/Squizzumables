@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.89"] = {
+        "Your own sounds now go in their own folder, Interface\\AddOns\\SquizzumablesMedia\\Sounds\\, which addon updates never touch - the old folder was emptied by every update.",
+        "Adding a sound is easier: type the filename, press Test to hear it, then Add. MP3 works as well as OGG, the name fills itself in, and every custom sound has a play button.",
+    },
     ["1.88"] = {
         "The proc glow on cooldown icons can be coloured now, per group - \"Proc Glow Colour\", beside the Proc Glow tick. It defaults to the gold of the game's own glow, so nothing changes until you pick a colour.",
         "Square icons used to get the game's own glow art, a fixed gold nothing could recolour. Square now has glow art of this addon's own, like the round and shield shapes already had, so the colour applies whatever shape a group uses.",

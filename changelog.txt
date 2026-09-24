@@ -1,17 +1,25 @@
 Squizzumables Changelog
 =======================
 
-V1.88
+V1.89
 
-- The proc glow on cooldown icons can now be coloured, per group, under
-  "Proc Glow Colour" beside the Proc Glow tick. It defaults to the gold of
-  the game's own glow, so nothing changes until you pick a colour.
+- Your own sounds now have their own folder:
+  Interface\AddOns\SquizzumablesMedia\Sounds\ (make the folders if they are
+  not there). They used to go inside Squizzumables' own Media\Sounds folder,
+  which an addon update replaces - so every update quietly deleted them.
+  Sounds you already added keep working and are marked "(old folder)" in the
+  list; move the file across and add it again before your next update.
 
-  Square icons used to get the game's own glow art, which is a fixed gold
-  nothing could recolour. Square now has glow art of this addon's own, drawn
-  the same way the round, shield and other shapes already were, so the colour
-  applies whatever shape a group uses. Reminder buttons are unchanged.
+- Adding a custom sound is friendlier. Type the filename - with or without
+  .ogg/.mp3 - press Test to hear it, then Add. The name fills itself in from
+  the file unless you type one. Every outcome now says something: a file that
+  cannot be found, a name you already use, and game sound being switched off
+  all get a message instead of the old silent nothing.
 
-- "Proc Glow" and "Dim When Unusable" no longer appear on the Buffs and Buff
-  Bars groups, where they never did anything - a tracked buff has no proc
-  highlight and nothing to dim.
+- MP3 files work. They were blocked by the addon itself, which stuck ".ogg"
+  on the end of any other filename.
+
+- Custom sounds each have a play button in the list, like the bundled ones.
+
+- The list of your sounds now sits below the add form instead of drawing
+  over it.
