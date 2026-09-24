@@ -23,7 +23,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.89"] = {
         "Your own sounds now go in their own folder, Interface\\AddOns\\SquizzumablesMedia\\Sounds\\, which addon updates never touch - the old folder was emptied by every update.",
-        "Adding a sound is easier: type the filename, press Test to hear it, then Add. MP3 works as well as OGG, the name fills itself in, and every custom sound has a play button.",
+        "Adding a sound is easier: type the filename, press Test to hear it, then Add. MP3 works as well as OGG, the name fills itself in, and every custom sound has a play button. There's a new bundled sound too: Chemical X.",
+        "The CDM settings (the tab formerly called Cooldowns) show a true-size live preview of every group, with a button straight to Blizzard's Cooldown Manager settings. Custom Icons groups now use the same sub-tabs as Essential and Utility.",
+        "Fixed moving a spell from Essential or Utility into a custom group leaving a gap behind, and the Buffs group ignoring its Orientation setting.",
     },
     ["1.88"] = {
         "The proc glow on cooldown icons can be coloured now, per group - \"Proc Glow Colour\", beside the Proc Glow tick. It defaults to the gold of the game's own glow, so nothing changes until you pick a colour.",
