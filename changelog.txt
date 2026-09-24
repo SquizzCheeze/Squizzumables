@@ -56,3 +56,8 @@ V1.89
   an empty gap where it used to be. The spell was never taken out of the
   group it came from, so that group kept its slot; the two groups shared one
   icon, and the custom group won it. The old group now closes up.
+
+- Custom Icons groups now have the same sub-tabs as Essential and Utility -
+  Layout, Appearance, Text, Behaviour, Visibility (and Buffs where it
+  applies) - instead of every setting in one long column. Each group
+  remembers which sub-tab you were on, with its preview above the tabs.

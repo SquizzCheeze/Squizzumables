@@ -6905,6 +6905,28 @@ function BH:RebuildCDMPage(state, mode)
     end -- mode == "custom"
 
     -- ===== LIST EXISTING GROUPS =====
+    --
+    -- Custom Icons (V1.89): each group is laid out like the CDM tab's groups --
+    -- sub-tabs for Layout / Appearance / Text / ... -- instead of one long
+    -- stack of every section. A tabbed group's height follows its selected
+    -- sub-tab, so it cannot sit at a fixed running offset: each group gets its
+    -- own host frame, stacked under the one before, and everything below the
+    -- groups moves into a tail frame that follows the last of them. The page
+    -- height is recomputed whenever a host changes size.
+    local pageContent = content
+    local customHosts = {}
+    local customTop
+    local customTail
+    local GROUP_GAP = 8
+    local function ResizeCustomPage()
+        local h = math.abs(customTop or 0)
+        for _, host in ipairs(customHosts) do
+            h = h + (host:GetHeight() or 0) + GROUP_GAP
+        end
+        if customTail then h = h + (customTail:GetHeight() or 0) end
+        pageContent:SetHeight(h + 20)
+    end
+
     local specData = GetSpecData()
     if specData then
         -- Also here, not just in reconcile: reconcile returns early when the
@@ -6956,10 +6978,42 @@ function BH:RebuildCDMPage(state, mode)
                     groupName, specData.groups[groupName], specData, true)
                 ns.Rows.currentSection = content.section
             else
-                yOffset = self:BuildGroupSection(content, leftPad, yOffset,
-                    groupName, specData.groups[groupName], specData)
+                local prev = customHosts[#customHosts]
+                local host = CreateFrame("Frame", nil, pageContent)
+                host.section = pageContent.section
+                if prev then
+                    host:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -GROUP_GAP)
+                    host:SetPoint("TOPRIGHT", prev, "BOTTOMRIGHT", 0, -GROUP_GAP)
+                else
+                    customTop = yOffset
+                    host:SetPoint("TOPLEFT", pageContent, "TOPLEFT", 0, yOffset)
+                    host:SetPoint("TOPRIGHT", pageContent, "TOPRIGHT", 0, yOffset)
+                end
+                host:SetHeight(1)
+                customHosts[#customHosts + 1] = host
+                -- Tabbed, with the preview under the heading. The inline
+                -- sub-tabs size the host to whichever section is showing.
+                self:BuildGroupSection(host, leftPad, 0,
+                    groupName, specData.groups[groupName], specData, true, true)
+                host:SetScript("OnSizeChanged", ResizeCustomPage)
             end
         end
+    end
+
+    -- Everything after the groups on Custom Icons is built into a tail that
+    -- follows the last group, so a group switching sub-tab moves it instead of
+    -- running over it. From here on `content` IS that tail and yOffset counts
+    -- from its top; the page's own height is ResizeCustomPage's job.
+    if #customHosts > 0 then
+        local last = customHosts[#customHosts]
+        customTail = CreateFrame("Frame", nil, pageContent)
+        customTail.section = pageContent.section
+        customTail:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -GROUP_GAP)
+        customTail:SetPoint("TOPRIGHT", last, "BOTTOMRIGHT", 0, -GROUP_GAP)
+        customTail:SetHeight(1)
+        customTail:SetScript("OnSizeChanged", ResizeCustomPage)
+        content = customTail
+        yOffset = 0
     end
 
     -- ===== DIVIDER =====
@@ -7106,6 +7160,10 @@ function BH:RebuildCDMPage(state, mode)
     yOffset = yOffset - 40
 
     content:SetHeight(math.abs(yOffset) + 20)
+    -- On Custom Icons `content` is the tail by now, so the page itself is
+    -- sized from the stacked groups plus the tail. Called directly as well as
+    -- from OnSizeChanged, which a frame not yet shown may not fire.
+    if customTail then ResizeCustomPage() end
     ns.Rows.currentSection = prevSection
 end
 
@@ -7848,7 +7906,9 @@ local GROUP_SECTIONS = {
 --- are stacked under headings and the running yOffset is returned, which is
 --- what the Custom Cooldowns tab needs: it puts several groups in one scroller,
 --- where a tab strip per group would be worse than the single column ever was.
-function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, specData, tabbed)
+-- `inlinePreview`: draw the group's preview under its heading. The Custom
+-- Icons page wants that; the CDM tab pins one above each sub-tab instead.
+function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, specData, tabbed, inlinePreview)
     local indent = leftPad + 10
 
     -- Group name header row with delete button
@@ -7913,7 +7973,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
 
     -- Custom Icons: a preview under each group's heading (the Cooldowns tab
     -- pins one above each sub-tab instead -- see BuildCDMTab).
-    if not tabbed and ns.CDMPreview then
+    if (inlinePreview or not tabbed) and ns.CDMPreview then
         yOffset = ns.CDMPreview.PlaceInline(content, groupName, leftPad, yOffset)
     end
 
