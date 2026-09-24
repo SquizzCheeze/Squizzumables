@@ -16,6 +16,8 @@ V1.89
   cannot be found, a name you already use, and game sound being switched off
   all get a message instead of the old silent nothing.
 
+- New bundled sound: Chemical X.
+
 - MP3 files work. They were blocked by the addon itself, which stuck ".ogg"
   on the end of any other filename.
 
