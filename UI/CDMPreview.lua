@@ -399,7 +399,10 @@ local function CreatePane(parent, groupName)
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    pane:SetBackdropColor(0.03, 0.03, 0.04, 0.85)
+    -- Fully transparent fill (user request 2026-09-24): the group is seen
+    -- against whatever the options window is, the way it sits over the game.
+    -- The border stays, so the pane still reads as a box.
+    pane:SetBackdropColor(0, 0, 0, 0)
     local b = SQ_COLORS and SQ_COLORS.border or { 0.3, 0.3, 0.35 }
     pane:SetBackdropBorderColor(b[1], b[2], b[3], 0.7)
     pane:SetHeight(INLINE_H)
