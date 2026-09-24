@@ -257,6 +257,9 @@ end
 
 local BAR_W = 6          -- scroll bar thickness
 local WHEEL_STEP = 24    -- pixels per mouse-wheel notch
+local VIEW_TOP = TITLE_H + 2   -- the view starts under the title line...
+local VIEW_BOTTOM = 2          -- ...and runs to the pane's bottom edge
+local OVERLAY_LEVEL = 400      -- button and scroll bars: over the glows (300)
 
 -- Fit a view scroll bar to what is visible (viewLen) against what there is
 -- (canvasLen). No overflow: hidden, and the view put back to its start.
@@ -337,17 +340,21 @@ function Preview.Refresh(pane)
     -- A pinned pane grows with its group up to its cap; an inline one has a
     -- fixed height. The view's size is worked out here rather than read back,
     -- because a height set this pass is not laid out until the next frame.
-    local chromeH = (TITLE_H + 2) + (PAD - 2 + FOOTER_H)
+    --
+    -- The view runs under the button row, so the group needs FOOTER_H of
+    -- canvas below it to be scrollable clear of the button; a pinned pane that
+    -- fits grows by the same amount, which is what keeps the button off it.
     local paneH = pane.fixedHeight
     if not paneH then
-        paneH = math.floor(math.min(MAX_PINNED_H, chromeH + needH) + 0.5)
+        paneH = math.floor(math.min(MAX_PINNED_H, VIEW_TOP + needH + FOOTER_H + VIEW_BOTTOM) + 0.5)
         if math.abs((pane:GetHeight() or 0) - paneH) >= 1 then pane:SetHeight(paneH) end
     end
     local viewW = width - PAD * 2
-    local viewH = paneH - chromeH
+    local viewH = paneH - VIEW_TOP - VIEW_BOTTOM
     local canvasW = math.max(viewW, needW)
-    local canvasH = math.max(viewH, needH)
+    local canvasH = math.max(viewH, needH + FOOTER_H)
     pane.canvas:SetSize(canvasW, canvasH)
+    pane.slot:SetSize(needW, needH)
 
     local view = pane.view
     local scrollsX = UpdateScrollBar(pane.hbar, viewW, canvasW,
@@ -428,22 +435,35 @@ local function CreatePane(parent, groupName)
     -- The canvas is the scroll child, at scale 1 and at least as big as the
     -- view; the host centres in it. Offsets on the host itself would be in its
     -- own (scaled) units, so it takes none.
+    --
+    -- The view runs to the pane's BOTTOM edge, under the button row, so icons
+    -- use the whole box instead of being cut off above the button (user
+    -- screenshot 2026-09-24). The button and the scroll bars are overlays on
+    -- it, raised above the icons and their glows, so they never scroll.
     local view = CreateFrame("ScrollFrame", nil, pane)
-    view:SetPoint("TOPLEFT", pane, "TOPLEFT", PAD, -(TITLE_H + 2))
-    view:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -PAD, PAD - 2 + FOOTER_H)
+    view:SetPoint("TOPLEFT", pane, "TOPLEFT", PAD, -VIEW_TOP)
+    view:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -PAD, VIEW_BOTTOM)
     local canvas = CreateFrame("Frame", nil, view)
     canvas:SetSize(1, 1)
     view:SetScrollChild(canvas)
     pane.view, pane.canvas = view, canvas
 
+    -- The group's own footprint (plus glow margin) at the top of the canvas,
+    -- centred across it; the host centres in this. Top-aligned rather than
+    -- centred in the view, so a group that fits sits clear of the button row.
+    local slot = CreateFrame("Frame", nil, canvas)
+    slot:SetPoint("TOP", canvas, "TOP")
+    slot:SetSize(1, 1)
+    pane.slot = slot
+
     pane.hbar = MakeScrollBar(pane, true, function(v) view:SetHorizontalScroll(v) end)
-    pane.hbar:SetPoint("TOPLEFT", view, "BOTTOMLEFT", 0, -2)
-    pane.hbar:SetPoint("TOPRIGHT", view, "BOTTOMRIGHT", 0, -2)
     pane.hbar:SetHeight(BAR_W)
     pane.vbar = MakeScrollBar(pane, false, function(v) view:SetVerticalScroll(v) end)
     pane.vbar:SetPoint("TOPLEFT", view, "TOPRIGHT", 2, 0)
     pane.vbar:SetPoint("BOTTOMLEFT", view, "BOTTOMRIGHT", 2, 0)
     pane.vbar:SetWidth(BAR_W)
+    pane.hbar:SetFrameLevel(OVERLAY_LEVEL)
+    pane.vbar:SetFrameLevel(OVERLAY_LEVEL)
 
     -- Wheel scrolls the view; Shift, or a view that only overflows sideways,
     -- scrolls horizontally. Only enabled while something overflows (Refresh),
@@ -477,8 +497,16 @@ local function CreatePane(parent, groupName)
          .. "Click again to close it.")
     end
 
-    local host = CreateFrame("Frame", nil, canvas)
-    host:SetPoint("CENTER", canvas, "CENTER")
+    -- Along the bottom row, beside the button: the sideways scroll bar. Both
+    -- its anchors sit on the button's centre line.
+    pane.hbar:SetPoint("LEFT", blizzBtn, "RIGHT", 10, 0)
+    pane.hbar:SetPoint("RIGHT", pane, "BOTTOMRIGHT", -PAD, 5 + BUTTON_H / 2)
+    -- Above the icons, and above their glow frames (fixed at level 300 inside
+    -- the same strata once lifted), so the button always stays clickable.
+    blizzBtn:SetFrameLevel(OVERLAY_LEVEL)
+
+    local host = CreateFrame("Frame", nil, slot)
+    host:SetPoint("CENTER", slot, "CENTER")
     host:SetSize(1, 1)
     pane.host = host
 
