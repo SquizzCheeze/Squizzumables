@@ -399,10 +399,7 @@ local function CreatePane(parent, groupName)
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    -- Fully transparent fill (user request 2026-09-24): the group is seen
-    -- against whatever the options window is, the way it sits over the game.
-    -- The border stays, so the pane still reads as a box.
-    pane:SetBackdropColor(0, 0, 0, 0)
+    pane:SetBackdropColor(0.03, 0.03, 0.04, 0.85)
     local b = SQ_COLORS and SQ_COLORS.border or { 0.3, 0.3, 0.35 }
     pane:SetBackdropBorderColor(b[1], b[2], b[3], 0.7)
     pane:SetHeight(INLINE_H)
@@ -466,6 +463,13 @@ local function CreatePane(parent, groupName)
     local blizzBtn = ns.CreateSQButton(pane, "Blizzard CDM Settings", 150, BUTTON_H)
     blizzBtn:SetPoint("BOTTOMLEFT", pane, "BOTTOMLEFT", PAD - 4, 5)
     blizzBtn:SetScript("OnClick", ToggleBlizzardCDMSettings)
+    -- Transparent fill (user request 2026-09-24): just the border and label
+    -- on the pane. CreateSQButton repaints its fill on every hover, so it is
+    -- cleared again after each; the border still lights up on hover.
+    local function ClearFill(self) self:SetBackdropColor(0, 0, 0, 0) end
+    ClearFill(blizzBtn)
+    blizzBtn:HookScript("OnEnter", ClearFill)
+    blizzBtn:HookScript("OnLeave", ClearFill)
     if ns.Rows and ns.Rows.AddTooltip then
         ns.Rows.AddTooltip(blizzBtn, "Blizzard CDM Settings",
             "Opens Blizzard's Cooldown Manager settings, where you choose which spells "
