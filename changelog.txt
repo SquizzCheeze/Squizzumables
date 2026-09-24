@@ -41,3 +41,13 @@ V1.89
 - The CDM tab's groups no longer all say "0 assigned". They fill themselves
   from Blizzard's Cooldown Manager, so the count looked at a list that is
   always empty; they now show how many they actually hold.
+
+- Each preview has a "Blizzard CDM Settings" button in its bottom-left corner
+  that opens Blizzard's Cooldown Manager settings (and closes them again), so
+  you can change what a bar tracks and watch the preview follow. It opens on
+  top of the Squizzumables window rather than behind it. Not in combat.
+
+- The Buffs group now follows its Orientation setting. It always offered the
+  dropdown but laid out horizontally regardless. If you had set it to
+  Vertical at some point, your buffs will now stack vertically - set it back
+  to Horizontal to keep the old look.

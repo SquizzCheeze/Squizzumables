@@ -1699,9 +1699,11 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
         return
     end
 
-    -- Always horizontal here: this pass has never honoured Orientation (the
-    -- `false`), and the shared Grid keeps that exactly as it was.
-    local g = Grid.Icons(#shown, groupData, false)
+    -- Orientation honoured since V1.89. The Buffs group always offered the
+    -- dropdown, but this pass laid out horizontally whatever it said -- which
+    -- is why the geometry takes `vertical` as an argument.
+    local g = Grid.Icons(#shown, groupData,
+        (groupData.orientation or DEFAULT_ORIENTATION) == "vertical")
     local iconSize = g.size
 
     for i, child in ipairs(shown) do

@@ -3,8 +3,9 @@ local addonName, ns = ...
 -- ============================================================================
 -- CDM options preview (V1.89)
 -- ============================================================================
--- A 1:1 picture of a cooldown group, at the top of its sub-tab on the
--- Cooldowns page and inline under each group on Custom Icons.
+-- A 1:1 picture of a cooldown group, at the top of its sub-tab on the CDM
+-- page and inline under each group on Custom Icons, with a button through to
+-- Blizzard's own Cooldown Manager settings.
 --
 -- THE RULE: it is drawn by the real code, never a copy. Icons are built by
 -- CreateProxyIcon and styled by ApplyProxyVisuals (in preview mode, which
@@ -37,8 +38,10 @@ local SAMPLE_ICON   = 134400   -- INV_Misc_QuestionMark
 local SAMPLE_COUNT  = 4        -- stand-ins shown for an empty group
 local PAD           = 10
 local TITLE_H       = 18
-local MAX_PINNED_H  = 190      -- the pinned pane never eats more of the tab than this
-local INLINE_H      = 110      -- inline panes have a fixed height: the page lays out once
+local MAX_PINNED_H  = 210      -- the pinned pane never eats more of the tab than this
+local INLINE_H      = 130      -- inline panes have a fixed height: the page lays out once
+local BUTTON_H      = 20       -- the Blizzard CDM button along the bottom edge
+local FOOTER_H      = BUTTON_H + 6
 local GLOW_MARGIN   = 12       -- room for a glow or text spilling past the icons
 local REFRESH_EVERY = 0.25
 
@@ -81,6 +84,52 @@ local function ApplyMockDesaturation(icon, gd, onCD)
     else
         icon:SetDesaturated(false)
     end
+end
+
+-- Opens (or closes) Blizzard's Cooldown Manager settings, so a group can be
+-- edited there with its preview in view.
+--
+-- CooldownViewerSettings:ShowUIPanel / HideUIPanel are Blizzard's own paths
+-- (CooldownViewerSettings.lua, TogglePanel; /cdm in CooldownManagerCentered
+-- calls the same). Not in combat, as that addon also declines: the window
+-- sits beside Edit Mode, which does not open mid-fight.
+--
+-- Blizzard's window has no strata of its own, so it is MEDIUM, and the
+-- options window is DIALOG -- wherever the two overlap, Blizzard's would be
+-- underneath ours. It is lifted to DIALOG while it is open and put back the
+-- moment it closes, so outside this button nothing about it changes.
+local blizzLiftedFrom
+local blizzHideHooked = false
+local function ToggleBlizzardCDMSettings()
+    if InCombatLockdown() then
+        print("|cff00ccffSquizzumables|r: Blizzard's Cooldown Manager settings can't be opened in combat.")
+        return
+    end
+    if not CooldownViewerSettings and C_AddOns and C_AddOns.LoadAddOn then
+        C_AddOns.LoadAddOn("Blizzard_CooldownViewer")
+    end
+    local settings = CooldownViewerSettings
+    if not settings then return end
+
+    if settings:IsShown() then
+        HideUIPanel(settings)
+        return
+    end
+    if not blizzHideHooked then
+        blizzHideHooked = true
+        settings:HookScript("OnHide", function(self)
+            if blizzLiftedFrom then
+                self:SetFrameStrata(blizzLiftedFrom)
+                blizzLiftedFrom = nil
+            end
+        end)
+    end
+    settings:ShowUIPanel(false)
+    if not blizzLiftedFrom then
+        blizzLiftedFrom = settings:GetFrameStrata()
+        settings:SetFrameStrata("DIALOG")
+    end
+    settings:Raise()
 end
 
 -- A running cooldown on the mock "icon 2", restarted whenever it finishes so
@@ -232,13 +281,13 @@ function Preview.Refresh(pane)
 
     -- Bars only for a borrowed bar group: LayoutGroup lays proxy icons on the
     -- icon grid whatever isBarGroup says, and the borrowed pass is the one that
-    -- stacks bars. Orientation likewise only reaches proxy groups.
+    -- stacks bars.
     local isBar = members.borrowed and gd.isBarGroup and true or false
     local g
     if isBar then
         g = cdm.Grid.Bars(#items, gd)
     else
-        g = cdm.Grid.Icons(#items, gd, (not members.borrowed) and gd.orientation == "vertical")
+        g = cdm.Grid.Icons(#items, gd, gd.orientation == "vertical")
     end
 
     if members.borrowed then
@@ -257,12 +306,12 @@ function Preview.Refresh(pane)
     local needW = (g.width + GLOW_MARGIN * 2) * trueScale
     local needH = (g.height + GLOW_MARGIN * 2) * trueScale
     local availW = width - PAD * 2
-    local maxH = (pane.fixedHeight or MAX_PINNED_H) - TITLE_H - PAD * 2
+    local maxH = (pane.fixedHeight or MAX_PINNED_H) - TITLE_H - FOOTER_H - PAD * 2
     local fit = math.min(1, availW / needW, maxH / needH)
     pane.host:SetScale(trueScale * fit)
 
     if not pane.fixedHeight then
-        local h = math.floor(TITLE_H + PAD * 2 + needH * fit + 0.5)
+        local h = math.floor(TITLE_H + FOOTER_H + PAD * 2 + needH * fit + 0.5)
         if math.abs((pane:GetHeight() or 0) - h) >= 1 then pane:SetHeight(h) end
     end
 
@@ -317,7 +366,20 @@ local function CreatePane(parent, groupName)
     -- the host itself would be in its own (scaled) units, so it takes none.
     local holder = CreateFrame("Frame", nil, pane)
     holder:SetPoint("TOPLEFT", pane, "TOPLEFT", PAD, -(TITLE_H + 2))
-    holder:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -PAD, PAD - 2)
+    holder:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -PAD, PAD - 2 + FOOTER_H)
+
+    -- Bottom left: straight to Blizzard's Cooldown Manager settings, which is
+    -- where what a group CONTAINS is decided. Toggles, so the same button
+    -- closes it again.
+    local blizzBtn = ns.CreateSQButton(pane, "Blizzard CDM Settings", 150, BUTTON_H)
+    blizzBtn:SetPoint("BOTTOMLEFT", pane, "BOTTOMLEFT", PAD - 4, 5)
+    blizzBtn:SetScript("OnClick", ToggleBlizzardCDMSettings)
+    if ns.Rows and ns.Rows.AddTooltip then
+        ns.Rows.AddTooltip(blizzBtn, "Blizzard CDM Settings",
+            "Opens Blizzard's Cooldown Manager settings, where you choose which spells "
+         .. "each bar tracks. Changes show up in this preview as you make them. "
+         .. "Click again to close it.")
+    end
 
     local host = CreateFrame("Frame", nil, holder)
     host:SetPoint("CENTER", holder, "CENTER")
