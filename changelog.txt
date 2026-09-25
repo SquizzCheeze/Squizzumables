@@ -1,6 +1,12 @@
 Squizzumables Changelog
 =======================
 
+V1.90
+
+- Other addons can now list your cooldown groups, custom ones included
+  (Squizzumables_GetCDMGroupNames). SquizzFrames uses it so your own groups
+  appear in its "Attach To" lists.
+
 V1.89
 
 - Your own sounds now have their own folder:

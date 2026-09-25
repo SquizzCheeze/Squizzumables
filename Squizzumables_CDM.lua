@@ -5080,6 +5080,23 @@ function Squizzumables_GetCDMGroupFrame(groupName)
     return cdmModule:GetGroupFrame(groupName)
 end
 
+-- The names Squizzumables_GetCDMGroupFrame will currently answer for: the
+-- built-ins first in their usual order, then custom groups alphabetically.
+-- Only groups whose frame exists this session are listed, so every name
+-- returned resolves. A fresh table each call; the caller may keep it.
+-- (SquizzFrames builds its "Attach To" dropdowns from this.)
+function Squizzumables_GetCDMGroupNames()
+    local out, custom = {}, {}
+    local builtin = { Essential = 1, Utility = 2, Buffs = 3, ["Buff Bars"] = 4 }
+    for name in pairs(containerCache) do
+        if builtin[name] then out[#out + 1] = name else custom[#custom + 1] = name end
+    end
+    table.sort(out, function(a, b) return builtin[a] < builtin[b] end)
+    table.sort(custom)
+    for _, name in ipairs(custom) do out[#out + 1] = name end
+    return out
+end
+
 -- Every Blizzard cooldown viewer, for the "hide Blizzard's" option.
 local BLIZZARD_VIEWERS = {
     "EssentialCooldownViewer",
