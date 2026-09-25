@@ -4277,6 +4277,76 @@ local function WouldAnchorLoop(specData, groupName, targetName)
     return false
 end
 
+-- ============================================================================
+-- Anchoring a group to ANOTHER ADDON'S frame
+-- ============================================================================
+--
+-- anchorTo holds either a group name or "frame:<GlobalFrameName>". The frame
+-- form is resolved through _G at placement time, so it works for any addon's
+-- named frame -- the curated list below only decides what the dropdown offers,
+-- and the "Frame name" box beside it takes anything else (/fstack shows names).
+--
+-- Kept on cdmModule rather than as file locals: this chunk sits close to Lua's
+-- 200-local ceiling (see CLAUDE.md).
+
+-- Offered in the Anchor To dropdown when the frame exists. SquizzFrames' cast
+-- bars are named "SquizzFramesCastBar" .. unit with the unit LOWER-case.
+cdmModule.EXTERNAL_ANCHORS = {
+    { frame = "SquizzFramesCastBarplayer",   text = "SquizzFrames: Player Cast Bar" },
+    { frame = "SquizzFramesCastBartarget",   text = "SquizzFrames: Target Cast Bar" },
+    { frame = "SquizzFramesCastBarfocus",    text = "SquizzFrames: Focus Cast Bar" },
+    { frame = "SquizzFramesUnitFramePlayer", text = "SquizzFrames: Player Frame" },
+    { frame = "SquizzFramesUnitFrameTarget", text = "SquizzFrames: Target Frame" },
+    { frame = "SquizzFramesUnitFrameFocus",  text = "SquizzFrames: Focus Frame" },
+    { frame = "SquizzFramesResourceBar",     text = "SquizzFrames: Resource Bar" },
+    { frame = "SquizzFramesResourcePoints",  text = "SquizzFrames: Resource Points" },
+    { frame = "SquizzFramesPartyFrame",      text = "SquizzFrames: Party/Raid Frames" },
+}
+
+-- For other addons: offer one of your frames in the Anchor To dropdown.
+--     Squizzumables_RegisterAnchorTarget("MyAddonBar", "MyAddon: Bar")
+-- Registering is only about the list; any named frame can already be typed in.
+function Squizzumables_RegisterAnchorTarget(frameName, label)
+    if type(frameName) ~= "string" or frameName == "" then return end
+    for _, e in ipairs(cdmModule.EXTERNAL_ANCHORS) do
+        if e.frame == frameName then e.text = label or e.text return end
+    end
+    cdmModule.EXTERNAL_ANCHORS[#cdmModule.EXTERNAL_ANCHORS + 1] =
+        { frame = frameName, text = label or frameName }
+end
+
+function cdmModule.ResolveExternalAnchor(frameName)
+    local f = frameName and _G[frameName]
+    if type(f) ~= "table" or type(f.GetObjectType) ~= "function" then return nil end
+    if f.IsForbidden and f:IsForbidden() then return nil end
+    return f
+end
+
+-- Does `frame`'s anchor chain lead back to `onto`? Anchoring `onto` to `frame`
+-- would then be a cycle, which WoW refuses with a hard error. A group-to-group
+-- loop is caught by WouldAnchorLoop from saved settings; across addons the only
+-- truth is the live geometry, so this walks GetPoint's relative frames.
+-- Bounded, and pcall'd per call: a forbidden region in the chain can refuse.
+function cdmModule.AnchorDependsOn(frame, onto)
+    local queue, seen, head = { frame }, { [frame] = true }, 1
+    while queue[head] and head <= 128 do
+        local f = queue[head]
+        head = head + 1
+        if f == onto then return true end
+        local okN, n = pcall(f.GetNumPoints, f)
+        for i = 1, (okN and n) or 0 do
+            local ok, _, rel = pcall(f.GetPoint, f, i)
+            -- A nil relativeTo means the parent.
+            if ok and rel == nil and f.GetParent then rel = f:GetParent() end
+            if ok and type(rel) == "table" and not seen[rel] then
+                seen[rel] = true
+                queue[#queue + 1] = rel
+            end
+        end
+    end
+    return false
+end
+
 -- Place a group: against another group if it is anchored to one, otherwise at
 -- its own saved position. Split out of CreateGroupContainer so an anchor change
 -- can be applied without rebuilding the frame.
@@ -4290,10 +4360,32 @@ function cdmModule:PositionGroup(groupName)
     local targetName = gd.anchorTo
     if targetName == "" then targetName = nil end
 
-    local target = targetName and targetName ~= groupName
-                   and not WouldAnchorLoop(specData, groupName, targetName)
-                   and self.groups[targetName] and self.groups[targetName].container
-                   or nil
+    local target
+    local external = targetName and targetName:match("^frame:(.+)$")
+    if external then
+        target = cdmModule.ResolveExternalAnchor(external)
+        if target and (target == container or cdmModule.AnchorDependsOn(target, container)) then
+            -- That frame is (eventually) anchored to THIS group. Placing us on
+            -- it would be a cycle; stay at our own position instead.
+            target = nil
+        elseif not target then
+            -- Not created yet -- another addon that builds its frames after
+            -- ours does. Retry a few times rather than stranding the group at
+            -- its free position for the session.
+            self._anchorRetries = self._anchorRetries or {}
+            local n = (self._anchorRetries[groupName] or 0) + 1
+            self._anchorRetries[groupName] = n
+            if n <= 10 then
+                C_Timer.After(2, function() self:PositionGroup(groupName) end)
+            end
+        end
+        if target and self._anchorRetries then self._anchorRetries[groupName] = nil end
+    else
+        target = targetName and targetName ~= groupName
+                 and not WouldAnchorLoop(specData, groupName, targetName)
+                 and self.groups[targetName] and self.groups[targetName].container
+                 or nil
+    end
 
     container:ClearAllPoints()
     if target then
@@ -7396,6 +7488,25 @@ local function BuildGroupLayoutSection(content, indent, yOffset, groupName, grou
     end
     table.sort(anchorItems, function(a, b) return a.value < b.value end)
 
+    -- Other addons' frames, after the groups: the curated list where the frame
+    -- exists, and whatever frame the group is set to now even when it is not
+    -- on that list (typed into the Frame Name box below) or not loaded yet.
+    local function BuildExternalItems(items)
+        local listed = {}
+        for _, e in ipairs(cdmModule.EXTERNAL_ANCHORS) do
+            if cdmModule.ResolveExternalAnchor(e.frame) then
+                items[#items + 1] = { text = e.text, value = "frame:" .. e.frame }
+                listed["frame:" .. e.frame] = true
+            end
+        end
+        local cur = groupData.anchorTo
+        if type(cur) == "string" and cur:match("^frame:") and not listed[cur] then
+            items[#items + 1] = { text = "Frame: " .. cur:sub(7), value = cur }
+        end
+        return items
+    end
+    BuildExternalItems(anchorItems)
+
     local anchorDD = CreateSQDropdown(content, "Anchor To", 160, anchorItems, function(val)
         groupData.anchorTo = val
         BH.cdm:ScheduleReconcile()
@@ -7403,7 +7514,8 @@ local function BuildGroupLayoutSection(content, indent, yOffset, groupName, grou
     anchorDD:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     anchorDD:SetSelectedValue(groupData.anchorTo or "")
     ns.Rows.AddTooltip(anchorDD, "Anchor To",
-        "Attach this group to another one, so moving that group moves this with it. "
+        "Attach this group to another one, or to another addon's frame (a SquizzFrames "
+     .. "cast bar, say), so moving that moves this with it. "
      .. "An anchored group cannot be dragged -- it is positioned by whatever it follows. "
      .. "Anchoring two groups to each other is ignored rather than allowed to break the layout.")
 
@@ -7421,6 +7533,44 @@ local function BuildGroupLayoutSection(content, indent, yOffset, groupName, grou
     sideDD:SetSelectedValue(groupData.anchorPoint or "below")
     ns.Rows.AddTooltip(sideDD, "Side", "Which side of the anchor group this one sits on.")
     yOffset = yOffset - 50
+
+    -- Any other addon's frame, by its global name. The dropdown only offers
+    -- frames we know about; this takes the rest.
+    local nameLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameLabel:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    nameLabel:SetText("Or anchor to a frame by name")
+    local nameBox = CreateSQEditBox(content, 220, 20, { maxLetters = 128 })
+    nameBox:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset - 16)
+    local nameStatus = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameStatus:SetPoint("LEFT", nameBox, "RIGHT", 8, 0)
+    nameStatus:SetTextColor(DIM_R, DIM_G, DIM_B, 1)
+    nameBox:SetScript("OnEnterPressed", function(self)
+        local name = strtrim(self:GetText() or "")
+        self:ClearFocus()
+        if name == "" then return end
+        if not cdmModule.ResolveExternalAnchor(name) then
+            nameStatus:SetText("No frame called " .. name)
+            return
+        end
+        groupData.anchorTo = "frame:" .. name
+        local items = { { text = "Screen (free)", value = "" } }
+        for otherName in pairs(specData.groups) do
+            if otherName ~= groupName then
+                items[#items + 1] = { text = otherName, value = otherName }
+            end
+        end
+        table.sort(items, function(a, b) return a.value < b.value end)
+        anchorDD:SetItems(BuildExternalItems(items))
+        anchorDD:SetSelectedValue(groupData.anchorTo)
+        nameStatus:SetText("Anchored")
+        self:SetText("")
+        BH.cdm:ScheduleReconcile()
+    end)
+    ns.Rows.AddTooltip(nameBox, "Frame Name",
+        "The global name of any frame, from any addon. Type /fstack and hover the frame "
+     .. "to find it, then press Enter here. If that frame is itself attached to this "
+     .. "group, the anchor is ignored rather than allowed to loop.")
+    yOffset = yOffset - 46
 
     local axSlider = CreateSQSlider(content, "Anchor Offset X", 220, -200, 200, 1)
     axSlider:SetValue(groupData.anchorX or 0)

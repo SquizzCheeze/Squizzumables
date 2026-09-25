@@ -3,6 +3,13 @@ Squizzumables Changelog
 
 V1.90
 
+- Cooldown groups can anchor to other addons' frames, not just to each other.
+  Anchor To now lists SquizzFrames' cast bars, unit frames, resource bar and
+  party frames - for example, Utility under the player cast bar. Any other
+  addon's frame works too: type its name into the new "Or anchor to a frame by
+  name" box (/fstack shows names) and press Enter. If that frame is itself
+  attached to the group, the anchor is ignored instead of breaking the layout.
+
 - Other addons can now list your cooldown groups, custom ones included
   (Squizzumables_GetCDMGroupNames). SquizzFrames uses it so your own groups
   appear in its "Attach To" lists.

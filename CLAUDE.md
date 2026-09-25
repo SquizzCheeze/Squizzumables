@@ -1124,7 +1124,18 @@ once per session and reused**, never rebuilt on `ReleaseAll` or a spec change: W
 a frame, so a second `CreateFrame` under the same name leaves the first alive and orphaned and
 anything anchored to it silently stops tracking. `containerCache` in `Squizzumables_CDM.lua` is
 what guarantees that; do not clear it. The `SQZ_CDMGroup_<name>` globals still exist but the
-accessor is the supported contract.
+accessor is the supported contract. `Squizzumables_GetCDMGroupNames()` lists the names that
+currently resolve (SquizzFrames builds its Attach To lists from it).
+
+**The other direction works too: a group can anchor to ANOTHER addon's frame.** `groupData.anchorTo`
+is a group name or `"frame:<GlobalName>"`, resolved through `_G` in `PositionGroup`.
+`cdmModule.EXTERNAL_ANCHORS` is only what the dropdown offers (SquizzFrames' frames by default;
+`Squizzumables_RegisterAnchorTarget(name, label)` adds more), and the options' frame-name box takes
+anything else. ⚠ Two addons can each hold half of a loop the other cannot see (SquizzFrames' cast
+bar on Utility, Utility on that cast bar), and WoW raises a hard error on the cycle. So both sides
+walk the TARGET's live anchor chain before anchoring — `cdmModule.AnchorDependsOn` here,
+`CastBar.DependsOn` in SquizzFrames — and whichever is placed second backs off. A missing frame
+(the other addon builds late) retries `PositionGroup` every 2s, ten times.
 
 Note this is *not* a mirror of Blizzard's viewers. The module proxies rather than reparenting, so
 `EssentialCooldownViewer` is a separate frame at its own position — and with "Hide Blizzard's
