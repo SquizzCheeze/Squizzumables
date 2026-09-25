@@ -626,6 +626,54 @@ local function LiveSpellID(spellID)
 end
 cdmModule.LiveSpellID = LiveSpellID
 
+-- Aura IDs learned from what Blizzard's OWN cooldown item actually matched.
+--
+-- A "Show While Active" overlay can only light for an aura whose spell ID it
+-- was given, and discovery cannot always know that ID in advance: a talent
+-- swaps the buff (Avenging Wrath -> Sentinel), or the aura is one of several
+-- (Vile Vial of Volatile Venom's use effect, Empowering Venom 1293316, applies
+-- a RANDOM secondary-stat buff, each its own spell ID). The icon then glowed,
+-- because Blizzard's item knew the ability was running, while its overlay
+-- matched nothing and the cooldown showed through (user report 2026-09-26).
+--
+-- Blizzard's item does find the aura -- it walks its own priority list
+-- (CooldownViewerItemDataMixin:GetAssociatedAuraSpellPriority) -- and records
+-- the match as item.auraSpellID. That field is a secret in combat and readable
+-- out of it, so whenever it is readable and names an ID the overlay does not
+-- have, it is saved here and the overlays are rebuilt to include it. Each
+-- variant is learned once, the first time it is seen out of combat, and kept
+-- for good, so from then on it works in combat too.
+--
+-- Account-wide and keyed by cooldownID: which aura a spell applies is a fact
+-- about the spell, not about a character, spec or profile.
+function cdmModule.LearnedAuraIDs(cdID)
+    local all = SquizzumablesDB and SquizzumablesDB.cdmLearnedAuras
+    return cdID and all and all[cdID] or nil
+end
+
+function cdmModule.LearnAuraID(cdID, item)
+    if not (cdID and item) or InCombatLockdown() then return end
+    local sid = item.auraSpellID
+    if sid == nil or BH.Secrets.IsSecret(sid) or type(sid) ~= "number" or sid <= 0 then return end
+    if not SquizzumablesDB then return end
+    local all = SquizzumablesDB.cdmLearnedAuras or {}
+    SquizzumablesDB.cdmLearnedAuras = all
+    local set = all[cdID]
+    if set and set[sid] then return end
+    -- Already one of the entry's own IDs: nothing new to match.
+    local entry = cdmModule.registry[cdID]
+    if entry then
+        if entry.spellID == sid or entry.tooltipSpellID == sid then return end
+        for _, id in ipairs(entry.auraIDs or {}) do
+            if id == sid then return end
+        end
+    end
+    set = set or {}
+    set[sid] = true
+    all[cdID] = set
+    cdmModule:ScheduleReconcile()
+end
+
 -- The key alerts are stored under: the spell, not the cooldown.
 local function AlertKey(cdID)
     return SpellIDForCooldown(cdID) or cdID
@@ -2664,6 +2712,7 @@ local function UpdateProxyCooldown(proxy)
         if proxy._sqShowActiveBuff then
             local item = cdmModule.viewerItems[proxy.cooldownID]
             if item then activeNow = AuraDisplayActive(item) or nil end
+            if activeNow then cdmModule.LearnAuraID(proxy.cooldownID, item) end
             -- Blizzard's Essential item can be as blind to the trinket's buff
             -- as our entry was (see the equip-slot merge at the end of
             -- discovery), so also ask the buff viewer's items, which track it.
@@ -2673,6 +2722,17 @@ local function UpdateProxyCooldown(proxy)
                         activeNow = true
                         break
                     end
+                end
+            end
+            -- And learn from the Tracked Buffs item for this trinket as well.
+            -- For a random-stat trinket that is the frame that actually binds
+            -- the buff -- it is why Tracked Buffs showed the Vial's duration
+            -- while the Essential icon could only show its cooldown (user
+            -- report 2026-09-26).
+            if activeNow then
+                for _, sid in ipairs(proxy.auraSpellIDs or {}) do
+                    local buffItem = cdmModule.buffItemForSpell[sid]
+                    if buffItem then cdmModule.LearnAuraID(proxy.cooldownID, buffItem) end
                 end
             end
         end
@@ -2733,6 +2793,9 @@ local function UpdateProxyCooldown(proxy)
     if not isBuffEntry and proxy._sqShowActiveBuff and ShowActiveAllowed(proxy) then
         local item = cdmModule.viewerItems[proxy.cooldownID]
         if item then activeNow = AuraDisplayActive(item) or nil end
+        -- Running per Blizzard: learn which aura it matched, so the overlay
+        -- can match it too (see cdmModule.LearnAuraID).
+        if activeNow then cdmModule.LearnAuraID(proxy.cooldownID, item) end
     end
     proxy._sqActiveNow = activeNow
 

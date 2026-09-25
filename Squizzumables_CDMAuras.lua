@@ -209,6 +209,35 @@ local function AuraSpellIDs(entry)
     add(entry.spellID)
     add(entry.tooltipSpellID)
     for _, id in ipairs(entry.auraIDs or {}) do add(id) end
+
+    -- The same IDs Blizzard's own item matches an aura by, read LIVE
+    -- (CooldownViewerItemDataMixin:GetAssociatedAuraSpellPriority: linkedSpellID,
+    -- linkedSpellIDs, overrideTooltipSpellID, overrideSpellID, spellID). The
+    -- entry above is discovery's snapshot, which misses a talent that replaced
+    -- the spell since (Avenging Wrath -> Sentinel) and never had linkedSpellID
+    -- at all. A change here changes the signature, so the overlay is rebuilt
+    -- on the next out-of-combat reconcile -- talent changes already cause one.
+    local cdID = entry.cooldownID
+    if cdID and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local ok, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+        if ok and type(info) == "table" then
+            add(info.linkedSpellID)
+            add(info.overrideTooltipSpellID)
+            add(info.overrideSpellID)
+            add(info.spellID)
+            if type(info.linkedSpellIDs) == "table" then
+                for _, id in ipairs(info.linkedSpellIDs) do add(id) end
+            end
+        end
+    end
+
+    -- And whatever Blizzard's items have been SEEN to match -- the only source
+    -- for an aura that is one of several, like a random-stat trinket buff.
+    -- See cdmModule.LearnAuraID.
+    local learned = BH.cdm and BH.cdm.LearnedAuraIDs and BH.cdm.LearnedAuraIDs(cdID)
+    if learned then
+        for id in pairs(learned) do add(id) end
+    end
     table.sort(list)
     return ids, table.concat(list, ",")
 end
@@ -322,6 +351,49 @@ local function NewFontString(parent)
     return fs
 end
 
+-- A square border drawn from four plain edge textures, NOT BackdropTemplate.
+--
+-- Backdrop is Lua (Blizzard_SharedXML/Backdrop.lua), and laying out its edges
+-- reads the frame's width and height and does arithmetic on them. On a button
+-- the aura engine has bound to a live aura that size is a SECRET, so
+-- SetBackdrop threw "attempt to perform arithmetic on local 'width' (a secret
+-- number value)". It ran inside initializeFrame, so the throw aborted the
+-- whole build -- BuildOverlay's pcall caught it and dropped the overlay. That
+-- is why Show While Active never appeared for Sentinel or the Vile Vial (user
+-- report 2026-09-26): their buffs were up when their overlays were built,
+-- while the ones that worked had been built with nothing running. A restyle
+-- over a live button failed the same way.
+--
+-- Edges pinned to the corners with a fixed thickness need no size at all.
+local function NewEdgeBorder(parent)
+    local f = CreateFrame("Frame", nil, parent)
+    f.edges = {}
+    for i = 1, 4 do f.edges[i] = f:CreateTexture(nil, "BORDER") end
+    return f
+end
+
+local function SetEdgeBorder(f, thickness, r, g, b, a)
+    local e = f.edges
+    -- top, bottom, left, right
+    e[1]:ClearAllPoints()
+    e[1]:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+    e[1]:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+    e[1]:SetHeight(thickness)
+    e[2]:ClearAllPoints()
+    e[2]:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+    e[2]:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+    e[2]:SetHeight(thickness)
+    e[3]:ClearAllPoints()
+    e[3]:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+    e[3]:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+    e[3]:SetWidth(thickness)
+    e[4]:ClearAllPoints()
+    e[4]:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
+    e[4]:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
+    e[4]:SetWidth(thickness)
+    for i = 1, 4 do e[i]:SetColorTexture(r, g, b, a) end
+end
+
 local function BuildIconPieces(button)
     local d = { isBar = false }
     d.bg = button:CreateTexture(nil, "BACKGROUND")
@@ -344,7 +416,7 @@ local function BuildIconPieces(button)
     d.cooldown:SetHideCountdownNumbers(true)
     if d.cooldown.SetUseAuraDisplayTime then d.cooldown:SetUseAuraDisplayTime(true) end
 
-    d.border = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    d.border = NewEdgeBorder(button)
     d.border:SetFrameLevel(d.cooldown:GetFrameLevel() + 1)
     d.text = CreateFrame("Frame", nil, button)
     d.text:SetAllPoints(button)
@@ -370,7 +442,7 @@ local function BuildBarPieces(button)
     d.barBg:SetAllPoints(d.bar)
     d.barBg:SetColorTexture(0, 0, 0, 0.5)
 
-    d.border = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    d.border = NewEdgeBorder(button)
     d.border:SetFrameLevel(d.bar:GetFrameLevel() + 1)
     d.text = CreateFrame("Frame", nil, button)
     d.text:SetAllPoints(button)
@@ -406,8 +478,7 @@ local function StyleBorder(d, gd, shapeFile)
     d.border:ClearAllPoints()
     d.border:SetPoint("TOPLEFT", anchor, "TOPLEFT", -thickness, thickness)
     d.border:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", thickness, -thickness)
-    d.border:SetBackdrop({ edgeFile = "Interface\\BUTTONS\\WHITE8X8", edgeSize = thickness })
-    d.border:SetBackdropBorderColor(r, g, b, a)
+    SetEdgeBorder(d.border, thickness, r, g, b, a)
     d.border:SetShown(show)
 end
 

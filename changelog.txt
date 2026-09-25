@@ -3,6 +3,20 @@ Squizzumables Changelog
 
 V1.90
 
+- Fixed "Show While Active" on Essential/Utility icons showing the ability's
+  cooldown instead of its duration for some abilities, such as Sentinel and
+  the Vile Vial of Volatile Venom, while the active glow still worked. If the
+  buff was already up when the icon's active display was being set up, the
+  setup failed and was thrown away. Seen with Sentinel and the Vile Vial; any
+  ability could hit it. Active icons (and natively drawn Tracked Buffs) now
+  draw their border in a way that cannot fail like that.
+
+- Show While Active now also recognises the buff when a talent has replaced
+  the spell, and learns the buff a random-effect trinket actually gave you,
+  from what Blizzard's own Cooldown Manager matched. Each one is learned the
+  first time it is seen out of combat, and from then on it works in combat
+  too.
+
 - Better performance in combat and in groups:
   - The Cooldown Manager did its full update several times over for a single
     aura change or cast: once for the event, then again for each tracked buff
