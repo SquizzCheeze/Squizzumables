@@ -1006,8 +1006,41 @@ local function PrintDiagnosticsBody(self)
             :format(tostring(cdID), tostring(st.sig),
                 (okV and not BH.Secrets.IsSecret(vis)) and tostring(vis) or "?",
                 st.buttonCount or 0))
+        local names = {}
+        for id in tostring(st.sig or ""):gmatch("%d+") do
+            local nm = C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(tonumber(id))
+            names[#names + 1] = id .. "=" .. ((nm and not BH.Secrets.IsSecret(nm)) and nm or "?")
+        end
+        print("      matches: " .. (#names > 0 and table.concat(names, ", ") or "nothing"))
     end
     if not anyOverlay then print("    none built") end
+
+    -- What an overlay is matched AGAINST: the spell IDs of the buffs actually
+    -- on you. An overlay only lights for an aura whose ID is in its set, so a
+    -- running ability whose buff is listed here WITHOUT the match mark is why
+    -- its icon keeps showing the cooldown. Readable out of combat only; in
+    -- combat every field is secret, and this says so rather than guessing.
+    print("  Your buffs now (* = an overlay matches it):")
+    local wantedIDs = {}
+    for _, st in pairs(activeOverlays) do
+        for id in tostring(st.sig or ""):gmatch("%d+") do wantedIDs[tonumber(id)] = true end
+    end
+    if BH.Secrets.AurasAreSecret and BH.Secrets.AurasAreSecret() then
+        print("    (auras are secret right now -- run this out of combat)")
+    else
+        local anyBuff = false
+        for i = 1, 40 do
+            local okA, a = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
+            if not okA or not a then break end
+            local sid, nm = a.spellId, a.name
+            if sid ~= nil and not BH.Secrets.IsSecret(sid) then
+                anyBuff = true
+                local shown = (nm ~= nil and not BH.Secrets.IsSecret(nm)) and nm or "?"
+                print(("    %s %s (%s)"):format(wantedIDs[sid] and "*" or " ", shown, tostring(sid)))
+            end
+        end
+        if not anyBuff then print("    none readable") end
+    end
 
     -- Equip-slot entries (trinkets): what discovery handed us, and what the
     -- running check reads. The aura IDs are what an overlay matches the buff by.
