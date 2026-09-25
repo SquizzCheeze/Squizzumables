@@ -644,6 +644,21 @@ model forbids addons from mutating protected/secure frames during combat:
   from plain `true`/`false` literals rather than derived from the aura, so unlike everything else
   there it is never secret and stays readable in combat. `_sqActiveNow` caches it per proxy.
 
+  ⚠ **Never put `BackdropTemplate` (or anything else that measures itself in Lua) on an aura
+  button.** A button bound to a live aura has a SECRET size, and Backdrop's edge layout does
+  arithmetic on `GetWidth()`, so `SetBackdrop` throws — inside `initializeFrame`, which aborts the
+  whole build. `BuildOverlay`'s pcall then drops the overlay silently. That was the V1.90 "Show
+  While Active shows the cooldown" bug for Sentinel and the Vile Vial, whose buffs happened to be up
+  when their overlays were built; the only trace was `/sq cdmnative`'s `last error`. Borders are
+  `NewEdgeBorder`/`SetEdgeBorder` (four textures pinned to the corners) for this reason.
+
+  The overlay's IDs are the entry's discovery snapshot PLUS the live cooldown info Blizzard matches
+  by (`GetAssociatedAuraSpellPriority`: `linkedSpellID`, `linkedSpellIDs`, `overrideTooltipSpellID`,
+  `overrideSpellID`, `spellID`) PLUS `SquizzumablesDB.cdmLearnedAuras[cdID]`, filled by
+  `cdmModule.LearnAuraID` from `item.auraSpellID` on Blizzard's cooldown item or the same trinket's
+  Tracked Buffs item whenever that is readable (out of combat). The learned set is the only way to
+  cover a random-effect trinket whose buff is one of several spell IDs.
+
   The overlay glow is a THIRD glow host (`proxy.ActiveGlow`, beside `GlowFrame` and `ProcGlow`):
   `ActionButtonSpellAlertManager` keys by frame, and this one is held for a whole buff duration so
   it overlaps the other two routinely. Passing `anchorTo` to `ns.Glow.Show`/`Set` forces the
