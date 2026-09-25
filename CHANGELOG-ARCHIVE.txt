@@ -8,6 +8,68 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.89
+
+- Your own sounds now have their own folder:
+  Interface\AddOns\SquizzumablesMedia\Sounds\ (make the folders if they are
+  not there). They used to go inside Squizzumables' own Media\Sounds folder,
+  which an addon update replaces - so every update quietly deleted them.
+  Sounds you already added keep working and are marked "(old folder)" in the
+  list; move the file across and add it again before your next update.
+
+- Adding a custom sound is friendlier. Type the filename - with or without
+  .ogg/.mp3 - press Test to hear it, then Add. The name fills itself in from
+  the file unless you type one. Every outcome now says something: a file that
+  cannot be found, a name you already use, and game sound being switched off
+  all get a message instead of the old silent nothing.
+
+- New bundled sound: Chemical X.
+
+- MP3 files work. They were blocked by the addon itself, which stuck ".ogg"
+  on the end of any other filename.
+
+- Custom sounds each have a play button in the list, like the bundled ones.
+
+- The list of your sounds now sits below the add form instead of drawing
+  over it.
+
+- The CDM settings now show a live preview of each group, drawn at the same
+  size as on your screen: pinned above the settings on the Essential,
+  Utility, Buffs and Buff Bars tabs, and under each group on Custom Icons.
+  It is drawn by the same code as the real groups, so every setting -
+  size, spacing, rows, growth, shape, border, zoom, text, colours - shows up
+  in it as you change it. What only happens in play is shown as an example:
+  one icon glowing, one on cooldown, one with stacks, and buffs as they look
+  while up. An empty group shows stand-in icons. The preview is always true
+  size: a group too big for it scrolls (mouse wheel, Shift+wheel sideways)
+  while the title and button stay where they are.
+
+- The "Cooldowns" tab is now called "CDM".
+
+- The CDM tab's groups no longer all say "0 assigned". They fill themselves
+  from Blizzard's Cooldown Manager, so the count looked at a list that is
+  always empty; they now show how many they actually hold.
+
+- Each preview has a "Blizzard CDM Settings" button in its bottom-left corner
+  that opens Blizzard's Cooldown Manager settings (and closes them again), so
+  you can change what a bar tracks and watch the preview follow. It opens on
+  top of the Squizzumables window rather than behind it. Not in combat.
+
+- The Buffs group now follows its Orientation setting. It always offered the
+  dropdown but laid out horizontally regardless. If you had set it to
+  Vertical at some point, your buffs will now stack vertically - set it back
+  to Horizontal to keep the old look.
+
+- Fixed moving a spell from Essential or Utility into a custom group leaving
+  an empty gap where it used to be. The spell was never taken out of the
+  group it came from, so that group kept its slot; the two groups shared one
+  icon, and the custom group won it. The old group now closes up.
+
+- Custom Icons groups now have the same sub-tabs as Essential and Utility -
+  Layout, Appearance, Text, Behaviour, Visibility (and Buffs where it
+  applies) - instead of every setting in one long column. Each group
+  remembers which sub-tab you were on, with its preview above the tabs.
+
 V1.88
 
 - The proc glow on cooldown icons can now be coloured, per group, under

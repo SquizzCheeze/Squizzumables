@@ -21,6 +21,12 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.90"] = {
+        "Fixed \"Show While Active\" showing an ability's cooldown instead of its duration on some Essential and Utility icons (Sentinel and the Vile Vial of Volatile Venom among them) while the glow still worked.",
+        "Cooldown groups can anchor to other addons' frames - SquizzFrames' cast bars, unit frames and resource bar are listed, or type any frame's name (/fstack shows it).",
+        "Every slider's number can be clicked and typed into for an exact value.",
+        "Smoother in combat and in groups: the Cooldown Manager no longer repeats its update several times per aura change, and the reminder buttons no longer rebuild every time an enemy's auras change.",
+    },
     ["1.89"] = {
         "Your own sounds now go in their own folder, Interface\\AddOns\\SquizzumablesMedia\\Sounds\\, which addon updates never touch - the old folder was emptied by every update.",
         "Adding a sound is easier: type the filename, press Test to hear it, then Add. MP3 works as well as OGG, the name fills itself in, and every custom sound has a play button. There's a new bundled sound too: Chemical X.",
