@@ -8900,7 +8900,7 @@ function BH:UpdateButtons()
     self.buttons = {}
     -- Clean up dummy preview buttons
     if self.unlockDummyBtns then
-        for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
+        for _, db in ipairs(self.unlockDummyBtns) do db:Hide() end  -- pooled: hide, never orphan
         self.unlockDummyBtns = nil
     end
 
@@ -9033,35 +9033,41 @@ function BH:UpdateButtons()
             "Interface\\Icons\\INV_Misc_Gear_01",
             "Interface\\Icons\\Spell_Nature_Rejuvenation",
         }
-        -- Clean up old dummy buttons
-        if self.unlockDummyBtns then
-            for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
-        end
-        -- Held in a local as well as on self: the other branches of this function
-        -- clear self.unlockDummyBtns to nil, so only the local is known non-nil here.
-        local dummyBtns = {}
-        self.unlockDummyBtns = dummyBtns
-        local labelHeight = showLabel and 14 or 0
-        local btnHeight = size + labelHeight
-        for i = 1, 3 do
-            local db = CreateFrame("Frame", nil, self.frame)
-            db:SetSize(size, btnHeight)
-            db:SetFrameStrata("MEDIUM")
-            db.icon = db:CreateTexture(nil, "ARTWORK")
-            db.icon:SetSize(size, size)
-            db.icon:SetPoint("TOP", db, "TOP", 0, 0)
-            db.icon:SetTexture(dummyIcons[i])
-            db.icon:SetDesaturated(true)
-            db.icon:SetAlpha(0.5)
-            ns.Shapes.SetMask(db, (self.settings and self.settings.buttonIconShape) or "none", db.icon)
-            if showLabel then
+        -- The three placeholders are created ONCE and reused. This branch runs
+        -- on every UpdateButtons while unlocked, and UpdateButtons is driven
+        -- by UNIT_AURA, so building fresh frames here (and orphaning the old
+        -- ones with SetParent(nil) -- WoW never frees a frame) leaked three
+        -- frames per rebuild, several times a second in a group.
+        local pool = self.unlockDummyPool
+        if not pool then
+            pool = {}
+            for i = 1, 3 do
+                local db = CreateFrame("Frame", nil, self.frame)
+                db:SetFrameStrata("MEDIUM")
+                db.icon = db:CreateTexture(nil, "ARTWORK")
+                db.icon:SetPoint("TOP", db, "TOP", 0, 0)
+                db.icon:SetTexture(dummyIcons[i])
+                db.icon:SetDesaturated(true)
+                db.icon:SetAlpha(0.5)
                 db.label = db:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 db.label:SetPoint("TOP", db.icon, "BOTTOM", 0, -2)
-                db.label:SetWidth(size)
                 db.label:SetJustifyH("CENTER")
                 db.label:SetText("Preview")
                 db.label:SetTextColor(0.6, 0.6, 0.6)
+                pool[i] = db
             end
+            self.unlockDummyPool = pool
+        end
+        self.unlockDummyBtns = pool
+        local labelHeight = showLabel and 14 or 0
+        local btnHeight = size + labelHeight
+        for i = 1, 3 do
+            local db = pool[i]
+            db:SetSize(size, btnHeight)
+            db.icon:SetSize(size, size)
+            ns.Shapes.SetMask(db, (self.settings and self.settings.buttonIconShape) or "none", db.icon)
+            db.label:SetWidth(size)
+            db.label:SetShown(showLabel)
             local idx = i - 1
             db:ClearAllPoints()
             if layout == "VERTICAL" then
@@ -9080,7 +9086,6 @@ function BH:UpdateButtons()
                 end
             end
             db:Show()
-            table.insert(dummyBtns, db)
         end
         if layout == "VERTICAL" then
             self.frame:SetSize(size, 3 * btnHeight + 2 * spacing)
@@ -9091,7 +9096,7 @@ function BH:UpdateButtons()
     elseif id == 1 then
         -- No buttons and not previewing - clean up and hide
         if self.unlockDummyBtns then
-            for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
+            for _, db in ipairs(self.unlockDummyBtns) do db:Hide() end  -- pooled: hide, never orphan
             self.unlockDummyBtns = nil
         end
         self.frame:Hide()
@@ -9100,7 +9105,7 @@ function BH:UpdateButtons()
     else
         -- Real buttons exist - clean up dummies
         if self.unlockDummyBtns then
-            for _, db in ipairs(self.unlockDummyBtns) do db:Hide(); db:SetParent(nil) end
+            for _, db in ipairs(self.unlockDummyBtns) do db:Hide() end  -- pooled: hide, never orphan
             self.unlockDummyBtns = nil
         end
         self.frame:Show()
@@ -10910,6 +10915,22 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         -- gear or bag contents shift, and one rebuild covers the whole burst.
         BH:ScheduleUpdateButtons()
     elseif event == "UNIT_AURA" then
+        -- Registered for EVERY unit, and that means nameplates, target, focus,
+        -- boss and the rest -- in a pull the busiest event in the game. None of
+        -- the three consumers below reads any of those (the reminders look at
+        -- you, your pet and your group; role CC at party/raid; Kel alerts at
+        -- you alone), yet each one still pushed the button bar into a full
+        -- rebuild 0.2s later, so standing near a pack meant rebuilding it up
+        -- to five times a second for the whole fight. One table lookup drops
+        -- them. Built lazily, on BH rather than as a file local.
+        local units = BH.GROUP_AURA_UNITS
+        if not units then
+            units = { player = true, pet = true }
+            for i = 1, 4 do units["party" .. i] = true end
+            for i = 1, 40 do units["raid" .. i] = true end
+            BH.GROUP_AURA_UNITS = units
+        end
+        if not (arg1 and units[arg1]) then return end
         -- Fires for every unit in the group; debounce to avoid rebuilding buttons on every party member aura change
         BH:ScheduleUpdateButtons()
         local ccUnit = arg1

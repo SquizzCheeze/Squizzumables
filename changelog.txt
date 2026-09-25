@@ -3,6 +3,17 @@ Squizzumables Changelog
 
 V1.90
 
+- Better performance in combat and in groups:
+  - The Cooldown Manager did its full update several times over for a single
+    aura change or cast: once for the event, then again for each tracked buff
+    Blizzard updated. It now does it once per frame, however many things ask.
+  - The reminder buttons were rebuilt whenever ANY unit's auras changed,
+    enemy nameplates included, so fighting a pack rebuilt them up to five
+    times a second. They now only react to you, your pet and your group.
+  - Tracked-aura refreshes are spread out instead of all running at once.
+  - Unlock mode no longer creates three new preview frames every time the
+    buttons update; the same three are reused.
+
 - Every slider's value can now be typed. Click the number at the top right of
   a slider, type an exact value and press Enter. It is kept within the
   slider's range; Escape or clicking away puts the old value back. Sliders

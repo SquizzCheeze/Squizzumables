@@ -1787,9 +1787,11 @@ local function HookBlizzardBuffFrames()
                     if child and child.cooldownID then
                         if not BS(child).buffHooked then
                             BS(child).buffHooked = true
+                            -- Batched: Blizzard calls these on every tracked
+                            -- buff item for one aura event, so running the
+                            -- pass directly here repeated it per item.
                             local function OnBuffStateChanged()
-                                ScanBlizzardBuffState()
-                                UpdateAllProxyCooldowns()
+                                cdmModule.RequestProxyRefresh(true)
                             end
                             if child.OnActiveStateChanged then
                                 hooksecurefunc(child, "OnActiveStateChanged", OnBuffStateChanged)
@@ -4104,6 +4106,45 @@ UpdateAllProxyCooldowns = function()
     FireCDSounds()
 end
 
+-- ONE refresh per frame, however many things asked for it.
+--
+-- The full pass above (every proxy twice over, the sound alerts, and for buff
+-- changes a rescan of every Blizzard buff viewer first) was being run straight
+-- from three sources: SPELL_UPDATE_COOLDOWN (every GCD, often several in one
+-- frame), the player's UNIT_AURA, and a hook on EACH tracked buff item that
+-- Blizzard pokes as it processes that same aura event. One aura change could
+-- therefore run the whole thing once per tracked buff, plus once more, all in
+-- the same frame, allocating fresh tables every time -- the dominant Lua cost
+-- of this module in combat. They all come through here now and the pass runs
+-- once on the next frame, scan first when any caller asked for one, so the
+-- proxies always read the freshly scanned buff state.
+--
+-- A frame of latency is invisible on a cooldown sweep. It also cannot make a
+-- buff read wrongly on appearing: CooldownAuraActive falls through to asking
+-- the buff item live whenever the scanned cache has no entry.
+--
+-- In a do block and on cdmModule: this chunk sits near Lua's 200-local limit.
+do
+    local pendingScan, pending = false, false
+    local runner = CreateFrame("Frame")
+    runner:Hide()
+    runner:SetScript("OnUpdate", function(self)
+        self:Hide()
+        local scan = pendingScan
+        pendingScan, pending = false, false
+        if scan then ScanBlizzardBuffState() end
+        UpdateAllProxyCooldowns()
+    end)
+
+    function cdmModule.RequestProxyRefresh(withScan)
+        if withScan then pendingScan = true end
+        if not pending then
+            pending = true
+            runner:Show()
+        end
+    end
+end
+
 local function GetOrCreateProxy(cooldownID, spellID, iconSize, equipSlot)
     local proxy = cdmModule.proxyFrames[cooldownID]
     if proxy then
@@ -6363,7 +6404,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
     if event == "BAG_UPDATE_COOLDOWN" then
         -- Trinkets: nothing else reports an equip-slot cooldown starting.
-        UpdateAllProxyCooldowns()
+        -- Batched: it fires in bursts alongside SPELL_UPDATE_COOLDOWN.
+        cdmModule.RequestProxyRefresh()
         return
     end
     if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_SLOT_CHANGED" then
@@ -6378,15 +6420,18 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         return
     end
     if event == "SPELL_UPDATE_COOLDOWN" then
-        -- Update proxy cooldown sweeps immediately
-        UpdateAllProxyCooldowns()
+        -- Next frame, batched with anything else that asks this frame -- this
+        -- event commonly fires several times in one frame on a single cast.
+        cdmModule.RequestProxyRefresh()
     elseif event == "UNIT_AURA" then
         local unit = ...
         if unit == "player" then
-            ScanBlizzardBuffState()
+            -- Hooking stays immediate: a buff item the pool hands out for this
+            -- very aura needs its hooks before Blizzard next pokes it. Only the
+            -- scan and the proxy pass are batched.
             HookBlizzardBuffFrames()
             HookBlizzardAlertEvents()
-            UpdateAllProxyCooldowns()
+            cdmModule.RequestProxyRefresh(true)
         end
     elseif event == "SPELLS_CHANGED" or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
         cdmModule:ScheduleReconcile(RECONCILE_DEBOUNCE)

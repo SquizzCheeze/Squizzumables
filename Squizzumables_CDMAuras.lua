@@ -582,23 +582,44 @@ local function Retire(st, groupName)
 end
 
 local function EnsureTicker()
-    if refreshTicker then return end
+    if refreshTicker then refreshTicker:Show() return end
     -- UpdateAllAuras is a container method, not a button one, and is legal in
     -- combat -- SquizzFrames has run the same ticker through every fight since
     -- it found slots sticking to a stale instance.
-    refreshTicker = C_Timer.NewTicker(REFRESH_INTERVAL, function()
-        for _, st in pairs(groups) do
-            for _, c in ipairs(st.containers) do
-                if c:IsVisible() then pcall(c.UpdateAllAuras, c) end
+    --
+    -- Active overlays need this for the same reason and more so: a big
+    -- cooldown is reapplied rather than refreshed, and a slot that has locked
+    -- onto the previous instance would show nothing the second time the
+    -- ability was pressed.
+    --
+    -- SPREAD, not bunched. Every container is still re-parsed once per
+    -- REFRESH_INTERVAL, but a few per frame rather than all in the same frame,
+    -- which put a small hitch on a fixed 1.5s beat. The list is snapshotted at
+    -- the start of each cycle (groups are rebuilt mid-session, and walking a
+    -- table while it is added to is undefined) and IsVisible is re-checked on
+    -- the way through, so a container retired since is simply skipped. A
+    -- frame now, not a C_Timer ticker: it hides itself when there is nothing
+    -- to refresh, and EnsureTicker shows it again.
+    local queue, qi, carry = {}, 1, 0
+    refreshTicker = CreateFrame("Frame")
+    refreshTicker:SetScript("OnUpdate", function(self, dt)
+        if qi > #queue then
+            wipe(queue)
+            qi, carry = 1, 0
+            for _, st in pairs(groups) do
+                for _, c in ipairs(st.containers) do queue[#queue + 1] = c end
             end
+            for _, st in pairs(activeOverlays) do
+                if st.container then queue[#queue + 1] = st.container end
+            end
+            if #queue == 0 then self:Hide() return end
         end
-        -- Active overlays need this for the same reason and more so: a big
-        -- cooldown is reapplied rather than refreshed, and a slot that has
-        -- locked onto the previous instance would show nothing the second time
-        -- the ability was pressed.
-        for _, st in pairs(activeOverlays) do
-            local c = st.container
-            if c and c:IsVisible() then pcall(c.UpdateAllAuras, c) end
+        carry = carry + #queue * dt / REFRESH_INTERVAL
+        while carry >= 1 and qi <= #queue do
+            carry = carry - 1
+            local c = queue[qi]
+            qi = qi + 1
+            if c:IsVisible() then pcall(c.UpdateAllAuras, c) end
         end
     end)
 end
