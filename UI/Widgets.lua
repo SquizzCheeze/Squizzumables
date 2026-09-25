@@ -300,9 +300,23 @@ local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
     label:SetText(labelText)
     label:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
-    local valueText = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    valueText:SetPoint("TOPRIGHT", 0, 0)
+    -- The value readout is an EDIT BOX: type an exact number and press Enter,
+    -- the way SquizzFrames' sliders work, rather than nudging the thumb a
+    -- pixel at a time. It sits exactly where the old read-only text did, so no
+    -- page's spacing changes. Enter commits (clamped to the range, snapped to
+    -- the step); Escape, or clicking away, puts the current value back.
+    local valueText = CreateSQEditBox(container, 48, 16, {
+        maxLetters = 10, justifyH = "CENTER", fontObject = GameFontNormalSmall, insets = 2,
+    })
+    valueText:SetPoint("TOPRIGHT", 0, 2)
     ns.ApplyAccent(valueText, "text")
+
+    -- Whole numbers for whole steps; otherwise two decimals, so a 0.05 step
+    -- does not read as 0 (the old readout floored everything).
+    local function FormatValue(v)
+        if step >= 1 then return tostring(math.floor(v + 0.5)) end
+        return tostring(math.floor(v * 100 + 0.5) / 100)
+    end
 
     -- Track background
     local track = CreateFrame("Frame", nil, container, "BackdropTemplate")
@@ -338,7 +352,11 @@ local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
 
     slider:SetScript("OnValueChanged", function(self, value, userInput)
         value = math.floor(value / step + 0.5) * step
-        valueText:SetText(tostring(math.floor(value)))
+        -- A typed value arrives through SetValue, which WoW reports as NOT user
+        -- input. It is, though, and callers gate live previews on the flag
+        -- (the death tally scale, every ns.Rows slider), so pass it on as such.
+        if self._sqTyped then userInput = true end
+        if not valueText:HasFocus() then valueText:SetText(FormatValue(value)) end
         -- Update fill width
         local range = maxVal - minVal
         if range > 0 then
@@ -348,10 +366,32 @@ local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
         if self.onValueChanged then self.onValueChanged(value, userInput) end
     end)
 
+    valueText:SetScript("OnEnterPressed", function(self)
+        local v = tonumber(self:GetText())
+        if v then
+            v = math.max(minVal, math.min(maxVal, v))
+            v = math.floor(v / step + 0.5) * step
+            slider._sqTyped = true
+            slider:SetValue(v)
+            slider._sqTyped = nil
+        end
+        self:ClearFocus()
+    end)
+    -- Escape and focus loss both restore the live value, so a half-typed or
+    -- invalid entry never stays on screen looking applied.
+    valueText.onFocusLost = function(self)
+        self:SetText(FormatValue(slider:GetValue()))
+    end
+
     container.slider = slider
+    -- The text is set here as well as in OnValueChanged: SetValue with the
+    -- value the slider already holds fires no event, so a slider whose saved
+    -- value equals its starting value would otherwise show an empty box.
     container.SetValue = function(self, v)
         self.slider:SetValue(v)
+        if not valueText:HasFocus() then valueText:SetText(FormatValue(self.slider:GetValue())) end
     end
+    valueText:SetText(FormatValue(slider:GetValue()))
     container.GetValue = function(self)
         return self.slider:GetValue()
     end

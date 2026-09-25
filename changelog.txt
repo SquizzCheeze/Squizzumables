@@ -3,6 +3,11 @@ Squizzumables Changelog
 
 V1.90
 
+- Every slider's value can now be typed. Click the number at the top right of
+  a slider, type an exact value and press Enter. It is kept within the
+  slider's range; Escape or clicking away puts the old value back. Sliders
+  with fractional steps now show their decimals instead of rounding down.
+
 - Cooldown groups can anchor to other addons' frames, not just to each other.
   Anchor To now lists SquizzFrames' cast bars, unit frames, resource bar and
   party frames - for example, Utility under the player cast bar. Any other
