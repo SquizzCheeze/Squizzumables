@@ -8,10 +8,13 @@ V1.91
   switches the grid between Dimmed, Bright and Off, and turns Snap on or off.
   It is the same grid SquizzFrames shows in its Edit Mode.
 
-- With Snap on, a frame you drag snaps to the screen's centre lines, the
-  screen edges, the grid lines, and the edges and centres of your other
-  frames and cooldown groups - SquizzFrames' frames included. Snap is off by
-  default; with it off, dragging works exactly as before.
+- With Snap on, a frame you drag snaps its centre to the screen's centre
+  lines, and its edges to the screen edges and to the nearest other frame or
+  cooldown group - lined up flush with it or placed right beside it,
+  SquizzFrames' frames included. The grid lines themselves are a visual guide
+  and do not snap. A snap holds until you pull a little further away, so
+  frames do not flick between nearby points. Snap is off by default; with it
+  off, dragging works exactly as before.
 
 - Fixed a cooldown group dragged by one of its icons sometimes saving the
   wrong position, so it jumped after the next refresh. Dragging the group

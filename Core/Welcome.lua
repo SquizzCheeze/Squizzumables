@@ -23,7 +23,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.91"] = {
         "Unlock mode has an alignment grid in your class colour, with a toolbar to dim or hide it and to turn Snap on - the same grid SquizzFrames uses.",
-        "With Snap on, dragged frames snap to the centre lines, screen edges, the grid and your other frames and cooldown groups.",
+        "With Snap on, a dragged frame's centre snaps to the screen's centre lines and its edges to the screen edges and the nearest other frame or cooldown group.",
         "The lust alert no longer replays for a lust that already happened - after leaving a dungeon, a /reload or a zone change while you still have Sated or Exhaustion. It plays only when the debuff has just been applied.",
         "\"Loop sound\" now warns that it is for short sounds only: looping a long track stacks copies of it and can get sounds cut off in busy fights.",
     },

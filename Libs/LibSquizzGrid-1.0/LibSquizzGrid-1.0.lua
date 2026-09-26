@@ -14,10 +14,13 @@
       * A small toolbar at the top of the screen: [Grid: Off/Dimmed/Bright]
         and [Snap: On/Off]. No keyboard modifier -- a button only (user's
         choice). Snap is OFF by default.
-      * With Snap on, a dragged frame's left/centre/right and top/centre/bottom
-        snap within SNAP_RANGE to: the screen centre lines, the screen edges,
-        the grid lines, and the edges/centres of every registered frame. A
-        guide line marks each axis that snapped.
+      * With Snap on, a dragged frame's CENTRE snaps only to the screen's
+        centre lines, and its EDGES to the screen edges and to the nearest
+        other frame's edges (flush or butted up against it). Grid lines are
+        visual only. Catch within SNAP_RANGE, hold until BREAK_RANGE. A guide
+        line marks each axis that snapped. (V1 snapped everything to
+        everything, grid included, and was far too sensitive -- see
+        SnapFrameDelta.)
 
     DESIGN REFERENCES (studied, not copied)
       Blizzard's EditModeMagnetismManager (Blizzard_EditMode/Shared/
@@ -53,12 +56,12 @@
                                    round-trip)
 ]]
 
-local MAJOR, MINOR = "LibSquizzGrid-1.0", 1
+local MAJOR, MINOR = "LibSquizzGrid-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
 local GRID_SPACING = 32
-local SNAP_RANGE   = 8
+local SNAP_RANGE   = 6
 local ALPHA = {
     dimmed = { line = 0.18, centre = 0.45 },
     bright = { line = 0.35, centre = 0.80 },
@@ -373,20 +376,73 @@ function lib:ClearGuides()
         self.guides.v:Hide()
         self.guides.h:Hide()
     end
+    -- Also the end of a drag (every mover calls this on stop), so any held
+    -- snap is let go: the next drag must earn its snaps fresh.
+    self.lockX, self.lockY = nil, nil
 end
 
--- Best signed correction on one axis: move `points` (the dragged frame's
--- low/centre/high) onto the nearest of `targets`, within SNAP_RANGE.
-local function BestDelta(points, targets)
-    local best, bestAbs, at = 0, SNAP_RANGE, nil
-    for _, p in ipairs(points) do
-        for _, t in ipairs(targets) do
-            local d = t - p
-            local ad = d < 0 and -d or d
-            if ad < bestAbs then best, bestAbs, at = d, ad, t end
+-- WHAT SNAPS TO WHAT (V2, 2026-09-26). V1 offered every grid line, every
+-- frame's three lines and the screen to each of the dragged frame's three
+-- lines, within 8px: with lines every 32px that is half of all positions, so a
+-- frame could barely move without catching on something (user report). Now:
+--
+--   the frame's CENTRE  -> the screen's centre line on that axis, nothing else
+--   the frame's EDGES   -> the screen edges, and the NEAREST other frame's
+--                          edges: same edge (flush) or opposite edge (butted
+--                          up against it). Only the nearest frame -- aligning
+--                          with something across the screen is noise.
+--   grid lines          -> visual only
+--
+-- Catch within SNAP_RANGE; once caught, hold until the pointer is BREAK_RANGE
+-- away (hysteresis), so a frame does not flick between two close targets.
+local BREAK_RANGE = SNAP_RANGE * 2
+
+-- The visible registered frame nearest `frame`, by edge-to-edge distance
+-- (0 when overlapping). Excludes the frame itself and anything riding it.
+local function NearestTarget(frame, l, r, b, t)
+    local best, bestD
+    for target in pairs(lib.targets) do
+        if target ~= frame and target.IsVisible and target:IsVisible()
+           and not DependsOn(target, frame) then
+            local tl, tr, tb, tt = RectOf(target)
+            if tl then
+                local gx = (r < tl and tl - r) or (l > tr and l - tr) or 0
+                local gy = (t < tb and tb - t) or (b > tt and b - tt) or 0
+                local d = gx * gx + gy * gy
+                if not bestD or d < bestD then best, bestD = { tl, tr, tb, tt }, d end
+            end
         end
     end
-    return at and best or 0, at
+    return best
+end
+
+-- One axis. `pts` are the dragged frame's { low, centre, high } on it;
+-- `centre` the screen centre, `lo/hi` the screen edges, `near` the nearest
+-- frame's { low, high } or nil. `lock` is the snap currently held on this axis
+-- ({ idx = which point, at = where }). Returns delta, guide position, lock.
+local function SolveAxis(pts, centre, lo, hi, near, lock)
+    -- Held: stay put until the pointer has pulled BREAK_RANGE away.
+    if lock then
+        local d = lock.at - pts[lock.idx]
+        if (d < 0 and -d or d) <= BREAK_RANGE then return d, lock.at, lock end
+    end
+
+    local best, bestAbs, bestAt, bestIdx = 0, SNAP_RANGE, nil, nil
+    local function Try(idx, target)
+        local d = target - pts[idx]
+        local ad = d < 0 and -d or d
+        if ad < bestAbs then best, bestAbs, bestAt, bestIdx = d, ad, target, idx end
+    end
+
+    Try(2, centre)              -- centre -> centre line only
+    Try(1, lo); Try(3, hi)      -- edges -> screen edges
+    if near then                -- edges -> nearest frame, flush or butted
+        Try(1, near[1]); Try(1, near[2])
+        Try(3, near[1]); Try(3, near[2])
+    end
+
+    if not bestAt then return 0, nil, nil end
+    return best, bestAt, { idx = bestIdx, at = bestAt }
 end
 
 function lib:SnapFrameDelta(frame)
@@ -397,33 +453,20 @@ function lib:SnapFrameDelta(frame)
     local l, r, b, t = RectOf(frame)
     if not l then self:ClearGuides() return 0, 0 end
 
-    local w, h = UIParent:GetWidth(), UIParent:GetHeight()
-    local cx, cy = w / 2, h / 2
-    local xs = { 0, w, cx }
-    local ys = { 0, h, cy }
-    -- Grid lines count as targets whenever snapping is on, drawn or not.
-    local x = cx - GRID_SPACING
-    while x > 0 do xs[#xs + 1] = x; x = x - GRID_SPACING end
-    x = cx + GRID_SPACING
-    while x < w do xs[#xs + 1] = x; x = x + GRID_SPACING end
-    local y = cy - GRID_SPACING
-    while y > 0 do ys[#ys + 1] = y; y = y - GRID_SPACING end
-    y = cy + GRID_SPACING
-    while y < h do ys[#ys + 1] = y; y = y + GRID_SPACING end
-
-    for target in pairs(self.targets) do
-        if target ~= frame and target.IsVisible and target:IsVisible()
-           and not DependsOn(target, frame) then
-            local tl, tr, tb, tt = RectOf(target)
-            if tl then
-                xs[#xs + 1] = tl; xs[#xs + 1] = tr; xs[#xs + 1] = (tl + tr) / 2
-                ys[#ys + 1] = tb; ys[#ys + 1] = tt; ys[#ys + 1] = (tb + tt) / 2
-            end
-        end
+    -- A lock belongs to one frame; a different frame starts clean.
+    if self.lockFrame ~= frame then
+        self.lockX, self.lockY, self.lockFrame = nil, nil, frame
     end
 
-    local dx, atX = BestDelta({ l, (l + r) / 2, r }, xs)
-    local dy, atY = BestDelta({ b, (b + t) / 2, t }, ys)
+    local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+    local near = NearestTarget(frame, l, r, b, t)
+
+    local dx, atX, lockX = SolveAxis({ l, (l + r) / 2, r }, w / 2, 0, w,
+        near and { near[1], near[2] }, self.lockX)
+    local dy, atY, lockY = SolveAxis({ b, (b + t) / 2, t }, h / 2, 0, h,
+        near and { near[3], near[4] }, self.lockY)
+    self.lockX, self.lockY = lockX, lockY
+
     local gd = EnsureGuides()
     if atX then ShowGuide(true, atX) else gd.v:Hide() end
     if atY then ShowGuide(false, atY) else gd.h:Hide() end
