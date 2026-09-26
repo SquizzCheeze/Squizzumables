@@ -8,6 +8,49 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.90
+
+- Fixed "Show While Active" on Essential/Utility icons showing the ability's
+  cooldown instead of its duration for some abilities, such as Sentinel and
+  the Vile Vial of Volatile Venom, while the active glow still worked. If the
+  buff was already up when the icon's active display was being set up, the
+  setup failed and was thrown away. Seen with Sentinel and the Vile Vial; any
+  ability could hit it. Active icons (and natively drawn Tracked Buffs) now
+  draw their border in a way that cannot fail like that.
+
+- Show While Active now also recognises the buff when a talent has replaced
+  the spell, and learns the buff a random-effect trinket actually gave you,
+  from what Blizzard's own Cooldown Manager matched. Each one is learned the
+  first time it is seen out of combat, and from then on it works in combat
+  too.
+
+- Better performance in combat and in groups:
+  - The Cooldown Manager did its full update several times over for a single
+    aura change or cast: once for the event, then again for each tracked buff
+    Blizzard updated. It now does it once per frame, however many things ask.
+  - The reminder buttons were rebuilt whenever ANY unit's auras changed,
+    enemy nameplates included, so fighting a pack rebuilt them up to five
+    times a second. They now only react to you, your pet and your group.
+  - Tracked-aura refreshes are spread out instead of all running at once.
+  - Unlock mode no longer creates three new preview frames every time the
+    buttons update; the same three are reused.
+
+- Every slider's value can now be typed. Click the number at the top right of
+  a slider, type an exact value and press Enter. It is kept within the
+  slider's range; Escape or clicking away puts the old value back. Sliders
+  with fractional steps now show their decimals instead of rounding down.
+
+- Cooldown groups can anchor to other addons' frames, not just to each other.
+  Anchor To now lists SquizzFrames' cast bars, unit frames, resource bar and
+  party frames - for example, Utility under the player cast bar. Any other
+  addon's frame works too: type its name into the new "Or anchor to a frame by
+  name" box (/fstack shows names) and press Enter. If that frame is itself
+  attached to the group, the anchor is ignored instead of breaking the layout.
+
+- Other addons can now list your cooldown groups, custom ones included
+  (Squizzumables_GetCDMGroupNames). SquizzFrames uses it so your own groups
+  appear in its "Attach To" lists.
+
 V1.89
 
 - Your own sounds now have their own folder:

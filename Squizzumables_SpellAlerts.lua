@@ -308,6 +308,49 @@ local function TriggerActive(alert)
 end
 BH.AlertTriggerActive = TriggerActive
 
+-- How long ago the trigger aura was APPLIED, in seconds, or nil when that
+-- cannot be told.
+--
+-- Presence alone is the wrong signal for "lust just went out". The alert fires
+-- on its trigger going false -> true, and that edge also happens with the SAME
+-- Sated still on you: after a /reload (alertWasActive is plain Lua state and
+-- starts empty), and across a loading screen, where auras briefly read absent
+-- and then come back -- which is how leaving a dungeon replayed the sound in
+-- the city (user report 2026-09-26). The 3 second playerZoning window caught
+-- only the fast cases; a slow city load, or a zone change some time after a
+-- reload, slipped past it.
+--
+-- The lust debuffs are readable in combat, so their application time is known
+-- (expiration - duration), and an alert now fires only for an aura applied
+-- within FRESH_TRIGGER_WINDOW. Anything unreadable -- a user trigger on an
+-- aura that goes secret -- answers nil and keeps the old behaviour, so this
+-- can only ever remove a replay, never a real alert.
+local FRESH_TRIGGER_WINDOW = 5
+
+local function TriggerAge(alert)
+    local t = alert.trigger or {}
+    local ids
+    if alert.builtin and not t.spellID then
+        ids = LUST_DEBUFF_IDS
+    else
+        local spellID = tonumber(t.spellID)
+        if not spellID then return nil end
+        ids = { [spellID] = true }
+    end
+    local youngest
+    for spellID in pairs(ids) do
+        local aura = BH.Secrets.GetAuraBySpellID("player", spellID)
+        if aura then
+            local dur = BH.Secrets.SafeAuraDuration(aura)
+            local exp = BH.Secrets.SafeAuraExpiration(aura)
+            if not (dur and exp and dur > 0) then return nil end
+            local age = GetTime() - (exp - dur)
+            if not youngest or age < youngest then youngest = age end
+        end
+    end
+    return youngest
+end
+
 -- ============================================================================
 -- Buff sounds  (C_UnitAuras.AddAuraSound, 12.1)
 --
@@ -946,13 +989,19 @@ function BH:CheckKelAlerts(unit)
         if type(alert) == "table" and alert.enabled ~= false then
             local now = TriggerActive(alert)
             if now and not alertWasActive[id] and not BH.playerZoning then
-                ShowAlert(alert)
+                -- Only for a freshly applied aura -- see TriggerAge. nil means
+                -- the age is unknowable, and fires as it always did.
+                local age = TriggerAge(alert)
+                if age == nil or age <= FRESH_TRIGGER_WINDOW then
+                    ShowAlert(alert)
+                end
             end
             alertWasActive[id] = now
         else
-            -- A disabled alert resets, so switching one on while its trigger is
-            -- already up fires once straight away -- which doubles as proof the
-            -- alert is wired up correctly.
+            -- A disabled alert resets. Switching one on while its trigger is
+            -- already up used to fire it straight away; with the freshness
+            -- check it only does so if that aura is new. The Test button is
+            -- the way to check an alert is wired up.
             alertWasActive[id] = false
         end
     end
@@ -1087,7 +1136,12 @@ function BH:BuildJustForKelTab(parent)
     end)
     lSndLoopCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     self.kelLustSndLoopCb = lSndLoopCb
-    ns.Rows.AddTooltip(lSndLoopCb, "Loop sound", "Repeat the alert sound while the alert is on screen.")
+    ns.Rows.AddTooltip(lSndLoopCb, "Loop sound",
+        "Repeat the alert sound while the alert is on screen.\n\n"
+     .. "Only for SHORT sounds. Each repeat starts a new copy of the sound on top of the ones "
+     .. "still playing, so a long track (the bundled lust tracks run about 40 seconds) stacks "
+     .. "up many copies at once. That drowns everything out, and in a busy fight the game "
+     .. "runs out of sound channels and starts cutting sounds off, the alert's included.")
 
     local lSndLoopIntervalLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     lSndLoopIntervalLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 95, yOffset + 3)
@@ -1109,7 +1163,17 @@ function BH:BuildJustForKelTab(parent)
     lSndLoopSecLbl:SetPoint("LEFT", lSndLoopIntervalEdit, "RIGHT", 4, 0)
     lSndLoopSecLbl:SetText("sec")
     lSndLoopSecLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 26
+    yOffset = yOffset - 24
+
+    -- Always shown rather than only while the box is ticked: the warning is
+    -- most useful BEFORE someone turns it on with a 40 second track.
+    local lSndLoopWarn = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    lSndLoopWarn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad + 4, yOffset)
+    lSndLoopWarn:SetWidth(372)
+    lSndLoopWarn:SetJustifyH("LEFT")
+    lSndLoopWarn:SetTextColor(1, 0.7, 0.3)
+    lSndLoopWarn:SetText("Loop short sounds only - looping a long track stacks copies of it and can get sounds cut off in busy fights.")
+    yOffset = yOffset - 28
 
     -- Lust row 3: Sound dropdown (full width) · Test
     local lSndLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

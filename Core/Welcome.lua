@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.91"] = {
+        "The lust alert no longer replays for a lust that already happened - after leaving a dungeon, a /reload or a zone change while you still have Sated or Exhaustion. It plays only when the debuff has just been applied.",
+        "\"Loop sound\" now warns that it is for short sounds only: looping a long track stacks copies of it and can get sounds cut off in busy fights.",
+    },
     ["1.90"] = {
         "Fixed \"Show While Active\" showing an ability's cooldown instead of its duration on some Essential and Utility icons (Sentinel and the Vile Vial of Volatile Venom among them) while the glow still worked.",
         "Cooldown groups can anchor to other addons' frames - SquizzFrames' cast bars, unit frames and resource bar are listed, or type any frame's name (/fstack shows it).",
