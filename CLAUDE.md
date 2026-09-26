@@ -1278,6 +1278,21 @@ because it watches all of `LUST_DEBUFF_IDS` at once. Everything else in the tabl
 Triggers are *presence* checks through `BH.Secrets.GetAuraBySpellID`, so secret auras make an
 alert quiet rather than spurious — see the absence-guard note above for why that direction matters.
 
+⚠ **An alert fires only for a FRESHLY APPLIED aura** (V1.91, `TriggerAge` / `FRESH_TRIGGER_WINDOW`,
+5s). Presence alone replayed the lust sound for an old Sated: the false→true edge also happens
+after a `/reload` (`alertWasActive` is plain Lua state and starts empty) and across loading screens,
+where auras briefly read absent — leaving a dungeon replayed it in the city. The 3s
+`BH.playerZoning` window only caught the fast cases. The lust debuffs are readable, so the age
+(expiration − duration) is known; an unreadable age returns nil and keeps the old behaviour, so
+the check can only ever remove a replay. Don't go back to a presence-only edge.
+
+Alert SOUNDS play through `PlaySoundFile` (`BH:PlaySound`), and nothing ever stops them: the
+Duration timer only hides the image and the loop ticker. A 40s track always plays out unless the
+client cuts it — which it does when it runs out of sound channels in a busy fight (Settings →
+Audio → Sound Channels). That, not a Duration setting, is the "sound randomly stops" report.
+"Loop sound" re-plays the file on top of itself every interval, so on a long track it stacks
+copies; the option carries a warning for that reason.
+
 **Know the real limit of this feature before promising anything from it.** Aura secrecy is
 per-spell, not a global combat switch, and Blizzard keeps only a *very short allowlist* of auras
 readable in combat. The lust debuffs (`LUST_DEBUFF_IDS`) are on it, which is why the built-in
@@ -1308,6 +1323,15 @@ random pool and no sound loop — the reasons are in the comment there, and they
 constraints rather than preferences. The built-in lust alert is excluded automatically because it
 has no `trigger.spellID`.
 
+⚠ **Unconfirmed 12.1.5 limit (PTR build 69952):** a DBM developer reported that `AddAuraSound`
+now rejects sound files longer than 5 seconds, and caps its throttle at 5s. Nothing in Blizzard's
+Lua or generated docs shows it (the function's documentation is unchanged), so if real it is
+engine-side and the failure mode (rejection vs truncation) is unknown. Only Buff sounds use this
+API; a rejection would surface as a missing `auraSoundID`, which `RunRegistration` already
+records in `BH.auraSoundRefusal` and retries. Four of the six bundled sounds are over 5s
+(DUCKYS_LUST_ATTACK ×2 and Kel's Flail ~40s, ChemicalX 16s). If confirmed, warn about or filter
+long files in the Buff sounds picker. The lust ALERT is unaffected — it uses `PlaySoundFile`.
+
 **What it does not buy is the image.** The client plays a sound and reports nothing back, so a
 delegated alert has no callback and cannot show the full-screen texture. Sound survives combat;
 the picture still needs a readable aura. `Removed = 2` is also worth remembering as the one
@@ -1318,3 +1342,31 @@ unreadable and absent look identical to us, and they do not look identical to th
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
+
+## Performance rules (review of 2026-09-26)
+
+- **CDM refreshes are batched: call `cdmModule.RequestProxyRefresh(withScan)`, never
+  `UpdateAllProxyCooldowns()` / `ScanBlizzardBuffState()` from an event path.** The full pass (every
+  proxy twice, the sound alerts, a rescan of every buff viewer) used to run straight from
+  `SPELL_UPDATE_COOLDOWN`, the player's `UNIT_AURA`, AND a hook on each tracked buff item that
+  Blizzard pokes for the same aura event — several full passes in one frame for a single aura
+  change. The batcher runs it once on the next frame, scan first when any caller asked for one.
+  Hooking new buff items (`HookBlizzardBuffFrames` / `HookBlizzardAlertEvents`) stays immediate.
+- **The main `UNIT_AURA` handler drops units nothing reads** (`BH.GROUP_AURA_UNITS`: player, pet,
+  party1-4, raid1-40). It is registered for every unit, nameplates included, and each one used to
+  schedule a full `UpdateButtons` 0.2s later — a reminder-bar rebuild up to five times a second in
+  any pull. A new consumer of that handler that needs another unit must add it to the set.
+- **Periodic container re-parses are spread across frames** (`Squizzumables_CDMAuras.lua`
+  `EnsureTicker`): each container once per `REFRESH_INTERVAL`, a few per frame, never all in one.
+  The driver hides itself when there is nothing to refresh; `EnsureTicker` shows it again.
+- **No frames created per update.** Unlock mode's three preview placeholders are a pool
+  (`BH.unlockDummyPool`); they used to be created on every `UpdateButtons` and orphaned.
+
+**CDM tab "(N tracked)" counts are live** (`BH:RefreshCDMCounts`, one updater per built-in group
+name): recomputed at the end of every `Reconcile` and when the group's page is shown. A count
+computed once at build froze at 0 whenever the panel was built before or during a reconcile.
+
+**Sliders take typed values** (`CreateSQSlider`, `UI/Widgets.lua`): the value readout is an edit
+box in the same spot. A typed value arrives through `SetValue`, which WoW reports as not user
+input, so the slider sets `_sqTyped` for that call and `OnValueChanged` passes `userInput = true`
+— callers gate live previews on that flag.
