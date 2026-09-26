@@ -8,6 +8,12 @@ V1.91
   already finished: after leaving a dungeon, after a /reload, or when changing
   zones. It now plays only when the debuff has just been applied.
 
+- The CDM tab's "(N tracked)" counts on Essential, Utility, Buffs and Buff
+  Bars could read "(0 tracked)" for a whole session if the settings were
+  first opened before the Cooldown Manager had finished setting up. They now
+  update whenever the Cooldown Manager changes and whenever you open that
+  group's page.
+
 - The "Loop sound" option now warns that it is for short sounds only. Looping
   a long track, such as the 40 second bundled lust tracks, stacks copies of it
   on top of each other, and in a busy fight the game can then start cutting

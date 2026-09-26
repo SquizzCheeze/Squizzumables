@@ -5193,6 +5193,11 @@ function cdmModule:Reconcile()
     for groupName in pairs(touchedGroups) do
         self:LayoutGroup(groupName)
     end
+
+    -- The settings tab's "(N tracked)" labels read the members filled above,
+    -- so they follow every reconcile rather than only the moment the tab was
+    -- built -- see BH:BuildGroupSection.
+    if BH.RefreshCDMCounts then BH:RefreshCDMCounts() end
 end
 
 -- Schedule a reconcile, never EARLIER than one already pending.
@@ -8183,6 +8188,14 @@ local GROUP_SECTIONS = {
 --- where a tab strip per group would be worse than the single column ever was.
 -- `inlinePreview`: draw the group's preview under its heading. The Custom
 -- Icons page wants that; the CDM tab pins one above each sub-tab instead.
+-- Redraw every built-in group's "(N tracked)" label from its live members.
+-- Called at the end of each Reconcile. Cheap -- one members walk per built-in
+-- group -- and each updater is pcall'd so a label on a torn-down page cannot
+-- take the reconcile with it.
+function BH:RefreshCDMCounts()
+    for _, update in pairs(self.cdmCountUpdaters or {}) do pcall(update) end
+end
+
 function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, specData, tabbed, inlinePreview)
     local indent = leftPad + 10
 
@@ -8204,9 +8217,26 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     -- (user report 2026-09-24). Count what the group actually holds instead --
     -- the same list the preview draws. Custom groups keep counting their own
     -- assignments, which is exactly what they are.
+    --
+    -- A LIVE count, not one computed at build time. The panel is built once
+    -- (on first open) and only rebuilt by a profile or spec change or its own
+    -- controls, while a built-in group's members are filled by Reconcile. A
+    -- build that ran before the first reconcile -- or a rebuild that landed
+    -- mid-way through one -- froze the label at "(0 tracked)" for the rest of
+    -- the session, however full the group actually was (user report
+    -- 2026-09-26, after 1.89's fix had made the number right only at build
+    -- time). So it is recomputed whenever the group's page is shown and after
+    -- every reconcile (BH:RefreshCDMCounts). Keyed by group name, so a rebuild
+    -- replaces the updater rather than piling new ones up.
     if groupData.builtin then
-        local held = #BH.cdm:PreviewMembers(groupName).items
-        countLabel:SetText("(" .. held .. " tracked)")
+        local function UpdateCount()
+            local held = #BH.cdm:PreviewMembers(groupName).items
+            countLabel:SetText("(" .. held .. " tracked)")
+        end
+        UpdateCount()
+        BH.cdmCountUpdaters = BH.cdmCountUpdaters or {}
+        BH.cdmCountUpdaters[groupName] = UpdateCount
+        groupRow:SetScript("OnShow", UpdateCount)
     else
         local assignedCount = groupData.cooldownIDs and #groupData.cooldownIDs or 0
         countLabel:SetText("(" .. assignedCount .. " assigned)")
