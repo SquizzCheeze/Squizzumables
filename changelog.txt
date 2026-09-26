@@ -3,6 +3,20 @@ Squizzumables Changelog
 
 V1.91
 
+- An alignment grid while frames are unlocked, in your class colour, with the
+  centre lines drawn brighter. A small toolbar at the top of the screen
+  switches the grid between Dimmed, Bright and Off, and turns Snap on or off.
+  It is the same grid SquizzFrames shows in its Edit Mode.
+
+- With Snap on, a frame you drag snaps to the screen's centre lines, the
+  screen edges, the grid lines, and the edges and centres of your other
+  frames and cooldown groups - SquizzFrames' frames included. Snap is off by
+  default; with it off, dragging works exactly as before.
+
+- Fixed a cooldown group dragged by one of its icons sometimes saving the
+  wrong position, so it jumped after the next refresh. Dragging the group
+  itself was already right.
+
 - The lust alert no longer plays again for a lust that happened earlier. It
   could replay while you still had Sated or Exhaustion from a key you had
   already finished: after leaving a dungeon, after a /reload, or when changing

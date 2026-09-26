@@ -3593,6 +3593,49 @@ end
 -- and the Close button on the floating control. Having one path is what stops
 -- the three of them drifting: each has to hide the panel, refresh six different
 -- frame groups and keep the button label in sync.
+-- Alignment grid and snapping while unlocked: Libs/LibSquizzGrid-1.0, a
+-- library shared with SquizzFrames (each embeds a copy; LibStub runs the
+-- newer), so one grid and one toolbar serve both addons and either's frames
+-- snap to the other's. Its toolbar holds [Grid] and [Snap]; Snap is off by
+-- default, and while it is off every drag is the plain StartMoving it always
+-- was. Settings are account-wide at SquizzumablesDB.snapGrid.
+--
+-- Frames that used self:StartMoving() / StopMovingOrSizing() call
+-- BH:GridStartMoving / BH:GridStopMoving instead. With Snap on the frame is
+-- left anchored CENTER to UIParent's CENTER, which every saver here reads back
+-- correctly: SaveFramePos stores GetPoint() generically, and the CDM groups
+-- measure with GetCenter().
+function BH:Grid()
+    local g = LibStub and LibStub("LibSquizzGrid-1.0", true)
+    if g and not self._gridStorageSet and SquizzumablesDB then
+        SquizzumablesDB.snapGrid = SquizzumablesDB.snapGrid or {}
+        g:SetStorage(SquizzumablesDB.snapGrid)
+        self._gridStorageSet = true
+    end
+    return g
+end
+
+function BH:GridStartMoving(frame)
+    local g = self:Grid()
+    if g then
+        g:RegisterTarget(frame) -- anything draggable is worth snapping to
+        g:StartMoving(frame)
+    else
+        frame:StartMoving()
+    end
+end
+
+function BH:GridStopMoving(frame)
+    local g = self:Grid()
+    if g then g:StopMoving(frame) else frame:StopMovingOrSizing() end
+end
+
+-- A frame other frames may snap to. Only used while it is visible.
+function BH:GridTarget(frame)
+    local g = self:Grid()
+    if g and frame then g:RegisterTarget(frame) end
+end
+
 function BH:SetUnlockMode(on)
     on = on and true or false
     if self.unlockMode == on then return end
@@ -3622,6 +3665,25 @@ function BH:SetUnlockMode(on)
     end
 
     self.unlockMode = on
+
+    -- The grid and its toolbar come and go with unlock mode. Leaving must work
+    -- in combat (see above); hiding a few plain textures is fine there.
+    local grid = self:Grid()
+    if grid then
+        if on then
+            -- Every positioned frame is something the others can snap to:
+            -- the POSITION_PAIRS frames plus the three kept outside that list
+            -- (main buttons, callouts, lust alert). Registering is idempotent,
+            -- and a frame not built yet is simply skipped until next time.
+            for _, pair in ipairs(POSITION_PAIRS) do self:GridTarget(self[pair[1]]) end
+            self:GridTarget(self.frame)
+            self:GridTarget(self.calloutsButtonFrame)
+            self:GridTarget(self.kelAlertFrame)
+            grid:Activate("Squizzumables")
+        else
+            grid:Deactivate("Squizzumables")
+        end
+    end
 
     if on then
         -- Get the options panel out of the way. It is 820 wide and will usually
@@ -4730,9 +4792,9 @@ function BH:BuildCalloutsButtonFrame()
     -- anywhere at all.
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    f:SetScript("OnDragStart", function(self) BH:GridStartMoving(self) end)
     f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
+        BH:GridStopMoving(self)
         BH:SaveCalloutsFramePosition()
     end)
     ApplySQBackdrop(f)
@@ -4746,9 +4808,9 @@ function BH:BuildCalloutsButtonFrame()
     titleBar:SetBackdropColor(0.10, 0.10, 0.13, 1)
     titleBar:EnableMouse(true)
     titleBar:RegisterForDrag("LeftButton")
-    titleBar:SetScript("OnDragStart", function() f:StartMoving() end)
+    titleBar:SetScript("OnDragStart", function() BH:GridStartMoving(f) end)
     titleBar:SetScript("OnDragStop", function()
-        f:StopMovingOrSizing()
+        BH:GridStopMoving(f)
         BH:SaveCalloutsFramePosition()
     end)
     local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -6121,10 +6183,10 @@ BH.frame:SetClampedToScreen(true)
 BH.frame:EnableMouse(false)
 BH.frame:RegisterForDrag("LeftButton")
 BH.frame:SetScript("OnDragStart", function(self)
-    if BH.unlockMode then self:StartMoving() end
+    if BH.unlockMode then BH:GridStartMoving(self) end
 end)
 BH.frame:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
+    BH:GridStopMoving(self)
     BH:SaveFramePosition()
 end)
 
@@ -7272,12 +7334,12 @@ local function CreateReminderFrame(def)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
         if not (BH.settings and BH.settings[lockedKey]) or BH.unlockMode then
-            self:StartMoving()
+            BH:GridStartMoving(self)
             self:SetUserPlaced(false)
         end
     end)
     frame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
+        BH:GridStopMoving(self)
         if BH[saveFn] then BH[saveFn](BH) end
     end)
     frame:Hide()
@@ -7498,12 +7560,12 @@ BH.bresCounterFrame:SetFixedFrameStrata(true)
 BH.bresCounterFrame:RegisterForDrag("LeftButton")
 BH.bresCounterFrame:SetScript("OnDragStart", function()
     if not (BH.settings and BH.settings.bresCounterLocked) or BH.unlockMode then
-        BH.bresCounterFrame:StartMoving()
+        BH:GridStartMoving(BH.bresCounterFrame)
         BH.bresCounterFrame:SetUserPlaced(false)
     end
 end)
 BH.bresCounterFrame:SetScript("OnDragStop", function()
-    BH.bresCounterFrame:StopMovingOrSizing()
+    BH:GridStopMoving(BH.bresCounterFrame)
     BH:SaveBresCounterPosition()
 end)
 BH.bresCounterFrame:Hide()
@@ -7641,12 +7703,12 @@ BH.deathTallyFrame:SetFixedFrameStrata(true)
 BH.deathTallyFrame:RegisterForDrag("LeftButton")
 BH.deathTallyFrame:SetScript("OnDragStart", function()
     if not (BH.settings and BH.settings.deathTallyLocked) or BH.unlockMode then
-        BH.deathTallyFrame:StartMoving()
+        BH:GridStartMoving(BH.deathTallyFrame)
         BH.deathTallyFrame:SetUserPlaced(false)
     end
 end)
 BH.deathTallyFrame:SetScript("OnDragStop", function()
-    BH.deathTallyFrame:StopMovingOrSizing()
+    BH:GridStopMoving(BH.deathTallyFrame)
     BH:SaveDeathTallyPosition()
 end)
 BH.deathTallyFrame:Hide()
@@ -10163,12 +10225,12 @@ function BH:CreateRaidToolsFrame()
     mf:RegisterForDrag("LeftButton")
     mf:SetScript("OnDragStart", function()
         if not (BH.settings and BH.settings.raidToolsMarkersLocked) or BH.unlockMode then
-            mf:StartMoving()
+            BH:GridStartMoving(mf)
             mf:SetUserPlaced(false)
         end
     end)
     mf:SetScript("OnDragStop", function()
-        mf:StopMovingOrSizing()
+        BH:GridStopMoving(mf)
         BH:SaveMarkersPosition()
     end)
     mf:Hide()
@@ -10189,12 +10251,12 @@ function BH:CreateRaidToolsFrame()
     mfDrag:RegisterForDrag("LeftButton")
     mfDrag:SetScript("OnDragStart", function()
         if not (BH.settings and BH.settings.raidToolsMarkersLocked) or BH.unlockMode then
-            mf:StartMoving()
+            BH:GridStartMoving(mf)
             mf:SetUserPlaced(false)
         end
     end)
     mfDrag:SetScript("OnDragStop", function()
-        mf:StopMovingOrSizing()
+        BH:GridStopMoving(mf)
         BH:SaveMarkersPosition()
     end)
     if self.settings and self.settings.raidToolsMarkersLocked then
@@ -10336,12 +10398,12 @@ function BH:CreateRaidToolsFrame()
     prf:RegisterForDrag("LeftButton")
     prf:SetScript("OnDragStart", function()
         if not (BH.settings and BH.settings.raidToolsPullReadyLocked) or BH.unlockMode then
-            prf:StartMoving()
+            BH:GridStartMoving(prf)
             prf:SetUserPlaced(false)
         end
     end)
     prf:SetScript("OnDragStop", function()
-        prf:StopMovingOrSizing()
+        BH:GridStopMoving(prf)
         BH:SavePullReadyPosition()
     end)
     prf:Hide()
@@ -10362,12 +10424,12 @@ function BH:CreateRaidToolsFrame()
     prfDrag:RegisterForDrag("LeftButton")
     prfDrag:SetScript("OnDragStart", function()
         if not (BH.settings and BH.settings.raidToolsPullReadyLocked) or BH.unlockMode then
-            prf:StartMoving()
+            BH:GridStartMoving(prf)
             prf:SetUserPlaced(false)
         end
     end)
     prfDrag:SetScript("OnDragStop", function()
-        prf:StopMovingOrSizing()
+        BH:GridStopMoving(prf)
         BH:SavePullReadyPosition()
     end)
     if self.settings and self.settings.raidToolsPullReadyLocked then

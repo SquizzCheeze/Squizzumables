@@ -12,6 +12,7 @@
 ## AddonCompartmentFuncOnLeave: Squizzumables_OnAddonCompartmentLeave
 Libs\LibStub\LibStub.lua
 Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+Libs\LibSquizzGrid-1.0\LibSquizzGrid-1.0.lua
 Squizzumables_Config.lua
 Squizzumables_Secrets.lua
 UI\Widgets.lua

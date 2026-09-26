@@ -4304,6 +4304,7 @@ local function CreateGroupContainer(groupName, position, iconSize)
     end
 
     local container = CreateFrame("Frame", "SQZ_CDMGroup_" .. groupName, UIParent)
+    BH:GridTarget(container) -- others can snap to a group (unlock-mode grid)
     containerCache[groupName] = container
     container:SetSize(DEFAULT_ICON_SIZE, DEFAULT_ICON_SIZE) -- Will be resized on layout
     container:SetPoint("CENTER", UIParent, "CENTER", position.x or 0, position.y or 0)
@@ -4321,11 +4322,11 @@ local function CreateGroupContainer(groupName, position, iconSize)
         local sd = GetSpecData()
         local gd = sd and sd.groups[groupName]
         if gd and gd.anchorTo and gd.anchorTo ~= "" then return end
-        self:StartMoving()
+        BH:GridStartMoving(self)
         self:SetUserPlaced(false)
     end)
     container:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
+        BH:GridStopMoving(self)
         -- Measure the centre offset; do NOT read it off GetPoint().
         --
         -- PositionGroup restores a group with
@@ -4655,15 +4656,24 @@ function cdmModule:LayoutGroup(groupName)
                 proxy:SetScript("OnDragStart", function()
                     if InCombatLockdown() then return end
                     if groupData.locked then return end
-                    group.container:StartMoving()
+                    BH:GridStartMoving(group.container)
                     group.container:SetUserPlaced(false)
                 end)
                 proxy:SetScript("OnDragStop", function()
-                    group.container:StopMovingOrSizing()
+                    BH:GridStopMoving(group.container)
                     local sd = GetSpecData()
+                    -- Measured with GetCenter, exactly as the container's own
+                    -- OnDragStop does (see the long note there). This path
+                    -- still read GetPoint(), whose offsets are relative to
+                    -- whatever anchor StartMoving left -- the "drag does not
+                    -- save" bug that handler was fixed for, alive here for a
+                    -- group dragged by one of its icons.
                     if sd and sd.groups[groupName] then
-                        local _, _, _, gx, gy = group.container:GetPoint()
-                        sd.groups[groupName].position = { x = gx, y = gy }
+                        local cx, cy = group.container:GetCenter()
+                        local px, py = UIParent:GetCenter()
+                        if cx and cy and px and py then
+                            sd.groups[groupName].position = { x = cx - px, y = cy - py }
+                        end
                     end
                 end)
                 proxy._groupDragSetup = groupName
@@ -4740,11 +4750,11 @@ function cdmModule:PositionFreeIcon(cooldownID)
         proxy:RegisterForDrag("LeftButton")
         proxy:SetScript("OnDragStart", function(self)
             if InCombatLockdown() then return end
-            self:StartMoving()
+            BH:GridStartMoving(self)
             self:SetUserPlaced(false)
         end)
         proxy:SetScript("OnDragStop", function(self)
-            self:StopMovingOrSizing()
+            BH:GridStopMoving(self)
             local sd = GetSpecData()
             if sd and sd.freeIcons[cooldownID] then
                 local cx = self:GetCenter()

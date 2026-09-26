@@ -54,11 +54,11 @@ local function EnsureAlertFrame()
         -- Only reachable in Unlock Frames: nothing else enables the mouse on
         -- this frame, so no lock check is needed here.
         if btn == "LeftButton" then
-            self:StartMoving()
+            BH:GridStartMoving(self)
         end
     end)
     f:SetScript("OnMouseUp", function(self)
-        self:StopMovingOrSizing()
+        BH:GridStopMoving(self)
         BH:SaveKelAlertPosition()
     end)
 
