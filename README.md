@@ -2,42 +2,53 @@
 
 A World of Warcraft addon that reminds you to apply the things you keep forgetting — food,
 flasks, weapon oils, augment runes and class buffs — and gives you a clickable button to fix each
-one without opening your bags.
+one without opening your bags. Plus raid tools, a fully restyled Cooldown Manager, and sound and
+image alerts.
 
 Retail only, built for **Midnight (12.0+)**.
 
 ![Interface](https://img.shields.io/badge/Interface-120100-blue)
 
+**[Download on CurseForge](https://www.curseforge.com/projects/1483099)**
+
 ## What it does
 
-**Consumable and buff reminders.** Scans your bags, auras and weapon enchants and shows a button
-for anything missing. Click the button to eat, drink, apply or cast it. Buttons appear in the
-order you configure them, not the order things happen to sit in your bags.
+**Consumable and buff reminders.** Scans your bags, buffs and weapon enchants and shows a button
+for anything missing. Click it to eat, drink, apply or cast. Choose where reminders appear: open
+world, each dungeon and raid difficulty, Mythic+.
 
 **Class buffs.** Per-class buff tracking with the awkward cases handled — buff variants that count
-as equivalent, self-only buffs, tank buffs, weapon imbues, pet checks, Paladin auras, Death Knight
-runeforging, Shaman Earth Shield, Druid Symbiotic Relationship.
+as the same, self-only and tank buffs, weapon imbues, rogue poisons, pets, Paladin auras and rites,
+Death Knight runeforging, Earth Shield and more.
 
 **Text reminders.** Large, movable banners for the things a button cannot fix: repair, no
 healthstone, no pet, missing beacons, a healer or tank in crowd control. Each one knows when it is
 relevant, so you only see it where it matters.
 
-**Raid tools.** Pull timer (mirrored onto Blizzard's encounter timeline), ready check, raid target
-markers, battle-res counter, Mythic+ death tally, feast announcements.
+**Raid tools.** Pull timer (shown on Blizzard's encounter timeline), ready check, raid markers,
+battle res counter, Mythic+ death tally, feast announcements and a target distance readout.
+**Dungeon callouts**: your own buttons for each dungeon that send a message and play a sound —
+they work in combat and in Mythic+.
 
-**Cooldown Manager sounds.** Attach your own sound to any spell in Blizzard's Cooldown Manager,
-firing when it becomes available, when its buff goes up, or when the buff drops.
+**Cooldown Manager.** Blizzard's Essential, Utility, Buffs and Buff Bars groups, restyled: icon
+shapes (round, diamond, hexagon, shield, heart, star), borders, zoom, panels, and text you can
+place anywhere. Proc glow in a colour of your choice, Glow When Ready, grey out on cooldown, and
+Show While Active to show an ability's buff time while it is running. Your own custom icon groups,
+anchored to each other or to other addons' frames, and an option to hide Blizzard's own bars.
 
-**Kelerts.** Full-screen image and sound alerts on any buff or debuff you name. Ships with one
-watching every Bloodlust-type exhaustion debuff at once.
+**Sounds and alerts.** Attach your own sound to any Cooldown Manager spell — when it is ready,
+when its buff goes up, or when it drops. Buff sounds that keep working in combat. A full-screen
+image and sound alert on Bloodlust and the other lust effects, with bundled tracks. Your own
+sounds (OGG or MP3) live in a folder that updates never touch.
 
-**Quality of life.** Profiles with per-character and per-spec assignment, import/export strings,
-per-difficulty "Show in" gating, button glow, minimap button and addon compartment entry, and a
-settings panel with search and tooltips on every option.
+**Quality of life.** Profiles per character and per spec with import/export strings, unlock mode
+with an alignment grid and snapping (shared with SquizzFrames), a settings panel with search and
+tooltips on every option, minimap button and addon compartment entry.
 
 ## Installing
 
-Drop the `Squizzumables` folder into:
+Install from [CurseForge](https://www.curseforge.com/projects/1483099), or drop the
+`Squizzumables` folder into:
 
     World of Warcraft/_retail_/Interface/AddOns/
 
@@ -62,6 +73,20 @@ There is no build step — edit the `.lua` files and `/reload` in game. `CLAUDE.
 architecture and, more usefully, the constraints: secret aura values, taint safety, and the APIs
 that no longer work on 12.1+. `NOTES.md` records what was investigated and found impossible, so
 it does not get attempted twice. `changelog.txt` carries root-cause writeups for past fixes.
+
+## Support
+
+If you enjoy using Squizzumables, consider supporting development on
+[Ko-fi](https://ko-fi.com/squizz) ❤️
+
+## More addons by Squizz
+
+- **[SquizzFrames](https://www.curseforge.com/projects/1649203)** — party, raid, pet and unit frames with a full indicator system, click-casting and a tank tracker
+- **[Squizzcap](https://www.curseforge.com/projects/1713974)** — what killed you, how hard it hit and how fast you went down, with every death of a key saved to look back on
+- **[SquizzTalents](https://www.curseforge.com/projects/1705647)** — all your talent builds in one list, with a reminder when your build doesn't match the content
+- **[DPS Report](https://www.curseforge.com/projects/1504877)** — a lightweight damage meter with spell breakdowns and an end-of-key MVP summary
+- **[Avatar Continued](https://www.curseforge.com/projects/1533608)** — your character model on screen as part of your UI
+- **[KSLBestDungeon](https://www.curseforge.com/projects/1599575)** — ranks Mythic+ dungeons by how many of your KeystoneLoot favorites drop there
 
 ## License
 
