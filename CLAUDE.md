@@ -25,7 +25,7 @@ without a fundamentally different detection approach that doesn't depend on read
 ## Development workflow
 
 - There is no compile/build step. Edit the `.lua` files directly; changes take effect after
-  `/reload` (or a relog) in-game.
+  `/reload` in-game -- that covers TOC/XML changes and new files too; never tell the user to relog.
 - No test framework exists. Verification is manual, in-game, via slash commands (see below) and
   observing behavior in a dungeon/raid/party context.
 - Linting is done via the **WoW Lua Language Server** (`tradeskillmaster.wowlua-ls`), which is what
