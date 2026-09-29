@@ -4048,7 +4048,15 @@ function BH:BuildTextRemindersTab(parent)
         feastTextEdit.placeholder:SetShown(self:GetText() == "")
     end)
     self.trFeastAnnounceTextEdit = feastTextEdit
-    yOffset = yOffset - 34
+    yOffset = yOffset - 26
+
+    local feastTokens = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    feastTokens:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    feastTokens:SetWidth(380)
+    feastTokens:SetJustifyH("LEFT")
+    feastTokens:SetText("{name} becomes the character placing the feast, {feast} the feast's name.")
+    feastTokens:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+    yOffset = yOffset - 22
 
     local feastTokenNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     feastTokenNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -10723,7 +10731,13 @@ function BH:OnFeastSpellcast(unit, castGUID, spellID)
     local customText = self.settings and self.settings.feastAnnounceText
     local msg
     if customText and customText ~= "" then
-        msg = customText:gsub("{feast}", feastName)
+        -- {name} is the character that placed the feast, so one message
+        -- written once reads right on every character. UnitName can be
+        -- secret; a secret cannot go into gsub, so it reads "I" instead.
+        local myName = BH.Secrets.SafeString(UnitName("player"), nil) or "I"
+        -- Function replacements: a "%" in either value is taken literally.
+        msg = customText:gsub("{feast}", function() return feastName end)
+            :gsub("{name}", function() return myName end)
     else
         msg = "Fresh off the Barbie, no Crocs were harmed in the making of this " .. feastName .. "... I think."
     end

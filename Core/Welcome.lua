@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.92"] = {
+        "Your feast message can include {name}: it becomes the character placing the feast, so one message reads right on every character. {feast} gives the feast's name.",
+    },
     ["1.91"] = {
         "Unlock mode has an alignment grid in your class colour, with a toolbar to dim or hide it and to turn Snap on - the same grid SquizzFrames uses.",
         "With Snap on, a dragged frame's centre snaps to the screen's centre lines and its edges to the screen edges and the nearest other frame or cooldown group.",

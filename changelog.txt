@@ -1,37 +1,9 @@
 Squizzumables Changelog
 =======================
 
-V1.91
+V1.92
 
-- An alignment grid while frames are unlocked, in your class colour, with the
-  centre lines drawn brighter. A small toolbar at the top of the screen
-  switches the grid between Dimmed, Bright and Off, and turns Snap on or off.
-  It is the same grid SquizzFrames shows in its Edit Mode.
-
-- With Snap on, a frame you drag snaps its centre to the screen's centre
-  lines, and its edges to the screen edges and to the nearest other frame or
-  cooldown group - lined up flush with it or placed right beside it,
-  SquizzFrames' frames included. The grid lines themselves are a visual guide
-  and do not snap. A snap holds until you pull a little further away, so
-  frames do not flick between nearby points. Snap is off by default; with it
-  off, dragging works exactly as before.
-
-- Fixed a cooldown group dragged by one of its icons sometimes saving the
-  wrong position, so it jumped after the next refresh. Dragging the group
-  itself was already right.
-
-- The lust alert no longer plays again for a lust that happened earlier. It
-  could replay while you still had Sated or Exhaustion from a key you had
-  already finished: after leaving a dungeon, after a /reload, or when changing
-  zones. It now plays only when the debuff has just been applied.
-
-- The CDM tab's "(N tracked)" counts on Essential, Utility, Buffs and Buff
-  Bars could read "(0 tracked)" for a whole session if the settings were
-  first opened before the Cooldown Manager had finished setting up. They now
-  update whenever the Cooldown Manager changes and whenever you open that
-  group's page.
-
-- The "Loop sound" option now warns that it is for short sounds only. Looping
-  a long track, such as the 40 second bundled lust tracks, stacks copies of it
-  on top of each other, and in a busy fight the game can then start cutting
-  sounds off - the alert's included.
+- Your own feast message can now include {name}, which becomes the name of
+  the character placing the feast. Write the message once and it reads
+  right on every character. {feast} (the feast's name) already worked and
+  is now listed under the message box too.
