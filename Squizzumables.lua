@@ -4054,7 +4054,7 @@ function BH:BuildTextRemindersTab(parent)
     feastTokens:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     feastTokens:SetWidth(380)
     feastTokens:SetJustifyH("LEFT")
-    feastTokens:SetText("{name} becomes the character placing the feast, {feast} the feast's name.")
+    feastTokens:SetText("{name} = the character placing it, {feast} = the feast, {zone} = where you are.")
     feastTokens:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 22
 
@@ -4889,7 +4889,10 @@ function BH:UpdateCalloutsButtonFrame()
         btn:GetHighlightTexture():SetVertexColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 0.4)
         local slash = CALLOUT_SLASH_MAP[callout.channel] or "/instance"
         btn:SetAttribute("type", "macro")
-        btn:SetAttribute("macrotext", slash .. " " .. (callout.message or ""))
+        -- Placeholders are filled in here, when the button is built -- it is
+        -- rebuilt on entering a dungeon and on every edit, so {zone} and
+        -- {name} are current (BH:ExpandPlaceholders).
+        btn:SetAttribute("macrotext", slash .. " " .. (BH:ExpandPlaceholders(callout.message or "") or ""))
         local lbl = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         lbl:SetAllPoints()
         lbl:SetText(callout.label or "Callout")
@@ -5230,7 +5233,7 @@ function BH:RefreshCalloutsTab()
             msgEdit:SetText(callout.message or "")
             local msgPH = msgEdit:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             msgPH:SetPoint("LEFT", msgEdit, "LEFT", 6, 0)
-            msgPH:SetText("Chat message text")
+            msgPH:SetText("Chat message ({name} and {zone} work)")
             msgPH:SetTextColor(0.4, 0.4, 0.4)
             msgPH:SetShown(msgEdit:GetText() == "")
             msgEdit:SetScript("OnTextChanged", function(self)
@@ -10704,6 +10707,31 @@ function BH:GetAnnounceChannel(channelDB)
     return channelDB.solo or "NONE"
 end
 
+-- Placeholders in the player's own announcement text, shared by the feast
+-- message and callouts:
+--   {name}  this character's name   -- one message reads right on every alt
+--   {zone}  the dungeon/raid you are in, else the zone
+-- plus per-announcement ones passed in `extra` (e.g. {feast}). Anything
+-- else in braces is left exactly as typed: WoW chat already turns {skull},
+-- {rt1} and friends into raid-marker icons, and those must survive.
+-- A value the game hides (secret) falls back rather than failing the send.
+function BH:ExpandPlaceholders(text, extra)
+    if type(text) ~= "string" or not text:find("{", 1, true) then return text end
+    local S = BH.Secrets
+    return (text:gsub("{(%a+)}", function(key)
+        local k = key:lower()
+        if extra and extra[k] ~= nil then return tostring(extra[k]) end
+        if k == "name" then
+            return S.SafeString(UnitName("player"), nil) or "I"
+        elseif k == "zone" then
+            local inInstance = IsInInstance()
+            local zone = inInstance and GetInstanceInfo() or GetRealZoneText()
+            return S.SafeString(zone, nil) or ""
+        end
+        return nil -- not ours: keep "{key}" as typed
+    end))
+end
+
 function BH:OnFeastSpellcast(unit, castGUID, spellID)
     if unit ~= "player" then return end  -- party spellID is fully secret in 12.0+, only player's own is comparable
     if not (self.settings and self.settings.feastAnnounceEnabled) then return end
@@ -10731,13 +10759,8 @@ function BH:OnFeastSpellcast(unit, castGUID, spellID)
     local customText = self.settings and self.settings.feastAnnounceText
     local msg
     if customText and customText ~= "" then
-        -- {name} is the character that placed the feast, so one message
-        -- written once reads right on every character. UnitName can be
-        -- secret; a secret cannot go into gsub, so it reads "I" instead.
-        local myName = BH.Secrets.SafeString(UnitName("player"), nil) or "I"
-        -- Function replacements: a "%" in either value is taken literally.
-        msg = customText:gsub("{feast}", function() return feastName end)
-            :gsub("{name}", function() return myName end)
+        -- {name}, {zone} and {feast}: see BH:ExpandPlaceholders.
+        msg = BH:ExpandPlaceholders(customText, { feast = feastName })
     else
         msg = "Fresh off the Barbie, no Crocs were harmed in the making of this " .. feastName .. "... I think."
     end

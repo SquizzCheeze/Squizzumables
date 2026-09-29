@@ -3,10 +3,12 @@ Squizzumables Changelog
 
 V1.92
 
-- Your own feast message can now include {name}, which becomes the name of
-  the character placing the feast. Write the message once and it reads
-  right on every character. {feast} (the feast's name) already worked and
-  is now listed under the message box too.
+- Placeholders in your own messages. The feast message and callouts can
+  now include {name}, which becomes the character sending it, and {zone},
+  the dungeon or zone you are in - write a message once and it reads right
+  on every character. The feast message also takes {feast} (the feast's
+  name), which already worked and is now listed under the message box.
+  Raid-marker codes such as {skull} still work as before.
 
 - A spell can now show in two groups at once. In the CDM settings' Custom
   Icons list, each spell has an "Also in" choice under its group: pick a

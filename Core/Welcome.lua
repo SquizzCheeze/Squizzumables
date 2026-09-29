@@ -22,7 +22,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
     ["1.92"] = {
-        "Your feast message can include {name}: it becomes the character placing the feast, so one message reads right on every character. {feast} gives the feast's name.",
+        "Your feast message and callouts can include {name} (the character sending it) and {zone} (where you are), so one message reads right on every character. The feast message also takes {feast}.",
         "A spell can show in two groups at once: pick \"Also in\" under its group in the CDM's Custom Icons list. The copy shows the cooldown, glow and tints; Show While Active stays on the original.",
     },
     ["1.91"] = {
