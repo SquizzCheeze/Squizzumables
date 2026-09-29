@@ -236,6 +236,8 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
+Last shipped: **v1.92 (2026-09-29)** -- closed, so the next change starts at step 1 below.
+
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
 
@@ -1342,6 +1344,29 @@ unreadable and absent look identical to us, and they do not look identical to th
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
+
+### Added in V1.92 (shipped 2026-09-29)
+
+- **Placeholders, one expander**: `BH:ExpandPlaceholders(text, extra)` fills `{name}`, `{zone}` and any
+  `extra` keys (the feast message passes `{feast}`), case-insensitive; an unknown `{key}` stays as typed.
+  Used by the feast announce AND callouts (callouts expand into their macrotext). `{name}` is
+  `UnitName("player")`, which never carries a realm, so a cross-realm group sees the bare name -- the
+  user asked, it is intended. `{zone}` is the instance name inside one, else `GetRealZoneText()`. Both go
+  through `S.SafeString`, so a secret degrades to "I" / "".
+- **Feast announce only fires for YOUR feasts** (`OnFeastSpellcast` returns unless `unit == "player"`:
+  party spell IDs are fully secret). `SQ_FEAST` addon messages only suppress a duplicate when a
+  groupmate's own copy announced. The Feast page note still says it announces party feasts too; the
+  user saw that and chose to leave it (2026-09-29).
+- **Options text that wraps must step `yOffset` by `GetStringHeight()`, not a fixed guess.** The feast
+  page's intro was stepped as two lines, wrapped to three, and overlapped the next control (fixed
+  c5e5921). The placeholder list is one multi-line FontString, one line per token with its meaning --
+  the user's requested format for documenting tokens.
+- **CDM "Also in"** (`specData.copies`, `cdmModule.copyProxies[cooldownID][groupName]`): a spell's
+  second icon in another group. Kept apart from `proxyFrames` so every one-proxy-per-spell path is
+  untouched; passes that must reach every icon go through `cdmModule.ForEachProxy`. The copy shows
+  cooldown, glow and tints; Show While Active stays on the original. User-confirmed in and out of combat.
+- **Low-stock bag warning**: `bagsLowThreshold` (default 1, 0 = off). Empty ("NO X IN BAGS") always
+  wins over low ("LOW ON FLASK (1 LEFT)").
 
 ## Performance rules (review of 2026-09-26)
 
