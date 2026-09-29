@@ -3977,7 +3977,8 @@ function BH:BuildTextRemindersTab(parent)
     feastNote:SetJustifyH("LEFT")
     feastNote:SetText("Announces in group chat when you or anyone in the party places a feast. Custom message applies to your own feasts; party feasts use the caster's name.")
     feastNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 28
+    -- By its wrapped height: a fixed 28 fitted two lines, and it wraps to three.
+    yOffset = yOffset - (math.ceil(feastNote:GetStringHeight() or 28) + 10)
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
@@ -4067,21 +4068,20 @@ function BH:BuildTextRemindersTab(parent)
     self.trFeastAnnounceTextEdit = feastTextEdit
     yOffset = yOffset - 26
 
+    -- Every placeholder the message takes (BH:ExpandPlaceholders), one per
+    -- line with what it becomes. Stepped by the block's real height, so it
+    -- can never run into the sound row below as the old two lines did.
     local feastTokens = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     feastTokens:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     feastTokens:SetWidth(380)
     feastTokens:SetJustifyH("LEFT")
-    feastTokens:SetText("{name} = the character placing it, {feast} = the feast, {zone} = where you are.")
+    feastTokens:SetSpacing(2)
+    feastTokens:SetText("|cffffffffPlaceholders you can use:|r\n"
+        .. "|cffffffff{name}|r  the name of the character placing the feast\n"
+        .. "|cffffffff{feast}|r  the feast's name\n"
+        .. "|cffffffff{zone}|r  the dungeon, raid or zone you're in")
     feastTokens:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 22
-
-    local feastTokenNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    feastTokenNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    feastTokenNote:SetWidth(380)
-    feastTokenNote:SetJustifyH("LEFT")
-    feastTokenNote:SetText("|cffffffffToken: {feast} = feast name.|r")
-    feastTokenNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    yOffset = yOffset - 30
+    yOffset = yOffset - (math.ceil(feastTokens:GetStringHeight() or 60) + 12)
 
     -- Sound alert when another Squizzumables user places a feast
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
