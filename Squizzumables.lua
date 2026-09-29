@@ -154,6 +154,7 @@ BH.defaultSettings = {
     bagsReminderLocked = false,
     bagsReminderScale = 1.0,
     bagsReminderEnabled = true,
+    bagsLowThreshold = 1,   -- also warn at this many or fewer of a watched consumable (0 = off)
     healthstoneReminderLocked = false,
     healthstoneReminderScale = 1.0,
     healthstoneReminderEnabled = true,
@@ -3944,6 +3945,22 @@ function BH:BuildTextRemindersTab(parent)
             disabled = function() return BH.settings.bagsReminderEnabled == false end,
         })
     end
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider",
+        indent = 28,
+        label = "Warn when running low (0 = off)",
+        width = 300, min = 0, max = 10, step = 1,
+        tooltip = "Also show the bag reminder when you have this many or fewer of a watched consumable left, "
+            .. "e.g. \"LOW ON FLASK (1 LEFT)\". Having none is still shown first.",
+        get = function() return BH.settings.bagsLowThreshold or 1 end,
+        set = function(v)
+            BH.settings.bagsLowThreshold = v
+            BH:SaveSettings()
+            BH:UpdateBagReminder()
+        end,
+        disabled = function() return BH.settings.bagsReminderEnabled == false end,
+    })
 
     yOffset = yOffset - self:AddReminderSection(content, yOffset, "healthstone", true)
 
@@ -9810,6 +9827,29 @@ local function MissingBagCategories()
     return missing
 end
 
+--- Watched categories you are carrying some of, but `threshold` or fewer:
+--- { "FLASK (2 LEFT)", ... }. Counts add up every enabled item of the
+--- category, since any of them does the job. threshold 0 turns this off.
+local function LowBagCategories(threshold)
+    local low = {}
+    if not threshold or threshold <= 0 then return low end
+    for _, key in ipairs(BAG_REMINDER_ORDER) do
+        if BH.settings and BH.settings[key .. "ReminderEnabled"] ~= false then
+            local total = 0
+            for _, itemID in ipairs(BH.consumables and BH.consumables[key] or {}) do
+                if BH:IsEnabled(itemID) then
+                    local entry = BH:GetBagEntry(itemID)
+                    total = total + (entry and entry.count or 0)
+                end
+            end
+            if total > 0 and total <= threshold then
+                low[#low + 1] = string.format("%s (%d LEFT)", BAG_REMINDER_WORDS[key], total)
+            end
+        end
+    end
+    return low
+end
+
 function BH:UpdateBagReminder()
     -- Oil is suppressed for Holy Paladins running a Lightsmith rite, since the
     -- imbue replaces oils entirely for them. Handled by IsEnabled on the items
@@ -9818,13 +9858,22 @@ function BH:UpdateBagReminder()
     if not frame then return end
 
     local missing = MissingBagCategories()
-    if #missing == 0 then
+    local text
+    if #missing > 0 then
+        text = "NO " .. JoinMissing(missing) .. " IN BAGS"
+    else
+        -- Nothing is out: warn about anything running low instead. Empty
+        -- always wins, since that is the more urgent reading.
+        local low = LowBagCategories(self.settings and self.settings.bagsLowThreshold or 1)
+        if #low > 0 then text = "LOW ON " .. table.concat(low, ", ") end
+    end
+    if not text then
         frame:Hide()
         return
     end
 
     if self.bagsReminderText then
-        self.bagsReminderText:SetText("NO " .. JoinMissing(missing) .. " IN BAGS")
+        self.bagsReminderText:SetText(text)
     end
     local locked = self.settings and self.settings.bagsReminderLocked
     frame:EnableMouse(BH:ReminderMouseEnabled(locked))

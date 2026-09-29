@@ -17,3 +17,9 @@ V1.92
   cooldown in Essential and also next to your other defensives. The copy
   shows the cooldown only: "Show While Active" stays on the original icon.
   Tracked buffs can't be copied, as they are Blizzard's own icons.
+
+- The bag reminder also warns when you are running low, not only when you
+  have run out: "LOW ON FLASK (1 LEFT)". By default it warns on your last
+  one; set how many under Text Reminders > Bags ("Warn when running low",
+  0 turns it off). Several of one kind, such as two flask types, count
+  together. Having none is still shown first.

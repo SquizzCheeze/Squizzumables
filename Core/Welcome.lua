@@ -24,6 +24,7 @@ local RELEASE_NOTES = {
     ["1.92"] = {
         "Your feast message and callouts can include {name} (the character sending it) and {zone} (where you are), so one message reads right on every character. The feast message also takes {feast}.",
         "A spell can show in two groups at once: pick \"Also in\" under its group in the CDM's Custom Icons list. The copy shows the cooldown, glow and tints; Show While Active stays on the original.",
+        "The bag reminder warns when you're running low (\"LOW ON FLASK (1 LEFT)\"), not only when you're out. Set how low in Text Reminders > Bags.",
     },
     ["1.91"] = {
         "Unlock mode has an alignment grid in your class colour, with a toolbar to dim or hide it and to turn Snap on - the same grid SquizzFrames uses.",
