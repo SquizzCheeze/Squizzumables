@@ -15,7 +15,8 @@ Retail only, built for **Midnight (12.0+)**.
 
 **Consumable and buff reminders.** Scans your bags, buffs and weapon enchants and shows a button
 for anything missing. Click it to eat, drink, apply or cast. Choose where reminders appear: open
-world, each dungeon and raid difficulty, Mythic+.
+world, each dungeon and raid difficulty, Mythic+. The bag reminder also warns when you're running
+low ("LOW ON FLASK (1 LEFT)"), not only when you're out.
 
 **Class buffs.** Per-class buff tracking with the awkward cases handled — buff variants that count
 as the same, self-only and tank buffs, weapon imbues, rogue poisons, pets, Paladin auras and rites,
@@ -28,13 +29,15 @@ relevant, so you only see it where it matters.
 **Raid tools.** Pull timer (shown on Blizzard's encounter timeline), ready check, raid markers,
 battle res counter, Mythic+ death tally, feast announcements and a target distance readout.
 **Dungeon callouts**: your own buttons for each dungeon that send a message and play a sound —
-they work in combat and in Mythic+.
+they work in combat and in Mythic+. Feast messages and callouts can include `{name}`, `{zone}` and
+(for feasts) `{feast}`, so one message reads right on every character.
 
 **Cooldown Manager.** Blizzard's Essential, Utility, Buffs and Buff Bars groups, restyled: icon
 shapes (round, diamond, hexagon, shield, heart, star), borders, zoom, panels, and text you can
 place anywhere. Proc glow in a colour of your choice, Glow When Ready, grey out on cooldown, and
 Show While Active to show an ability's buff time while it is running. Your own custom icon groups,
-anchored to each other or to other addons' frames, and an option to hide Blizzard's own bars.
+anchored to each other or to other addons' frames, a spell shown in two groups at once ("Also
+in"), and an option to hide Blizzard's own bars.
 
 **Sounds and alerts.** Attach your own sound to any Cooldown Manager spell — when it is ready,
 when its buff goes up, or when it drops. Buff sounds that keep working in combat. A full-screen
