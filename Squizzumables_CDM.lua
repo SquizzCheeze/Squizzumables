@@ -220,6 +220,11 @@ cdmModule.freeIcons = {}
 cdmModule.registry = {}
 -- Proxy frames we created: { [cooldownID] = proxyFrame }
 cdmModule.proxyFrames = {}
+-- A spell's SECOND icon, in its "Also in" group (specData.copies):
+-- { [cooldownID] = { [groupName] = proxyFrame } }. Separate from proxyFrames
+-- so every existing one-proxy-per-spell path is untouched; the passes that
+-- must reach every icon go through cdmModule.ForEachProxy.
+cdmModule.copyProxies = {}
 -- Pending container mutations (combat-deferred)
 cdmModule.pendingMutations = {}
 -- Active buff cooldown tracking (populated by hooking Blizzard CDM buff frames)
@@ -365,6 +370,11 @@ local function GetSpecData()
     end
     perSpec.assignments = perSpec.assignments or {}
     perSpec.freeIcons = perSpec.freeIcons or {}
+    -- { [cooldownID] = groupName }: a SECOND group the spell also shows in
+    -- ("Also in"), on top of its assignment. Kept out of assignments and out
+    -- of the groups' cooldownIDs lists on purpose -- those mean "this spell
+    -- lives here", and deleting a group unassigns everything in its list.
+    perSpec.copies = perSpec.copies or {}
 
     -- Nil rather than a scratch table when profiles are not up yet (very early
     -- login). Every caller already guards on nil, and handing back a throwaway
@@ -382,11 +392,13 @@ local function GetSpecData()
     if not specDataView
        or specDataView.groups ~= groups
        or specDataView.assignments ~= perSpec.assignments
-       or specDataView.freeIcons ~= perSpec.freeIcons then
+       or specDataView.freeIcons ~= perSpec.freeIcons
+       or specDataView.copies ~= perSpec.copies then
         specDataView = {
             groups = groups,
             assignments = perSpec.assignments,
             freeIcons = perSpec.freeIcons,
+            copies = perSpec.copies,
         }
     end
     return specDataView
@@ -1013,8 +1025,16 @@ local function MirrorBlizzardCooldown(child)
     local function MirrorTo(fn)
         return function(_, ...)
             local id = child.cooldownID
-            local p = id and cdmModule.proxyFrames[id]
+            if not id then return end
+            local p = cdmModule.proxyFrames[id]
             if p and p.Cooldown and MirrorOwnsProxy(p) then fn(p, ...) end
+            -- And the spell's "Also in" copy, which shows the same cooldown.
+            local copies = cdmModule.copyProxies[id]
+            if copies then
+                for _, cp in pairs(copies) do
+                    if cp.Cooldown and MirrorOwnsProxy(cp) then fn(cp, ...) end
+                end
+            end
         end
     end
 
@@ -4129,9 +4149,7 @@ function cdmModule:PrintSoundDiagnostics()
 end
 
 UpdateAllProxyCooldowns = function()
-    for _, proxy in pairs(cdmModule.proxyFrames) do
-        UpdateProxyCooldown(proxy)
-    end
+    cdmModule.ForEachProxy(function(proxy) UpdateProxyCooldown(proxy) end)
     -- Also update visuals (desaturation state changes with cooldown)
     local specData = GetSpecData()
     if not specData then return end
@@ -4154,6 +4172,19 @@ UpdateAllProxyCooldowns = function()
                 ApplyProxyVisuals(proxy, groupData)
                 if groupData.hideUntilActive and proxy:IsShown() ~= wasShown then
                     repack[assignment] = true
+                end
+            end
+        end
+    end
+    -- "Also in" copies: styled by the group they sit in, not the spell's own.
+    for _, byGroup in pairs(cdmModule.copyProxies) do
+        for groupName, proxy in pairs(byGroup) do
+            local groupData = specData.groups[groupName]
+            if groupData then
+                local wasShown = proxy:IsShown()
+                ApplyProxyVisuals(proxy, groupData)
+                if groupData.hideUntilActive and proxy:IsShown() ~= wasShown then
+                    repack[groupName] = true
                 end
             end
         end
@@ -4244,6 +4275,66 @@ local function DestroyProxy(cooldownID)
         proxy:Hide()
         proxy:SetParent(nil)
         cdmModule.proxyFrames[cooldownID] = nil
+    end
+end
+
+-- Copy proxies ("Also in"). On cdmModule inside a do block: this chunk sits
+-- against Lua's 200-local limit (see the refresh runner below).
+do
+    -- Every icon: the spell's own proxy, then its copies. fn(proxy, cdID,
+    -- copyGroup) -- copyGroup nil for the primary.
+    function cdmModule.ForEachProxy(fn)
+        for cdID, proxy in pairs(cdmModule.proxyFrames) do fn(proxy, cdID, nil) end
+        for cdID, byGroup in pairs(cdmModule.copyProxies) do
+            for groupName, proxy in pairs(byGroup) do fn(proxy, cdID, groupName) end
+        end
+    end
+
+    function cdmModule.GetOrCreateCopyProxy(cooldownID, groupName, spellID, iconSize, equipSlot)
+        local byGroup = cdmModule.copyProxies[cooldownID]
+        if not byGroup then
+            byGroup = {}
+            cdmModule.copyProxies[cooldownID] = byGroup
+        end
+        local proxy = byGroup[groupName]
+        if proxy then
+            if equipSlot then proxy.equipSlot = equipSlot end
+            proxy:SetSize(iconSize, iconSize)
+            proxy.Icon:SetAllPoints()
+            proxy.Cooldown:SetAllPoints()
+            ResizeSpellAlert(proxy)
+            proxy:Show()
+            return proxy
+        end
+        proxy = CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
+        proxy._sqCopyOf = groupName
+        byGroup[groupName] = proxy
+        UpdateProxyCooldown(proxy)
+        return proxy
+    end
+
+    -- Same teardown as DestroyProxy, glows first (see there for why).
+    -- groupName nil destroys every copy of the spell.
+    function cdmModule.DestroyCopyProxy(cooldownID, groupName)
+        local byGroup = cdmModule.copyProxies[cooldownID]
+        if not byGroup then return end
+        for g, proxy in pairs(byGroup) do
+            if groupName == nil or g == groupName then
+                SetProcGlow(proxy, false)
+                if proxy._glowShowing then
+                    ns.Glow.Hide(proxy.GlowFrame or proxy)
+                    proxy._glowShowing = false
+                end
+                proxy:Hide()
+                proxy:SetParent(nil)
+                local group = cdmModule.groups and cdmModule.groups[g]
+                if group and group.members and group.members[cooldownID] == proxy then
+                    group.members[cooldownID] = nil
+                end
+                byGroup[g] = nil
+            end
+        end
+        if not next(byGroup) then cdmModule.copyProxies[cooldownID] = nil end
     end
 end
 
@@ -4970,6 +5061,8 @@ function cdmModule:Reconcile()
         if assignment and (entry.viewerType == "buff" or entry.viewerType == "buffbar")
            and BorrowBuffIcons() then
             entry.managed = true
+            -- Tracked buffs are Blizzard's own icons, one per buff: no copies.
+            self.DestroyCopyProxy(cdID)
             local group = self.groups[assignment]
             if group then
                 -- The buff layout path either way: a natively drawn buff still
@@ -5025,12 +5118,38 @@ function cdmModule:Reconcile()
                     end
                 end
             end
+
+            -- "Also in": the spell's second icon, in another group. A copy
+            -- shows the cooldown, glows and tints like the original, but gets
+            -- no "Show While Active" overlay: that system is keyed one per
+            -- spell (activeWanted / Native's activeOverlays) and the
+            -- original keeps it. A copy aimed at the spell's own group or a
+            -- group that no longer exists is dropped.
+            local copyTo = specData.copies and specData.copies[cdID]
+            local copyGroup = copyTo and copyTo ~= assignment and self.groups[copyTo]
+            local copyData = copyGroup and specData.groups[copyTo]
+            if copyGroup and copyData then
+                local cp = self.GetOrCreateCopyProxy(cdID, copyTo, entry.spellID,
+                    copyData.iconSize or DEFAULT_ICON_SIZE, entry.equipSlot)
+                cp.auraSpellIDs = entry.auraIDs
+                cp.viewerType = entry.viewerType
+                cp.selfAura = entry.selfAura
+                copyGroup.members[cdID] = cp
+                -- Any other group this spell was copied to before.
+                for g in pairs(self.copyProxies[cdID] or {}) do
+                    if g ~= copyTo then self.DestroyCopyProxy(cdID, g) end
+                end
+            else
+                self.DestroyCopyProxy(cdID)
+            end
         else
             -- Not assigned â€” clean up if previously managed
             if entry.managed then
                 DestroyProxy(cdID)
                 entry.managed = false
             end
+            -- A copy only exists alongside a placed original.
+            self.DestroyCopyProxy(cdID)
         end
     end
 
@@ -5192,6 +5311,7 @@ function cdmModule:Reconcile()
             end
             self.freeIcons[cdID] = nil
             DestroyProxy(cdID)
+            self.DestroyCopyProxy(cdID)
             entry.managed = false
         end
     end
@@ -5789,9 +5909,12 @@ function cdmModule:ReleaseAll()
     -- claim to be drawing.
     UnshapeAllBorrowed()
 
-    -- Destroy all proxy frames
+    -- Destroy all proxy frames, copies included
     for cdID, _ in pairs(self.proxyFrames) do
         DestroyProxy(cdID)
+    end
+    for cdID in pairs(self.copyProxies) do
+        self.DestroyCopyProxy(cdID)
     end
 
     -- Mark all registry entries as unmanaged
@@ -5994,6 +6117,15 @@ function cdmModule:DeleteGroup(groupName)
             specData.assignments[cdID] = nil
         end
     end
+    -- And forget every "Also in" copy that pointed here. Their icons are
+    -- destroyed before the container goes (below would treat them as the
+    -- spells' own proxies and destroy those instead).
+    for cdID, target in pairs(specData.copies or {}) do
+        if target == groupName then
+            specData.copies[cdID] = nil
+            self.DestroyCopyProxy(cdID, groupName)
+        end
+    end
     specData.groups[groupName] = nil
 
     -- Destroy container and clean up proxies
@@ -6012,6 +6144,18 @@ function cdmModule:DeleteGroup(groupName)
     self.groups[groupName] = nil
 
     self:ScheduleReconcile()
+end
+
+-- "Also in": show the spell in a second group as well (groupName), or stop
+-- (nil). One copy per spell; the next Reconcile builds or drops the icon.
+function cdmModule:SetCopy(cooldownID, groupName)
+    local specData = GetSpecData()
+    if not specData then return end
+    specData.copies = specData.copies or {}
+    specData.copies[cooldownID] = groupName
+    if not groupName then self.DestroyCopyProxy(cooldownID) end
+    self:ScheduleReconcile()
+    C_Timer.After(0.2, function() if BH.RebuildCDMTabContent then BH:RebuildCDMTabContent() end end)
 end
 
 function cdmModule:AssignToGroup(cooldownID, groupName)
@@ -6453,31 +6597,32 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local spellID = ...
         if BH.Secrets.IsSecret(spellID) then return end
         local show = (event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
-        for _, proxy in pairs(cdmModule.proxyFrames) do
+        -- ForEachProxy: an "Also in" copy lights up with its original.
+        cdmModule.ForEachProxy(function(proxy)
             if proxy._procGlowAllowed and ProxyMatchesSpell(proxy, spellID) then
                 -- skipBirth false: this IS the fresh proc, so the spawn
                 -- animation is the point. Blizzard makes the same distinction
                 -- between its event path and its refresh path.
                 SetProcGlow(proxy, show, false)
             end
-        end
+        end)
         return
     end
     if event == "SPELL_UPDATE_USABLE" then
-        for _, proxy in pairs(cdmModule.proxyFrames) do
+        cdmModule.ForEachProxy(function(proxy)
             ApplyUsableTint(proxy, proxy._usableTintAllowed)
-        end
+        end)
         return
     end
     if event == "SPELL_RANGE_CHECK_UPDATE" then
         local spellID, inRange, checksRange = ...
         if BH.Secrets.HasAnySecret(spellID, inRange, checksRange) then return end
-        for _, proxy in pairs(cdmModule.proxyFrames) do
+        cdmModule.ForEachProxy(function(proxy)
             if ProxyMatchesSpell(proxy, spellID) then
                 proxy._outOfRange = (checksRange == true and inRange == false)
                 ApplyUsableTint(proxy, proxy._usableTintAllowed)
             end
-        end
+        end)
         return
     end
     if event == "BAG_UPDATE_COOLDOWN" then
@@ -7271,9 +7416,9 @@ function BH:RebuildCDMPage(state, mode)
     availDesc:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     availDesc:SetWidth(380)
     availDesc:SetJustifyH("LEFT")
-    availDesc:SetText("Assign cooldowns to a group or set as Free to position independently.")
+    availDesc:SetText("Assign cooldowns to a group or set as Free to position independently. Also in shows a spell in a second group as well.")
     availDesc:SetTextColor(DIM_R, DIM_G, DIM_B)
-    yOffset = yOffset - 22
+    yOffset = yOffset - 34 -- two lines
 
     local cooldowns = BH.cdm:GetAvailableCooldowns()
 
@@ -7356,7 +7501,30 @@ function BH:RebuildCDMPage(state, mode)
                     dd:SetSelectedValue("__NONE__")
                 end
 
-                yOffset = yOffset - 38
+                -- "Also in": a second icon for this spell in another group
+                -- (cdmModule:SetCopy). Offered every group but the one it is
+                -- assigned to; the original keeps Show While Active.
+                local copyItems = { { text = "None", value = "__NONE__" } }
+                if specData then
+                    for gName, _ in pairs(specData.groups) do
+                        if gName ~= currentAssignment then
+                            table.insert(copyItems, { text = gName, value = gName })
+                        end
+                    end
+                end
+                local alsoLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                alsoLabel:SetPoint("TOPLEFT", row, "TOPLEFT", 28, -40)
+                alsoLabel:SetText("Also in:")
+                alsoLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
+                local copyDD = CreateSQDropdown(row, "", 150, copyItems, function(val)
+                    BH.cdm:SetCopy(cdInfo.cooldownID, val ~= "__NONE__" and val or nil)
+                end)
+                copyDD:SetPoint("TOPLEFT", row, "TOPLEFT", 192, -28)
+                local currentCopy = specData and specData.copies and specData.copies[cdInfo.cooldownID]
+                copyDD:SetSelectedValue(currentCopy or "__NONE__")
+                row:SetHeight(60)
+
+                yOffset = yOffset - 62
             end
 
             yOffset = yOffset - 4

@@ -23,6 +23,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.92"] = {
         "Your feast message can include {name}: it becomes the character placing the feast, so one message reads right on every character. {feast} gives the feast's name.",
+        "A spell can show in two groups at once: pick \"Also in\" under its group in the CDM's Custom Icons list. The copy shows the cooldown, glow and tints; Show While Active stays on the original.",
     },
     ["1.91"] = {
         "Unlock mode has an alignment grid in your class colour, with a toolbar to dim or hide it and to turn Snap on - the same grid SquizzFrames uses.",

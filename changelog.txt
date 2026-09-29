@@ -7,3 +7,11 @@ V1.92
   the character placing the feast. Write the message once and it reads
   right on every character. {feast} (the feast's name) already worked and
   is now listed under the message box too.
+
+- A spell can now show in two groups at once. In the CDM settings' Custom
+  Icons list, each spell has an "Also in" choice under its group: pick a
+  second group and the spell appears there too, with the same cooldown,
+  proc glow and range/usable tint as the original. Useful for keeping a big
+  cooldown in Essential and also next to your other defensives. The copy
+  shows the cooldown only: "Show While Active" stays on the original icon.
+  Tracked buffs can't be copied, as they are Blizzard's own icons.
