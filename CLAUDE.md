@@ -1369,7 +1369,7 @@ adding new IDs.
   the last stroke went left (`facingLeft`). `custom` takes `cursorTrailTexture`: tried as an atlas
   (`C_Texture.GetAtlasInfo`) then as a file path, empty = soft glow. The pool is restyled only when
   `trailLook` (style|texture|blend) changes. Palette (`cursorTrailPalette`, up to `PALETTE_MAX` 6,
-  `cursorTrailPaletteCount`): "time" flows at Rainbow Speed; "trail" recolours each piece by AGE in
+  `cursorTrailPaletteCount`): "time" flows at its own pace, `cursorTrailPaletteSeconds` per colour (a lap = that x count; it used to borrow Rainbow Speed, 4s per lap whatever the count); "trail" recolours each piece by AGE in
   `FadeTrail` (age = how far back down the trail). Also `cursorTrailHeight` (% of width),
   `cursorTrailOffsetX/Y` (trail only, not the click burst), `cursorTrailBlend` (style / glow / solid).
   Skipped from Frogski: shrink-with-distance (on a moving trail it IS shrink-with-age), max dots, profile

@@ -178,7 +178,13 @@ local function ModeRGB(mode, c, hueOffset)
     if mode == "rainbow" then return Hue(RainbowHue() + (hueOffset or 0)) end
     if mode == "palette" then
         if PaletteAlongTrail() then return PaletteRGB(0, false) end
-        return PaletteRGB(RainbowHue() + (hueOffset or 0), true)
+        -- Its own pace (Seconds Per Colour), not Rainbow Speed: a full lap is
+        -- that many seconds per colour, so adding colours lengthens the cycle
+        -- instead of speeding every step up (user request 2026-10-03).
+        local s = BH.settings
+        local n = math.max(2, math.min(PALETTE_MAX, s.cursorTrailPaletteCount or 3))
+        local per = math.max(0.1, s.cursorTrailPaletteSeconds or 1.5)
+        return PaletteRGB(GetTime() / (per * n) + (hueOffset or 0), true)
     end
     c = c or {}
     return c.r or 1, c.g or 1, c.b or 1
@@ -821,7 +827,8 @@ function BH:BuildCursorTab(parent)
         "Used when Combat Colour is Custom colour.",
         function() return CombatOff() or BH.settings.cursorCombatColorMode ~= "custom" end))
     y = y - Rows.Add(content, y, Slider("Rainbow Speed", "cursorRainbowSpeed", 10, 400, 10, 100,
-        "How fast Rainbow goes round the colour wheel, wherever it is used. At 100% once every 4 seconds."))
+        "How fast Rainbow goes round the colour wheel, for the rings and the trail. At 100% once every "
+            .. "4 seconds. The trail palette has its own pace on the Trail Colour tab."))
     y = y - Rows.Add(content, y, Check("Only In Combat", "cursorCombatOnly",
         "Show the rings only while you are in combat."))
     y = y - Rows.Add(content, y, Check("Shake To Find Cursor", "cursorShakeFind",
@@ -915,9 +922,13 @@ function BH:BuildCursorTab(parent)
         function() return ParticlesOff() or BH.settings.cursorTrailColorMode ~= "custom" end))
     local function PaletteOff() return ParticlesOff() or BH.settings.cursorTrailColorMode ~= "palette" end
     y = y - Rows.Add(content, y, Dropdown("Palette Flow", "cursorTrailPaletteFlow", PALETTE_FLOWS, "time",
-        "Flows over time: the trail cycles through your colours, at the Rainbow Speed on the Cursor tab. "
+        "Flows over time: the trail cycles through your colours, at the pace set below. "
             .. "Along the trail: the head of the trail is your first colour and the tail your last.",
         PaletteOff))
+    y = y - Rows.Add(content, y, Slider("Seconds Per Colour", "cursorTrailPaletteSeconds", 0.2, 10, 0.1, 1.5,
+        "How long the trail takes to blend from one palette colour to the next when it flows over time. "
+            .. "A full cycle through every colour is this times the number of colours used.",
+        function() return PaletteOff() or BH.settings.cursorTrailPaletteFlow == "trail" end))
     y = y - Rows.Add(content, y, Slider("Palette Colours Used", "cursorTrailPaletteCount", 2, PALETTE_MAX, 1, 3,
         "How many of the colours below the palette uses, from the first.", PaletteOff))
     for i = 1, PALETTE_MAX do

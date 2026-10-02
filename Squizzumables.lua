@@ -174,6 +174,7 @@ BH.defaultSettings = {
     cursorTrailTexture = "",            -- atlas name or file path, Trail Style "custom"
     cursorTrailPaletteFlow = "time",    -- "time" | "trail" (head to tail)
     cursorTrailPaletteCount = 3,        -- how many palette colours are used
+    cursorTrailPaletteSeconds = 1.5,    -- "time" flow: seconds from one colour to the next
     cursorTrailPalette = {
         { r = 1.00, g = 0.20, b = 0.20 },
         { r = 1.00, g = 0.75, b = 0.10 },

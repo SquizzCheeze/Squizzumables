@@ -19,7 +19,7 @@ V1.94
     whichever way you move the mouse - or any texture of your own, by game
     atlas name or file path.
   - A colour palette: pick up to six colours and have the trail flow
-    through them over time, or run from your first colour at the head to
+    through them over time (at a pace you set), or run from your first colour at the head to
     your last at the tail. On its own new Trail Colour tab.
   - Glow or solid blending for any style, the trail's height separately
     from its width to stretch or squash it, and an offset to lay the trail
