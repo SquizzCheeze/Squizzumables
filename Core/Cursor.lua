@@ -43,8 +43,18 @@ local GCD_SIZE   = 40            -- inside the ring
 local CAST_SIZE  = 74            -- outside it
 local TRAIL_SIZE = 16            -- one particle, at its birth
 
-local TRAIL_POOL = 120           -- particles; the oldest is reused past this
-local TRAIL_MAX_PER_FRAME = 10   -- caps the fill-in on a very fast flick
+-- Particles; the oldest is reused past this. 300 covers a 3s linger at full
+-- density on a fast mouse; the fade loop only runs while any are alive.
+local TRAIL_POOL = 300
+
+-- Trail looks: the image, and how it blends. A glow ADDs, so overlapping
+-- particles brighten into a ribbon; dots and rings draw solid.
+local TRAIL_STYLES = {
+    glow = { file = "soft.png", blend = "ADD" },
+    dot  = { file = "dot.png",  blend = "BLEND" },
+    ring = { file = "ring.png", blend = "BLEND" },
+}
+local TRAIL_MAX_PER_FRAME = 20   -- caps the fill-in on a very fast flick
 local TRAIL_JUMP = 400           -- a move longer than this is a jump, not a stroke
 
 local Cursor = {}
@@ -56,6 +66,7 @@ local trailFrame, driver
 -- lived, lifespan -- 0 when idle -- and size at birth).
 local pool, ages, lives, bases = {}, {}, {}, {}
 local poolNext, active = 1, 0
+local trailStyle                 -- the TRAIL_STYLES key the pool is drawn in
 local lastX, lastY
 local casting = false
 
@@ -161,8 +172,6 @@ local function Build()
     trailFrame:EnableMouse(false)
     for i = 1, TRAIL_POOL do
         local t = trailFrame:CreateTexture(nil, "ARTWORK")
-        t:SetTexture(MEDIA .. "soft.png")
-        t:SetBlendMode("ADD")
         t:Hide()
         pool[i], ages[i], lives[i], bases[i] = t, 0, 0, 0
     end
@@ -189,12 +198,14 @@ local function Spawn(x, y)
     t:ClearAllPoints()
     t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
     t:SetSize(base, base)
-    t:SetAlpha((s.cursorOpacity or 100) / 100)
+    t:SetAlpha((s.cursorOpacity or 100) / 100 * (s.cursorTrailOpacity or 100) / 100)
     t:Show()
 end
 
 local function FadeTrail(elapsed)
-    local opacity = (BH.settings.cursorOpacity or 100) / 100
+    local s = BH.settings
+    local opacity = (s.cursorOpacity or 100) / 100 * (s.cursorTrailOpacity or 100) / 100
+    local shrink = (s.cursorTrailShrink or 60) / 100
     for i = 1, TRAIL_POOL do
         local life = lives[i]
         if life > 0 then
@@ -207,7 +218,7 @@ local function FadeTrail(elapsed)
                 active = active - 1
                 t:Hide()
             else
-                local size = bases[i] * (1 - 0.6 * p)
+                local size = bases[i] * (1 - shrink * p)
                 t:SetSize(size, size)
                 t:SetAlpha(opacity * (1 - p))
             end
@@ -223,7 +234,10 @@ local function StrokeTrail(x, y)
     local dx, dy = x - lastX, y - lastY
     local dist = math.sqrt(dx * dx + dy * dy)
     if dist > TRAIL_JUMP then lastX, lastY = x, y return end
-    local spacing = math.max(2, TRAIL_SIZE * (s.cursorTrailSize or 100) / 100 * 0.3)
+    -- Density 100% puts particles 30% of their width apart; double it halves
+    -- the gap.
+    local spacing = math.max(1, TRAIL_SIZE * (s.cursorTrailSize or 100) / 100 * 0.3
+        * 100 / (s.cursorTrailDensity or 100))
     if dist < spacing then return end
     local n = math.min(math.floor(dist / spacing), TRAIL_MAX_PER_FRAME)
     for i = 1, n do
@@ -288,15 +302,22 @@ local function ShouldShowRings()
     local s = BH.settings
     if s.cursorCombatOnly and not InCombatLockdown() then return false end
     -- The real cursor is hidden while you turn the camera with a mouse button
-    -- held; rings left floating where it was would look like a bug.
-    if IsMouselooking() then return false end
+    -- held, and frozen where it was. The rings stay there by default (user
+    -- request: they should not vanish on right-click); hiding them is opt-in.
+    if s.cursorHideMouselook and IsMouselooking() then return false end
     return true
 end
 
 local function OnUpdate(_, elapsed)
     local s = BH.settings
     local show = ShouldShowRings()
-    if show then
+    if show and IsMouselooking() then
+        -- Turning the camera: hold the rings where the cursor was rather than
+        -- trust GetCursorPosition while the cursor is hidden, and lay no trail.
+        root:Show()
+        lastX, lastY = nil, nil
+        if s.cursorColorMode == "rainbow" then PaintRings(Hue(RainbowHue())) end
+    elseif show then
         local scale = UIParent:GetEffectiveScale()
         local cx, cy = GetCursorPosition()
         local x, y = cx / scale, cy / scale
@@ -347,6 +368,15 @@ function BH:ApplyCursor()
 
     PaintRings(ModeRGB(s.cursorColorMode, s.cursorColor))
     if not s.cursorTrail then ClearTrail() end
+    local styleKey = TRAIL_STYLES[s.cursorTrailStyle] and s.cursorTrailStyle or "glow"
+    if styleKey ~= trailStyle then
+        local style = TRAIL_STYLES[styleKey]
+        for i = 1, TRAIL_POOL do
+            pool[i]:SetTexture(MEDIA .. style.file)
+            pool[i]:SetBlendMode(style.blend)
+        end
+        trailStyle = styleKey
+    end
 
     UpdateGCD()
     UpdateCast()
@@ -392,6 +422,11 @@ local COLOR_MODES = {
     { text = "Custom colour", value = "custom" },
     { text = "Class colour",  value = "class" },
     { text = "Rainbow",       value = "rainbow" },
+}
+local TRAIL_STYLE_ITEMS = {
+    { text = "Soft glow",   value = "glow" },
+    { text = "Solid dots",  value = "dot" },
+    { text = "Rings",       value = "ring" },
 }
 local STRATAS = {
     { text = "Medium",  value = "MEDIUM" },
@@ -466,6 +501,9 @@ function BH:BuildCursorTab(parent)
         function() return Off() or (BH.settings.cursorColorMode ~= "rainbow" and BH.settings.cursorTrailColorMode ~= "rainbow") end))
     y = y - Rows.Add(content, y, Check("Only In Combat", "cursorCombatOnly",
         "Show the rings only while you are in combat."))
+    y = y - Rows.Add(content, y, Check("Hide While Turning The Camera", "cursorHideMouselook",
+        "Hide the rings while you hold a mouse button to turn the camera. Off, they stay where the "
+            .. "cursor was, which is where it comes back when you let go."))
     y = y - Rows.Add(content, y, Dropdown("Frame Strata", "cursorStrata", STRATAS, "HIGH",
         "How far in front of other frames the rings sit. Tooltip puts them above every window."))
     content:SetHeight(math.abs(y) + 20)
@@ -495,8 +533,18 @@ function BH:BuildCursorTab(parent)
         "Rainbow runs through the colour wheel along the trail.", TrailOff))
     y = y - Rows.Add(content, y, Color("Custom Trail Colour", "cursorTrailColor", "Used when Trail Colour is Custom colour.",
         function() return TrailOff() or BH.settings.cursorTrailColorMode ~= "custom" end))
-    y = y - Rows.Add(content, y, Slider("Trail Length", "cursorTrailLength", 0.1, 2, 0.1, 0.5,
-        "How long, in seconds, the trail takes to fade.", TrailOff))
+    y = y - Rows.Add(content, y, Dropdown("Trail Style", "cursorTrailStyle", TRAIL_STYLE_ITEMS, "glow",
+        "Soft glow blends into a bright ribbon; solid dots and rings draw each piece of the trail on its own.",
+        TrailOff))
+    y = y - Rows.Add(content, y, Slider("Linger Time", "cursorTrailLength", 0.1, 3, 0.1, 0.5,
+        "How long, in seconds, the trail lingers before it has faded away.", TrailOff))
+    y = y - Rows.Add(content, y, Slider("Trail Opacity", "cursorTrailOpacity", 10, 100, 5, 100,
+        "How see-through the trail is, on top of the overall Opacity on the Cursor tab.", TrailOff))
+    y = y - Rows.Add(content, y, Slider("Shrink As It Fades", "cursorTrailShrink", 0, 100, 5, 60,
+        "How much each piece shrinks as it fades. 0% keeps it full size to the end; 100% shrinks it to nothing.",
+        TrailOff))
+    y = y - Rows.Add(content, y, Slider("Density", "cursorTrailDensity", 25, 400, 25, 100,
+        "How close together the pieces are. Low makes a dotted line, high a smooth ribbon.", TrailOff))
     y = y - Rows.Add(content, y, Slider("Trail Size", "cursorTrailSize", 25, 300, 5, 100,
         "Width of the trail, as a percentage.", TrailOff))
     content:SetHeight(math.abs(y) + 20)

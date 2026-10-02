@@ -7,10 +7,11 @@ V1.93
   cursor's tip, a ring around it, your global cooldown filling a ring
   inside it and your cast or channel filling one outside it - in your
   class colour, a colour you pick, or a cycling rainbow. Size, opacity,
-  each ring on or off, and Only In Combat. The rings hide while you turn
-  the camera with a mouse button held, since the cursor itself is hidden
-  then. Off by default; turn it on under Cursor.
-- An optional trail behind the cursor as you move it, fading out over a
-  length you choose. Rainbow by default, running through the colours
-  along the trail, or class or custom colour, with its own size and a
-  rainbow speed shared with the rings.
+  each ring on or off, and Only In Combat. The rings stay put while you
+  hold a mouse button to turn the camera (or tick Hide While Turning The
+  Camera). Off by default; turn it on under Cursor.
+- An optional trail behind the cursor as you move it. Rainbow by default,
+  running through the colours along the trail, or class or custom colour.
+  Choose its style (soft glow, solid dots or rings), how long it lingers
+  (up to 3 seconds), its opacity, how much it shrinks as it fades, how
+  dense it is and how wide.

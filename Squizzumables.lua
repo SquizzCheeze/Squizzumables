@@ -143,6 +143,7 @@ BH.defaultSettings = {
     cursorOpacity = 100,                -- percent
     cursorStrata = "HIGH",
     cursorCombatOnly = false,
+    cursorHideMouselook = false,        -- keep the rings while right-click turns the camera
     cursorColorMode = "custom",         -- "custom" | "class" | "rainbow"
     cursorColor = { r = 1, g = 1, b = 1 },
     cursorDot = true,
@@ -153,8 +154,12 @@ BH.defaultSettings = {
     cursorTrail = false,
     cursorTrailColorMode = "rainbow",   -- "custom" | "class" | "rainbow"
     cursorTrailColor = { r = 1, g = 1, b = 1 },
-    cursorTrailLength = 0.5,            -- seconds each particle lives
+    cursorTrailLength = 0.5,            -- seconds each particle lives ("Linger Time")
     cursorTrailSize = 100,              -- percent
+    cursorTrailStyle = "glow",          -- "glow" | "dot" | "ring"
+    cursorTrailOpacity = 100,           -- percent, on top of cursorOpacity
+    cursorTrailShrink = 60,             -- percent a particle shrinks by the end
+    cursorTrailDensity = 100,           -- percent; higher packs particles closer
     cursorRainbowSpeed = 100,           -- percent
 
     deathTallyEnabled = true,

@@ -1345,7 +1345,7 @@ unreadable and absent look identical to us, and they do not look identical to th
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
 
-### Added in V1.93 (unshipped, untested in game as of 2026-10-02)
+### Added in V1.93 (unshipped)
 
 - **Mouse cursor (`Core/Cursor.lua`, Cursor nav page)** replaces the user's Ultimate Mouse Cursor addon.
   Nothing of UMC is reused (it has no licence): the images in `Media/Cursor` are ours, from
@@ -1358,10 +1358,17 @@ adding new IDs.
   `UnitCastingDuration`/`UnitChannelDuration`/`UnitEmpoweredChannelDuration` (SquizzFrames' cast-bar
   route). The ring image is the swipe texture; `SetReverse(true)` is meant to make it FILL -- unconfirmed
   in game, flip it if the rings empty instead.
-- One OnUpdate (`driver`), shown only while enabled: places the root at the cursor, hides it while
-  `IsMouselooking()` or (Only In Combat) out of combat, repaints for rainbow, lays trail particles along
-  the stroke. The trail is a fixed pool of 120 textures with state in parallel arrays -- **no per-frame
-  allocation**, deliberately, after the 2026-10-02 AddonPulse churn readings.
+- One OnUpdate (`driver`), shown only while enabled: places the root at the cursor, hides it (Only In
+  Combat) out of combat, repaints for rainbow, lays trail particles along the stroke. The trail is a
+  fixed pool of 300 textures with state in parallel arrays -- **no per-frame allocation**, deliberately,
+  after the 2026-10-02 AddonPulse churn readings. Trail style (`TRAIL_STYLES`) is applied to the whole
+  pool only when it changes.
+- **While `IsMouselooking()` (right-click camera turn) the rings STAY, frozen in place** -- user request;
+  `cursorHideMouselook` opts back into hiding. The position is deliberately not updated during mouselook
+  rather than trusting `GetCursorPosition` while the cursor is hidden (unverified what it returns then).
+- Confirmed in game 2026-10-02: rings, fills (they fill, `SetReverse(true)` is right) and trail all work.
+  The first build drew nothing because the image paths lacked `.png` -- WoW only finds .blp/.tga
+  without an extension.
 - Settings are `cursor*` on the profile, `cursorEnabled` and `cursorTrail` default OFF (user decision).
   `BH:ApplyCursor()` is called everywhere `ApplyTargetDistance` is (login, profile switch/delete/reset).
 
