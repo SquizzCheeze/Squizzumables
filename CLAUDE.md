@@ -236,7 +236,7 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.93 (2026-10-02)**. V1.94 is OPEN (archived, TOC bumped, changelog + RELEASE_NOTES started).
+Last shipped: **v1.94 (2026-10-03)** -- closed, so the next change starts at step 1 below.
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
@@ -1348,7 +1348,7 @@ unreadable and absent look identical to us, and they do not look identical to th
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
 
-### Added in V1.94 (open, held untagged by user choice; confirmed in game 2026-10-02 except the buff-group styling + preview and the Frogski trail options below)
+### Added in V1.94 (shipped 2026-10-03; all confirmed in game first)
 
 - **Charge counts survive combat.** `C_Spell.GetSpellCharges` is `SecretWhenCooldownsRestricted`, and the
   proxy update read it through `SafeNumber`, so every charge count blanked for the whole fight (user report
