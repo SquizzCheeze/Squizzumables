@@ -3008,19 +3008,25 @@ local PlaceText = ns.PlaceText
 -- no accessor for it, so it has to be found among the regions. Cached per
 -- widget; best-effort by nature, and the position option simply does nothing if
 -- a future build stops exposing it rather than erroring.
+-- The countdown FontString may not exist until a cooldown first runs, so a
+-- miss is retried a second later rather than remembered forever. It used to
+-- be cached as "none" on the first look, and the options preview styles its
+-- icons just before starting their mock cooldown -- which would have left
+-- the countdown's size, colour and placement unapplied for good. The retry is
+-- throttled because the region scan allocates a table.
 local function CooldownCountdownText(cd)
     if not cd then return nil end
-    if cd._sqCountdownFS ~= nil then return cd._sqCountdownFS or nil end
-    local found = false
+    if cd._sqCountdownFS then return cd._sqCountdownFS end
+    local now = GetTime()
+    if cd._sqCountdownRetry and now < cd._sqCountdownRetry then return nil end
     for _, region in ipairs({ cd:GetRegions() }) do
         if region:GetObjectType() == "FontString" then
             cd._sqCountdownFS = region
-            found = true
-            break
+            return region
         end
     end
-    if not found then cd._sqCountdownFS = false end
-    return cd._sqCountdownFS or nil
+    cd._sqCountdownRetry = now + 1
+    return nil
 end
 
 -- Icon shapes. The shape list, its art and the mask handling live in
@@ -3482,15 +3488,56 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
 
     ApplyKeybindText(proxy, proxy.spellID, groupData)
 
-    -- Charge count: visibility and placement.
+    -- Charge count: visibility, size, colour and placement. The colour is ours
+    -- to set even while the number itself is secret (it only adds the Text
+    -- aspect, not a colour one).
     if proxy.Count then
         proxy.Count:SetShown(groupData.showCount ~= false)
         proxy.Count:SetFont("Fonts\\FRIZQT__.TTF", groupData.countSize or 12, "OUTLINE")
+        local cc = groupData.countColor or { 1, 1, 1, 1 }
+        proxy.Count:SetTextColor(cc[1], cc[2], cc[3], cc[4] or 1)
         PlaceText(proxy.Count, proxy, groupData.countPosition or "BOTTOMRIGHT",
             groupData.countOffsetX or -1, groupData.countOffsetY or 1)
     end
 
-    -- Cooldown countdown placement, when the widget exposes its font string.
+    -- Cooldown countdown, when the widget exposes its font string: size and
+    -- colour (V1.94, user request), then placement. Size 0 / no colour leave
+    -- the game's own -- a size that scales with the icon, and white -- so a
+    -- group nobody has touched looks exactly as before.
+    if proxy.Cooldown then
+        local cdText = CooldownCountdownText(proxy.Cooldown)
+        if cdText then
+            -- The game's own font and colour, captured before we first change
+            -- them, so going back to 0 / clearing the colour restores them
+            -- instead of leaving the last custom value stuck.
+            if not cdText._sqDefaultFont then
+                local font, fsize, flags = cdText:GetFont()
+                cdText._sqDefaultFont = { font or "Fonts\\FRIZQT__.TTF", fsize or 14, flags or "OUTLINE" }
+                cdText._sqDefaultColor = { cdText:GetTextColor() }
+            end
+            -- Touched only while a custom value is set, and restored ONCE when it
+            -- is cleared: re-applying the captured default every pass would
+            -- freeze whatever size the game had picked for the icon then.
+            local d = cdText._sqDefaultFont
+            local size = groupData.cooldownTextSize or 0
+            if size > 0 then
+                cdText:SetFont(d[1], size, d[3])
+                cdText._sqSized = true
+            elseif cdText._sqSized then
+                cdText:SetFont(d[1], d[2], d[3])
+                cdText._sqSized = nil
+            end
+            local tc = groupData.cooldownTextColor
+            if tc then
+                cdText:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
+                cdText._sqColored = true
+            elseif cdText._sqColored then
+                local dc = cdText._sqDefaultColor
+                cdText:SetTextColor(dc[1] or 1, dc[2] or 1, dc[3] or 1, dc[4] or 1)
+                cdText._sqColored = nil
+            end
+        end
+    end
     if proxy.Cooldown and groupData.cooldownTextPosition
        and groupData.cooldownTextPosition ~= "CENTER" then
         PlaceText(CooldownCountdownText(proxy.Cooldown), proxy,
@@ -8031,7 +8078,27 @@ local function BuildGroupTextSection(content, indent, yOffset, groupName, groupD
     cdTextCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     ns.Rows.AddTooltip(cdTextCB, "Cooldown Text", "Show the remaining cooldown as a number on the icon.")
     cdTextCB:SetChecked(groupData.showCooldownText ~= false)
+
+    local cdColor = groupData.cooldownTextColor or { 1, 1, 1, 1 }
+    local cdPicker = CreateSQColorPicker(content, "Cooldown Text Colour",
+        cdColor[1], cdColor[2], cdColor[3], cdColor[4] or 1, function(r, g, b, a)
+            groupData.cooldownTextColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    cdPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(cdPicker, "Cooldown Text Colour", "Colour of the cooldown countdown.")
     yOffset = yOffset - 32
+
+    local cdSize = CreateSQSlider(content, "Cooldown Text Size", 220, 0, 32, 1)
+    cdSize:SetValue(groupData.cooldownTextSize or 0)
+    cdSize:SetAfterValueChanged(function(v)
+        groupData.cooldownTextSize = v
+        BH.cdm:ScheduleReconcile()
+    end)
+    cdSize:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(cdSize, "Cooldown Text Size",
+        "Font size of the cooldown countdown. 0 keeps the game's own size, which grows and shrinks with the icon.")
+    yOffset = yOffset - 46
 
     yOffset = AddTextPlacement(content, indent, yOffset, groupData,
         "Cooldown Text", "cooldownTextPosition",
@@ -8049,6 +8116,15 @@ local function BuildGroupTextSection(content, indent, yOffset, groupName, groupD
     ns.Rows.AddTooltip(countCB, "Show Charges",
         "Show the charge or stack number on icons that have one.")
     countCB:SetChecked(groupData.showCount ~= false)
+
+    local cntColor = groupData.countColor or { 1, 1, 1, 1 }
+    local cntPicker = CreateSQColorPicker(content, "Charge Text Colour",
+        cntColor[1], cntColor[2], cntColor[3], cntColor[4] or 1, function(r, g, b, a)
+            groupData.countColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    cntPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(cntPicker, "Charge Text Colour", "Colour of the charge or stack number.")
     yOffset = yOffset - 32
 
     local countSize = CreateSQSlider(content, "Charge Text Size", 220, 6, 24, 1)

@@ -8,3 +8,9 @@ V1.94
   charge counts from addons in combat; they are now shown anyway, the same
   way the game's own Cooldown Manager shows them, and update the moment a
   charge is spent or comes back.
+- Text colours and sizes for every Cooldown Manager group (Essential,
+  Utility, Buffs, Buff Bars and Custom Icons): the cooldown countdown now
+  has its own size and colour, and the charge/stack number its own colour,
+  alongside the keybind colour that was already there. A cooldown text
+  size of 0 keeps the game's own size, which follows the icon. The
+  preview shows them as you change them.

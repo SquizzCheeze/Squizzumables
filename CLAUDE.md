@@ -1354,6 +1354,15 @@ adding new IDs.
   `currentCharges` straight to `SetText` (`AllowedWhenTainted`). A spell first seen mid-combat shows no
   count until a readable pass. `SPELL_UPDATE_CHARGES` now also requests a refresh -- before, a charge
   coming back with no cooldown event left the old count up. UNTESTED in game when written.
+- **Text colour/size for every group** (`BuildGroupTextSection`, shared by all groups): `cooldownTextSize`
+  (0 = the game's own, which scales with the icon), `cooldownTextColor`, `countColor`. The countdown is the
+  game's FontString (`CooldownCountdownText`), so its font and colour are captured before we first change
+  them and touched only while a custom value is set, restored ONCE when cleared -- re-applying the
+  captured size every pass would freeze the game's own scaling.
+- **`CooldownCountdownText` no longer caches a miss forever.** The FontString can appear only once a
+  cooldown first runs; a first look before that was remembered as "none", which would have left the
+  countdown's placement, size and colour unapplied for good -- the options preview styles its icons just
+  before starting their mock cooldown. A miss now retries after 1s (throttled: the scan allocates).
 
 ### Added in V1.93 (shipped 2026-10-02)
 
