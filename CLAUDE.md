@@ -236,7 +236,7 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.93 (2026-10-02)** -- closed, so the next change starts at step 1 below.
+Last shipped: **v1.93 (2026-10-02)**. V1.94 is OPEN (archived, TOC bumped, changelog + RELEASE_NOTES started).
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
@@ -1344,6 +1344,16 @@ unreadable and absent look identical to us, and they do not look identical to th
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
+
+### Added in V1.94 (open)
+
+- **Charge counts survive combat.** `C_Spell.GetSpellCharges` is `SecretWhenCooldownsRestricted`, and the
+  proxy update read it through `SafeNumber`, so every charge count blanked for the whole fight (user report
+  2026-10-02). Blizzard's own viewer gates on `maxCharges > 1`, which only secure code may do on a secret.
+  Ours learns that per live spell ID on a readable pass (`cdmModule.multiCharge`) and in combat hands
+  `currentCharges` straight to `SetText` (`AllowedWhenTainted`). A spell first seen mid-combat shows no
+  count until a readable pass. `SPELL_UPDATE_CHARGES` now also requests a refresh -- before, a charge
+  coming back with no cooldown event left the old count up. UNTESTED in game when written.
 
 ### Added in V1.93 (shipped 2026-10-02)
 

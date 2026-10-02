@@ -1,27 +1,10 @@
 Squizzumables Changelog
 =======================
 
-V1.93
+V1.94
 
-- Mouse cursor rings, on a new Cursor page in the options. A dot at the
-  cursor's tip, a ring around it, your global cooldown filling a ring
-  inside it and your cast or channel filling one outside it - in your
-  class colour, a colour you pick, or a cycling rainbow. Size, opacity,
-  each ring on or off, and Only In Combat. The rings stay put while you
-  hold a mouse button to turn the camera (or tick Hide While Turning The
-  Camera). Off by default; turn it on under Cursor.
-- An optional trail behind the cursor as you move it. Rainbow by default,
-  running through the colours along the trail, or class or custom colour.
-  Choose its style (soft glow, solid dots or rings), how long it lingers
-  (up to 3 seconds), its opacity, how much it shrinks as it fades, how
-  dense it is and how wide. The Sparkle style drifts, falls and twinkles
-  like sparks off a sparkler.
-- Click Burst: a burst of particles flies out from the cursor when you
-  left-click, round the colour wheel with a rainbow colour.
-- The ring can warn you on low health, turning amber and then red as your
-  health drops, over whatever colour it already is. Works in combat. Choose
-  the health it starts at.
-- A different ring colour while you are in combat, if you want one.
-- Shake To Find Cursor: shake the mouse left and right and a big ring
-  shrinks onto the cursor, to find it in a busy fight. On by default once
-  the cursor is turned on.
+- Fixed: charge counts on Essential, Utility and Custom Icons disappeared
+  in combat and could stay missing after you spent a charge. The game hides
+  charge counts from addons in combat; they are now shown anyway, the same
+  way the game's own Cooldown Manager shows them, and update the moment a
+  charge is spent or comes back.

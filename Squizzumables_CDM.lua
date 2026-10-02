@@ -225,6 +225,10 @@ cdmModule.proxyFrames = {}
 -- so every existing one-proxy-per-spell path is untouched; the passes that
 -- must reach every icon go through cdmModule.ForEachProxy.
 cdmModule.copyProxies = {}
+-- { [liveSpellID] = true/false }: whether a spell has more than one charge,
+-- learned out of combat, so its count can still be shown when the charge
+-- info goes secret in combat (see the charge count in the proxy update).
+cdmModule.multiCharge = {}
 -- Pending container mutations (combat-deferred)
 cdmModule.pendingMutations = {}
 -- Active buff cooldown tracking (populated by hooking Blizzard CDM buff frames)
@@ -2932,11 +2936,21 @@ local function UpdateProxyCooldown(proxy)
         -- number rather than an error.
         -- LiveSpellID for the same reason as the cooldown below: charges live
         -- on the overridden spell when a talent replaces one.
-        local spellCharges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(LiveSpellID(proxy.spellID))
+        --
+        -- In combat GetSpellCharges is secret (SecretWhenCooldownsRestricted),
+        -- so the count used to vanish for the whole fight -- and since spending
+        -- a charge usually starts one, it looked like it "never came back"
+        -- (user report 2026-10-02). Whether a spell has charges is learned
+        -- from a readable pass and remembered (cdmModule.multiCharge); the
+        -- count itself goes straight into SetText, which takes a secret
+        -- (AllowedWhenTainted) without it ever being read here. A spell first
+        -- seen in combat shows no count until the first readable pass.
+        local chargeID = LiveSpellID(proxy.spellID)
+        local spellCharges = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(chargeID)
         local maxCharges = spellCharges and BH.Secrets.SafeNumber(spellCharges.maxCharges, nil)
-        local curCharges = spellCharges and BH.Secrets.SafeNumber(spellCharges.currentCharges, nil)
-        if maxCharges and curCharges and maxCharges > 1 then
-            proxy.Count:SetText(curCharges)
+        if maxCharges then cdmModule.multiCharge[chargeID] = maxCharges > 1 end
+        if spellCharges and cdmModule.multiCharge[chargeID] then
+            proxy.Count:SetText(spellCharges.currentCharges)
         else
             proxy.Count:SetText("")
         end
@@ -6397,6 +6411,9 @@ local eventFrame = CreateFrame("Frame")
 cdmModule.eventFrame = eventFrame
 
 eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+-- A charge spent or regained: the count must follow even when no cooldown
+-- event comes with it (it "never came back" after one was used).
+eventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")
 eventFrame:RegisterEvent("SPELLS_CHANGED")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -6642,7 +6659,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         UpdateCombatVisibility()
         return
     end
-    if event == "SPELL_UPDATE_COOLDOWN" then
+    if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then
         -- Next frame, batched with anything else that asks this frame -- this
         -- event commonly fires several times in one frame on a single cast.
         cdmModule.RequestProxyRefresh()

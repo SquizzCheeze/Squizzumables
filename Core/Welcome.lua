@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.94"] = {
+        "Charge counts on your cooldown icons now stay visible in combat and update as soon as you spend or regain a charge.",
+    },
     ["1.93"] = {
         "Mouse cursor rings: a dot, a ring, and your global cooldown and cast filling round the cursor, in class colour, your own colour or a rainbow. Turn it on in the new Cursor page.",
         "An optional trail behind the cursor, rainbow by default: pick its style (Sparkle drifts and twinkles like sparks), how long it lingers, how much it shrinks and how dense it is. Click Burst throws particles out on a left click.",
