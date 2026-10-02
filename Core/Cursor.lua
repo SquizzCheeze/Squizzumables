@@ -31,6 +31,9 @@ local addonName, ns = ...
 ns.BH = ns.BH or {}
 local BH = ns.BH
 
+-- Every name below needs its ".png": WoW only finds .blp/.tga without an
+-- extension. Left off (V1.93's first build) nothing drew but the cooldown's
+-- plain white square sweep.
 local MEDIA = "Interface\\AddOns\\Squizzumables\\Media\\Cursor\\"
 local GCD_SPELL = 61304          -- the global cooldown's own spell
 
@@ -115,7 +118,7 @@ local function RingCooldown(size)
     local cd = CreateFrame("Cooldown", nil, root)
     cd:SetPoint("CENTER")
     cd:SetSize(size, size)
-    cd:SetSwipeTexture(MEDIA .. "ring", 1, 1, 1, 1)
+    cd:SetSwipeTexture(MEDIA .. "ring.png", 1, 1, 1, 1)
     cd:SetDrawSwipe(true)
     cd:SetDrawEdge(false)
     cd:SetDrawBling(false)
@@ -136,17 +139,17 @@ local function Build()
     root:Hide()
 
     ring = root:CreateTexture(nil, "ARTWORK")
-    ring:SetTexture(MEDIA .. "ring")
+    ring:SetTexture(MEDIA .. "ring.png")
     ring:SetPoint("CENTER")
 
     dot = root:CreateTexture(nil, "OVERLAY")
-    dot:SetTexture(MEDIA .. "dot")
+    dot:SetTexture(MEDIA .. "dot.png")
     dot:SetPoint("CENTER")
 
     gcd = RingCooldown(GCD_SIZE)
 
     castTrack = root:CreateTexture(nil, "BACKGROUND")
-    castTrack:SetTexture(MEDIA .. "ring")
+    castTrack:SetTexture(MEDIA .. "ring.png")
     castTrack:SetPoint("CENTER")
     castTrack:Hide()
     cast = RingCooldown(CAST_SIZE)
@@ -158,7 +161,7 @@ local function Build()
     trailFrame:EnableMouse(false)
     for i = 1, TRAIL_POOL do
         local t = trailFrame:CreateTexture(nil, "ARTWORK")
-        t:SetTexture(MEDIA .. "soft")
+        t:SetTexture(MEDIA .. "soft.png")
         t:SetBlendMode("ADD")
         t:Hide()
         pool[i], ages[i], lives[i], bases[i] = t, 0, 0, 0
