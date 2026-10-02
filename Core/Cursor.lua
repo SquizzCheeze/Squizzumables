@@ -50,13 +50,27 @@ local TRAIL_POOL = 300
 -- Trail looks: the image, and how it blends. A glow ADDs, so overlapping
 -- particles brighten into a ribbon; dots and rings draw solid.
 -- Sparkle is the glow image with motion: each piece drifts off, falls and
--- twinkles as it fades.
+-- twinkles as it fades. Star/heart/diamond reuse the CDM icon-shape images
+-- (UI/Shapes.lua, ours); the duck is ours too (make-cursor.ps1) and `faces`
+-- the way the cursor travels. Custom takes any atlas name or file path the
+-- player types (cursorTrailTexture), an idea from Frogski's Cursor Trail --
+-- whose code is not reused (no licence).
+local SHAPES = "Interface\\AddOns\\Squizzumables\\Media\\Shapes\\"
 local TRAIL_STYLES = {
-    glow    = { file = "soft.png", blend = "ADD" },
-    sparkle = { file = "soft.png", blend = "ADD", moves = true },
-    dot     = { file = "dot.png",  blend = "BLEND" },
-    ring    = { file = "ring.png", blend = "BLEND" },
+    glow    = { file = MEDIA .. "soft.png", blend = "ADD" },
+    sparkle = { file = MEDIA .. "soft.png", blend = "ADD", moves = true },
+    dot     = { file = MEDIA .. "dot.png",  blend = "BLEND" },
+    ring    = { file = MEDIA .. "ring.png", blend = "BLEND" },
+    star    = { file = SHAPES .. "star.png",    blend = "BLEND" },
+    heart   = { file = SHAPES .. "heart.png",   blend = "BLEND" },
+    diamond = { file = SHAPES .. "diamond.png", blend = "BLEND" },
+    duck    = { file = MEDIA .. "duck.png", blend = "BLEND", faces = true },
+    custom  = { custom = true, blend = "ADD" },
 }
+
+-- The trail's colour palette (Trail Colour = Palette): up to this many
+-- colours, flowing over time or running head to tail along the trail.
+local PALETTE_MAX = 6
 local TRAIL_MAX_PER_FRAME = 20   -- caps the fill-in on a very fast flick
 local TRAIL_JUMP = 400           -- a move longer than this is a jump, not a stroke
 
@@ -88,6 +102,8 @@ local pool, ages, lives, bases = {}, {}, {}, {}
 local pxs, pys, vxs, vys, twinkles = {}, {}, {}, {}, {}
 local poolNext, active = 1, 0
 local trailStyle                 -- the TRAIL_STYLES key the pool is drawn in
+local trailLook                  -- style|texture|blend the pool was last drawn with
+local facingLeft = false         -- the duck's facing, from the last stroke
 local lastX, lastY
 local casting = false
 -- Set from PLAYER_REGEN_*, not InCombatLockdown(): that still reads false
@@ -129,10 +145,41 @@ local function RainbowHue()
     return GetTime() * 0.25 * ((s and s.cursorRainbowSpeed or 100) / 100)
 end
 
--- `mode` "custom" | "class" | "rainbow"; `c` the custom colour table.
+-- The trail palette's colour at `f`. With `wrap` (flowing over time) f loops
+-- 0..1 through every colour and back to the first; without (head to tail)
+-- f=0 is the first colour and f=1 the last. Plain returns, no tables built.
+local function PaletteRGB(f, wrap)
+    local s = BH.settings
+    local pal = s.cursorTrailPalette or {}
+    local n = math.max(2, math.min(PALETTE_MAX, s.cursorTrailPaletteCount or 3))
+    local x
+    if wrap then x = (f % 1) * n else x = math.max(0, math.min(1, f)) * (n - 1) end
+    local i = math.floor(x)
+    local frac = x - i
+    if not wrap and i >= n - 1 then i, frac = n - 2, 1 end
+    local j = i + 2
+    if j > n then j = 1 end
+    local a, b = pal[i + 1] or {}, pal[j] or {}
+    local ar, ag, ab = a.r or 1, a.g or 1, a.b or 1
+    return ar + ((b.r or 1) - ar) * frac, ag + ((b.g or 1) - ag) * frac, ab + ((b.b or 1) - ab) * frac
+end
+
+-- Palette colours run head to tail along the trail (recoloured by age as each
+-- piece fades) rather than flowing over time.
+local function PaletteAlongTrail()
+    local s = BH.settings
+    return s.cursorTrailColorMode == "palette" and s.cursorTrailPaletteFlow == "trail"
+end
+
+-- `mode` "custom" | "class" | "rainbow" | "palette" (trail only); `c` the
+-- custom colour table.
 local function ModeRGB(mode, c, hueOffset)
     if mode == "class" then return ClassRGB() end
     if mode == "rainbow" then return Hue(RainbowHue() + (hueOffset or 0)) end
+    if mode == "palette" then
+        if PaletteAlongTrail() then return PaletteRGB(0, false) end
+        return PaletteRGB(RainbowHue() + (hueOffset or 0), true)
+    end
     c = c or {}
     return c.r or 1, c.g or 1, c.b or 1
 end
@@ -250,9 +297,16 @@ local function Spawn(x, y, life, vx, vy, twinkle, hueOffset)
     -- Each particle keeps the colour it was born with, so a rainbow runs
     -- along the trail instead of the whole trail changing at once.
     t:SetVertexColor(ModeRGB(s.cursorTrailColorMode, s.cursorTrailColor, hueOffset))
+    -- A shape that faces the way it travels (the duck) is mirrored when the
+    -- cursor last moved left. Only file textures get here; an atlas keeps the
+    -- coords SetAtlas gave it.
+    local style = TRAIL_STYLES[trailStyle]
+    if style and style.faces then
+        if facingLeft then t:SetTexCoord(1, 0, 0, 1) else t:SetTexCoord(0, 1, 0, 1) end
+    end
     t:ClearAllPoints()
     t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
-    t:SetSize(base, base)
+    t:SetSize(base, base * (s.cursorTrailHeight or 100) / 100)
     t:SetAlpha((s.cursorOpacity or 100) / 100 * (s.cursorTrailOpacity or 100) / 100)
     t:Show()
 end
@@ -261,6 +315,8 @@ local function FadeTrail(elapsed)
     local s = BH.settings
     local opacity = (s.cursorOpacity or 100) / 100 * (s.cursorTrailOpacity or 100) / 100
     local shrink = (s.cursorTrailShrink or 60) / 100
+    local hRatio = (s.cursorTrailHeight or 100) / 100
+    local alongTrail = PaletteAlongTrail()
     local drag = math.max(0, 1 - DRAG * elapsed)
     for i = 1, TRAIL_POOL do
         local life = lives[i]
@@ -283,7 +339,11 @@ local function FadeTrail(elapsed)
                     t:SetPoint("CENTER", UIParent, "BOTTOMLEFT", pxs[i], pys[i])
                 end
                 local size = bases[i] * (1 - shrink * p)
-                t:SetSize(size, size)
+                t:SetSize(size, size * hRatio)
+                -- Palette along the trail: a piece's age is how far back down
+                -- the trail it is, so the head wears the first colour and the
+                -- tail the last.
+                if alongTrail then t:SetVertexColor(PaletteRGB(p, false)) end
                 local a = opacity * (1 - p)
                 if twinkles[i] then a = a * (0.55 + 0.45 * math.sin(age * 25 + i)) end
                 t:SetAlpha(a)
@@ -317,6 +377,11 @@ local function StrokeTrail(x, y)
     local n = math.min(math.floor(dist / spacing), TRAIL_MAX_PER_FRAME)
     local life = s.cursorTrailLength or 0.5
     local moves = TRAIL_STYLES[trailStyle] and TRAIL_STYLES[trailStyle].moves
+    -- Facing follows horizontal travel; a purely vertical move keeps it.
+    if dx < -0.5 then facingLeft = true elseif dx > 0.5 then facingLeft = false end
+    -- Laid down offset from the cursor (Trail Offset X/Y); the stroke itself
+    -- is still measured from the cursor.
+    local ox, oy = s.cursorTrailOffsetX or 0, s.cursorTrailOffsetY or 0
     for i = 1, n do
         local vx, vy = 0, 0
         if moves then
@@ -325,7 +390,7 @@ local function StrokeTrail(x, y)
             local speed = SPARKLE_SPEED * (0.5 + math.random())
             vx, vy = math.cos(angle) * speed, math.sin(angle) * speed + SPARKLE_SPEED * 0.6
         end
-        Spawn(lastX + dx * i / n, lastY + dy * i / n, life, vx, vy, moves and true or false)
+        Spawn(lastX + dx * i / n + ox, lastY + dy * i / n + oy, life, vx, vy, moves and true or false)
     end
     lastX, lastY = x, y
 end
@@ -560,14 +625,32 @@ function BH:ApplyCursor()
     PaintRings(ModeRGB(RingColor()))
     UpdateHealth()
     if not (s.cursorTrail or s.cursorClickBurst) then ClearTrail() end
+    -- The pool is redrawn only when its look changes: style, the custom
+    -- texture's name, or the blending.
     local styleKey = TRAIL_STYLES[s.cursorTrailStyle] and s.cursorTrailStyle or "glow"
-    if styleKey ~= trailStyle then
-        local style = TRAIL_STYLES[styleKey]
+    local style = TRAIL_STYLES[styleKey]
+    local blend = (s.cursorTrailBlend == "glow" and "ADD")
+        or (s.cursorTrailBlend == "solid" and "BLEND") or style.blend
+    local custom = style.custom and strtrim(s.cursorTrailTexture or "") or ""
+    local look = styleKey .. "|" .. custom .. "|" .. blend
+    if look ~= trailLook then
+        -- A custom name is tried as an atlas first, then as a file path;
+        -- empty falls back to the soft glow so the trail never vanishes.
+        local atlas = custom ~= "" and C_Texture and C_Texture.GetAtlasInfo
+            and C_Texture.GetAtlasInfo(custom) and custom or nil
+        local file = (not style.custom and style.file)
+            or (custom ~= "" and custom) or (MEDIA .. "soft.png")
         for i = 1, TRAIL_POOL do
-            pool[i]:SetTexture(MEDIA .. style.file)
-            pool[i]:SetBlendMode(style.blend)
+            local t = pool[i]
+            if atlas then
+                t:SetAtlas(atlas)
+            else
+                t:SetTexture(file)
+                t:SetTexCoord(0, 1, 0, 1)
+            end
+            t:SetBlendMode(blend)
         end
-        trailStyle = styleKey
+        trailStyle, trailLook = styleKey, look
     end
 
     UpdateGCD()
@@ -633,11 +716,32 @@ local COLOR_MODES = {
     { text = "Class colour",  value = "class" },
     { text = "Rainbow",       value = "rainbow" },
 }
+-- The trail also offers Palette (several colours of your own).
+local TRAIL_COLOR_MODES = {
+    { text = "Custom colour", value = "custom" },
+    { text = "Class colour",  value = "class" },
+    { text = "Rainbow",       value = "rainbow" },
+    { text = "Palette",       value = "palette" },
+}
+local PALETTE_FLOWS = {
+    { text = "Flows over time",           value = "time" },
+    { text = "Along the trail, head to tail", value = "trail" },
+}
 local TRAIL_STYLE_ITEMS = {
     { text = "Soft glow",   value = "glow" },
     { text = "Sparkle",     value = "sparkle" },
     { text = "Solid dots",  value = "dot" },
     { text = "Rings",       value = "ring" },
+    { text = "Stars",       value = "star" },
+    { text = "Hearts",      value = "heart" },
+    { text = "Diamonds",    value = "diamond" },
+    { text = "Ducks",       value = "duck" },
+    { text = "Your own texture", value = "custom" },
+}
+local TRAIL_BLENDS = {
+    { text = "The style's own", value = "style" },
+    { text = "Glow (bright, adds up)", value = "glow" },
+    { text = "Solid",           value = "solid" },
 }
 local STRATAS = {
     { text = "Medium",  value = "MEDIUM" },
@@ -652,6 +756,7 @@ function BH:BuildCursorTab(parent)
         { key = "cursor", label = "Cursor" },
         { key = "rings",  label = "Rings" },
         { key = "trail",  label = "Trail" },
+        { key = "trailcolour", label = "Trail Colour" },
     })
 
     local function Set(key, v)
@@ -763,13 +868,22 @@ function BH:BuildCursorTab(parent)
     y = y - Rows.Add(content, y, Check("Click Burst", "cursorClickBurst",
         "A burst of particles flies out from the cursor when you left-click. It uses the look set below; "
             .. "with a rainbow colour it spreads round the colour wheel. Works with the trail off."))
-    y = y - Rows.Add(content, y, Dropdown("Trail Colour", "cursorTrailColorMode", COLOR_MODES, "rainbow",
-        "Rainbow runs through the colour wheel along the trail.", ParticlesOff))
-    y = y - Rows.Add(content, y, Color("Custom Trail Colour", "cursorTrailColor", "Used when Trail Colour is Custom colour.",
-        function() return ParticlesOff() or BH.settings.cursorTrailColorMode ~= "custom" end))
     y = y - Rows.Add(content, y, Dropdown("Trail Style", "cursorTrailStyle", TRAIL_STYLE_ITEMS, "glow",
-        "Soft glow blends into a bright ribbon; sparkle drifts, falls and twinkles like sparks; solid dots "
-            .. "and rings draw each piece of the trail on its own.", ParticlesOff))
+        "Soft glow blends into a bright ribbon; sparkle drifts, falls and twinkles like sparks; dots, rings, "
+            .. "stars, hearts and diamonds draw each piece on its own; ducks face the way you move the mouse. "
+            .. "Your own texture uses the name typed below.", ParticlesOff))
+    y = y - Rows.Add(content, y, {
+        type = "editbox", label = "Your Own Texture (atlas name or file path)", width = 300,
+        tooltip = "Any of the game's atlas names, for example \"titleprestige-starglow\" or "
+            .. "\"bags-glow-flash\", or a texture file path. Press Enter to apply. Used when Trail Style is "
+            .. "Your own texture; an empty box falls back to the soft glow.",
+        get = function() return BH.settings.cursorTrailTexture or "" end,
+        set = function(v) Set("cursorTrailTexture", strtrim(v or "")) end,
+        disabled = function() return ParticlesOff() or BH.settings.cursorTrailStyle ~= "custom" end,
+    })
+    y = y - Rows.Add(content, y, Dropdown("Blending", "cursorTrailBlend", TRAIL_BLENDS, "style",
+        "Glow adds the pieces' light together, so overlaps go bright; solid draws them as they are. "
+            .. "By default each style uses whichever suits it.", ParticlesOff))
     y = y - Rows.Add(content, y, Slider("Linger Time", "cursorTrailLength", 0.1, 3, 0.1, 0.5,
         "How long, in seconds, the trail lingers before it has faded away.", TrailOff))
     y = y - Rows.Add(content, y, Slider("Trail Opacity", "cursorTrailOpacity", 10, 100, 5, 100,
@@ -780,6 +894,47 @@ function BH:BuildCursorTab(parent)
     y = y - Rows.Add(content, y, Slider("Density", "cursorTrailDensity", 25, 400, 25, 100,
         "How close together the pieces are. Low makes a dotted line, high a smooth ribbon.", TrailOff))
     y = y - Rows.Add(content, y, Slider("Trail Size", "cursorTrailSize", 25, 300, 5, 100,
-        "Width of the trail, as a percentage.", ParticlesOff))
+        "Width of each piece, as a percentage.", ParticlesOff))
+    y = y - Rows.Add(content, y, Slider("Trail Height", "cursorTrailHeight", 25, 400, 5, 100,
+        "Height of each piece as a percentage of its width. 100% keeps it in proportion; other values "
+            .. "stretch or squash it.", ParticlesOff))
+    y = y - Rows.Add(content, y, Slider("Trail Offset X", "cursorTrailOffsetX", -60, 60, 1, 0,
+        "Moves the trail left or right of the cursor.", TrailOff))
+    y = y - Rows.Add(content, y, Slider("Trail Offset Y", "cursorTrailOffsetY", -60, 60, 1, 0,
+        "Moves the trail above or below the cursor.", TrailOff))
+    content:SetHeight(math.abs(y) + 20)
+
+    -- Trail colour
+    content = pages.trailcolour
+    Rows.currentSection = content.section
+    y = -14
+    y = y - Rows.Add(content, y, Dropdown("Trail Colour", "cursorTrailColorMode", TRAIL_COLOR_MODES, "rainbow",
+        "Rainbow runs through the colour wheel along the trail. Palette uses colours you choose below.",
+        ParticlesOff))
+    y = y - Rows.Add(content, y, Color("Custom Trail Colour", "cursorTrailColor", "Used when Trail Colour is Custom colour.",
+        function() return ParticlesOff() or BH.settings.cursorTrailColorMode ~= "custom" end))
+    local function PaletteOff() return ParticlesOff() or BH.settings.cursorTrailColorMode ~= "palette" end
+    y = y - Rows.Add(content, y, Dropdown("Palette Flow", "cursorTrailPaletteFlow", PALETTE_FLOWS, "time",
+        "Flows over time: the trail cycles through your colours, at the Rainbow Speed on the Cursor tab. "
+            .. "Along the trail: the head of the trail is your first colour and the tail your last.",
+        PaletteOff))
+    y = y - Rows.Add(content, y, Slider("Palette Colours Used", "cursorTrailPaletteCount", 2, PALETTE_MAX, 1, 3,
+        "How many of the colours below the palette uses, from the first.", PaletteOff))
+    for i = 1, PALETTE_MAX do
+        y = y - Rows.Add(content, y, {
+            type = "color", label = "Palette Colour " .. i,
+            tooltip = "Colour " .. i .. " of the trail palette.",
+            get = function()
+                local c = (BH.settings.cursorTrailPalette or {})[i] or {}
+                return c.r or 1, c.g or 1, c.b or 1
+            end,
+            set = function(r, g, b)
+                local pal = BH.settings.cursorTrailPalette or {}
+                pal[i] = { r = r, g = g, b = b }
+                Set("cursorTrailPalette", pal)
+            end,
+            disabled = function() return PaletteOff() or i > (BH.settings.cursorTrailPaletteCount or 3) end,
+        })
+    end
     content:SetHeight(math.abs(y) + 20)
 end

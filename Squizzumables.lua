@@ -167,6 +167,21 @@ BH.defaultSettings = {
     cursorTrailOpacity = 100,           -- percent, on top of cursorOpacity
     cursorTrailShrink = 60,             -- percent a particle shrinks by the end
     cursorTrailDensity = 100,           -- percent; higher packs particles closer
+    cursorTrailHeight = 100,            -- percent of the width; stretch or squash
+    cursorTrailOffsetX = 0,             -- trail laid down offset from the cursor
+    cursorTrailOffsetY = 0,
+    cursorTrailBlend = "style",         -- "style" | "glow" | "solid"
+    cursorTrailTexture = "",            -- atlas name or file path, Trail Style "custom"
+    cursorTrailPaletteFlow = "time",    -- "time" | "trail" (head to tail)
+    cursorTrailPaletteCount = 3,        -- how many palette colours are used
+    cursorTrailPalette = {
+        { r = 1.00, g = 0.20, b = 0.20 },
+        { r = 1.00, g = 0.75, b = 0.10 },
+        { r = 0.20, g = 0.85, b = 1.00 },
+        { r = 0.25, g = 0.90, b = 0.30 },
+        { r = 0.65, g = 0.35, b = 1.00 },
+        { r = 1.00, g = 0.45, b = 0.80 },
+    },
     cursorRainbowSpeed = 100,           -- percent
 
     deathTallyEnabled = true,

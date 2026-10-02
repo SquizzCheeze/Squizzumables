@@ -24,6 +24,7 @@ local RELEASE_NOTES = {
     ["1.94"] = {
         "Charge counts on your cooldown icons now stay visible in combat and update as soon as you spend or regain a charge.",
         "Every CDM group's Text settings now let you colour and size the cooldown countdown and colour the charge number.",
+        "Cursor trail: stars, hearts, diamonds, ducks or your own texture, a colour palette that flows or runs head to tail, plus stretch, offset and glow options.",
     },
     ["1.93"] = {
         "Mouse cursor rings: a dot, a ring, and your global cooldown and cast filling round the cursor, in class colour, your own colour or a rainbow. Turn it on in the new Cursor page.",

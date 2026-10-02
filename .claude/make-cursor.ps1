@@ -7,6 +7,8 @@
 #   dot.png    a filled circle with an anti-aliased edge: the centre dot.
 #   soft.png   a round radial falloff: one particle of the trail. Soft rather
 #              than hard-edged so overlapping particles blend into a ribbon.
+#   duck.png   a rubber-duck silhouette facing RIGHT, eye cut out: the Duck
+#              trail style. Core/Cursor.lua mirrors it when the cursor moves left.
 #
 # Our own images, deliberately: Ultimate Mouse Cursor (what this replaces) ships
 # no licence, so none of its art is reused.
@@ -59,3 +61,40 @@ Write-Radial 'dot.png'  { param($d) if ($d -le $Outer) { 1 } else { 0 } }
 # integer first argument PowerShell picks Math.Max(int, int) and rounds the
 # falloff to a solid disc.
 Write-Radial 'soft.png' { param($d) $t = [Math]::Max(0.0, 1.0 - $d / $Outer); $t * $t }
+
+# The duck: plain GDI+ shapes, anti-aliased, unioned into one white fill.
+function Write-Duck {
+    $bmp = New-Object System.Drawing.Bitmap $Size, $Size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+
+    $g.FillEllipse($white, 14, 58, 96, 50)          # body
+    $g.FillEllipse($white, 66, 40, 34, 42)          # neck, joining head to body
+    $g.FillEllipse($white, 66, 16, 44, 44)          # head
+    # tail, a point rising off the back of the body
+    $tail = [System.Drawing.PointF[]]@(
+        (New-Object System.Drawing.PointF 4, 50),
+        (New-Object System.Drawing.PointF 34, 66),
+        (New-Object System.Drawing.PointF 20, 86))
+    $g.FillPolygon($white, $tail)
+    # beak
+    $beak = [System.Drawing.PointF[]]@(
+        (New-Object System.Drawing.PointF 104, 32),
+        (New-Object System.Drawing.PointF 126, 40),
+        (New-Object System.Drawing.PointF 104, 48))
+    $g.FillPolygon($white, $beak)
+
+    # The eye, punched out so the silhouette still reads as a duck when solid.
+    $g.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+    $clear = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(0, 0, 0, 0))
+    $g.FillEllipse($clear, 89, 28, 8, 8)
+
+    $g.Dispose()
+    $path = Join-Path $OutDir 'duck.png'
+    $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bmp.Dispose()
+    Write-Host "wrote $path"
+}
+Write-Duck

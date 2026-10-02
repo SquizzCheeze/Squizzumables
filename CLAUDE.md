@@ -1348,7 +1348,7 @@ unreadable and absent look identical to us, and they do not look identical to th
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
 
-### Added in V1.94 (open, held untagged by user choice; confirmed in game 2026-10-02 except the buff-group styling + preview below)
+### Added in V1.94 (open, held untagged by user choice; confirmed in game 2026-10-02 except the buff-group styling + preview and the Frogski trail options below)
 
 - **Charge counts survive combat.** `C_Spell.GetSpellCharges` is `SecretWhenCooldownsRestricted`, and the
   proxy update read it through `SafeNumber`, so every charge count blanked for the whole fight (user report
@@ -1362,6 +1362,18 @@ adding new IDs.
   game's FontString (`CooldownCountdownText`), so its font and colour are captured before we first change
   them and touched only while a custom value is set, restored ONCE when cleared -- re-applying the
   captured size every pass would freeze the game's own scaling.
+- **Cursor trail options from Frogski's Cursor Trail** (a user request; that addon has no licence, so the
+  IDEAS were reimplemented, no code reused). Styles in `TRAIL_STYLES` carry a full `file` path: star /
+  heart / diamond reuse `Media/Shapes` (ours), `duck.png` is ours (`make-cursor.ps1`, rubber-duck
+  silhouette facing right, eye punched out) with `faces = true` -- mirrored by `SetTexCoord(1,0,0,1)` when
+  the last stroke went left (`facingLeft`). `custom` takes `cursorTrailTexture`: tried as an atlas
+  (`C_Texture.GetAtlasInfo`) then as a file path, empty = soft glow. The pool is restyled only when
+  `trailLook` (style|texture|blend) changes. Palette (`cursorTrailPalette`, up to `PALETTE_MAX` 6,
+  `cursorTrailPaletteCount`): "time" flows at Rainbow Speed; "trail" recolours each piece by AGE in
+  `FadeTrail` (age = how far back down the trail). Also `cursorTrailHeight` (% of width),
+  `cursorTrailOffsetX/Y` (trail only, not the click burst), `cursorTrailBlend` (style / glow / solid).
+  Skipped from Frogski: shrink-with-distance (on a moving trail it IS shrink-with-age), max dots, profile
+  automation. Squizzumables' `Media/duckrun_*.png` is a photo flipbook (Kelerts), not usable as a shape.
 - **Buff groups are styled by a DIFFERENT function** (`Squizzumables_CDMAuras.lua` `Style`, keyed by
   `StyleSignature`), not `ApplyProxyVisuals`. The new text settings first reached cooldown proxies only;
   `Style` now reads `cooldownTextSize`/`cooldownTextColor`/`countColor` too, and they joined the
