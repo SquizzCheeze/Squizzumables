@@ -236,7 +236,7 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.92 (2026-09-29)** -- closed, so the next change starts at step 1 below.
+Last shipped: **v1.93 (2026-10-02)** -- closed, so the next change starts at step 1 below.
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
@@ -1345,7 +1345,7 @@ unreadable and absent look identical to us, and they do not look identical to th
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
 
-### Added in V1.93 (unshipped)
+### Added in V1.93 (shipped 2026-10-02)
 
 - **Mouse cursor (`Core/Cursor.lua`, Cursor nav page)** replaces the user's Ultimate Mouse Cursor addon.
   Nothing of UMC is reused (it has no licence): the images in `Media/Cursor` are ours, from
