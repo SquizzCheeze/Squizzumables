@@ -136,6 +136,27 @@ BH.defaultSettings = {
     targetDistanceFriendly = false,     -- probes are harmful, so hostile only
     targetDistanceColor = { r = 1, g = 1, b = 1 },
 
+    -- Mouse cursor rings and trail (Core/Cursor.lua). Off by default, like the
+    -- distance readout: it changes how the mouse looks, so it is asked for.
+    cursorEnabled = false,
+    cursorSize = 100,                   -- percent
+    cursorOpacity = 100,                -- percent
+    cursorStrata = "HIGH",
+    cursorCombatOnly = false,
+    cursorColorMode = "custom",         -- "custom" | "class" | "rainbow"
+    cursorColor = { r = 1, g = 1, b = 1 },
+    cursorDot = true,
+    cursorDotSize = 8,
+    cursorRing = true,
+    cursorGCD = true,
+    cursorCast = true,
+    cursorTrail = false,
+    cursorTrailColorMode = "rainbow",   -- "custom" | "class" | "rainbow"
+    cursorTrailColor = { r = 1, g = 1, b = 1 },
+    cursorTrailLength = 0.5,            -- seconds each particle lives
+    cursorTrailSize = 100,              -- percent
+    cursorRainbowSpeed = 100,           -- percent
+
     deathTallyEnabled = true,
     deathTallyLocked = false,
     deathTallyScale = 1.0,
@@ -734,6 +755,7 @@ function BH:SwitchToProfile(profileName)
     -- After the BH references above, since the rebuild reads cdmEnabled.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
+    if self.ApplyCursor then self:ApplyCursor() end
 
     return true
 end
@@ -825,6 +847,7 @@ function BH:OnSpecChanged()
     -- cached view is stale either way.
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
+    if self.ApplyCursor then self:ApplyCursor() end
     -- Outside the panel check: the new profile has its own alerts, so the
     -- client-side aura sound registrations have to follow it whether or not the
     -- options panel happens to be open. Leaving them would keep playing the
@@ -1740,6 +1763,7 @@ function BH:CreateOptionsPanel()
     local calloutsTabBtn = CreateTab("Callouts")
     local kelTabBtn = CreateTab("Kelerts")
     local cdmSoundsTabBtn = CreateTab("CDM Sounds")
+    local cursorTabBtn = CreateTab("Cursor")
     -- No Nameplates tab: the purge-glow module is disabled and unloaded, so it
     -- has no page to build. See the Nameplate purge glow note in CLAUDE.md for
     -- what to restore here when the feature comes back.
@@ -1808,6 +1832,12 @@ function BH:CreateOptionsPanel()
     cdmSoundsTab:Hide()
     self.cdmSoundsTab = cdmSoundsTab
 
+    -- Mouse cursor tab content (Core/Cursor.lua builds it)
+    local cursorTab = CreateFrame("Frame", nil, contentArea)
+    cursorTab:SetAllPoints()
+    cursorTab:Hide()
+    self.cursorTab = cursorTab
+
     -- Class Buffs tab content
     local classBuffsTab = CreateFrame("Frame", nil, contentArea)
     classBuffsTab:SetAllPoints()
@@ -1827,6 +1857,7 @@ function BH:CreateOptionsPanel()
         kelTabBtn:SetActive(active == "kel")
         cdmCustomTabBtn:SetActive(active == "cdmcustom")
         cdmSoundsTabBtn:SetActive(active == "cdmsounds")
+        cursorTabBtn:SetActive(active == "cursor")
         if active == "settings" then settingsTab:Show() else settingsTab:Hide() end
         if active == "items" then itemsTab:Show() else itemsTab:Hide() end
         if active == "raidtools" then raidToolsTab:Show() else raidToolsTab:Hide() end
@@ -1838,6 +1869,7 @@ function BH:CreateOptionsPanel()
         if active == "callouts" then calloutsTab:Show() else calloutsTab:Hide() end
         if active == "kel" then kelTab:Show() else kelTab:Hide() end
         if active == "cdmsounds" then cdmSoundsTab:Show() else cdmSoundsTab:Hide() end
+        if active == "cursor" then cursorTab:Show() else cursorTab:Hide() end
     end
     settingsTabBtn:SetScript("OnClick", function() SwitchTab("settings") end)
     itemsTabBtn:SetScript("OnClick", function() SwitchTab("items") end)
@@ -1850,6 +1882,7 @@ function BH:CreateOptionsPanel()
     calloutsTabBtn:SetScript("OnClick", function() SwitchTab("callouts") end)
     kelTabBtn:SetScript("OnClick", function() SwitchTab("kel") end)
     cdmSoundsTabBtn:SetScript("OnClick", function() SwitchTab("cdmsounds") end)
+    cursorTabBtn:SetScript("OnClick", function() SwitchTab("cursor") end)
     self.switchTab = SwitchTab
     SwitchTab("settings")
 
@@ -1867,6 +1900,7 @@ function BH:CreateOptionsPanel()
         { key = "callouts",   label = "Callouts",    frame = calloutsTab,      build = "BuildCalloutsTab" },
         { key = "kel",        label = "Kelerts",     frame = kelTab,           build = "BuildJustForKelTab" },
         { key = "cdmsounds",  label = "CDM Sounds",  frame = cdmSoundsTab,     build = "BuildCDMSoundsTab" },
+        { key = "cursor",     label = "Cursor",      frame = cursorTab,        build = "BuildCursorTab" },
     }
     for _, page in ipairs(pages) do
         local builder = self[page.build]
@@ -1990,6 +2024,7 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             -- Default's Cooldown Manager layout, not the deleted profile's.
             if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
             if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
+            if BH.ApplyCursor then BH:ApplyCursor() end
             BH:RefreshSettingsTab()
             print("Squizzumables: Deleted profile '" .. data .. "', switched to Default.")
         end
@@ -2251,6 +2286,7 @@ function BH:BuildSettingsTab(parent)
         -- above, since it lives on the profile as of 1.70. Rebuild so it shows.
         if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
         if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
+        if BH.ApplyCursor then BH:ApplyCursor() end
         BH:RefreshSettingsTab()
         BH:RefreshItemList()
         BH:RefreshRaidToolsTab()

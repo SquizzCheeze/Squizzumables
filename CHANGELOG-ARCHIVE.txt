@@ -8,6 +8,29 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.92
+
+- Placeholders in your own messages. The feast message and callouts can
+  now include {name}, which becomes the character sending it, and {zone},
+  the dungeon or zone you are in - write a message once and it reads right
+  on every character. The feast message also takes {feast} (the feast's
+  name), which already worked and is now listed under the message box.
+  Raid-marker codes such as {skull} still work as before.
+
+- A spell can now show in two groups at once. In the CDM settings' Custom
+  Icons list, each spell has an "Also in" choice under its group: pick a
+  second group and the spell appears there too, with the same cooldown,
+  proc glow and range/usable tint as the original. Useful for keeping a big
+  cooldown in Essential and also next to your other defensives. The copy
+  shows the cooldown only: "Show While Active" stays on the original icon.
+  Tracked buffs can't be copied, as they are Blizzard's own icons.
+
+- The bag reminder also warns when you are running low, not only when you
+  have run out: "LOW ON FLASK (1 LEFT)". By default it warns on your last
+  one; set how many under Text Reminders > Bags ("Warn when running low",
+  0 turns it off). Several of one kind, such as two flask types, count
+  together. Having none is still shown first.
+
 V1.91
 
 - An alignment grid while frames are unlocked, in your class colour, with the

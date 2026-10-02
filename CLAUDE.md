@@ -324,7 +324,7 @@ initialized `BH`. `perl .claude/check-toc.pl` verifies every listed path exists 
     + sound on an aura), and the M+ Death Tally.
 
 The `.toc` also carries `UI/SubTabs.lua` (after Widgets, before Rows), `Core/TargetDistance.lua`
-(after Welcome), `UI/CDMPreview.lua` (straight after `Squizzumables_CDMAuras.lua` — see "CDM options
+(after Welcome), `Core/Cursor.lua` (after TargetDistance; the mouse cursor rings, V1.93), `UI/CDMPreview.lua` (straight after `Squizzumables_CDMAuras.lua` — see "CDM options
 preview" below) and `Squizzumables_StackDiag.lua` (last, and temporary — see above), none of which
 the numbered list above describes.
 
@@ -1344,6 +1344,26 @@ unreadable and absent look identical to us, and they do not look identical to th
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
+
+### Added in V1.93 (unshipped, untested in game as of 2026-10-02)
+
+- **Mouse cursor (`Core/Cursor.lua`, Cursor nav page)** replaces the user's Ultimate Mouse Cursor addon.
+  Nothing of UMC is reused (it has no licence): the images in `Media/Cursor` are ours, from
+  `.claude/make-cursor.ps1` (ring, dot, soft trail particle; white, tinted in game). In that script,
+  write `0.0`/`1.0`, never `0`/`1`, in any `Math.Min`/`Max`: an integer literal picks the int overload and
+  silently rounds every alpha to 0 or 1 -- it did, twice, and the ring only looked right because it is
+  solid.
+- **GCD and cast rings are Cooldown frames fed DURATION OBJECTS**, never times: GCD from
+  `C_Spell.GetSpellCooldownDuration(61304)` (the CDM proxies' route), cast from
+  `UnitCastingDuration`/`UnitChannelDuration`/`UnitEmpoweredChannelDuration` (SquizzFrames' cast-bar
+  route). The ring image is the swipe texture; `SetReverse(true)` is meant to make it FILL -- unconfirmed
+  in game, flip it if the rings empty instead.
+- One OnUpdate (`driver`), shown only while enabled: places the root at the cursor, hides it while
+  `IsMouselooking()` or (Only In Combat) out of combat, repaints for rainbow, lays trail particles along
+  the stroke. The trail is a fixed pool of 120 textures with state in parallel arrays -- **no per-frame
+  allocation**, deliberately, after the 2026-10-02 AddonPulse churn readings.
+- Settings are `cursor*` on the profile, `cursorEnabled` and `cursorTrail` default OFF (user decision).
+  `BH:ApplyCursor()` is called everywhere `ApplyTargetDistance` is (login, profile switch/delete/reset).
 
 ### Added in V1.92 (shipped 2026-09-29)
 

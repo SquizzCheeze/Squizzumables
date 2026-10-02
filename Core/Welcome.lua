@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.93"] = {
+        "Mouse cursor rings: a dot, a ring, and your global cooldown and cast filling round the cursor, in class colour, your own colour or a rainbow. Turn it on in the new Cursor page.",
+        "An optional fading trail behind the cursor, rainbow by default.",
+    },
     ["1.92"] = {
         "Your feast message and callouts can include {name} (the character sending it) and {zone} (where you are), so one message reads right on every character. The feast message also takes {feast}.",
         "A spell can show in two groups at once: pick \"Also in\" under its group in the CDM's Custom Icons list. The copy shows the cooldown, glow and tints; Show While Active stays on the original.",
