@@ -1348,7 +1348,7 @@ unreadable and absent look identical to us, and they do not look identical to th
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
 
-### Added in V1.94 (open)
+### Added in V1.94 (open; everything below confirmed in game 2026-10-02, held untagged by user choice)
 
 - **Charge counts survive combat.** `C_Spell.GetSpellCharges` is `SecretWhenCooldownsRestricted`, and the
   proxy update read it through `SafeNumber`, so every charge count blanked for the whole fight (user report
@@ -1356,7 +1356,7 @@ adding new IDs.
   Ours learns that per live spell ID on a readable pass (`cdmModule.multiCharge`) and in combat hands
   `currentCharges` straight to `SetText` (`AllowedWhenTainted`). A spell first seen mid-combat shows no
   count until a readable pass. `SPELL_UPDATE_CHARGES` now also requests a refresh -- before, a charge
-  coming back with no cooldown event left the old count up. UNTESTED in game when written.
+  coming back with no cooldown event left the old count up. Confirmed in game 2026-10-02.
 - **Text colour/size for every group** (`BuildGroupTextSection`, shared by all groups): `cooldownTextSize`
   (0 = the game's own, which scales with the icon), `cooldownTextColor`, `countColor`. The countdown is the
   game's FontString (`CooldownCountdownText`), so its font and colour are captured before we first change
