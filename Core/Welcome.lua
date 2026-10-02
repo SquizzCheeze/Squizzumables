@@ -23,7 +23,8 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.93"] = {
         "Mouse cursor rings: a dot, a ring, and your global cooldown and cast filling round the cursor, in class colour, your own colour or a rainbow. Turn it on in the new Cursor page.",
-        "An optional trail behind the cursor, rainbow by default: pick its style, how long it lingers, how much it shrinks and how dense it is.",
+        "An optional trail behind the cursor, rainbow by default: pick its style (Sparkle drifts and twinkles like sparks), how long it lingers, how much it shrinks and how dense it is. Click Burst throws particles out on a left click.",
+        "The ring can warn you on low health, going amber then red, and take a different colour in combat. Shake the mouse to find the cursor in a busy fight.",
     },
     ["1.92"] = {
         "Your feast message and callouts can include {name} (the character sending it) and {zone} (where you are), so one message reads right on every character. The feast message also takes {feast}.",

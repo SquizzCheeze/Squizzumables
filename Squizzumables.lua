@@ -144,6 +144,13 @@ BH.defaultSettings = {
     cursorStrata = "HIGH",
     cursorCombatOnly = false,
     cursorHideMouselook = false,        -- keep the rings while right-click turns the camera
+    cursorCombatColor = false,          -- a second ring colour while in combat
+    cursorCombatColorMode = "class",    -- "custom" | "class" | "rainbow"
+    cursorCombatCustomColor = { r = 1, g = 0.2, b = 0.2 },
+    cursorShakeFind = true,             -- shake the mouse to flash a locator ring
+    cursorHealthColor = false,          -- ring turns amber/red as your health drops
+    cursorHealthStart = 70,             -- percent health the warning starts at
+    cursorClickBurst = false,           -- particles fly out on a left click
     cursorColorMode = "custom",         -- "custom" | "class" | "rainbow"
     cursorColor = { r = 1, g = 1, b = 1 },
     cursorDot = true,

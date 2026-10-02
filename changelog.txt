@@ -14,4 +14,14 @@ V1.93
   running through the colours along the trail, or class or custom colour.
   Choose its style (soft glow, solid dots or rings), how long it lingers
   (up to 3 seconds), its opacity, how much it shrinks as it fades, how
-  dense it is and how wide.
+  dense it is and how wide. The Sparkle style drifts, falls and twinkles
+  like sparks off a sparkler.
+- Click Burst: a burst of particles flies out from the cursor when you
+  left-click, round the colour wheel with a rainbow colour.
+- The ring can warn you on low health, turning amber and then red as your
+  health drops, over whatever colour it already is. Works in combat. Choose
+  the health it starts at.
+- A different ring colour while you are in combat, if you want one.
+- Shake To Find Cursor: shake the mouse left and right and a big ring
+  shrinks onto the cursor, to find it in a busy fight. On by default once
+  the cursor is turned on.

@@ -1366,6 +1366,20 @@ adding new IDs.
 - **While `IsMouselooking()` (right-click camera turn) the rings STAY, frozen in place** -- user request;
   `cursorHideMouselook` opts back into hiding. The position is deliberately not updated during mouselook
   rather than trusting `GetCursorPosition` while the cursor is hidden (unverified what it returns then).
+- **Second round (2026-10-02), UNTESTED in game when written:**
+  - *Low-health ring* (`healthRing`): a second ring over the plain one, coloured AND faded by a colour curve
+    passed INTO `UnitHealthPercent("player", true, curve)` -- the engine evaluates it against the secret
+    health (SquizzFrames' proven route). Alpha is part of the curve, so it is clear above
+    `cursorHealthStart` and works over any ring colour, rainbow included. The colour is unpacked with
+    `GetRGBA` inside a `pcall` (`UnpackColor`) and handed to `SetVertexColor`, which is
+    `AllowedWhenTainted`. If it ever fails in combat it simply stays hidden. Updated on UNIT_HEALTH, never
+    per frame.
+  - *Combat colour*: `RingColor()` picks the combat mode while `inCombat`, a flag set from
+    PLAYER_REGEN_*, because `InCombatLockdown()` can still read false inside PLAYER_REGEN_DISABLED.
+  - *Shake to find* (`DetectShake`): 4 reversals of a 40px+ stroke, each within 0.3s, then a 1.5s cooldown;
+    the locator is a ring shrinking from 5x onto the cursor.
+  - *Sparkle* trail style and *Click Burst* (GLOBAL_MOUSE_DOWN, LeftButton only, so right-click camera
+    turns never burst) are moving particles in the same pool: position/velocity arrays, gravity + drag.
 - Confirmed in game 2026-10-02: rings, fills (they fill, `SetReverse(true)` is right), the trail and all its options, and the right-click hold.
   The first build drew nothing because the image paths lacked `.png` -- WoW only finds .blp/.tga
   without an extension.
