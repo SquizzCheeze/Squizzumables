@@ -1366,7 +1366,7 @@ adding new IDs.
 - **While `IsMouselooking()` (right-click camera turn) the rings STAY, frozen in place** -- user request;
   `cursorHideMouselook` opts back into hiding. The position is deliberately not updated during mouselook
   rather than trusting `GetCursorPosition` while the cursor is hidden (unverified what it returns then).
-- Confirmed in game 2026-10-02: rings, fills (they fill, `SetReverse(true)` is right) and trail all work.
+- Confirmed in game 2026-10-02: rings, fills (they fill, `SetReverse(true)` is right), the trail and all its options, and the right-click hold.
   The first build drew nothing because the image paths lacked `.png` -- WoW only finds .blp/.tga
   without an extension.
 - Settings are `cursor*` on the profile, `cursorEnabled` and `cursorTrail` default OFF (user decision).
