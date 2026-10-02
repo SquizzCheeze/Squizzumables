@@ -1366,7 +1366,7 @@ adding new IDs.
 - **While `IsMouselooking()` (right-click camera turn) the rings STAY, frozen in place** -- user request;
   `cursorHideMouselook` opts back into hiding. The position is deliberately not updated during mouselook
   rather than trusting `GetCursorPosition` while the cursor is hidden (unverified what it returns then).
-- **Second round (2026-10-02), UNTESTED in game when written:**
+- **Second round (2026-10-02); the low-health ring is CONFIRMED in combat by the user, the rest untested:**
   - *Low-health ring* (`healthRing`): a second ring over the plain one, coloured AND faded by a colour curve
     passed INTO `UnitHealthPercent("player", true, curve)` -- the engine evaluates it against the secret
     health (SquizzFrames' proven route). Alpha is part of the curve, so it is clear above
