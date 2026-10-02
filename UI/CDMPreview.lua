@@ -132,7 +132,8 @@ local function ToggleBlizzardCDMSettings()
     settings:Raise()
 end
 
--- A running cooldown on the mock "icon 2", restarted whenever it finishes so
+-- A running cooldown on the mock cooldown icon (icon 2, or icon 1 when it is
+-- alone -- see DrawProxyIcons), restarted whenever it finishes so
 -- the sweep and countdown are always there to look at. Our own Cooldown frame
 -- and plain numbers, so no secret-aspect rules apply.
 local MOCK_CD = 12
@@ -151,6 +152,16 @@ end
 local function DrawProxyIcons(pane, kit, cdm, gd, items, g)
     local strata = pane:GetFrameStrata()
     local used = {}
+    -- Which icon shows which mock state. Three or more: proc, cooldown,
+    -- charges on icons 1, 2, 3. Fewer, and the states double up so every
+    -- text setting can still be seen -- a two-icon custom group never showed
+    -- the charge count (user report 2026-10-02). One icon carries the
+    -- cooldown and the count together, like a charge spell recharging, and
+    -- no proc glow.
+    local n = #items
+    local procIndex  = (n >= 2) and 1 or nil
+    local cdIndex    = (n >= 2) and 2 or 1
+    local countIndex = (n >= 3) and 3 or 1
     for i, item in ipairs(items) do
         local key = item.cdID or ("sample" .. i)
         local proxy = pane.proxies[key]
@@ -182,11 +193,11 @@ local function DrawProxyIcons(pane, kit, cdm, gd, items, g)
         kit.ApplyProxyVisuals(proxy, gd, true)
         proxy:EnableMouse(false)
 
-        -- Mock state. Icon 1 procced, icon 2 on cooldown, icon 3 with stacks.
+        -- Mock state, dealt out above: procced, on cooldown, with stacks.
         local isCooldownType = proxy.viewerType ~= "buff"
-        kit.SetProcGlow(proxy, i == 1 and isCooldownType and gd.procGlow ~= false, true)
+        kit.SetProcGlow(proxy, i == procIndex and isCooldownType and gd.procGlow ~= false, true)
 
-        local onCD = (i == 2)
+        local onCD = (i == cdIndex)
         if onCD then
             if not proxy._sqPreviewCD then
                 proxy._sqPreviewCD = true
@@ -201,7 +212,7 @@ local function DrawProxyIcons(pane, kit, cdm, gd, items, g)
         ApplyMockDesaturation(proxy.Icon, gd, onCD)
 
         if proxy.Count then
-            proxy.Count:SetText((i == 3 and gd.showCount ~= false) and "2" or "")
+            proxy.Count:SetText((i == countIndex and gd.showCount ~= false) and "2" or "")
         end
         -- A stand-in has no spell to find a key for; show where the keybind
         -- would sit rather than nothing.

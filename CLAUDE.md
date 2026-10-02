@@ -379,7 +379,10 @@ are load-bearing:
 - **`ApplyProxyVisuals(proxy, groupData, preview)`** — the third argument skips everything that
   reads live state: the real proc (`SyncProcGlow`), the usable tint and the whole cooldown/aura
   pass. That pass **fires the CDM sound alerts**, so a preview icon must never reach it. The preview
-  mocks state itself: icon 1 procced, icon 2 on a repeating 12s cooldown, icon 3 with stacks.
+  mocks state itself: icon 1 procced, icon 2 on a repeating 12s cooldown, icon 3 with stacks -- and
+  with fewer icons the states DOUBLE UP (`procIndex`/`cdIndex`/`countIndex` in `DrawProxyIcons`): two
+  icons put the stacks on icon 1, one icon carries cooldown + stacks and no proc. Purely positional
+  states hid the charge count from any group of one or two icons (user report 2026-10-02, V1.94).
 - **`group.previewLook`** makes `GetBuffPlaceholder` draw a slot as a live buff (bar at 65%, "12s").
   The preview hands it a fake group table (`{ container = host, placeholders = {} }`) and sets the
   flag per placeholder, so one row can show live and inactive slots side by side.
