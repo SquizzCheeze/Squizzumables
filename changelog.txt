@@ -14,3 +14,5 @@ V1.94
   alongside the keybind colour that was already there. A cooldown text
   size of 0 keeps the game's own size, which follows the icon. The
   preview shows them as you change them.
+- The options preview for Buffs now shows each icon's border, duration
+  countdown and stacks, as the real row draws them, instead of a bare icon.

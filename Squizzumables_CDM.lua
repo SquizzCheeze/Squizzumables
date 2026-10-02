@@ -1337,7 +1337,12 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData, mirrorSource)
         -- Dressed like the native bars it shares a row with, not like itself.
         local textSize = math.max(8, math.floor(barH * 0.55 + 0.5))
         bar.name:SetFont(PLACEHOLDER_BAR_FONT, textSize, "OUTLINE")
-        bar.timer:SetFont(PLACEHOLDER_BAR_FONT, textSize, "OUTLINE")
+        -- The timer follows the Text section's countdown size and colour, as
+        -- the native bars' duration text does (Squizzumables_CDMAuras.lua Style).
+        local customSize = (groupData.cooldownTextSize or 0) > 0 and groupData.cooldownTextSize or nil
+        bar.timer:SetFont(PLACEHOLDER_BAR_FONT, customSize or textSize, "OUTLINE")
+        local tc = groupData.cooldownTextColor or { 1, 1, 1, 1 }
+        bar.timer:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
         local c = groupData.barColor or PLACEHOLDER_BAR_COLOR
         bar.sb:SetStatusBarColor(c[1] or 1, c[2] or 0.7, c[3] or 0, c[4] or 1)
 
@@ -1366,7 +1371,8 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData, mirrorSource)
             bar.sb:SetMinMaxValues(0, 1)
             bar.sb:SetValue(0.65)
             bar.timer:SetText("12s")
-            bar.timer:Show()
+            -- Off with the Text section's Cooldown Text, like a native bar's.
+            bar.timer:SetShown(groupData.showCooldownText ~= false)
         else
             -- Empty, for Always Show Buffs: this one stands for a buff that is
             -- not up.
@@ -1403,6 +1409,34 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData, mirrorSource)
         ph.Icon:RemoveMaskTexture(ph.mask)
         ph._maskOn = false
     end
+    -- An icon slot drawn as a live buff in the preview wears the live buff
+    -- icon's own pieces, styled by the same code (cdmModule.native.Style):
+    -- border, shape, background, countdown and stacks. A bare texture here
+    -- showed none of them, so the Text and Appearance settings had nothing to
+    -- show on the buff groups (user report 2026-10-02). The mock texts are
+    -- filled in by UI/CDMPreview.lua. Inactive slots stay bare, as they are live.
+    local native = self.native
+    local d = ph.previewPieces
+    if not isBar and preview and not mirrorSource and native and native.BuildIconPieces then
+        if not d then
+            d = native.BuildIconPieces(ph)
+            ph.previewPieces = d
+        end
+        d.icon:SetTexture(ph.Icon:GetTexture())
+        d.icon:Show()
+        d.text:Show()
+        native.Style(d, groupData)
+        ph.Icon:Hide()
+    elseif d then
+        d.icon:Hide()
+        d.bg:Hide()
+        d.border:Hide()
+        d.shapeBorder:Hide()
+        d.text:Hide()
+        d.cooldown:Hide()
+        ph.Icon:Show()
+    end
+
     -- Drawn as a live buff while previewing: the point is to show how the
     -- group will look when it is up. Dimmed and greyed only when it stands for
     -- a buff that is genuinely not there.

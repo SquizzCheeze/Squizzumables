@@ -284,6 +284,7 @@ local function StyleSignature(gd)
         tostring(gd.showCooldownText), tostring(gd.cooldownTextPosition),
         tostring(gd.cooldownTextOffsetX), tostring(gd.cooldownTextOffsetY),
         tostring(gd.barHeight), ColorSig(gd.barColor),
+        tostring(gd.cooldownTextSize), ColorSig(gd.cooldownTextColor), ColorSig(gd.countColor),
     }, "|")
 end
 
@@ -495,6 +496,14 @@ local function Style(d, gd)
     -- Hidden by alpha, never unregistered: registration can only happen in
     -- initializeFrame, so turning the text back on must not need a rebuild.
     d.duration:SetAlpha(gd.showCooldownText ~= false and 1 or 0)
+    -- The Text section's colours and countdown size (V1.94) apply to buff
+    -- icons as well as cooldowns -- they first shipped reaching cooldown
+    -- proxies only. Our own FontStrings, so restyling them is legal.
+    local cc = gd.countColor or { 1, 1, 1, 1 }
+    d.count:SetTextColor(cc[1], cc[2], cc[3], cc[4] or 1)
+    local tc = gd.cooldownTextColor or { 1, 1, 1, 1 }
+    d.duration:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
+    local customSize = (gd.cooldownTextSize or 0) > 0 and gd.cooldownTextSize or nil
 
     if d.isBar then
         local barH = gd.barHeight or 20
@@ -503,7 +512,7 @@ local function Style(d, gd)
         d.bar:SetStatusBarColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
         local textSize = math.max(8, math.floor(barH * 0.55 + 0.5))
         d.name:SetFont(FONT, textSize, "OUTLINE")
-        d.duration:SetFont(FONT, textSize, "OUTLINE")
+        d.duration:SetFont(FONT, customSize or textSize, "OUTLINE")
         if SH.PlaceText then
             SH.PlaceText(d.count, d.iconHolder, gd.countPosition or "BOTTOMRIGHT",
                 gd.countOffsetX or -1, gd.countOffsetY or 1)
@@ -535,7 +544,7 @@ local function Style(d, gd)
     d.bg:SetShown(gd.bgEnabled and true or false)
 
     local iconSize = gd.iconSize or SH.DEFAULT_ICON_SIZE or 36
-    d.duration:SetFont(FONT, math.max(8, math.floor(iconSize * 0.4 + 0.5)), "OUTLINE")
+    d.duration:SetFont(FONT, customSize or math.max(8, math.floor(iconSize * 0.4 + 0.5)), "OUTLINE")
     if SH.PlaceText then
         SH.PlaceText(d.count, d.text, gd.countPosition or "BOTTOMRIGHT",
             gd.countOffsetX or -1, gd.countOffsetY or 1)
@@ -544,6 +553,13 @@ local function Style(d, gd)
     end
     StyleBorder(d, gd, shapeFile)
 end
+
+-- For the options preview (GetBuffPlaceholder in preview mode): the SAME icon
+-- pieces and styling a live buff icon gets, on a plain frame, so the preview
+-- shows the border, countdown and stacks the real row will -- never a copy of
+-- this styling (CLAUDE.md, "CDM options preview").
+Native.BuildIconPieces = BuildIconPieces
+Native.Style = Style
 
 -- Hand the pieces to the button. Each registration is pcall'd: an error inside
 -- one aborts the engine's whole frame batch, taking the slot with it.

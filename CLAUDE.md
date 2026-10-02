@@ -1348,7 +1348,7 @@ unreadable and absent look identical to us, and they do not look identical to th
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
 
-### Added in V1.94 (open; everything below confirmed in game 2026-10-02, held untagged by user choice)
+### Added in V1.94 (open, held untagged by user choice; confirmed in game 2026-10-02 except the buff-group styling + preview below)
 
 - **Charge counts survive combat.** `C_Spell.GetSpellCharges` is `SecretWhenCooldownsRestricted`, and the
   proxy update read it through `SafeNumber`, so every charge count blanked for the whole fight (user report
@@ -1362,6 +1362,16 @@ adding new IDs.
   game's FontString (`CooldownCountdownText`), so its font and colour are captured before we first change
   them and touched only while a custom value is set, restored ONCE when cleared -- re-applying the
   captured size every pass would freeze the game's own scaling.
+- **Buff groups are styled by a DIFFERENT function** (`Squizzumables_CDMAuras.lua` `Style`, keyed by
+  `StyleSignature`), not `ApplyProxyVisuals`. The new text settings first reached cooldown proxies only;
+  `Style` now reads `cooldownTextSize`/`cooldownTextColor`/`countColor` too, and they joined the
+  signature. Any new Text/Appearance setting needs BOTH places (plus the placeholder bar's timer in
+  `GetBuffPlaceholder`).
+- **The preview's icon-style buff slots wear the live pieces**: `GetBuffPlaceholder` in preview mode builds
+  `cdm.native.BuildIconPieces(ph)` once (`ph.previewPieces`) and styles it with `cdm.native.Style` -- the
+  live code, per the preview rule -- hiding the bare `ph.Icon`; `CDMPreview.lua` fills the mock sweep,
+  "12" and stacks. Inactive slots stay bare, as live. A bare icon there showed no border or texts at all
+  (user report 2026-10-02).
 - **`CooldownCountdownText` no longer caches a miss forever.** The FontString can appear only once a
   cooldown first runs; a first look before that was remembered as "none", which would have left the
   countdown's placement, size and colour unapplied for good -- the options preview styles its icons just

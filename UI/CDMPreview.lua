@@ -233,6 +233,9 @@ local function DrawPlaceholders(pane, kit, cdm, gd, items, g, isBar)
     -- held-but-inactive, so both looks are visible. Otherwise every slot is
     -- drawn as up, which is all the real row ever shows.
     local liveCount = gd.showInactiveBuffs and math.max(1, math.ceil(#items / 2)) or #items
+    -- Stacks on the third live slot, or the first when there are fewer --
+    -- the same rule as the cooldown icons (DrawProxyIcons).
+    local countIndex = (liveCount >= 3) and 3 or 1
     for i, item in ipairs(items) do
         -- Negative stand-in IDs can never collide with a real cooldownID.
         local cdID = item.cdID or -i
@@ -254,6 +257,21 @@ local function DrawPlaceholders(pane, kit, cdm, gd, items, g, isBar)
             ph:SetPoint(point, pane.host, relPoint, x, y)
             kit.ApplyShapeToBorrowedChild(ph, gd.iconShape or "none",
                 gd.iconZoom or kit.DEFAULT_ICON_ZOOM)
+        end
+        -- A live icon slot wears the real buff icon's pieces (see
+        -- GetBuffPlaceholder); give them the mock state: a running duration
+        -- sweep, its countdown, and stacks on one slot. Visibility of each
+        -- text follows the group's settings through Style's alpha.
+        local d = ph.previewPieces
+        if d and not isBar and i <= liveCount then
+            if not d._sqPreviewCD then
+                d._sqPreviewCD = true
+                d.cooldown:SetScript("OnCooldownDone", StartMockCooldown)
+                StartMockCooldown(d.cooldown)
+            end
+            d.cooldown:Show()
+            d.duration:SetText("12")
+            d.count:SetText(i == countIndex and "2" or "")
         end
         kit.ApplyKeybindText(ph, item.spellID, gd)
         slots[#slots + 1] = ph
