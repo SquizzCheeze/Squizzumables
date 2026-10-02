@@ -381,7 +381,7 @@ are load-bearing:
   pass. That pass **fires the CDM sound alerts**, so a preview icon must never reach it. The preview
   mocks state itself: icon 1 procced, icon 2 on a repeating 12s cooldown, icon 3 with stacks -- and
   with fewer icons the states DOUBLE UP (`procIndex`/`cdIndex`/`countIndex` in `DrawProxyIcons`): two
-  icons put the stacks on icon 1, one icon carries cooldown + stacks and no proc. Purely positional
+  icons put the stacks on icon 1, one icon carries all three -- proc, cooldown and stacks (user decision). Purely positional
   states hid the charge count from any group of one or two icons (user report 2026-10-02, V1.94).
 - **`group.previewLook`** makes `GetBuffPlaceholder` draw a slot as a live buff (bar at 65%, "12s").
   The preview hands it a fake group table (`{ container = host, placeholders = {} }`) and sets the

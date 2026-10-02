@@ -155,11 +155,10 @@ local function DrawProxyIcons(pane, kit, cdm, gd, items, g)
     -- Which icon shows which mock state. Three or more: proc, cooldown,
     -- charges on icons 1, 2, 3. Fewer, and the states double up so every
     -- text setting can still be seen -- a two-icon custom group never showed
-    -- the charge count (user report 2026-10-02). One icon carries the
-    -- cooldown and the count together, like a charge spell recharging, and
-    -- no proc glow.
+    -- the charge count (user report 2026-10-02). One icon carries all three
+    -- (user decision): every setting has to be visible somewhere.
     local n = #items
-    local procIndex  = (n >= 2) and 1 or nil
+    local procIndex  = 1
     local cdIndex    = (n >= 2) and 2 or 1
     local countIndex = (n >= 3) and 3 or 1
     for i, item in ipairs(items) do
