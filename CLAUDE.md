@@ -1359,6 +1359,12 @@ adding new IDs.
   the icon and nothing else moves it. Done in three places that must agree: `ApplyProxyVisuals` (proxy
   `Border`/`ShapeBorder`/`_sqMask`, `showBorder` + `inside` joined `sig`), `CDMAuras` `StyleBorder` (+
   `StyleSignature`), and the placeholder bar border in `GetBuffPlaceholder`. UNTESTED in game when written.
+- **Colour picker Cancel lost the alpha** (`CreateSQColorPicker`): it restored `prev.opacity` from the
+  picker's previousValues, which is not where Retail keeps it, so a cancelled pick saved `{r, g, b}` with
+  no alpha. `ApplyProxyVisuals`' style `sig` then threw "bad argument #6 to 'format'" on EVERY refresh
+  (199x in the user's report, 2026-10-04). Cancel now restores the values captured at open (SquizzFrames'
+  V1.30 fix for the same widget), and the `sig` `or`s every channel. Any `string.format` over a saved
+  colour must default its channels -- old saved data can still lack one. The bug is in shipped versions.
 
 ### Added in V1.94 (shipped 2026-10-03; all confirmed in game first)
 
