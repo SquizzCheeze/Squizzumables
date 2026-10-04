@@ -8,6 +8,33 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.94
+
+- Fixed: charge counts on Essential, Utility and Custom Icons disappeared
+  in combat and could stay missing after you spent a charge. The game hides
+  charge counts from addons in combat; they are now shown anyway, the same
+  way the game's own Cooldown Manager shows them, and update the moment a
+  charge is spent or comes back.
+- Text colours and sizes for every Cooldown Manager group (Essential,
+  Utility, Buffs, Buff Bars and Custom Icons): the cooldown countdown now
+  has its own size and colour, and the charge/stack number its own colour,
+  alongside the keybind colour that was already there. A cooldown text
+  size of 0 keeps the game's own size, which follows the icon. The
+  preview shows them as you change them.
+- More for the cursor trail, on the Cursor page:
+  - New trail shapes: stars, hearts, diamonds and ducks - the ducks face
+    whichever way you move the mouse - or any texture of your own, by game
+    atlas name or file path.
+  - A colour palette: pick up to six colours and have the trail flow
+    through them over time, at a pace you set, or run from your first
+    colour at the head to your last at the tail. On its own new Trail
+    Colour tab.
+  - Glow or solid blending for any style, the trail's height separately
+    from its width to stretch or squash it, and an offset to lay the trail
+    a little away from the cursor.
+- The options preview for Buffs now shows each icon's border, duration
+  countdown and stacks, as the real row draws them, instead of a bare icon.
+
 V1.93
 
 - Mouse cursor rings, on a new Cursor page in the options. A dot at the

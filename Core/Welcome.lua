@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.95"] = {
+        "Border Inside Icon (CDM, Appearance): draw the icon border over the icon's edge instead of outside it, so bars matched to a group's width line up exactly.",
+    },
     ["1.94"] = {
         "Charge counts on your cooldown icons now stay visible in combat and update as soon as you spend or regain a charge.",
         "Every CDM group's Text settings now let you colour and size the cooldown countdown and colour the charge number.",

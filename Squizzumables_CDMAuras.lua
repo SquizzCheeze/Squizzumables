@@ -285,6 +285,7 @@ local function StyleSignature(gd)
         tostring(gd.cooldownTextOffsetX), tostring(gd.cooldownTextOffsetY),
         tostring(gd.barHeight), ColorSig(gd.barColor),
         tostring(gd.cooldownTextSize), ColorSig(gd.cooldownTextColor), ColorSig(gd.countColor),
+        tostring(gd.borderInside),
     }, "|")
 end
 
@@ -464,12 +465,23 @@ local function StyleBorder(d, gd, shapeFile)
     local show = gd.showBorder ~= false
     local r, g, b, a = BorderColor(gd)
     local anchor = d.isBar and d.border:GetParent() or d.icon
+    -- Border Inside Icon: on the icon's own edge rather than grown past it, the
+    -- same as a cooldown proxy's (ApplyProxyVisuals). A shaped rim stays the
+    -- icon's size and the MASK shrinks by the thickness to reveal it.
+    local inside = gd.borderInside and true or false
+    local grow = inside and 0 or thickness
+    if d.mask then
+        local inset = (inside and shapeFile and show) and thickness or 0
+        d.mask:ClearAllPoints()
+        d.mask:SetPoint("TOPLEFT", d.icon, "TOPLEFT", inset, -inset)
+        d.mask:SetPoint("BOTTOMRIGHT", d.icon, "BOTTOMRIGHT", -inset, inset)
+    end
 
     if shapeFile and d.shapeBorder then
         d.shapeBorder:SetTexture(shapeFile)
         d.shapeBorder:ClearAllPoints()
-        d.shapeBorder:SetPoint("TOPLEFT", d.icon, "TOPLEFT", -thickness, thickness)
-        d.shapeBorder:SetPoint("BOTTOMRIGHT", d.icon, "BOTTOMRIGHT", thickness, -thickness)
+        d.shapeBorder:SetPoint("TOPLEFT", d.icon, "TOPLEFT", -grow, grow)
+        d.shapeBorder:SetPoint("BOTTOMRIGHT", d.icon, "BOTTOMRIGHT", grow, -grow)
         d.shapeBorder:SetVertexColor(r, g, b, a)
         d.shapeBorder:SetShown(show)
         d.border:Hide()
@@ -477,8 +489,8 @@ local function StyleBorder(d, gd, shapeFile)
     end
     if d.shapeBorder then d.shapeBorder:Hide() end
     d.border:ClearAllPoints()
-    d.border:SetPoint("TOPLEFT", anchor, "TOPLEFT", -thickness, thickness)
-    d.border:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", thickness, -thickness)
+    d.border:SetPoint("TOPLEFT", anchor, "TOPLEFT", -grow, grow)
+    d.border:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", grow, -grow)
     SetEdgeBorder(d.border, thickness, r, g, b, a)
     d.border:SetShown(show)
 end

@@ -236,7 +236,7 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.94 (2026-10-03)** -- closed, so the next change starts at step 1 below.
+Last shipped: **v1.94 (2026-10-03)**. V1.95 is OPEN (archived, TOC bumped, changelog + RELEASE_NOTES started).
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
@@ -1347,6 +1347,18 @@ unreadable and absent look identical to us, and they do not look identical to th
 `.flask`, `.oil`, and `classBuffs`) are expansion/season-specific and go stale when Blizzard
 rotates seasonal items — check `CHANGELOG-ARCHIVE.txt` for the most recent update pattern before
 adding new IDs.
+
+### Added in V1.95 (open)
+
+- **Border Inside Icon** (`groupData.borderInside`, Appearance, default off). An OUTSIDE border grows
+  past the icon by its thickness, but the group frame -- what SquizzFrames' cast/resource bar "Match
+  width" measures via `GetWidth` -- ends at the icons, so a matched bar fell short by 2x thickness (user
+  report 2026-10-04). Inside: `grow` 0, border on the icon's edge. A SHAPED rim is the shape drawn behind
+  the icon, so inside it stays icon-sized and the MASK is inset by the thickness instead -- not the icon,
+  which four layout passes re-anchor to the full frame (`proxy.Icon:SetAllPoints()`); the mask hangs off
+  the icon and nothing else moves it. Done in three places that must agree: `ApplyProxyVisuals` (proxy
+  `Border`/`ShapeBorder`/`_sqMask`, `showBorder` + `inside` joined `sig`), `CDMAuras` `StyleBorder` (+
+  `StyleSignature`), and the placeholder bar border in `GetBuffPlaceholder`. UNTESTED in game when written.
 
 ### Added in V1.94 (shipped 2026-10-03; all confirmed in game first)
 

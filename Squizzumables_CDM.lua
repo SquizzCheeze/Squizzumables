@@ -1352,8 +1352,10 @@ function cdmModule:GetBuffPlaceholder(group, cdID, groupData, mirrorSource)
             local thickness = groupData.borderThickness or DEFAULT_BORDER_THICKNESS or 1
             local br, bgc, bb, ba = PlaceholderBorderColor(groupData)
             bar.border:ClearAllPoints()
-            bar.border:SetPoint("TOPLEFT", ph, "TOPLEFT", -thickness, thickness)
-            bar.border:SetPoint("BOTTOMRIGHT", ph, "BOTTOMRIGHT", thickness, -thickness)
+            -- Border Inside Icon: on the frame's own edge, not grown past it.
+            local grow = groupData.borderInside and 0 or thickness
+            bar.border:SetPoint("TOPLEFT", ph, "TOPLEFT", -grow, grow)
+            bar.border:SetPoint("BOTTOMRIGHT", ph, "BOTTOMRIGHT", grow, -grow)
             bar.border:SetBackdrop({ edgeFile = "Interface\\BUTTONS\\WHITE8X8", edgeSize = thickness })
             bar.border:SetBackdropBorderColor(br, bgc, bb, ba)
             bar.border:SetShown(groupData.showBorder ~= false)
@@ -3593,13 +3595,20 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
     local bg        = groupData.bgColor or DEFAULT_BG_COLOR
     local bgOn      = groupData.bgEnabled and true or false
     local classCol  = groupData.borderClassColor and true or false
+    -- Border Inside Icon (V1.95): drawn over the icon's own edge instead of
+    -- grown outward, so the icons' visible width IS the group frame's width --
+    -- which is what another addon matching that width (SquizzFrames'
+    -- attach/match) measures. Outside, the outer border adds 2x thickness the
+    -- frame does not report (user report 2026-10-04).
+    local inside    = groupData.borderInside and true or false
+    local grow      = inside and 0 or thickness
 
     -- Appended after format, not built into the format string: a value
     -- containing a % would otherwise be read as a directive.
     local sig = ("%d|%.3f|%.2f,%.2f,%.2f,%.2f|%s|%.2f,%.2f,%.2f,%.2f|%s"):format(
         thickness, zoom, bc[1], bc[2], bc[3], bc[4],
         tostring(classCol), bg[1], bg[2], bg[3], bg[4], tostring(bgOn))
-        .. "|" .. shape
+        .. "|" .. shape .. "|" .. tostring(inside) .. "|" .. tostring(showBorder)
 
     if proxy._styleSig ~= sig then
         proxy._styleSig = sig
@@ -3615,6 +3624,19 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
         -- is the repaint.
         ApplyIconShape(proxy, shape)
 
+        -- A shaped border is the shape drawn BEHIND the icon. Inside, it stays
+        -- the icon's size and the MASK shrinks by the thickness instead, so the
+        -- rim shows round the art without moving the icon itself -- several
+        -- layout passes re-anchor proxy.Icon to the full frame, the mask they
+        -- leave alone (it hangs off the icon). Outside, back to the full icon.
+        local mask = proxy._sqMask
+        if mask and proxy.Icon then
+            mask:ClearAllPoints()
+            local inset = (inside and shaped and showBorder) and thickness or 0
+            mask:SetPoint("TOPLEFT", proxy.Icon, "TOPLEFT", inset, -inset)
+            mask:SetPoint("BOTTOMRIGHT", proxy.Icon, "BOTTOMRIGHT", -inset, inset)
+        end
+
         if proxy.Icon then
             proxy.Icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
         end
@@ -3629,8 +3651,8 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
 
         if proxy.Border then
             proxy.Border:ClearAllPoints()
-            proxy.Border:SetPoint("TOPLEFT", -thickness, thickness)
-            proxy.Border:SetPoint("BOTTOMRIGHT", thickness, -thickness)
+            proxy.Border:SetPoint("TOPLEFT", -grow, grow)
+            proxy.Border:SetPoint("BOTTOMRIGHT", grow, -grow)
             proxy.Border:SetBackdrop({
                 edgeFile = "Interface\\BUTTONS\\WHITE8X8",
                 edgeSize = thickness,
@@ -3642,8 +3664,8 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
         -- every side and tinted, sitting behind the icon.
         if proxy.ShapeBorder then
             proxy.ShapeBorder:ClearAllPoints()
-            proxy.ShapeBorder:SetPoint("TOPLEFT", -thickness, thickness)
-            proxy.ShapeBorder:SetPoint("BOTTOMRIGHT", thickness, -thickness)
+            proxy.ShapeBorder:SetPoint("TOPLEFT", -grow, grow)
+            proxy.ShapeBorder:SetPoint("BOTTOMRIGHT", grow, -grow)
             proxy.ShapeBorder:SetVertexColor(r, g, b, a)
         end
 
@@ -8049,6 +8071,17 @@ local function BuildGroupLookSection(content, indent, yOffset, groupName, groupD
         end)
     borderColorPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     ns.Rows.AddTooltip(borderColorPicker, "Border Colour", "Colour of the icon border for this group.")
+
+    local insideCB = CreateSQCheckbox(content, "Border Inside Icon", function(checked)
+        groupData.borderInside = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    insideCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent + 190, yOffset)
+    ns.Rows.AddTooltip(insideCB, "Border Inside Icon",
+        "Draw the border over the icon's own edge instead of around the outside. The group then takes up "
+        .. "exactly its icons' size, so a bar matched to its width (SquizzFrames' cast bar or resource bar "
+        .. "\"Match width\") lines up with the border's outer edge instead of falling short by the border.")
+    insideCB:SetChecked(groupData.borderInside)
     yOffset = yOffset - 32
 
     local bgCB = CreateSQCheckbox(content, "Icon Background", function(checked)
