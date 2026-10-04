@@ -10,3 +10,7 @@ V1.95
   bar or resource bar set to match its width now lines up with the outer
   edge of the border instead of falling short by the border's width. Off
   by default, so nothing changes until you tick it.
+- Fixed: a Cooldown Manager group could throw "bad argument #6 to
+  'format'" on every refresh after cancelling a colour picker, which saved
+  the colour without its opacity. Cancel now restores exactly the colour
+  you had, and a colour already saved that way works again.

@@ -3605,9 +3605,12 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
 
     -- Appended after format, not built into the format string: a value
     -- containing a % would otherwise be read as a directive.
+    -- `or` on every channel: a colour saved without its alpha (the colour
+    -- picker's old Cancel path did that) must not break the format -- it did,
+    -- on every refresh (user report 2026-10-04).
     local sig = ("%d|%.3f|%.2f,%.2f,%.2f,%.2f|%s|%.2f,%.2f,%.2f,%.2f|%s"):format(
-        thickness, zoom, bc[1], bc[2], bc[3], bc[4],
-        tostring(classCol), bg[1], bg[2], bg[3], bg[4], tostring(bgOn))
+        thickness, zoom, bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1,
+        tostring(classCol), bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 1, tostring(bgOn))
         .. "|" .. shape .. "|" .. tostring(inside) .. "|" .. tostring(showBorder)
 
     if proxy._styleSig ~= sig then

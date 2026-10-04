@@ -475,9 +475,16 @@ local function CreateSQColorPicker(parent, labelText, r, g, b, a, onChange)
     label:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
 
     swatch:SetScript("OnClick", function()
+        -- Cancel restores THESE, captured as the picker opens -- not the
+        -- picker's `previousValues`, whose opacity is not `prev.opacity` on
+        -- Retail. Reading that handed callers a colour with no alpha, and a
+        -- CDM border colour saved that way then broke every restyle with
+        -- "bad argument #6 to 'format'" (user report 2026-10-04; SquizzFrames
+        -- fixed the same picker bug in its V1.30).
+        local or0, og0, ob0, oa0 = r or 0, g or 0, b or 0, a or 1
         local info = {}
-        info.r, info.g, info.b = r or 0, g or 0, b or 0
-        info.opacity = a or 1
+        info.r, info.g, info.b = or0, og0, ob0
+        info.opacity = oa0
         info.hasOpacity = true
         info.swatchFunc = function()
             local cr, cg, cb = ColorPickerFrame:GetColorRGB()
@@ -487,10 +494,10 @@ local function CreateSQColorPicker(parent, labelText, r, g, b, a, onChange)
             if onChange then onChange(cr, cg, cb, ca) end
         end
         info.opacityFunc = info.swatchFunc
-        info.cancelFunc = function(prev)
-            swatch:SetBackdropColor(prev.r, prev.g, prev.b, 1)
-            r, g, b, a = prev.r, prev.g, prev.b, prev.opacity
-            if onChange then onChange(prev.r, prev.g, prev.b, prev.opacity) end
+        info.cancelFunc = function()
+            swatch:SetBackdropColor(or0, og0, ob0, 1)
+            r, g, b, a = or0, og0, ob0, oa0
+            if onChange then onChange(or0, og0, ob0, oa0) end
         end
         ColorPickerFrame:SetupColorPickerAndShow(info)
     end)
