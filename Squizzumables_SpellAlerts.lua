@@ -637,6 +637,8 @@ end
 --   imageFill    true = over the whole screen, behind the interface;
 --                false = imageSize square at its own position
 --   imageSize    pixels, when not filling the screen
+--   imageHeight  height as a % of imageSize (default 100) -- the "( )" arcs
+--                want taller than wide to frame a character
 --   imageX/Y     its own position, offset from the screen's centre
 --
 -- ANIMATION IS A FLIPBOOK, never a texture swap. The lust alert animates by
@@ -656,6 +658,9 @@ local VIGNETTE = ALERTS .. "vignette.png"
 -- The flame sheets' layout, as .claude/make-flames.ps1 draws them: 32 frames
 -- of 512x256, 4 columns x 8 rows, on 2048x2048. Change both together.
 local FLAME_SHEET = { frames = 32, cols = 4, rows = 8, w = 512, h = 256, fps = 16, loop = true }
+-- "( )" arcs round a centre: 32 frames of 256x256, 8 columns x 4 rows, on
+-- 2048x1024 (make-flames.ps1's MakeArcs).
+local ARC_SHEET = { frames = 32, cols = 8, rows = 4, w = 256, h = 256, fps = 16, loop = true }
 
 -- Images that ship with the addon, offered in the editor's Image dropdown.
 local BUNDLED_IMAGES = {
@@ -664,6 +669,8 @@ local BUNDLED_IMAGES = {
     flames_sides  = { file = ALERTS .. "flames_sides.png",  sheet = FLAME_SHEET, blend = "ADD" },
     flames_bottom = { file = ALERTS .. "flames_bottom.png", sheet = FLAME_SHEET, blend = "ADD" },
     flames_ring   = { file = ALERTS .. "flames_ring.png",   sheet = FLAME_SHEET, blend = "ADD" },
+    -- placed: framed round something (your character), not the screen's edge
+    flames_arcs   = { file = ALERTS .. "flames_arcs.png",   sheet = ARC_SHEET,   blend = "ADD", placed = true },
 }
 BH.KEL_BUNDLED_IMAGES = BUNDLED_IMAGES
 
@@ -742,7 +749,7 @@ local function PlaceImageFrame(f, entry)
     else
         f:SetFrameStrata("HIGH")
         local size = entry.imageSize or 200
-        f:SetSize(size, size)
+        f:SetSize(size, size * (entry.imageHeight or 100) / 100)
         f:SetPoint("CENTER", UIParent, "CENTER", entry.imageX or 0, entry.imageY or 0)
     end
 end
@@ -755,7 +762,7 @@ local function ImageSignature(entry)
             tostring(entry.imageFrameW), tostring(entry.imageFrameH), tostring(entry.imageFps),
             tostring(entry.imageLoop) }, ","),
         ("%.3f,%.3f,%.3f,%.3f"):format(c.r or 1, c.g or 1, c.b or 1, entry.imageAlpha or 0.8),
-        tostring(entry.imageFill ~= false), tostring(entry.imageSize or 200),
+        tostring(entry.imageFill ~= false), tostring(entry.imageSize or 200), tostring(entry.imageHeight or 100),
         entry.imageFill == false and (tostring(entry.imageX or 0) .. "," .. tostring(entry.imageY or 0)) or "",
     }, "|")
 end
@@ -1365,9 +1372,21 @@ function BH:RebuildBuffSoundEditor()
         { text = "Flames: both sides",        value = "flames_sides" },
         { text = "Flames: bottom",            value = "flames_bottom" },
         { text = "Flames: all round",         value = "flames_ring" },
+        { text = "Flames: ( ) arcs",          value = "flames_arcs" },
         { text = "Your own texture",          value = "custom" },
     }, function(val)
-        Entry().image = (val ~= "none") and val or nil
+        local e = Entry()
+        e.image = (val ~= "none") and val or nil
+        -- The arcs frame something, so they start placed (centre of the
+        -- screen, where a third-person character usually stands) and taller
+        -- than wide -- but only the first time: a later re-pick keeps any
+        -- placement the player has made.
+        local b = BUNDLED_IMAGES[val]
+        if b and b.placed and e.imageFill == nil then
+            e.imageFill = false
+            e.imageSize = e.imageSize or 260
+            e.imageHeight = e.imageHeight or 150
+        end
         Changed(true)
     end)
     imgDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
@@ -1376,7 +1395,8 @@ function BH:RebuildBuffSoundEditor()
         "An image on screen for exactly as long as this buff is up, in combat too -- the game's aura engine "
         .. "shows and hides it. Each buff can have its own. Screen edge glow is a coloured vignette round the "
         .. "edge of the screen; the Flames are animated fire along the edges you pick (leave the colour white "
-        .. "for natural fire, or tint them).")
+        .. "for natural fire, or tint them). The ( ) arcs are placed rather than full screen: size and move "
+        .. "them to frame your character.")
 
     if entry and entry.image then
         local test = CreateSQButton(editor, "Test", 46, 22)
@@ -1499,9 +1519,28 @@ function BH:RebuildBuffSoundEditor()
                 BH:SaveSettings()
                 BH:RefreshBuffImagesSoon()
                 -- Resize the Move handle too, if it is out.
-                if BH.MovingBuffImage(spellID) and previewFrame then previewFrame:SetSize(v, v) end
+                if BH.MovingBuffImage(spellID) and previewFrame then
+                    previewFrame:SetSize(v, v * (Entry().imageHeight or 100) / 100)
+                end
             end)
             size:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+            ns.Rows.AddTooltip(size, "Size", "Width of the image, in pixels.")
+            y = y - 46
+
+            local height = CreateSQSlider(editor, "Height %", 200, 25, 300, 5)
+            height:SetValue(entry.imageHeight or 100)
+            height:SetAfterValueChanged(function(v)
+                Entry().imageHeight = v
+                BH:SaveSettings()
+                BH:RefreshBuffImagesSoon()
+                if BH.MovingBuffImage(spellID) and previewFrame then
+                    previewFrame:SetHeight((Entry().imageSize or 200) * v / 100)
+                end
+            end)
+            height:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+            ns.Rows.AddTooltip(height, "Height %",
+                "Height as a percentage of the width: 100 is square, higher is taller. The ( ) arcs frame a "
+                .. "character best somewhere around 150.")
             y = y - 46
 
             local move = CreateSQButton(editor, BH.MovingBuffImage(spellID) and "Done" or "Move", 70, 22)
@@ -1513,6 +1552,23 @@ function BH:RebuildBuffSoundEditor()
             ns.Rows.AddTooltip(move, "Move",
                 "Show this image as a box you can drag into place, then click Done. Each image has its own "
                 .. "position, separate from the others and from the lust alert.")
+
+            local centre = CreateSQButton(editor, "Centre", 70, 22)
+            centre:SetPoint("LEFT", move, "RIGHT", 6, 0)
+            centre:SetScript("OnClick", function()
+                local e = Entry()
+                e.imageX, e.imageY = 0, 0
+                BH:SaveSettings()
+                BH:RefreshBuffImages()
+                -- Snap the Move handle along with it, if it is out.
+                if BH.MovingBuffImage(spellID) and previewFrame then
+                    previewFrame:ClearAllPoints()
+                    previewFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+                end
+            end)
+            ns.Rows.AddTooltip(centre, "Centre",
+                "Put the image back in the middle of the screen -- where your character stands in third person, "
+                .. "so a good start before nudging it with Move.")
             y = y - 30
         end
     end

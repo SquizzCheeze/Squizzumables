@@ -5,6 +5,8 @@
 #   flames_sides.png   left and right only -- "( )" round the screen
 #   flames_bottom.png  bottom only
 #   flames_ring.png    all four edges
+#   flames_arcs.png    "( )" -- two arcs round a centre, to frame a character
+#                      (its own layout: 32 frames of 256x256, 8x4, 2048x1024)
 #
 # Each is a FLIPBOOK: 32 frames of 512x256, 4 columns x 8 rows, on one
 # 2048x2048 sheet (row-major, top-left first). The Lua side must agree:
@@ -127,6 +129,59 @@ public static class SqFlames {
         bmp.Save(path, ImageFormat.Png);
         bmp.Dispose();
     }
+
+    // "( )": two arcs of fire round a centre -- meant to frame a character, not
+    // the screen. 32 frames of 256x256, 8 columns x 4 rows, on 2048x1024 (the
+    // Lua side's ARC_SHEET). Each arc is the left or right part of an ellipse,
+    // tapering to nothing at its top and bottom; the noise scrolls UP the frame
+    // so the flames rise along the curve, and it loops like the edge sheets.
+    public static void MakeArcs(string path) {
+        const int AW = 256, AH = 256, ACOLS = 8, SW = 2048, SH = 1024;   // 4 rows
+        var bmp = new Bitmap(SW, SH, PixelFormat.Format32bppArgb);
+        var data = bmp.LockBits(new Rectangle(0, 0, SW, SH), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        byte[] px = new byte[SW * SH * 4];
+        double rx = 0.40, ry = 0.44;             // ellipse radii, fraction of the frame
+        double halfSpan = 62 * Math.PI / 180;    // each arc covers +-62 degrees of its side
+        for (int f = 0; f < FRAMES; f++) {
+            double phase = (double)f / FRAMES, scroll = phase * PERIOD;
+            int ox = (f % ACOLS) * AW, oy = (f / ACOLS) * AH;
+            for (int y = 0; y < AH; y++) {
+                for (int x = 0; x < AW; x++) {
+                    double u = (x + 0.5) / AW - 0.5, v = 0.5 - (y + 0.5) / AH;  // centred, y up
+                    double heat = 0;
+                    for (int side = 0; side < 2; side++) {
+                        double sx = side == 0 ? -u : u;               // mirror the right arc onto the left
+                        double ang = Math.Atan2(v / ry, -sx / rx);      // 0 at the arc's middle
+                        if (Math.Abs(ang) > halfSpan * 1.25) continue;
+                        double rn = Math.Sqrt((sx / rx) * (sx / rx) + (v / ry) * (v / ry));
+                        double d = Math.Abs(rn - 1.0) * rx;             // distance off the curve
+                        // Taper towards both ends of the arc.
+                        double along = Math.Abs(ang) / halfSpan;
+                        double taper = along >= 1 ? 0 : 1 - along * along;
+                        if (taper <= 0) continue;
+                        double reach = 0.07 * (0.35 + 0.65 * taper);
+                        double tongue = Fbm(ang * 3.0 + side * 7, scroll * 0.5 + 0.37, 201 + side);
+                        tongue = tongue * tongue;
+                        // Outside the curve a little further than inside: the
+                        // flames lean away from what they surround.
+                        double dd = rn > 1 ? d * 0.8 : d * 1.4;
+                        double n = Fbm(u * 9.0 + side * 3.1, -v * 9.0 + scroll, 301 + side);
+                        double h = (1.0 - dd / (reach * (0.4 + 1.8 * tongue))) * taper;
+                        h += (n - 0.55) * 1.0 * taper;
+                        if (h > heat) heat = h;
+                    }
+                    byte r, g, b, a;
+                    Color(heat, out r, out g, out b, out a);
+                    int i = ((oy + y) * SW + (ox + x)) * 4;
+                    px[i] = b; px[i + 1] = g; px[i + 2] = r; px[i + 3] = a;
+                }
+            }
+        }
+        Marshal.Copy(px, 0, data.Scan0, px.Length);
+        bmp.UnlockBits(data);
+        bmp.Save(path, ImageFormat.Png);
+        bmp.Dispose();
+    }
 }
 '@
 
@@ -136,3 +191,6 @@ foreach ($e in @(@('flames_u', 'blr'), @('flames_sides', 'lr'), @('flames_bottom
     [SqFlames]::Make($path, $e[1])
     Write-Host ("wrote {0} ({1:N0} KB)" -f $path, ((Get-Item $path).Length / 1KB))
 }
+$path = Join-Path $OutDir 'flames_arcs.png'
+[SqFlames]::MakeArcs($path)
+Write-Host ("wrote {0} ({1:N0} KB)" -f $path, ((Get-Item $path).Length / 1KB))

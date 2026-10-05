@@ -23,7 +23,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.95"] = {
         "Border Inside Icon (CDM, Appearance): draw the icon border over the icon's edge instead of outside it, so bars matched to a group's width line up exactly.",
-        "Buff images (Kelerts, Buff Alerts): any of your buffs can show its own image - a coloured screen edge glow, animated flames round the screen, or your own texture or animation - for as long as it's up, in combat too.",
+        "Buff images (Kelerts, Buff Alerts): any of your buffs can show its own image - a coloured screen edge glow, animated flames round the screen or framing your character, or your own texture or animation - for as long as it's up, in combat too.",
     },
     ["1.94"] = {
         "Charge counts on your cooldown icons now stay visible in combat and update as soon as you spend or regain a charge.",
