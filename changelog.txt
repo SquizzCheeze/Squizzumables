@@ -37,3 +37,9 @@ V1.95
   alert art for it (Demonic Core's, for example), so yours replaces theirs
   rather than sitting on top of it. Every other spell alert is untouched,
   and removing the image brings Blizzard's back.
+- Buff Alerts now lists every buff Blizzard's Cooldown Manager tracks for
+  your spec as well as the ones from your spellbook, so buffs from passive
+  talents and procs (Demonic Core, for example) appear without adding them
+  by spell ID. Sounds and images also match a buff under any of the spell
+  IDs the game uses for it, so one whose buff ID differs from the spell you
+  cast now triggers too.

@@ -968,14 +968,21 @@ function Native:ReleaseAllBuffImages()
     for key in pairs(buffImages) do ReleaseBuffImage(key) end
 end
 
---- Returns true when the image was built.
-function Native:BuildBuffImage(key, spellID, host, paint)
+--- Returns true when the image was built. `spellIDs` is one ID or a set
+--- { [auraID] = true } of every aura ID the buff may arrive under.
+function Native:BuildBuffImage(key, spellIDs, host, paint)
     ReleaseBuffImage(key)
     if InCombatLockdown() or not self:IsAvailable() then return false end
     local c = NewContainer(host)
     if not c then return false end
     local slotHost = NewHost(host)
-    local info = { spellID = spellID, inits = 0, shows = 0, hides = 0 }
+    local idSet = {}
+    if type(spellIDs) == "table" then
+        for id in pairs(spellIDs) do idSet[id] = true end
+    else
+        idSet[spellIDs] = true
+    end
+    local info = { spellID = key, inits = 0, shows = 0, hides = 0 }
     buffImageInfo[key] = info
     -- includeSpellIDs is a SET, { [spellID] = true }: the engine checks
     -- `includeSpellIDs[auraData.spellId]`. A plain list { spellID } is
@@ -983,7 +990,7 @@ function Native:BuildBuffImage(key, spellID, host, paint)
     -- (user report 2026-10-05; /sq buffimages: built, 0 shows). AuraSpellIDs
     -- above builds its sets the same way.
     local ok, slot = pcall(c.AddAuraSlot, c, "sqkel" .. tostring(key), FILTERS.player[1], {
-        candidateFilters = { includeSpellIDs = { [spellID] = true } },
+        candidateFilters = { includeSpellIDs = idSet },
         initializeFrame = function(button)
             info.inits = info.inits + 1
             button:ClearAllPoints()
@@ -1010,7 +1017,7 @@ function Native:BuildBuffImage(key, spellID, host, paint)
         end,
     })
     if not (ok and slot) then
-        Note(ok and ("AddAuraSlot returned nothing for buff image " .. tostring(spellID)) or slot)
+        Note(ok and ("AddAuraSlot returned nothing for buff image " .. tostring(key)) or slot)
         pcall(c.Hide, c)
         return false
     end

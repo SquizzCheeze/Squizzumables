@@ -394,6 +394,63 @@ local function BuffSounds()
 end
 BH.BuffSounds = BuffSounds
 
+-- ----------------------------------------------------------------------------
+-- Aura ID aliases. A grid icon is ONE spell ID, but the buff it stands for can
+-- arrive under another: the Cooldown Manager hands every tracked buff over
+-- with an overrideSpellID and linkedSpellIDs, and the aura really is often one
+-- of those (the CDM's own buff swipe needed exactly this, see
+-- Squizzumables_CDM.lua). buffAliases[gridID] = { [auraID] = true, ... },
+-- always including gridID itself; aliasOwner is the reverse. Filled by
+-- ScanCDMBuffs and used by the images, the sounds and the Blizzard-art hiding,
+-- so all three match whichever ID the buff turns up under.
+-- ----------------------------------------------------------------------------
+local buffAliases, aliasOwner = {}, {}
+
+local function AddAlias(gridID, auraID)
+    if not (gridID and auraID) then return end
+    local set = buffAliases[gridID]
+    if not set then set = { [gridID] = true }; buffAliases[gridID] = set end
+    set[auraID] = true
+    aliasOwner[auraID] = aliasOwner[auraID] or gridID
+end
+
+-- Every aura ID a grid icon matches, as a set.
+local function AuraIDsFor(gridID)
+    return buffAliases[gridID] or { [gridID] = true }
+end
+
+-- The Cooldown Manager's two buff categories (buff icons, buff bars) for the
+-- current spec: what the CDM tracks, passives and procs included -- Demonic
+-- Core comes from a passive and so is not in the spellbook walk below. Only
+-- entries whose aura lands on the player (selfAura not false), and only real
+-- spells (equip-slot trinket entries have no spellID of their own).
+local function ScanCDMBuffs()
+    local out = {}
+    local CV = C_CooldownViewer
+    if not (CV and CV.GetCooldownViewerCategorySet and CV.GetCooldownViewerCooldownInfo) then return out end
+    local cats = Enum.CooldownViewerCategory
+    if not cats then return out end
+    for _, cat in ipairs({ cats.TrackedBuff, cats.TrackedBar }) do
+        local ok, ids = pcall(CV.GetCooldownViewerCategorySet, cat)
+        if ok and type(ids) == "table" then
+            for _, cdID in ipairs(ids) do
+                local info = CV.GetCooldownViewerCooldownInfo(cdID)
+                local spellID = info and info.spellID
+                if spellID and info.isKnown and info.selfAura ~= false then
+                    AddAlias(spellID, spellID)
+                    if info.overrideSpellID then AddAlias(spellID, info.overrideSpellID) end
+                    if type(info.linkedSpellIDs) == "table" then
+                        for _, lid in ipairs(info.linkedSpellIDs) do AddAlias(spellID, lid) end
+                    end
+                    out[#out + 1] = spellID
+                end
+            end
+        end
+    end
+    return out
+end
+BH.ScanCDMBuffs = ScanCDMBuffs
+
 local function ClearAuraSoundRegistrations()
     if not AuraSoundsAvailable() then return end
     for key, soundID in pairs(registeredAuraSounds) do
@@ -419,16 +476,19 @@ local function ApplyAuraSoundRegistrations(self)
     }
 
     local wanted, got = 0, 0
+    ScanCDMBuffs()   -- fresh aliases before registering against them
     for spellID, entry in pairs(BuffSounds()) do
         local id = tonumber(spellID)
         if id and type(entry) == "table" then
             for field, trigger in pairs(triggers) do
                 local path = self.ResolveSoundPath and self:ResolveSoundPath(entry[field])
-                if path then
+                -- One registration per aura ID the icon matches: an aura has
+                -- exactly one spell ID, so only one of them can ever fire.
+                for auraID in pairs(path and AuraIDsFor(id) or {}) do
                     wanted = wanted + 1
                     local ok, soundID = pcall(C_UnitAuras.AddAuraSound, trigger, {
                         unitToken     = "player",
-                        spellID       = id,
+                        spellID       = auraID,
                         soundFileName = path,
                         outputChannel = entry.channel or "Master",
                     })
@@ -439,7 +499,7 @@ local function ApplyAuraSoundRegistrations(self)
                     -- The missing ID is the only tell we get.
                     if ok and soundID then
                         got = got + 1
-                        registeredAuraSounds[id .. ":" .. field] = soundID
+                        registeredAuraSounds[id .. ":" .. field .. ":" .. auraID] = soundID
                     end
                 end
             end
@@ -573,7 +633,12 @@ end
 -- Did the client accept this spell's registration? Read by the tab, so a
 -- refusal is visible rather than silently doing nothing.
 function BH.BuffSoundRegistered(spellID, field)
-    return registeredAuraSounds[tonumber(spellID) .. ":" .. field] ~= nil
+    -- Keys are "<grid ID>:<field>:<aura ID>"; any alias accepted counts.
+    local prefix = tonumber(spellID) .. ":" .. field .. ":"
+    for key in pairs(registeredAuraSounds) do
+        if key:sub(1, #prefix) == prefix then return true end
+    end
+    return false
 end
 
 -- /sq buffsounds -- what the client actually accepted, and what it refused.
@@ -819,7 +884,9 @@ end
 -- the overlay is shown, and cannot be cut without replacing Blizzard's code).
 -- ----------------------------------------------------------------------------
 local function OverlayHidden(spellID)
-    local entry = spellID and BuffSounds()[spellID]
+    if not spellID then return false end
+    -- Blizzard's alert may carry any of the buff's aura IDs.
+    local entry = BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
     return type(entry) == "table" and entry.image ~= nil
 end
 
@@ -875,8 +942,15 @@ function BH:RefreshBuffImages()
             if imageHosts[id] then imageHosts[id]:Hide() end
         end
     end
+    ScanCDMBuffs()   -- fresh aura ID aliases
     for id, entry in pairs(wanted) do
-        local sig = ImageSignature(entry)
+        -- The aura IDs are part of the signature, so an alias the CDM only
+        -- reports later (talents loading after login) rebuilds the image.
+        local auraIDs = AuraIDsFor(id)
+        local idList = {}
+        for a in pairs(auraIDs) do idList[#idList + 1] = a end
+        table.sort(idList)
+        local sig = ImageSignature(entry) .. "|" .. table.concat(idList, ",")
         if builtImageSig[id] ~= sig then
             local host = imageHosts[id]
             if not host then
@@ -886,7 +960,7 @@ function BH:RefreshBuffImages()
             end
             PlaceImageFrame(host, entry)
             host:Show()
-            local ok = native:BuildBuffImage(id, id, host, function(button, watcher)
+            local ok = native:BuildBuffImage(id, auraIDs, host, function(button, watcher)
                 local tex = button:CreateTexture(nil, "ARTWORK")
                 tex:SetAllPoints(button)
                 local ag = PaintImage(tex, entry)
@@ -1118,6 +1192,11 @@ end
 -- differs from the ID of the aura it applies will register a sound that never
 -- plays (Blessing of Freedom is 61107 to cast and 92824 as the buff) -- which is
 -- why the tab also takes a spell ID by hand.
+--
+-- Since 2026-10-05 the CDM's buff categories are merged in as well (see
+-- ScanCDMBuffs): the spellbook skips passives, and plenty of buffs come from
+-- them (Demonic Core). The spellbook still comes first, so the list works with
+-- the Cooldown Manager switched off; the CDM only adds to it.
 -- ============================================================================
 
 -- Spells the walk below misses, added by hand.
@@ -1171,6 +1250,35 @@ function BH.GetKnownBuffSpells()
                         end
                     end
                 end
+            end
+        end
+    end
+
+    -- What the Cooldown Manager tracks as buffs: passives and procs the
+    -- spellbook walk cannot see (user report 2026-10-05: buffs in the CDM
+    -- missing from this list). A buff already listed under the same NAME --
+    -- the spellbook's cast ID against the CDM's aura ID, Burning Rush style --
+    -- is not listed twice; its aura IDs are folded into the existing icon, so
+    -- that icon now matches either.
+    local byName = {}
+    for _, e in ipairs(out) do
+        local nm = BH.Secrets.SafeString(e.name, nil)
+        if nm then byName[nm] = e.spellID end
+    end
+    for _, cdmID in ipairs(ScanCDMBuffs()) do
+        if not seen[cdmID] then
+            seen[cdmID] = true
+            local name = BH.Secrets.SafeString(C_Spell.GetSpellName(cdmID), nil)
+            local existing = name and byName[name]
+            if existing then
+                for auraID in pairs(AuraIDsFor(cdmID)) do AddAlias(existing, auraID) end
+            else
+                if name then byName[name] = cdmID end
+                out[#out + 1] = {
+                    spellID = cdmID,
+                    name    = name or ("Spell " .. cdmID),
+                    icon    = C_Spell.GetSpellTexture(cdmID),
+                }
             end
         end
     end
