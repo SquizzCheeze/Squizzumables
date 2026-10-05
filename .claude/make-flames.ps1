@@ -140,7 +140,10 @@ public static class SqFlames {
         var bmp = new Bitmap(SW, SH, PixelFormat.Format32bppArgb);
         var data = bmp.LockBits(new Rectangle(0, 0, SW, SH), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         byte[] px = new byte[SW * SH * 4];
-        double rx = 0.40, ry = 0.44;             // ellipse radii, fraction of the frame
+        // Ellipse radii, fraction of the frame. Pulled in from 0.40/0.44 when
+        // the flames were thickened (user request 2026-10-05), so the taller
+        // tongues still fit inside the frame.
+        double rx = 0.34, ry = 0.40;
         double halfSpan = 62 * Math.PI / 180;    // each arc covers +-62 degrees of its side
         for (int f = 0; f < FRAMES; f++) {
             double phase = (double)f / FRAMES, scroll = phase * PERIOD;
@@ -159,7 +162,7 @@ public static class SqFlames {
                         double along = Math.Abs(ang) / halfSpan;
                         double taper = along >= 1 ? 0 : 1 - along * along;
                         if (taper <= 0) continue;
-                        double reach = 0.07 * (0.35 + 0.65 * taper);
+                        double reach = 0.13 * (0.35 + 0.65 * taper);
                         double tongue = Fbm(ang * 3.0 + side * 7, scroll * 0.5 + 0.37, 201 + side);
                         tongue = tongue * tongue;
                         // Outside the curve a little further than inside: the
