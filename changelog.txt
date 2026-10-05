@@ -33,3 +33,7 @@ V1.95
   setting, set how thick the fire is with Flame Thickness (1-5), and Move
   them into place. A Centre button puts any placed image
   back in the middle of the screen.
+- A buff with one of these images no longer also shows Blizzard's own spell
+  alert art for it (Demonic Core's, for example), so yours replaces theirs
+  rather than sitting on top of it. Every other spell alert is untouched,
+  and removing the image brings Blizzard's back.

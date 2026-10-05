@@ -803,7 +803,59 @@ end
 --- so rebuilding them all on every edit would leak one per image per edit.
 --- In combat, the work waits for combat to end (containers are built out of
 --- combat only).
+-- ----------------------------------------------------------------------------
+-- Blizzard's proc art ("spell alerts", SpellActivationOverlayFrame) is hidden
+-- for any buff that has one of OUR images (user request 2026-10-05: Demonic
+-- Core's sits where the ( ) arcs go). Only those: every other proc still
+-- shows, and clearing the image brings Blizzard's back.
+--
+-- How: a hook on the frame's ShowOverlay, which every show goes through, sets
+-- each of that spell's overlay TEXTURES to alpha 0 -- or back to 1, since the
+-- overlays are pooled and the next spell to get one must not inherit our 0.
+-- The texture, not the overlay: Blizzard's fade-in/out animations drive the
+-- overlay frame's own alpha and would undo it. Plain, unprotected frame, and
+-- the event's spell ID is not secret, so this works in combat. The game's
+-- "spell alert" sound still plays (it is played in the same function, before
+-- the overlay is shown, and cannot be cut without replacing Blizzard's code).
+-- ----------------------------------------------------------------------------
+local function OverlayHidden(spellID)
+    local entry = spellID and BuffSounds()[spellID]
+    return type(entry) == "table" and entry.image ~= nil
+end
+
+local function ApplyOverlayHiding(frame, spellID)
+    local list = frame.overlaysInUse and frame.overlaysInUse[spellID]
+    if not list then return end
+    local a = OverlayHidden(spellID) and 0 or 1
+    for _, overlay in pairs(list) do
+        if overlay.texture then overlay.texture:SetAlpha(a) end
+    end
+end
+
+local overlayHooked = false
+local function HookBlizzardOverlay()
+    local frame = _G.SpellActivationOverlayFrame
+    if overlayHooked or not (frame and frame.ShowOverlay) then return end
+    overlayHooked = true
+    hooksecurefunc(frame, "ShowOverlay", function(self, spellID)
+        pcall(ApplyOverlayHiding, self, spellID)
+    end)
+end
+
+-- Re-apply to whatever is on screen right now, after an image was set or
+-- cleared (otherwise it would only take effect on the next proc).
+local function RefreshOverlayHiding()
+    HookBlizzardOverlay()
+    local frame = _G.SpellActivationOverlayFrame
+    if not (frame and frame.overlaysInUse) then return end
+    for spellID in pairs(frame.overlaysInUse) do
+        pcall(ApplyOverlayHiding, frame, spellID)
+    end
+end
+BH.BlizzardOverlayHidden = OverlayHidden
+
 function BH:RefreshBuffImages()
+    RefreshOverlayHiding()
     local native = self.cdm and self.cdm.native
     if not (native and native.BuildBuffImage) then return end
     if InCombatLockdown() then imagesPending = true return end
@@ -903,6 +955,16 @@ local function PrintBuffImageDiagnosticsBody()
         end
     end
     if not next(configured) then P("no buff has an image set") end
+
+    -- Blizzard's own proc art: hidden for a spell with one of our images. If
+    -- it still shows, its ID here differs from the aura's.
+    local sao = _G.SpellActivationOverlayFrame
+    local shown = {}
+    for id in pairs(sao and sao.overlaysInUse or {}) do
+        shown[#shown + 1] = ("%s (%s)%s"):format(tostring(BH.Secrets.SafeString(C_Spell.GetSpellName(id), "?")),
+            tostring(id), BH.BlizzardOverlayHidden(id) and " hidden" or "")
+    end
+    P("Blizzard spell alerts on screen: " .. (#shown > 0 and table.concat(shown, ", ") or "none"))
 
     if InCombatLockdown() then
         P("buffs on you: run this again OUT of combat -- the game hides aura data in combat")
