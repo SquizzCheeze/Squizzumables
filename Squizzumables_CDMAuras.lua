@@ -975,7 +975,7 @@ function Native:BuildBuffImage(key, spellID, host, paint)
     local c = NewContainer(host)
     if not c then return false end
     local slotHost = NewHost(host)
-    local info = { spellID = spellID, inits = 0 }
+    local info = { spellID = spellID, inits = 0, shows = 0, hides = 0 }
     buffImageInfo[key] = info
     local ok, slot = pcall(c.AddAuraSlot, c, "sqkel" .. tostring(key), FILTERS.player[1], {
         candidateFilters = { includeSpellIDs = { spellID } },
@@ -987,7 +987,20 @@ function Native:BuildBuffImage(key, spellID, host, paint)
             -- image would swallow every click while the buff is up.
             if button.SetMouseClickEnabled then button:SetMouseClickEnabled(false) end
             if button.SetMouseMotionEnabled then button:SetMouseMotionEnabled(false) end
-            local okP, err = pcall(paint, button)
+            -- A child frame of OURS rides along: OnShow / OnHide fire on it
+            -- exactly when the engine shows and hides the button, which can
+            -- never be asked directly (reading the button's state is refused).
+            -- It counts them for /sq buffimages -- "shown 0 times with the
+            -- buff up" is a matching problem, "shown but nothing on screen" a
+            -- drawing one -- and runs the caller's onShow (the flipbook
+            -- restart). Not the engine's button, so it may carry scripts.
+            local watcher = CreateFrame("Frame", nil, button)
+            watcher:SetScript("OnShow", function(w)
+                info.shows = info.shows + 1
+                if w.onShow then pcall(w.onShow) end
+            end)
+            watcher:SetScript("OnHide", function() info.hides = info.hides + 1 end)
+            local okP, err = pcall(paint, button, watcher)
             if not okP then Note(err) end
         end,
     })

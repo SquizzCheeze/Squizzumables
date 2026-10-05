@@ -796,17 +796,15 @@ function BH:RefreshBuffImages()
             end
             PlaceImageFrame(host, entry)
             host:Show()
-            local ok = native:BuildBuffImage(id, id, host, function(button)
+            local ok = native:BuildBuffImage(id, id, host, function(button, watcher)
                 local tex = button:CreateTexture(nil, "ARTWORK")
                 tex:SetAllPoints(button)
                 local ag = PaintImage(tex, entry)
-                if ag then
+                if ag and watcher then
                     -- Restart the flipbook each time the engine shows the
-                    -- button again (see the section header). Our own child
-                    -- frame: OnShow fires on it when its parent is shown, and
-                    -- it is not the engine's button, so it may have a script.
-                    local watcher = CreateFrame("Frame", nil, button)
-                    watcher:SetScript("OnShow", function() pcall(ag.Restart, ag) end)
+                    -- button again (see the section header). `watcher` is
+                    -- our own child frame of the button (BuildBuffImage).
+                    watcher.onShow = function() ag:Restart() end
                 end
             end)
             builtImageSig[id] = ok and sig or nil
@@ -853,6 +851,12 @@ local function PrintBuffImageDiagnosticsBody()
                     builtImageSig[id] and "yes" or "NO",
                     c and (c:IsVisible() and "visible" or "hidden") or "none",
                     info and tostring(info.inits) or "-"))
+            -- The engine showing the button is what puts the image up. 0 shows
+            -- with the buff on = the aura never matched the slot.
+            if info then
+                P(("    engine showed the image %d time(s), hid it %d time(s)")
+                    :format(info.shows or 0, info.hides or 0))
+            end
             local host = imageHosts[id]
             if host then
                 P(("    host: shown=%s  size=%dx%d  strata=%s")
