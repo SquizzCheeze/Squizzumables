@@ -662,6 +662,23 @@ local FLAME_SHEET = { frames = 32, cols = 4, rows = 8, w = 512, h = 256, fps = 1
 -- 2048x1024 (make-flames.ps1's MakeArcs).
 local ARC_SHEET = { frames = 32, cols = 8, rows = 4, w = 256, h = 256, fps = 16, loop = true }
 
+-- The arcs come in five thicknesses (imageThickness 1-5, default 3), each its
+-- own sheet. A thicker sheet draws a smaller ellipse to make room for its
+-- flames (rx = 0.47 - thick, ry = 0.53 - thick, in make-flames.ps1), so the
+-- frame is scaled by ellipse(3) / ellipse(n) to keep the arc's centre line
+-- where the player placed it: thickness changes the fire, not the framing.
+local ARC_LEVELS = {}
+do
+    local thick = { 0.05, 0.09, 0.13, 0.17, 0.21 }   -- must match make-flames.ps1
+    for n, t in ipairs(thick) do
+        ARC_LEVELS[n] = {
+            file = ALERTS .. (n == 3 and "flames_arcs.png" or ("flames_arcs_" .. n .. ".png")),
+            sw = (0.47 - 0.13) / (0.47 - t),
+            sh = (0.53 - 0.13) / (0.53 - t),
+        }
+    end
+end
+
 -- Images that ship with the addon, offered in the editor's Image dropdown.
 local BUNDLED_IMAGES = {
     vignette      = { file = VIGNETTE },
@@ -670,7 +687,8 @@ local BUNDLED_IMAGES = {
     flames_bottom = { file = ALERTS .. "flames_bottom.png", sheet = FLAME_SHEET, blend = "ADD" },
     flames_ring   = { file = ALERTS .. "flames_ring.png",   sheet = FLAME_SHEET, blend = "ADD" },
     -- placed: framed round something (your character), not the screen's edge
-    flames_arcs   = { file = ALERTS .. "flames_arcs.png",   sheet = ARC_SHEET,   blend = "ADD", placed = true },
+    flames_arcs   = { file = ALERTS .. "flames_arcs.png",   sheet = ARC_SHEET,   blend = "ADD", placed = true,
+                      levels = ARC_LEVELS },
 }
 BH.KEL_BUNDLED_IMAGES = BUNDLED_IMAGES
 
@@ -680,9 +698,20 @@ local imagesPending = false
 
 -- What to draw: atlas or file, the flipbook layout if it animates, and the
 -- blend mode.
+-- The thickness level of an image that has them, or nil.
+local function ImageLevel(entry)
+    local bundled = BUNDLED_IMAGES[entry.image]
+    local levels = bundled and bundled.levels
+    if not levels then return nil end
+    return levels[tonumber(entry.imageThickness) or 3] or levels[3]
+end
+
 local function ImageSource(entry)
     local bundled = BUNDLED_IMAGES[entry.image]
-    if bundled then return nil, bundled.file, bundled.sheet, bundled.blend or "BLEND" end
+    if bundled then
+        local lv = ImageLevel(entry)
+        return nil, lv and lv.file or bundled.file, bundled.sheet, bundled.blend or "BLEND"
+    end
     local name = strtrim(tostring(entry.imageTexture or ""))
     if name == "" then return nil, VIGNETTE, nil, "BLEND" end
     local sheet
@@ -749,7 +778,8 @@ local function PlaceImageFrame(f, entry)
     else
         f:SetFrameStrata("HIGH")
         local size = entry.imageSize or 200
-        f:SetSize(size, size * (entry.imageHeight or 100) / 100)
+        local lv = ImageLevel(entry)
+        f:SetSize(size * (lv and lv.sw or 1), size * (entry.imageHeight or 100) / 100 * (lv and lv.sh or 1))
         f:SetPoint("CENTER", UIParent, "CENTER", entry.imageX or 0, entry.imageY or 0)
     end
 end
@@ -763,6 +793,7 @@ local function ImageSignature(entry)
             tostring(entry.imageLoop) }, ","),
         ("%.3f,%.3f,%.3f,%.3f"):format(c.r or 1, c.g or 1, c.b or 1, entry.imageAlpha or 0.8),
         tostring(entry.imageFill ~= false), tostring(entry.imageSize or 200), tostring(entry.imageHeight or 100),
+        tostring(entry.imageThickness or 3),
         entry.imageFill == false and (tostring(entry.imageX or 0) .. "," .. tostring(entry.imageY or 0)) or "",
     }, "|")
 end
@@ -1000,6 +1031,16 @@ function BH:MoveBuffImage(spellID)
 end
 
 function BH.MovingBuffImage(spellID) return movingSpellID ~= nil and movingSpellID == tonumber(spellID) end
+
+-- Re-place the Move handle from its buff's current settings, after the size,
+-- height, thickness or position changed while it is out. Through
+-- PlaceImageFrame, so the handle is always exactly what will show.
+local function RefitMoveHandle()
+    local entry = movingSpellID and previewFrame and BuffSounds()[movingSpellID]
+    if not entry then return end
+    PlaceImageFrame(previewFrame, entry)
+    previewFrame:SetFrameStrata("DIALOG")
+end
 
 -- ============================================================================
 -- The player's own buffs, from the spellbook
@@ -1519,9 +1560,7 @@ function BH:RebuildBuffSoundEditor()
                 BH:SaveSettings()
                 BH:RefreshBuffImagesSoon()
                 -- Resize the Move handle too, if it is out.
-                if BH.MovingBuffImage(spellID) and previewFrame then
-                    previewFrame:SetSize(v, v * (Entry().imageHeight or 100) / 100)
-                end
+                RefitMoveHandle()
             end)
             size:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
             ns.Rows.AddTooltip(size, "Size", "Width of the image, in pixels.")
@@ -1533,15 +1572,33 @@ function BH:RebuildBuffSoundEditor()
                 Entry().imageHeight = v
                 BH:SaveSettings()
                 BH:RefreshBuffImagesSoon()
-                if BH.MovingBuffImage(spellID) and previewFrame then
-                    previewFrame:SetHeight((Entry().imageSize or 200) * v / 100)
-                end
+                RefitMoveHandle()
             end)
             height:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
             ns.Rows.AddTooltip(height, "Height %",
                 "Height as a percentage of the width: 100 is square, higher is taller. The ( ) arcs frame a "
                 .. "character best somewhere around 150.")
             y = y - 46
+
+            local bundled = BUNDLED_IMAGES[entry.image]
+            if bundled and bundled.levels then
+                local thick = CreateSQSlider(editor, "Flame Thickness", 200, 1, #bundled.levels, 1)
+                thick:SetValue(tonumber(entry.imageThickness) or 3)
+                thick:SetAfterValueChanged(function(v)
+                    Entry().imageThickness = v
+                    BH:SaveSettings()
+                    BH:RefreshBuffImagesSoon()
+                    if BH.MovingBuffImage(spellID) and previewFrame then
+                        RefitMoveHandle()
+                        PaintImage(previewFrame.tex, Entry())
+                    end
+                end)
+                thick:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+                ns.Rows.AddTooltip(thick, "Flame Thickness",
+                    "How thick the fire is, from 1 (a thin line of flame) to 5. The arcs stay where you placed "
+                    .. "them; only the flames grow or shrink. Press Test to see it.")
+                y = y - 46
+            end
 
             local move = CreateSQButton(editor, BH.MovingBuffImage(spellID) and "Done" or "Move", 70, 22)
             move:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
@@ -1561,10 +1618,7 @@ function BH:RebuildBuffSoundEditor()
                 BH:SaveSettings()
                 BH:RefreshBuffImages()
                 -- Snap the Move handle along with it, if it is out.
-                if BH.MovingBuffImage(spellID) and previewFrame then
-                    previewFrame:ClearAllPoints()
-                    previewFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-                end
+                RefitMoveHandle()
             end)
             ns.Rows.AddTooltip(centre, "Centre",
                 "Put the image back in the middle of the screen -- where your character stands in third person, "
