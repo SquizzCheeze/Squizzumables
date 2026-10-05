@@ -113,6 +113,10 @@ local activeOverlays = {}
 -- shape as the overlays; kept separate for the same reason, and refreshed by
 -- the same ticker.
 local buffImages = {}
+-- [key] = { spellID, inits }: how many buttons the engine built for each
+-- image's slot -- 0 means the slot exists but the engine never made a button,
+-- which is the first thing /sq buffimages has to tell apart.
+local buffImageInfo = {}
 
 local availability     -- nil = not checked yet
 local refreshTicker
@@ -955,6 +959,11 @@ end
 
 function Native:ReleaseBuffImage(key) ReleaseBuffImage(key) end
 
+--- For /sq buffimages: the container (or nil) and its build info.
+function Native:BuffImageInfo(key)
+    return buffImages[key], buffImageInfo[key]
+end
+
 function Native:ReleaseAllBuffImages()
     for key in pairs(buffImages) do ReleaseBuffImage(key) end
 end
@@ -966,9 +975,12 @@ function Native:BuildBuffImage(key, spellID, host, paint)
     local c = NewContainer(host)
     if not c then return false end
     local slotHost = NewHost(host)
+    local info = { spellID = spellID, inits = 0 }
+    buffImageInfo[key] = info
     local ok, slot = pcall(c.AddAuraSlot, c, "sqkel" .. tostring(key), FILTERS.player[1], {
         candidateFilters = { includeSpellIDs = { spellID } },
         initializeFrame = function(button)
+            info.inits = info.inits + 1
             button:ClearAllPoints()
             button:SetAllPoints(slotHost)
             -- A picture, not a control: never take the mouse, or a full-screen

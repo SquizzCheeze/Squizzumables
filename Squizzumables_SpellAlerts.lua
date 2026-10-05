@@ -826,6 +826,66 @@ function BH:RefreshBuffImagesSoon()
     end)
 end
 
+-- /sq buffimages -- unlisted; see CLAUDE.md. Every link from setting to
+-- screen, so "nothing shows" can be pinned to one of them: is the engine
+-- there, did the image build, did the engine make its button, and -- the
+-- usual one -- is the configured ID really the ID of the aura on you? The
+-- buff grid lists CAST spell IDs; the slot matches AURA IDs. The aura list
+-- needs to be run out of combat (aura data is hidden in it).
+local function PrintBuffImageDiagnosticsBody()
+    local P = function(s) print("  " .. s) end
+    print("|cFF00FF00Squizzumables buff images|r")
+    local native = BH.cdm and BH.cdm.native
+    if not native then P("CDM aura module not loaded -- images cannot build.") return end
+    P(("aura engine available: %s   in combat: %s   images waiting for combat to end: %s")
+        :format(tostring(native:IsAvailable()), tostring(InCombatLockdown()), tostring(imagesPending)))
+    P("last engine error: " .. tostring(native.lastError or "none"))
+
+    local configured = {}
+    for spellID, entry in pairs(BuffSounds()) do
+        local id = tonumber(spellID)
+        if id and type(entry) == "table" and entry.image then
+            configured[id] = true
+            local name = C_Spell.GetSpellName and C_Spell.GetSpellName(id)
+            local c, info = native:BuffImageInfo(id)
+            P(("%s (%d): image=%s  built=%s  container=%s  buttons made=%s")
+                :format(tostring(BH.Secrets.SafeString(name, "?")), id, tostring(entry.image),
+                    builtImageSig[id] and "yes" or "NO",
+                    c and (c:IsVisible() and "visible" or "hidden") or "none",
+                    info and tostring(info.inits) or "-"))
+            local host = imageHosts[id]
+            if host then
+                P(("    host: shown=%s  size=%dx%d  strata=%s")
+                    :format(tostring(host:IsShown()), host:GetWidth(), host:GetHeight(), host:GetFrameStrata()))
+            end
+        end
+    end
+    if not next(configured) then P("no buff has an image set") end
+
+    if InCombatLockdown() then
+        P("buffs on you: run this again OUT of combat -- the game hides aura data in combat")
+        return
+    end
+    P("buffs on you now (name: aura ID) -- an image needs the AURA ID:")
+    local n = 0
+    for i = 1, 60 do
+        local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, "player", i, "HELPFUL")
+        if not ok or not a then break end
+        local id = BH.Secrets.SafeNumber(a.spellId, nil)
+        local nm = BH.Secrets.SafeString(a.name, "?")
+        n = n + 1
+        P(("    %s: %s%s"):format(tostring(nm), tostring(id or "hidden"),
+            (id and configured[id]) and "  <- has an image" or ""))
+    end
+    if n == 0 then P("    none") end
+end
+
+function BH:PrintBuffImageDiagnostics()
+    local ok, err = pcall(PrintBuffImageDiagnosticsBody)
+    if not ok then print("  |cffff4444diagnostics failed:|r " .. tostring(err)) end
+    print("  -- end of buffimages --")
+end
+
 -- A built image's state, for the editor: "active", "waiting" (combat) or nil.
 function BH.BuffImageState(spellID)
     if builtImageSig[tonumber(spellID)] then return "active" end

@@ -164,7 +164,10 @@ without a fundamentally different detection approach that doesn't depend on read
   in, when an alert fires in one and not the other), `/sq cdm` (CDM
   sound wiring) and `/sq buffsounds` (which `AddAuraSound` registrations the client accepted, what
   it refused, and which call site asked for the last rebuild — run this first on any
-  blocked-call report about buff sounds), `/sq cdmtaint` (whether this addon has tainted
+  blocked-call report about buff sounds), `/sq buffimages` (Kelerts buff images: engine available,
+  each image built or not, buttons the engine made for its slot, last error, and -- out of combat --
+  every buff on you with its AURA ID, which is the usual culprit: the grid lists cast IDs; run it with
+  the buff up), `/sq cdmtaint` (whether this addon has tainted
   Blizzard's Cooldown Manager — the first thing to run on any report of errors that come from
   Blizzard's own code and name Squizzumables; see the taint-spread note under "Taint safety" for
   why nothing else can answer that) and `/sq cdmbuff` (per tracked-buff frame: whether

@@ -11347,6 +11347,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": Spell alerts module not loaded.")
         end
+    elseif msg == "buffimages" then
+        if BH.PrintBuffImageDiagnostics then
+            BH:PrintBuffImageDiagnostics()
+        else
+            print(addonName .. ": Spell alerts module not loaded.")
+        end
     elseif msg == "notes" then
         if BH.ShowReleaseNotes then BH.ShowReleaseNotes() end
     elseif msg == "welcome" then
