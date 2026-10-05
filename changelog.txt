@@ -31,7 +31,13 @@ V1.95
   character rather than the screen. They start in the middle of the
   screen, taller than wide; size them, stretch them with the new Height %
   setting, set how thick the fire is with Flame Thickness (1-5), and Move
-  them into place. A Centre button puts any placed image
+  them into place.
+- Eight more images to frame your character. Animated: Lightning ( ) arcs
+  that crackle and fork, Frost ( ) arcs with ice shards, rising mist and
+  sparkles, a beating Heartbeat, and an Arcane orbit of two rune rings with
+  orbs circling in opposite directions. Still: Angel wings, a Shield
+  bubble, a Sunburst and a Rune circle. Picking one sets Height % to suit
+  its shape. A Centre button puts any placed image
   back in the middle of the screen.
 - A buff with one of these images no longer also shows Blizzard's own spell
   alert art for it (Demonic Core's, for example), so yours replaces theirs

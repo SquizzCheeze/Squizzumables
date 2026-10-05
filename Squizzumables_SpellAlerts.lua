@@ -753,7 +753,18 @@ local BUNDLED_IMAGES = {
     flames_ring   = { file = ALERTS .. "flames_ring.png",   sheet = FLAME_SHEET, blend = "ADD" },
     -- placed: framed round something (your character), not the screen's edge
     flames_arcs   = { file = ALERTS .. "flames_arcs.png",   sheet = ARC_SHEET,   blend = "ADD", placed = true,
-                      levels = ARC_LEVELS },
+                      levels = ARC_LEVELS, height = 150 },
+    -- .claude/make-auras.ps1. The animated four share the arcs' sheet layout;
+    -- the last four are still images. `height` is the Height % a placed image
+    -- starts at when picked (the ( ) shapes want taller than wide).
+    lightning_arcs = { file = ALERTS .. "aura_lightning.png", sheet = ARC_SHEET, blend = "ADD", placed = true, height = 150 },
+    frost_arcs     = { file = ALERTS .. "aura_frost.png",     sheet = ARC_SHEET, blend = "ADD", placed = true, height = 150 },
+    heartbeat      = { file = ALERTS .. "aura_heart.png",     sheet = ARC_SHEET, blend = "ADD", placed = true },
+    arcane_orbit   = { file = ALERTS .. "aura_arcane.png",    sheet = ARC_SHEET, blend = "ADD", placed = true },
+    angel_wings    = { file = ALERTS .. "aura_wings.png",     placed = true },   -- opaque feathers: BLEND
+    shield_bubble  = { file = ALERTS .. "aura_bubble.png",    blend = "ADD", placed = true },
+    sunburst       = { file = ALERTS .. "aura_sunburst.png",  blend = "ADD", placed = true },
+    rune_circle    = { file = ALERTS .. "aura_runes.png",     blend = "ADD", placed = true },
 }
 BH.KEL_BUNDLED_IMAGES = BUNDLED_IMAGES
 
@@ -1584,19 +1595,32 @@ function BH:RebuildBuffSoundEditor()
         { text = "Flames: bottom",            value = "flames_bottom" },
         { text = "Flames: all round",         value = "flames_ring" },
         { text = "Flames: ( ) arcs",          value = "flames_arcs" },
+        { text = "Lightning: ( ) arcs",       value = "lightning_arcs" },
+        { text = "Frost: ( ) arcs",           value = "frost_arcs" },
+        { text = "Heartbeat",                 value = "heartbeat" },
+        { text = "Arcane orbit",              value = "arcane_orbit" },
+        { text = "Angel wings (still)",       value = "angel_wings" },
+        { text = "Shield bubble (still)",     value = "shield_bubble" },
+        { text = "Sunburst (still)",          value = "sunburst" },
+        { text = "Rune circle (still)",       value = "rune_circle" },
         { text = "Your own texture",          value = "custom" },
     }, function(val)
         local e = Entry()
+        local before = BUNDLED_IMAGES[e.image or ""]
         e.image = (val ~= "none") and val or nil
-        -- The arcs frame something, so they start placed (centre of the
-        -- screen, where a third-person character usually stands) and taller
-        -- than wide -- but only the first time: a later re-pick keeps any
-        -- placement the player has made.
+        -- These frame something, so they start placed (centre of the screen,
+        -- where a third-person character usually stands) -- the first time
+        -- only: a later re-pick keeps the player's placement. The Height %
+        -- follows the shape (the ( ) arcs taller than wide, the rest square)
+        -- when coming from a different one, since a heart at the arcs' 150%
+        -- is just a squashed heart; re-picking the same one keeps it.
         local b = BUNDLED_IMAGES[val]
-        if b and b.placed and e.imageFill == nil then
-            e.imageFill = false
-            e.imageSize = e.imageSize or 260
-            e.imageHeight = e.imageHeight or 150
+        if b and b.placed then
+            if e.imageFill == nil then
+                e.imageFill = false
+                e.imageSize = e.imageSize or 260
+            end
+            if before ~= b then e.imageHeight = b.height or 100 end
         end
         Changed(true)
     end)
@@ -1606,8 +1630,8 @@ function BH:RebuildBuffSoundEditor()
         "An image on screen for exactly as long as this buff is up, in combat too -- the game's aura engine "
         .. "shows and hides it. Each buff can have its own. Screen edge glow is a coloured vignette round the "
         .. "edge of the screen; the Flames are animated fire along the edges you pick (leave the colour white "
-        .. "for natural fire, or tint them). The ( ) arcs are placed rather than full screen: size and move "
-        .. "them to frame your character.")
+        .. "for natural fire, or tint them). The ( ) arcs and the shapes below them are placed rather than "
+        .. "full screen: size and move them to frame your character. Those marked (still) do not animate.")
 
     if entry and entry.image then
         local test = CreateSQButton(editor, "Test", 46, 22)
