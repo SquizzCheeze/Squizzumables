@@ -1359,6 +1359,21 @@ adding new IDs.
   the icon and nothing else moves it. Done in three places that must agree: `ApplyProxyVisuals` (proxy
   `Border`/`ShapeBorder`/`_sqMask`, `showBorder` + `inside` joined `sig`), `CDMAuras` `StyleBorder` (+
   `StyleSignature`), and the placeholder bar border in `GetBuffPlaceholder`. UNTESTED in game when written.
+- **Kelerts buff images** (user request, after researching a friend's Burning Rush vignette). The "image
+  half is not solved" note under Kelerts is now solved for the PLAYER'S OWN BUFFS: `BuffSounds()[spellID]`
+  entries can carry `image` ("vignette" | "custom"), `imageTexture` (atlas, path, or Media file name),
+  `imageColor`, `imageAlpha`, `imageFill` (default true: full screen, BACKGROUND strata, behind the UI),
+  `imageSize`, `imageX/Y` (own position from screen centre -- user decision: NOT the lust alert's). The
+  sub-tab is now "Buff Alerts". Built by `cdm.native:BuildBuffImage(key, spellID, host, paint)` in
+  CDMAuras: one HELPFUL player slot, `includeSpellIDs = {spellID}`, the texture created on the button in
+  initializeFrame, refreshed by the shared ticker (`buffImages`). Rules: static images only (changing a
+  texture after init is not allowed once the aura is secret); every change is a REBUILD out of combat,
+  queued until PLAYER_REGEN_ENABLED in combat; `RefreshBuffImages` rebuilds only entries whose
+  `ImageSignature` changed because containers can never be destroyed, and drag-continuous controls go
+  through `RefreshBuffImagesSoon` (0.4s debounce). Hosts are our frames, reused per spell. Rebuilt from
+  `RefreshAuraSoundRegistrations` (login, profile load, every Kelerts edit). Move = the Test preview
+  frame made draggable (`MoveBuffImage`). `Media/Alerts/vignette.png` from `.claude/make-vignette.ps1`.
+  UNTESTED in game when written; the aura spell ID caveat of buff sounds applies (cast vs aura IDs).
 - **Colour picker Cancel lost the alpha** (`CreateSQColorPicker`): it restored `prev.opacity` from the
   picker's previousValues, which is not where Retail keeps it, so a cancelled pick saved `{r, g, b}` with
   no alpha. `ApplyProxyVisuals`' style `sig` then threw "bad argument #6 to 'format'" on EVERY refresh

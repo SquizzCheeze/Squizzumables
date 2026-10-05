@@ -14,3 +14,11 @@ V1.95
   'format'" on every refresh after cancelling a colour picker, which saved
   the colour without its opacity. Cancel now restores exactly the colour
   you had, and a colour already saved that way works again.
+- Buff images, in Kelerts (the Buff Sounds tab is now Buff Alerts): give
+  any of your own buffs an image that is on screen for exactly as long as
+  the buff is up - and it works in combat, because the game itself shows
+  and hides it. Each buff can have its own: a coloured screen edge glow,
+  or any texture of yours (a game atlas name or an image file), with its
+  own colour and opacity. Fill the whole screen behind your interface, or
+  place it anywhere at a size you choose with its own Move button. A Test
+  button shows how it will look.

@@ -108,6 +108,12 @@ local nativeCooldowns = {}
 -- below, can refresh these containers too.
 local activeOverlays = {}
 
+-- Kelerts buff images (Native:BuildBuffImage, used by
+-- Squizzumables_SpellAlerts.lua), keyed by the caller's key. Same one-slot
+-- shape as the overlays; kept separate for the same reason, and refreshed by
+-- the same ticker.
+local buffImages = {}
+
 local availability     -- nil = not checked yet
 local refreshTicker
 Native.lastError = nil
@@ -711,6 +717,7 @@ local function EnsureTicker()
             for _, st in pairs(activeOverlays) do
                 if st.container then queue[#queue + 1] = st.container end
             end
+            for _, c in pairs(buffImages) do queue[#queue + 1] = c end
             if #queue == 0 then self:Hide() return end
         end
         carry = carry + #queue * dt / REFRESH_INTERVAL
@@ -916,6 +923,83 @@ end
 
 function Native:ReleaseAllActiveOverlays()
     for cdID in pairs(activeOverlays) do ReleaseOverlay(cdID) end
+end
+
+-- ============================================================================
+-- Kelerts buff images
+-- ============================================================================
+--
+-- An image that is on screen exactly while one of your buffs is up, in combat
+-- included -- the half of a custom Kelert that could never work by reading the
+-- aura, because the game hides nearly every aura from addons in combat. The
+-- engine shows and hides the slot's button with the aura; the image is a
+-- texture we put ON that button, inside initializeFrame, so it shows and hides
+-- with it. Nothing reads the aura.
+--
+-- `host` is a plain frame of the caller's, already placed (full screen, or
+-- where the alert sits) BEFORE this runs: the slot binds the button to it for
+-- good. `paint(button)` builds the image on the button and is called from
+-- initializeFrame -- the only time the button may be touched -- so every
+-- change of image, colour or placement is a rebuild, out of combat.
+--
+-- HELPFUL on the player only: that is the case where a spell-ID filter is
+-- always honoured (see the header's last rule).
+
+local function ReleaseBuffImage(key)
+    local c = buffImages[key]
+    if not c then return end
+    pcall(c.SetEnabled, c, false)
+    pcall(c.Hide, c)
+    buffImages[key] = nil
+end
+
+function Native:ReleaseBuffImage(key) ReleaseBuffImage(key) end
+
+function Native:ReleaseAllBuffImages()
+    for key in pairs(buffImages) do ReleaseBuffImage(key) end
+end
+
+--- Returns true when the image was built.
+function Native:BuildBuffImage(key, spellID, host, paint)
+    ReleaseBuffImage(key)
+    if InCombatLockdown() or not self:IsAvailable() then return false end
+    local c = NewContainer(host)
+    if not c then return false end
+    local slotHost = NewHost(host)
+    local ok, slot = pcall(c.AddAuraSlot, c, "sqkel" .. tostring(key), FILTERS.player[1], {
+        candidateFilters = { includeSpellIDs = { spellID } },
+        initializeFrame = function(button)
+            button:ClearAllPoints()
+            button:SetAllPoints(slotHost)
+            -- A picture, not a control: never take the mouse, or a full-screen
+            -- image would swallow every click while the buff is up.
+            if button.SetMouseClickEnabled then button:SetMouseClickEnabled(false) end
+            if button.SetMouseMotionEnabled then button:SetMouseMotionEnabled(false) end
+            local okP, err = pcall(paint, button)
+            if not okP then Note(err) end
+        end,
+    })
+    if not (ok and slot) then
+        Note(ok and ("AddAuraSlot returned nothing for buff image " .. tostring(spellID)) or slot)
+        pcall(c.Hide, c)
+        return false
+    end
+    -- Unit LAST: before the slot exists, UNIT_AURA is never registered.
+    local okU, err = pcall(function()
+        c:SetUnit("player")
+        c:SetEnabled(true)
+        c:Show()
+        c:UpdateAllAuras()
+    end)
+    if not okU then
+        Note(err)
+        pcall(c.SetEnabled, c, false)
+        pcall(c.Hide, c)
+        return false
+    end
+    buffImages[key] = c
+    EnsureTicker()
+    return true
 end
 
 -- ============================================================================

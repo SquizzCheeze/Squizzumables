@@ -547,6 +547,10 @@ end
 
 ---@param trigger string? label for /sq buffsounds, naming what asked for this
 function BH:RefreshAuraSoundRegistrations(trigger)
+    -- The buff images live on the same entries and must follow every place
+    -- this is called from (login, profile load, every Kelerts edit). Ahead of
+    -- the availability check: images do not need AddAuraSound.
+    if self.RefreshBuffImages then self:RefreshBuffImages() end
     if not AuraSoundsAvailable() then return end
     lastTrigger = trigger or "unknown"
     -- A fresh request is a fresh budget: the retries below belong to the
@@ -610,6 +614,240 @@ function BH:PrintBuffSoundDiagnostics()
         print("  no refusals since the last successful rebuild")
     end
 end
+
+-- ============================================================================
+-- Buff images (V1.95)
+--
+-- The image half of a custom Kelert, which reading the aura could never do in
+-- combat. Each buff in the grid can carry an image that is on screen exactly
+-- while that buff is up -- different buffs, different images. The aura
+-- engine shows and hides it (BH.cdm.native:BuildBuffImage), so it works in
+-- combat; nothing here reads the aura.
+--
+-- Stored on the same entry as the buff's sounds, BuffSounds()[spellID]:
+--   image        "vignette" (the bundled screen-edge glow) | "custom" | nil
+--   imageTexture custom: a game atlas name, a texture path, or a file name in
+--                the addon's Media folder
+--   imageColor   { r, g, b } tint (the glow is white, so this is its colour)
+--   imageAlpha   0..1
+--   imageFill    true = over the whole screen, behind the interface;
+--                false = imageSize square at the alert image's position
+--   imageSize    pixels, when not filling the screen
+--
+-- Static images only: an animation would mean changing the texture after the
+-- engine owns the button, which is not allowed once its aura is secret.
+-- ============================================================================
+
+local VIGNETTE = KEL_MEDIA_PATH .. "Alerts\\vignette.png"
+local imageHosts = {}     -- [spellID] = our frame the image is placed by (reused)
+local builtImageSig = {}  -- [spellID] = signature of the image last built
+local imagesPending = false
+
+-- What to draw: the atlas to use, or the file to load.
+local function ImageSource(entry)
+    if entry.image == "vignette" then return nil, VIGNETTE end
+    local name = strtrim(tostring(entry.imageTexture or ""))
+    if name == "" then return nil, VIGNETTE end
+    if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) then return name, nil end
+    if name:find("[\\/]") then return nil, name end
+    return nil, KEL_MEDIA_PATH .. name
+end
+
+local function PaintImage(tex, entry)
+    local atlas, file = ImageSource(entry)
+    if atlas then tex:SetAtlas(atlas) else tex:SetTexture(file) end
+    local c = entry.imageColor or {}
+    tex:SetVertexColor(c.r or 1, c.g or 1, c.b or 1, entry.imageAlpha or 0.8)
+end
+
+-- Place a frame where an image for `entry` goes: the whole screen, behind the
+-- interface, or a square at the image's OWN position (imageX/imageY, offset
+-- from the screen's centre), above it. Its own, not the lust alert's: each
+-- buff's image is placed independently (user decision 2026-10-05), with the
+-- editor's Move button.
+local function PlaceImageFrame(f, entry)
+    f:ClearAllPoints()
+    if entry.imageFill ~= false then
+        f:SetFrameStrata("BACKGROUND")
+        f:SetAllPoints(UIParent)
+    else
+        f:SetFrameStrata("HIGH")
+        local size = entry.imageSize or 200
+        f:SetSize(size, size)
+        f:SetPoint("CENTER", UIParent, "CENTER", entry.imageX or 0, entry.imageY or 0)
+    end
+end
+
+local function ImageSignature(entry)
+    local c = entry.imageColor or {}
+    return table.concat({
+        tostring(entry.image), tostring(entry.imageTexture),
+        ("%.3f,%.3f,%.3f,%.3f"):format(c.r or 1, c.g or 1, c.b or 1, entry.imageAlpha or 0.8),
+        tostring(entry.imageFill ~= false), tostring(entry.imageSize or 200),
+        entry.imageFill == false and (tostring(entry.imageX or 0) .. "," .. tostring(entry.imageY or 0)) or "",
+    }, "|")
+end
+
+--- Build every buff image from settings. Only images whose settings changed
+--- are rebuilt: an aura container can never be destroyed, only switched off,
+--- so rebuilding them all on every edit would leak one per image per edit.
+--- In combat, the work waits for combat to end (containers are built out of
+--- combat only).
+function BH:RefreshBuffImages()
+    local native = self.cdm and self.cdm.native
+    if not (native and native.BuildBuffImage) then return end
+    if InCombatLockdown() then imagesPending = true return end
+    imagesPending = false
+
+    local wanted = {}
+    for spellID, entry in pairs(BuffSounds()) do
+        local id = tonumber(spellID)
+        if id and type(entry) == "table" and entry.image then
+            wanted[id] = entry
+        end
+    end
+    for id in pairs(builtImageSig) do
+        if not wanted[id] then
+            native:ReleaseBuffImage(id)
+            builtImageSig[id] = nil
+            if imageHosts[id] then imageHosts[id]:Hide() end
+        end
+    end
+    for id, entry in pairs(wanted) do
+        local sig = ImageSignature(entry)
+        if builtImageSig[id] ~= sig then
+            local host = imageHosts[id]
+            if not host then
+                host = CreateFrame("Frame", nil, UIParent)
+                host:EnableMouse(false)
+                imageHosts[id] = host
+            end
+            PlaceImageFrame(host, entry)
+            host:Show()
+            local ok = native:BuildBuffImage(id, id, host, function(button)
+                local tex = button:CreateTexture(nil, "ARTWORK")
+                tex:SetAllPoints(button)
+                PaintImage(tex, entry)
+            end)
+            builtImageSig[id] = ok and sig or nil
+        end
+    end
+end
+
+-- For controls that fire continuously while dragged (colour picker, sliders):
+-- one rebuild after the dragging stops, not one per step, since every rebuild
+-- strands a container.
+local imageRefreshTimer
+function BH:RefreshBuffImagesSoon()
+    if imageRefreshTimer then imageRefreshTimer:Cancel() end
+    imageRefreshTimer = C_Timer.NewTimer(0.4, function()
+        imageRefreshTimer = nil
+        BH:RefreshBuffImages()
+    end)
+end
+
+-- A built image's state, for the editor: "active", "waiting" (combat) or nil.
+function BH.BuffImageState(spellID)
+    if builtImageSig[tonumber(spellID)] then return "active" end
+    if imagesPending then return "waiting" end
+    return nil
+end
+
+do
+    local ev = CreateFrame("Frame")
+    ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+    ev:SetScript("OnEvent", function()
+        if imagesPending then BH:RefreshBuffImages() end
+    end)
+end
+
+-- The Test button: the image as it will look, for a few seconds. A plain
+-- frame of ours -- the real one only ever shows for a real buff. The same
+-- frame is the Move handle (BH:MoveBuffImage), so what you drag is exactly
+-- what will show.
+local previewFrame, previewTimer
+local movingSpellID     -- the image being placed with Move, or nil
+
+local function PreviewFrame()
+    if previewFrame then return previewFrame end
+    local f = CreateFrame("Frame", nil, UIParent)
+    f:EnableMouse(false)
+    f:SetMovable(true)
+    f:SetClampedToScreen(true)
+    f.tex = f:CreateTexture(nil, "ARTWORK")
+    f.tex:SetAllPoints()
+    -- Shown only while moving: a box and a label, so a faint image -- or one
+    -- the colour of the scene behind it -- can still be found and grabbed.
+    f.box = f:CreateTexture(nil, "BACKGROUND")
+    f.box:SetAllPoints()
+    f.box:SetColorTexture(0.1, 0.4, 0.8, 0.25)
+    f.label = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    f.label:SetPoint("CENTER")
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function(self) BH:GridStartMoving(self) end)
+    f:SetScript("OnDragStop", function(self)
+        BH:GridStopMoving(self)
+        local entry = movingSpellID and BuffSounds()[movingSpellID]
+        if not entry then return end
+        -- Saved as an offset from the screen's centre. Both centres are read
+        -- in UIParent's space (this frame is its child at scale 1).
+        local fx, fy = self:GetCenter()
+        local ux, uy = UIParent:GetCenter()
+        if fx and ux then
+            entry.imageX = math.floor(fx - ux + 0.5)
+            entry.imageY = math.floor(fy - uy + 0.5)
+            BH:SaveSettings()
+            BH:RefreshBuffImages()
+        end
+    end)
+    previewFrame = f
+    return f
+end
+
+function BH:PreviewBuffImage(spellID)
+    local entry = BuffSounds()[tonumber(spellID)]
+    if not (entry and entry.image) or movingSpellID then return end
+    local f = PreviewFrame()
+    PlaceImageFrame(f, entry)
+    PaintImage(f.tex, entry)
+    f.box:Hide()
+    f.label:SetText("")
+    f:Show()
+    if previewTimer then previewTimer:Cancel() end
+    previewTimer = C_Timer.NewTimer(3, function()
+        f:Hide()
+        previewTimer = nil
+    end)
+end
+
+--- Start or finish placing a buff's image by dragging it. Its own position,
+--- independent of every other image and of the lust alert.
+function BH:MoveBuffImage(spellID)
+    local id = tonumber(spellID)
+    local f = PreviewFrame()
+    if movingSpellID then
+        -- Done (or switching to another buff): put the handle away.
+        local wasSame = movingSpellID == id
+        movingSpellID = nil
+        f:EnableMouse(false)
+        f:Hide()
+        if wasSame then return end
+    end
+    local entry = id and BuffSounds()[id]
+    if not (entry and entry.image) or entry.imageFill ~= false then return end
+    if previewTimer then previewTimer:Cancel(); previewTimer = nil end
+    movingSpellID = id
+    PlaceImageFrame(f, entry)
+    -- Above everything while being placed, whatever the image sits at.
+    f:SetFrameStrata("DIALOG")
+    PaintImage(f.tex, entry)
+    f.box:Show()
+    f.label:SetText("Drag me")
+    f:EnableMouse(true)
+    f:Show()
+end
+
+function BH.MovingBuffImage(spellID) return movingSpellID ~= nil and movingSpellID == tonumber(spellID) end
 
 -- ============================================================================
 -- The player's own buffs, from the spellbook
@@ -708,6 +946,9 @@ end
 local selectedBuffSpellID
 
 function BH.SelectBuffSpell(spellID)
+    -- A Move handle belongs to the buff it was opened for; picking another
+    -- buff puts it away rather than leaving it to move the wrong image.
+    if movingSpellID and movingSpellID ~= tonumber(spellID) then BH:MoveBuffImage(movingSpellID) end
     selectedBuffSpellID = tonumber(spellID)
 end
 
@@ -825,7 +1066,7 @@ function BH:RebuildBuffSoundGrid()
                 GameTooltip:AddLine("Added by spell ID.", 0.7, 0.7, 0.7, true)
             end
             if configured then
-                GameTooltip:AddLine("Has a sound.", 0.7, 0.7, 0.7, true)
+                GameTooltip:AddLine("Has a sound or an image.", 0.7, 0.7, 0.7, true)
             end
             GameTooltip:Show()
         end)
@@ -946,11 +1187,152 @@ function BH:RebuildBuffSoundEditor()
             BH:RebuildBuffSoundGrid()
             BH:RebuildBuffSoundEditor()
         end)
-        ns.Rows.AddTooltip(rm, "Remove", "Clear both sounds for this spell.")
+        ns.Rows.AddTooltip(rm, "Remove", "Clear this spell's sounds and image.")
     end
     y = y - 30
 
+    -- ── IMAGE ─────────────────────────────────────────────────────────────
+    -- Shown while the buff is up, by the game's aura engine, so it works in
+    -- combat (see "Buff images" above).
+    local function Entry()
+        local s = BH.BuffSounds()
+        s[spellID] = s[spellID] or { channel = "Master" }
+        return s[spellID]
+    end
+    local function Changed(rebuildEditor)
+        BH:SaveSettings()
+        BH:RefreshBuffImages()
+        BH:RebuildBuffSoundGrid()
+        if rebuildEditor then BH:RebuildBuffSoundEditor() end
+    end
+
+    local imgLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    imgLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+    imgLbl:SetWidth(60)
+    imgLbl:SetJustifyH("LEFT")
+    imgLbl:SetText("Image:")
+    imgLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+    local imgDrop = CreateSQDropdown(editor, "", 200, {
+        { text = "None",             value = "none" },
+        { text = "Screen edge glow", value = "vignette" },
+        { text = "Your own texture", value = "custom" },
+    }, function(val)
+        Entry().image = (val ~= "none") and val or nil
+        Changed(true)
+    end)
+    imgDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+    imgDrop:SetSelectedValue((entry and entry.image) or "none")
+    ns.Rows.AddTooltip(imgDrop, "Image",
+        "An image on screen for exactly as long as this buff is up, in combat too -- the game's aura engine "
+        .. "shows and hides it. Each buff can have its own. Screen edge glow is a coloured vignette round the "
+        .. "edge of the screen.")
+
+    if entry and entry.image then
+        local test = CreateSQButton(editor, "Test", 46, 22)
+        test:SetPoint("LEFT", imgDrop.btn, "RIGHT", 6, 0)
+        test:SetScript("OnClick", function() BH:PreviewBuffImage(spellID) end)
+        ns.Rows.AddTooltip(test, "Test", "Show the image for a few seconds, as it will look.")
+
+        local state = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        state:SetPoint("LEFT", test, "RIGHT", 6, 0)
+        local st = BH.BuffImageState(spellID)
+        if st == "active" then
+            state:SetText("active")
+            state:SetTextColor(0.4, 0.8, 0.4)
+        elseif st == "waiting" then
+            state:SetText("after combat")
+            state:SetTextColor(1, 0.8, 0.3)
+        else
+            state:SetText("not built")
+            state:SetTextColor(SQ_COLORS.danger[1], SQ_COLORS.danger[2], SQ_COLORS.danger[3])
+        end
+    end
+    y = y - 30
+
+    if entry and entry.image then
+        if entry.image == "custom" then
+            local texLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            texLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+            texLbl:SetText("Texture:")
+            texLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+            local texEdit = CreateSQEditBox(editor, 200, 20, { maxLetters = 200 })
+            texEdit:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+            texEdit:SetText(entry.imageTexture or "")
+            local function SaveTex(box)
+                Entry().imageTexture = strtrim(box:GetText() or "")
+                Changed(false)
+            end
+            texEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveTex(box) end)
+            texEdit.onFocusLost = SaveTex
+            ns.Rows.AddTooltip(texEdit, "Texture",
+                "A game atlas name (for example \"bags-glow-flash\"), a texture path, or the name of an image "
+                .. "file in Squizzumables' Media folder. Press Enter to apply. Empty uses the screen edge glow.")
+            y = y - 28
+        end
+
+        local c = entry.imageColor or {}
+        local picker = ns.CreateSQColorPicker(editor, "Colour", c.r or 1, c.g or 1, c.b or 1, 1,
+            function(r, g, b)
+                Entry().imageColor = { r = r, g = g, b = b }
+                BH:SaveSettings()
+                BH:RefreshBuffImagesSoon()
+            end)
+        picker:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+        ns.Rows.AddTooltip(picker, "Colour", "Tint for the image. The screen edge glow is white, so this is its colour.")
+
+        local fillCb = CreateSQCheckbox(editor, "Fill the screen", function(checked)
+            Entry().imageFill = checked
+            if checked and BH.MovingBuffImage(spellID) then BH:MoveBuffImage(spellID) end
+            Changed(true)
+        end)
+        fillCb:SetPoint("TOPLEFT", editor, "TOPLEFT", 190, y)
+        fillCb:SetChecked(entry.imageFill ~= false)
+        ns.Rows.AddTooltip(fillCb, "Fill the screen",
+            "Stretch the image over the whole screen, behind your interface -- right for an edge glow. Unticked, "
+            .. "it is a square with its own position and size, above the interface; place it with Move.")
+        y = y - 30
+
+        local alpha = CreateSQSlider(editor, "Opacity %", 200, 5, 100, 5)
+        alpha:SetValue(math.floor((entry.imageAlpha or 0.8) * 100 + 0.5))
+        alpha:SetAfterValueChanged(function(v)
+            Entry().imageAlpha = v / 100
+            BH:SaveSettings()
+            BH:RefreshBuffImagesSoon()
+        end)
+        alpha:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+        y = y - 46
+
+        if entry.imageFill == false then
+            local size = CreateSQSlider(editor, "Size", 200, 50, 800, 10)
+            size:SetValue(entry.imageSize or 200)
+            size:SetAfterValueChanged(function(v)
+                Entry().imageSize = v
+                BH:SaveSettings()
+                BH:RefreshBuffImagesSoon()
+                -- Resize the Move handle too, if it is out.
+                if BH.MovingBuffImage(spellID) and previewFrame then previewFrame:SetSize(v, v) end
+            end)
+            size:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+            y = y - 46
+
+            local move = CreateSQButton(editor, BH.MovingBuffImage(spellID) and "Done" or "Move", 70, 22)
+            move:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+            move:SetScript("OnClick", function()
+                BH:MoveBuffImage(spellID)
+                BH:RebuildBuffSoundEditor()
+            end)
+            ns.Rows.AddTooltip(move, "Move",
+                "Show this image as a box you can drag into place, then click Done. Each image has its own "
+                .. "position, separate from the others and from the lust alert.")
+            y = y - 30
+        end
+    end
+
     editor:SetHeight(math.abs(y) + 4)
+    if self.kelBuffPage and self.kelBuffEditorTop then
+        self.kelBuffPage:SetHeight(self.kelBuffEditorTop + editor:GetHeight() + 32)
+    end
 end
 
 -- Previous trigger state, per alert id, for edge detection.
@@ -1024,7 +1406,7 @@ function BH:BuildJustForKelTab(parent)
     -- setting up one alert across two tabs.
     local pages = ns.SubTabs.Create(parent, {
         { key = "alerts",     label = "Lust Alert" },
-        { key = "buffsounds", label = "Buff Sounds" },
+        { key = "buffsounds", label = "Buff Alerts" },
         { key = "deaths",     label = "Death Tally" },
     })
 
@@ -1039,7 +1421,7 @@ function BH:BuildJustForKelTab(parent)
     lustNote:SetWidth(372)
     lustNote:SetJustifyH("LEFT")
     lustNote:SetWordWrap(true)
-    lustNote:SetText("A full-screen image and a sound when any lust effect wears off. For a sound on your own buffs, see Buff Sounds below.")
+    lustNote:SetText("A full-screen image and a sound when any lust effect wears off. For a sound or an image on your own buffs, see Buff Alerts.")
     lustNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 34
 
@@ -1356,7 +1738,7 @@ function BH:BuildJustForKelTab(parent)
         bsNote:SetWidth(372)
         bsNote:SetJustifyH("LEFT")
         bsNote:SetWordWrap(true)
-        bsNote:SetText("Your spec's buffs. Click one to give it a sound when it lands or drops. These play in combat, where the game hides auras from addons \226\128\148 so they are sound only, no image.")
+        bsNote:SetText("Your spec's buffs. Click one to give it a sound when it lands or drops, and an image that shows for as long as it is up. Both are handled by the game itself, so they work in combat too.")
         bsNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
         yOffset = yOffset - 44
 
@@ -1417,6 +1799,11 @@ function BH:BuildJustForKelTab(parent)
             editor:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
             editor:SetSize(372, 40)
             self.kelBuffEditor = editor
+            -- The editor's height follows what the selected buff has turned
+            -- on (the image options add rows), so it resizes this page itself
+            -- after every rebuild -- sized once here, the new rows were cut off.
+            self.kelBuffPage = content
+            self.kelBuffEditorTop = math.abs(yOffset)
             self:RebuildBuffSoundEditor()
             yOffset = yOffset - (editor:GetHeight() + 12)
         end
