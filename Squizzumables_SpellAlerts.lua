@@ -625,39 +625,108 @@ end
 -- combat; nothing here reads the aura.
 --
 -- Stored on the same entry as the buff's sounds, BuffSounds()[spellID]:
---   image        "vignette" (the bundled screen-edge glow) | "custom" | nil
+--   image        a BUNDLED_IMAGES key ("vignette", "flames_u", ...) |
+--                "custom" | nil
 --   imageTexture custom: a game atlas name, a texture path, or a file name in
 --                the addon's Media folder
+--   imageFrames/imageCols/imageRows/imageFrameW/imageFrameH/imageFps/imageLoop
+--                custom only: the texture is a FLIPBOOK sheet when imageFrames
+--                > 1 (frame size in pixels; 0 = work it out, atlases only)
 --   imageColor   { r, g, b } tint (the glow is white, so this is its colour)
 --   imageAlpha   0..1
 --   imageFill    true = over the whole screen, behind the interface;
---                false = imageSize square at the alert image's position
+--                false = imageSize square at its own position
 --   imageSize    pixels, when not filling the screen
+--   imageX/Y     its own position, offset from the screen's centre
 --
--- Static images only: an animation would mean changing the texture after the
--- engine owns the button, which is not allowed once its aura is secret.
+-- ANIMATION IS A FLIPBOOK, never a texture swap. The lust alert animates by
+-- SetTexture-ing the next numbered file every frame; that cannot work here,
+-- because nothing on the engine's button may be touched after it is built.
+-- A FlipBook animation is set up ONCE, inside initializeFrame, and the client
+-- steps through the sheet itself. A child frame of ours restarts it on every
+-- show (OnShow), so a buff re-applied later does not come back frozen on
+-- whatever frame it stopped at -- whether that restart is needed at all, and
+-- whether the client allows it once the aura is secret, is UNVERIFIED; it is
+-- pcall'd so a refusal costs nothing.
 -- ============================================================================
 
-local VIGNETTE = KEL_MEDIA_PATH .. "Alerts\\vignette.png"
+local ALERTS = KEL_MEDIA_PATH .. "Alerts\\"
+local VIGNETTE = ALERTS .. "vignette.png"
+
+-- The flame sheets' layout, as .claude/make-flames.ps1 draws them: 32 frames
+-- of 512x256, 4 columns x 8 rows, on 2048x2048. Change both together.
+local FLAME_SHEET = { frames = 32, cols = 4, rows = 8, w = 512, h = 256, fps = 16, loop = true }
+
+-- Images that ship with the addon, offered in the editor's Image dropdown.
+local BUNDLED_IMAGES = {
+    vignette      = { file = VIGNETTE },
+    flames_u      = { file = ALERTS .. "flames_u.png",      sheet = FLAME_SHEET, blend = "ADD" },
+    flames_sides  = { file = ALERTS .. "flames_sides.png",  sheet = FLAME_SHEET, blend = "ADD" },
+    flames_bottom = { file = ALERTS .. "flames_bottom.png", sheet = FLAME_SHEET, blend = "ADD" },
+    flames_ring   = { file = ALERTS .. "flames_ring.png",   sheet = FLAME_SHEET, blend = "ADD" },
+}
+BH.KEL_BUNDLED_IMAGES = BUNDLED_IMAGES
+
 local imageHosts = {}     -- [spellID] = our frame the image is placed by (reused)
 local builtImageSig = {}  -- [spellID] = signature of the image last built
 local imagesPending = false
 
--- What to draw: the atlas to use, or the file to load.
+-- What to draw: atlas or file, the flipbook layout if it animates, and the
+-- blend mode.
 local function ImageSource(entry)
-    if entry.image == "vignette" then return nil, VIGNETTE end
+    local bundled = BUNDLED_IMAGES[entry.image]
+    if bundled then return nil, bundled.file, bundled.sheet, bundled.blend or "BLEND" end
     local name = strtrim(tostring(entry.imageTexture or ""))
-    if name == "" then return nil, VIGNETTE end
-    if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) then return name, nil end
-    if name:find("[\\/]") then return nil, name end
-    return nil, KEL_MEDIA_PATH .. name
+    if name == "" then return nil, VIGNETTE, nil, "BLEND" end
+    local sheet
+    local frames = tonumber(entry.imageFrames) or 1
+    if frames > 1 then
+        sheet = {
+            frames = frames,
+            cols = math.max(1, tonumber(entry.imageCols) or 1),
+            rows = math.max(1, tonumber(entry.imageRows) or 1),
+            w = tonumber(entry.imageFrameW) or 0,
+            h = tonumber(entry.imageFrameH) or 0,
+            fps = math.max(1, tonumber(entry.imageFps) or 12),
+            loop = entry.imageLoop ~= false,
+        }
+    end
+    if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) then return name, nil, sheet, "BLEND" end
+    if name:find("[\\/]") then return nil, name, sheet, "BLEND" end
+    return nil, KEL_MEDIA_PATH .. name, sheet, "BLEND"
 end
 
+-- Paint `tex`, and if the image is a flipbook give it (or reconfigure) its
+-- animation and play it. Returns the animation group, or nil for a still.
 local function PaintImage(tex, entry)
-    local atlas, file = ImageSource(entry)
+    local atlas, file, sheet, blend = ImageSource(entry)
     if atlas then tex:SetAtlas(atlas) else tex:SetTexture(file) end
+    tex:SetBlendMode(blend)
     local c = entry.imageColor or {}
     tex:SetVertexColor(c.r or 1, c.g or 1, c.b or 1, entry.imageAlpha or 0.8)
+
+    local ag = tex._sqAnim
+    if not sheet then
+        if ag then ag:Stop() end
+        if not atlas then tex:SetTexCoord(0, 1, 0, 1) end
+        return nil
+    end
+    if not ag then
+        ag = tex:CreateAnimationGroup()
+        ag._sqFlip = ag:CreateAnimation("FlipBook")
+        tex._sqAnim = ag
+    end
+    local fb = ag._sqFlip
+    ag:Stop()
+    fb:SetFlipBookFrameWidth(sheet.w)
+    fb:SetFlipBookFrameHeight(sheet.h)
+    fb:SetFlipBookRows(sheet.rows)
+    fb:SetFlipBookColumns(sheet.cols)
+    fb:SetFlipBookFrames(sheet.frames)
+    fb:SetDuration(sheet.frames / sheet.fps)
+    ag:SetLooping(sheet.loop and "REPEAT" or "NONE")
+    ag:Play()
+    return ag
 end
 
 -- Place a frame where an image for `entry` goes: the whole screen, behind the
@@ -682,6 +751,9 @@ local function ImageSignature(entry)
     local c = entry.imageColor or {}
     return table.concat({
         tostring(entry.image), tostring(entry.imageTexture),
+        table.concat({ tostring(entry.imageFrames), tostring(entry.imageCols), tostring(entry.imageRows),
+            tostring(entry.imageFrameW), tostring(entry.imageFrameH), tostring(entry.imageFps),
+            tostring(entry.imageLoop) }, ","),
         ("%.3f,%.3f,%.3f,%.3f"):format(c.r or 1, c.g or 1, c.b or 1, entry.imageAlpha or 0.8),
         tostring(entry.imageFill ~= false), tostring(entry.imageSize or 200),
         entry.imageFill == false and (tostring(entry.imageX or 0) .. "," .. tostring(entry.imageY or 0)) or "",
@@ -727,7 +799,15 @@ function BH:RefreshBuffImages()
             local ok = native:BuildBuffImage(id, id, host, function(button)
                 local tex = button:CreateTexture(nil, "ARTWORK")
                 tex:SetAllPoints(button)
-                PaintImage(tex, entry)
+                local ag = PaintImage(tex, entry)
+                if ag then
+                    -- Restart the flipbook each time the engine shows the
+                    -- button again (see the section header). Our own child
+                    -- frame: OnShow fires on it when its parent is shown, and
+                    -- it is not the engine's button, so it may have a script.
+                    local watcher = CreateFrame("Frame", nil, button)
+                    watcher:SetScript("OnShow", function() pcall(ag.Restart, ag) end)
+                end
             end)
             builtImageSig[id] = ok and sig or nil
         end
@@ -816,6 +896,7 @@ function BH:PreviewBuffImage(spellID)
     if previewTimer then previewTimer:Cancel() end
     previewTimer = C_Timer.NewTimer(3, function()
         f:Hide()
+        if f.tex._sqAnim then f.tex._sqAnim:Stop() end
         previewTimer = nil
     end)
 end
@@ -1214,9 +1295,13 @@ function BH:RebuildBuffSoundEditor()
     imgLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
     local imgDrop = CreateSQDropdown(editor, "", 200, {
-        { text = "None",             value = "none" },
-        { text = "Screen edge glow", value = "vignette" },
-        { text = "Your own texture", value = "custom" },
+        { text = "None",                      value = "none" },
+        { text = "Screen edge glow",          value = "vignette" },
+        { text = "Flames: bottom and sides",  value = "flames_u" },
+        { text = "Flames: both sides",        value = "flames_sides" },
+        { text = "Flames: bottom",            value = "flames_bottom" },
+        { text = "Flames: all round",         value = "flames_ring" },
+        { text = "Your own texture",          value = "custom" },
     }, function(val)
         Entry().image = (val ~= "none") and val or nil
         Changed(true)
@@ -1226,7 +1311,8 @@ function BH:RebuildBuffSoundEditor()
     ns.Rows.AddTooltip(imgDrop, "Image",
         "An image on screen for exactly as long as this buff is up, in combat too -- the game's aura engine "
         .. "shows and hides it. Each buff can have its own. Screen edge glow is a coloured vignette round the "
-        .. "edge of the screen.")
+        .. "edge of the screen; the Flames are animated fire along the edges you pick (leave the colour white "
+        .. "for natural fire, or tint them).")
 
     if entry and entry.image then
         local test = CreateSQButton(editor, "Test", 46, 22)
@@ -1269,6 +1355,44 @@ function BH:RebuildBuffSoundEditor()
                 "A game atlas name (for example \"bags-glow-flash\"), a texture path, or the name of an image "
                 .. "file in Squizzumables' Media folder. Press Enter to apply. Empty uses the screen edge glow.")
             y = y - 28
+
+            -- Flipbook: the texture is a sheet of frames in a grid, played by
+            -- the game. A numbered sequence (name_001.png ...) can be packed
+            -- into one with .claude/make-flipbook.ps1, which prints the values
+            -- to enter here.
+            local function NumBox(label, key, default, x, width, tip)
+                local l = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                l:SetPoint("TOPLEFT", editor, "TOPLEFT", x, y - 4)
+                l:SetText(label)
+                l:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+                local box = CreateSQEditBox(editor, width, 20, { numeric = true, justifyH = "CENTER", maxLetters = 4 })
+                box:SetPoint("LEFT", l, "RIGHT", 4, 0)
+                box:SetText(tostring(entry[key] or default))
+                local function Save(b)
+                    Entry()[key] = tonumber(b:GetText()) or default
+                    Changed(false)
+                end
+                box:SetScript("OnEnterPressed", function(b) b:ClearFocus(); Save(b) end)
+                box.onFocusLost = Save
+                ns.Rows.AddTooltip(box, label, tip)
+            end
+            NumBox("Frames", "imageFrames", 1, 0, 30,
+                "How many frames the sheet holds. 1 is a still image; more makes it a flipbook animation.")
+            NumBox("Cols", "imageCols", 1, 86, 26, "How many frames across the sheet.")
+            NumBox("Rows", "imageRows", 1, 158, 26, "How many frames down the sheet.")
+            NumBox("FPS", "imageFps", 12, 232, 26, "Frames per second.")
+            y = y - 26
+            NumBox("Frame W", "imageFrameW", 0, 0, 36,
+                "Width of one frame in the sheet, in pixels. 0 works it out for a game atlas; give it for your own file.")
+            NumBox("H", "imageFrameH", 0, 98, 36, "Height of one frame in the sheet, in pixels.")
+            local loopCb = CreateSQCheckbox(editor, "Loop", function(checked)
+                Entry().imageLoop = checked
+                Changed(false)
+            end)
+            loopCb:SetPoint("TOPLEFT", editor, "TOPLEFT", 190, y + 2)
+            loopCb:SetChecked(entry.imageLoop ~= false)
+            ns.Rows.AddTooltip(loopCb, "Loop", "Repeat the animation for as long as the buff is up, instead of playing it once.")
+            y = y - 30
         end
 
         local c = entry.imageColor or {}

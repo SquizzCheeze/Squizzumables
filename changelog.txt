@@ -22,3 +22,8 @@ V1.95
   own colour and opacity. Fill the whole screen behind your interface, or
   place it anywhere at a size you choose with its own Move button. A Test
   button shows how it will look.
+- Animated buff images: four bundled flame animations - flames along the
+  bottom and sides, both sides, the bottom, or all round the screen - and
+  your own animations as a flipbook sheet (frames in a grid), with frames,
+  speed and looping settings. A numbered sequence of images can be packed
+  into a sheet for you.

@@ -1374,6 +1374,18 @@ adding new IDs.
   `RefreshAuraSoundRegistrations` (login, profile load, every Kelerts edit). Move = the Test preview
   frame made draggable (`MoveBuffImage`). `Media/Alerts/vignette.png` from `.claude/make-vignette.ps1`.
   UNTESTED in game when written; the aura spell ID caveat of buff sounds applies (cast vs aura IDs).
+  - **Animation is a FlipBook, never a texture swap** (the lust alert's numbered-file swap cannot work on
+    the engine's button). `PaintImage` makes one AnimationGroup + FlipBook on the texture inside
+    initializeFrame and plays it; frame width/height are in PIXELS of the file (0 = derive, atlases only),
+    as `UI/Glow.lua`'s proc sheets do. A child frame of ours restarts it `OnShow` (pcall'd; whether a
+    hidden-then-shown button's animation needs it, and whether it is allowed once the aura is secret, is
+    UNVERIFIED). Bundled `BUNDLED_IMAGES`: `vignette` plus `flames_u/sides/bottom/ring` (ADD blend),
+    drawn by `.claude/make-flames.ps1` -- C# compiled in the script (4M px/sheet), periodic value noise
+    scrolled exactly one period over 32 frames so it loops seamlessly; layout `FLAME_SHEET` (32 frames,
+    512x256, 4x8, 2048 sheet) must match the script. Custom flipbooks: `imageFrames/Cols/Rows/FrameW/
+    FrameH/Fps/Loop`; `.claude/make-flipbook.ps1 -Name x` packs `Media/x_NNN.png` into `x_sheet.png`
+    (power-of-two padded) and prints the values. 12.1.5 adds an `AddAnimations` forbidden aspect for
+    aura buttons -- re-check this when that patch lands.
 - **Colour picker Cancel lost the alpha** (`CreateSQColorPicker`): it restored `prev.opacity` from the
   picker's previousValues, which is not where Retail keeps it, so a cancelled pick saved `{r, g, b}` with
   no alpha. `ApplyProxyVisuals`' style `sig` then threw "bad argument #6 to 'format'" on EVERY refresh
