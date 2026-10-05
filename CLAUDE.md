@@ -1377,6 +1377,10 @@ adding new IDs.
   `RefreshAuraSoundRegistrations` (login, profile load, every Kelerts edit). Move = the Test preview
   frame made draggable (`MoveBuffImage`). `Media/Alerts/vignette.png` from `.claude/make-vignette.ps1`.
   UNTESTED in game when written; the aura spell ID caveat of buff sounds applies (cast vs aura IDs).
+  - **`includeSpellIDs` is a SET, `{ [id] = true }`** -- the engine indexes it by the aura's spell ID.
+    The first build passed a list `{ id }` and every aura was rejected: built fine, container visible,
+    image never shown (user report 2026-10-05). `/sq buffimages`' "engine showed the image N times"
+    (a counting child frame inside the button) is what told matching apart from drawing.
   - **Animation is a FlipBook, never a texture swap** (the lust alert's numbered-file swap cannot work on
     the engine's button). `PaintImage` makes one AnimationGroup + FlipBook on the texture inside
     initializeFrame and plays it; frame width/height are in PIXELS of the file (0 = derive, atlases only),

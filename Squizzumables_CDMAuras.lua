@@ -977,8 +977,13 @@ function Native:BuildBuffImage(key, spellID, host, paint)
     local slotHost = NewHost(host)
     local info = { spellID = spellID, inits = 0, shows = 0, hides = 0 }
     buffImageInfo[key] = info
+    -- includeSpellIDs is a SET, { [spellID] = true }: the engine checks
+    -- `includeSpellIDs[auraData.spellId]`. A plain list { spellID } is
+    -- { [1] = spellID }, so every aura was rejected and the image never showed
+    -- (user report 2026-10-05; /sq buffimages: built, 0 shows). AuraSpellIDs
+    -- above builds its sets the same way.
     local ok, slot = pcall(c.AddAuraSlot, c, "sqkel" .. tostring(key), FILTERS.player[1], {
-        candidateFilters = { includeSpellIDs = { spellID } },
+        candidateFilters = { includeSpellIDs = { [spellID] = true } },
         initializeFrame = function(button)
             info.inits = info.inits + 1
             button:ClearAllPoints()
