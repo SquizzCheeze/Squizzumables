@@ -899,18 +899,39 @@ end
 -- ----------------------------------------------------------------------------
 local function OverlayHidden(spellID)
     if not spellID then return false end
-    if BH.settings and BH.settings.kelHideBlizzardAlerts then return true end
     -- Blizzard's alert may carry any of the buff's aura IDs.
     local entry = BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
     return type(entry) == "table" and entry.image ~= nil
 end
 
 local function ApplyOverlayHiding(frame, spellID)
+    -- A spell ID that has gone secret cannot index a table (it raises), so
+    -- the per-buff match cannot be made for it. Leave that overlay alone --
+    -- "hide all" does not come through here at all (see below).
+    if spellID == nil or BH.Secrets.IsSecret(spellID) then return end
     local list = frame.overlaysInUse and frame.overlaysInUse[spellID]
     if not list then return end
     local a = OverlayHidden(spellID) and 0 or 1
     for _, overlay in pairs(list) do
         if overlay.texture then overlay.texture:SetAlpha(a) end
+    end
+end
+
+-- "Hide all" hides Blizzard's whole alert frame instead of matching spells:
+-- every overlay is drawn inside it, so nothing shows, not even for a frame,
+-- and no spell ID is needed. Matching per spell left alerts up for seconds
+-- (user report 2026-10-06) -- most likely spell IDs reaching the hook secret
+-- in combat. Only re-shown if WE hid it, and kept hidden if anything shows it.
+local hiddenByUs = false
+local function ApplyHideAll()
+    local frame = _G.SpellActivationOverlayFrame
+    if not frame then return end
+    if BH.settings and BH.settings.kelHideBlizzardAlerts then
+        hiddenByUs = true
+        frame:Hide()
+    elseif hiddenByUs then
+        hiddenByUs = false
+        frame:Show()
     end
 end
 
@@ -922,12 +943,16 @@ local function HookBlizzardOverlay()
     hooksecurefunc(frame, "ShowOverlay", function(self, spellID)
         pcall(ApplyOverlayHiding, self, spellID)
     end)
+    hooksecurefunc(frame, "Show", function(self)
+        if BH.settings and BH.settings.kelHideBlizzardAlerts then self:Hide() end
+    end)
 end
 
 -- Re-apply to whatever is on screen right now, after an image was set or
 -- cleared (otherwise it would only take effect on the next proc).
 local function RefreshOverlayHiding()
     HookBlizzardOverlay()
+    ApplyHideAll()
     local frame = _G.SpellActivationOverlayFrame
     if not (frame and frame.overlaysInUse) then return end
     for spellID in pairs(frame.overlaysInUse) do
@@ -1074,10 +1099,16 @@ local function PrintBuffImageDiagnosticsBody()
     local sao = _G.SpellActivationOverlayFrame
     local shown = {}
     for id in pairs(sao and sao.overlaysInUse or {}) do
-        shown[#shown + 1] = ("%s (%s)%s"):format(tostring(BH.Secrets.SafeString(C_Spell.GetSpellName(id), "?")),
-            tostring(id), BH.BlizzardOverlayHidden(id) and " hidden" or "")
+        if BH.Secrets.IsSecret(id) then
+            shown[#shown + 1] = "(spell ID secret -- cannot match per buff)"
+        else
+            shown[#shown + 1] = ("%s (%s)%s"):format(tostring(BH.Secrets.SafeString(C_Spell.GetSpellName(id), "?")),
+                tostring(id), BH.BlizzardOverlayHidden(id) and " hidden" or "")
+        end
     end
     P("Blizzard spell alerts on screen: " .. (#shown > 0 and table.concat(shown, ", ") or "none"))
+    P(("Blizzard alert frame shown: %s   hide all: %s"):format(tostring(sao and sao:IsShown()),
+        tostring(BH.settings.kelHideBlizzardAlerts == true)))
 
     if InCombatLockdown() then
         P("buffs on you: run this again OUT of combat -- the game hides aura data in combat")
