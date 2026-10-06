@@ -1053,6 +1053,9 @@ local function HookBlizzardOverlay()
     overlayHooked = true
     hooksecurefunc(frame, "ShowOverlay", function(self, spellID)
         overlayHookCounts.showOverlay = overlayHookCounts.showOverlay + 1
+        -- Hide all, applied here as well: the first proc of a session can
+        -- come before the first RefreshOverlayHiding.
+        if BH.settings and BH.settings.kelHideBlizzardAlerts and self:IsShown() then ApplyHideAll() end
         local ok, err = pcall(ApplyOverlayHiding, self, spellID)
         LogOverlay("hook ShowOverlay", spellID, ok and (" hide=" .. tostring(select(2, pcall(OverlayHidden, spellID))))
             or (" ERROR " .. tostring(err)))
@@ -1061,6 +1064,12 @@ local function HookBlizzardOverlay()
         if BH.settings and BH.settings.kelHideBlizzardAlerts then self:Hide() end
     end)
 end
+-- Installed at FILE LOAD, not on the first image refresh: that refresh runs a
+-- moment after login, and a proc in between showed Blizzard's art until its
+-- next refresh -- the sub-second flash on the first proc of a session (user
+-- report 2026-10-06; /sq buffimages showed an "event SHOW" with no hook run).
+-- Blizzard_FrameXML is loaded before any addon, so the frame exists now.
+HookBlizzardOverlay()
 
 -- Re-apply to whatever is on screen right now, after an image was set or
 -- cleared (otherwise it would only take effect on the next proc).

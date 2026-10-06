@@ -23,4 +23,5 @@ V1.96
   image is also matched by name, which teaches the image that ID too.
 - Fixed: Blizzard's spell alert art for a buff with an image could still
   show for about a second on the first proc after logging in or reloading.
-  The buff's other spell IDs are now remembered between sessions.
+  The alert hook is now in place from the moment the addon loads, and the
+  buff's other spell IDs are remembered between sessions.
