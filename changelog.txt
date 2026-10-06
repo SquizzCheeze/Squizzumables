@@ -6,3 +6,11 @@ V1.96
 - Mouse cursor: the rings no longer end up slightly off the cursor after
   turning the camera with the right mouse button. The hidden cursor drifts
   a little while you turn, and the rings now follow it.
+- Buff images can build up with stacks: Reveal by Stacks uncovers the image
+  a piece at a time as a buff stacks, whole at the number you choose, left
+  to right or bottom to top. Set the ( ) arcs to 2 for a two-stack buff and
+  1 stack shows the left arc, 2 stacks both. The game itself tracks the
+  stacks, so it works in combat.
+- Hide all of Blizzard's spell alerts (Buff Alerts, off by default): hides
+  the proc art Blizzard draws round the middle of the screen for every
+  spell, not just the buffs you give an image. The alert sound still plays.

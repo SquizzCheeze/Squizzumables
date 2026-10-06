@@ -705,6 +705,9 @@ end
 --   imageHeight  height as a % of imageSize (default 100) -- the "( )" arcs
 --                want taller than wide to frame a character
 --   imageX/Y     its own position, offset from the screen's centre
+--   imageStacks  0/nil = shown whole; N = revealed as the buff stacks, whole
+--                at N stacks (imageReveal "right" = left to right, "up" =
+--                bottom to top). A buff that does not stack shows nothing.
 --
 -- ANIMATION IS A FLIPBOOK, never a texture swap. The lust alert animates by
 -- SetTexture-ing the next numbered file every frame; that cannot work here,
@@ -869,7 +872,7 @@ local function ImageSignature(entry)
             tostring(entry.imageLoop) }, ","),
         ("%.3f,%.3f,%.3f,%.3f"):format(c.r or 1, c.g or 1, c.b or 1, entry.imageAlpha or 0.8),
         tostring(entry.imageFill ~= false), tostring(entry.imageSize or 200), tostring(entry.imageHeight or 100),
-        tostring(entry.imageThickness or 3),
+        tostring(entry.imageThickness or 3), tostring(entry.imageStacks or 0), tostring(entry.imageReveal or "right"),
         entry.imageFill == false and (tostring(entry.imageX or 0) .. "," .. tostring(entry.imageY or 0)) or "",
     }, "|")
 end
@@ -896,6 +899,7 @@ end
 -- ----------------------------------------------------------------------------
 local function OverlayHidden(spellID)
     if not spellID then return false end
+    if BH.settings and BH.settings.kelHideBlizzardAlerts then return true end
     -- Blizzard's alert may carry any of the buff's aura IDs.
     local entry = BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
     return type(entry) == "table" and entry.image ~= nil
@@ -972,7 +976,31 @@ function BH:RefreshBuffImages()
             PlaceImageFrame(host, entry)
             host:Show()
             local ok = native:BuildBuffImage(id, auraIDs, host, function(button, watcher)
-                local tex = button:CreateTexture(nil, "ARTWORK")
+                -- Reveal by stacks (imageStacks = stacks for the full image):
+                -- the engine drives a StatusBar from the aura's stack count
+                -- (SetApplicationBar), and that bar is used only as a WINDOW.
+                -- Its fill texture is invisible; a clipping frame sits exactly
+                -- on it, so as the fill grows with stacks it uncovers the
+                -- image behind it -- anchored to the whole button, so the
+                -- image itself never moves or crops its texcoords and the
+                -- flipbook keeps playing. "( )" arcs at 2 stacks: 1 stack
+                -- shows the left arc, 2 both. The stack count is secret in
+                -- combat; we never read it, the engine sizes the fill.
+                local parent = button
+                local stacks = tonumber(entry.imageStacks) or 0
+                if stacks > 0 and button.SetApplicationBar then
+                    local bar = CreateFrame("StatusBar", nil, button)
+                    bar:SetAllPoints(button)
+                    bar:SetOrientation(entry.imageReveal == "up" and "VERTICAL" or "HORIZONTAL")
+                    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+                    bar:GetStatusBarTexture():SetAlpha(0)
+                    button:SetApplicationBar(bar, { maxApplications = stacks })
+                    local clip = CreateFrame("Frame", nil, bar)
+                    clip:SetAllPoints(bar:GetStatusBarTexture())
+                    clip:SetClipsChildren(true)
+                    parent = clip
+                end
+                local tex = parent:CreateTexture(nil, "ARTWORK")
                 tex:SetAllPoints(button)
                 local ag = PaintImage(tex, entry)
                 if ag and watcher then
@@ -1746,6 +1774,43 @@ function BH:RebuildBuffSoundEditor()
         alpha:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
         y = y - 46
 
+        local stacks = CreateSQSlider(editor, "Reveal by Stacks", 200, 0, 10, 1)
+        stacks:SetValue(tonumber(entry.imageStacks) or 0)
+        stacks:SetAfterValueChanged(function(v)
+            local e = Entry()
+            local wasOn = (tonumber(e.imageStacks) or 0) > 0
+            e.imageStacks = v > 0 and v or nil
+            BH:SaveSettings()
+            BH:RefreshBuffImagesSoon()
+            -- The direction control only exists while this is on.
+            if wasOn ~= (v > 0) then BH:RebuildBuffSoundEditor() end
+        end)
+        stacks:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+        ns.Rows.AddTooltip(stacks, "Reveal by Stacks",
+            "For a buff that stacks: uncover the image a piece at a time as the stacks build, whole at this many "
+            .. "stacks. 2 with the ( ) arcs shows the left arc at 1 stack and both at 2. 0 shows the whole image "
+            .. "whenever the buff is up. A buff that does not stack shows nothing with this on. Test shows the "
+            .. "whole image.")
+        y = y - 46
+
+        if (tonumber(entry.imageStacks) or 0) > 0 then
+            local dirLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            dirLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+            dirLbl:SetText("Reveal:")
+            dirLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+            local dirDrop = CreateSQDropdown(editor, "", 160, {
+                { text = "Left to right", value = "right" },
+                { text = "Bottom to top", value = "up" },
+            }, function(val)
+                Entry().imageReveal = val
+                BH:SaveSettings()
+                BH:RefreshBuffImages()
+            end)
+            dirDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+            dirDrop:SetSelectedValue(entry.imageReveal or "right")
+            y = y - 30
+        end
+
         if entry.imageFill == false then
             local size = CreateSQSlider(editor, "Size", 200, 50, 800, 10)
             size:SetValue(entry.imageSize or 200)
@@ -2233,6 +2298,19 @@ function BH:BuildJustForKelTab(parent)
         bsNote:SetText("Your spec's buffs. Click one to give it a sound when it lands or drops, and an image that shows for as long as it is up. Both are handled by the game itself, so they work in combat too.")
         bsNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
         yOffset = yOffset - 44
+
+        local hideBlizz = CreateSQCheckbox(content, "Hide all of Blizzard's spell alerts", function(val)
+            BH.settings.kelHideBlizzardAlerts = val and true or false
+            BH:SaveSettings()
+            BH:RefreshBuffImages()
+        end)
+        hideBlizz:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        hideBlizz:SetChecked(BH.settings.kelHideBlizzardAlerts == true)
+        ns.Rows.AddTooltip(hideBlizz, "Hide all of Blizzard's spell alerts",
+            "Hides the art Blizzard draws round the middle of the screen when a proc or buff is up, for every "
+            .. "spell. Without this, only the buffs you give an image here have theirs hidden. The game's alert "
+            .. "sound still plays; the game's own Spell Alert setting turns that off.")
+        yOffset = yOffset - 30
 
         if not BH.AuraSoundsAvailable() then
             local nope = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

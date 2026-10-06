@@ -285,6 +285,9 @@ BH.defaultSettings = {
     -- and reports nothing back, so there is no moment at which we could draw
     -- anything. See Squizzumables_SpellAlerts.lua.
     buffSounds = {},
+    -- Hide ALL of Blizzard's spell alert art (the proc overlays round the
+    -- screen centre), not just the buffs given an image. Off by default.
+    kelHideBlizzardAlerts = false,
 
     -- Kelerts: the lust alert.
     --

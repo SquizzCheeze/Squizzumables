@@ -23,6 +23,8 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.96"] = {
         "Mouse cursor: the rings stay on the cursor after you turn the camera with the right mouse button.",
+        "Buff images can build up with stacks (Reveal by Stacks): the ( ) arcs can show one side per stack of a two-stack buff.",
+        "Hide all of Blizzard's spell alerts with one tick, in Kelerts' Buff Alerts.",
     },
     ["1.95"] = {
         "Border Inside Icon (CDM, Appearance): draw the icon border over the icon's edge instead of outside it, so bars matched to a group's width line up exactly.",
