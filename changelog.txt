@@ -9,7 +9,8 @@ V1.96
 - Buff images can build up with stacks: Reveal by Stacks uncovers the image
   a piece at a time as a buff stacks, whole at the number you choose, left
   to right or bottom to top. Set the ( ) arcs to 2 for a two-stack buff and
-  1 stack shows the left arc, 2 stacks both. The game itself tracks the
+  1 stack shows the left arc, 2 stacks both. Beside it, the game says how
+  far that buff stacks, and Match sets it for you. The game itself tracks the
   stacks, so it works in combat.
 - Hide all of Blizzard's spell alerts (Buff Alerts, off by default): hides
   the proc art Blizzard draws round the middle of the screen for every

@@ -1974,6 +1974,38 @@ function BH:RebuildBuffSoundEditor()
             if wasOn ~= (v > 0) then BH:RebuildBuffSoundEditor() end
         end)
         stacks:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+
+        -- How far this buff stacks, from the game: the highest
+        -- GetSpellMaxCumulativeAuraApplications over every aura ID the icon
+        -- matches (the grid ID can be the TALENT -- Infusion of Light 53576 --
+        -- while the stacking lives on the buff, 54149). Secret while aura data
+        -- is restricted, i.e. in combat; the editor is used out of it.
+        local maxStacks = 0
+        if C_Spell.GetSpellMaxCumulativeAuraApplications then
+            for auraID in pairs(AuraIDsFor(spellID)) do
+                local ok, n = pcall(C_Spell.GetSpellMaxCumulativeAuraApplications, auraID)
+                n = ok and BH.Secrets.SafeNumber(n, 0) or 0
+                if n > maxStacks then maxStacks = n end
+            end
+        end
+        local maxLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        maxLbl:SetPoint("TOPLEFT", stacks, "TOPRIGHT", 12, -14)
+        maxLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        if maxStacks > 1 then
+            maxLbl:SetText(("Stacks to %d"):format(maxStacks))
+            local match = CreateSQButton(editor, "Match", 54, 20)
+            match:SetPoint("LEFT", maxLbl, "RIGHT", 6, 0)
+            match:SetScript("OnClick", function()
+                Entry().imageStacks = math.min(maxStacks, 10)
+                BH:SaveSettings()
+                BH:RefreshBuffImages()
+                BH:RebuildBuffSoundEditor()
+            end)
+            ns.Rows.AddTooltip(match, "Match", "Set Reveal by Stacks to this buff's most stacks, so the image is "
+                .. "whole at full stacks.")
+        else
+            maxLbl:SetText(maxStacks == 1 and "Does not stack" or "")
+        end
         ns.Rows.AddTooltip(stacks, "Reveal by Stacks",
             "For a buff that stacks: uncover the image a piece at a time as the stacks build, whole at this many "
             .. "stacks. 2 with the ( ) arcs shows the left arc at 1 stack and both at 2. 0 shows the whole image "
