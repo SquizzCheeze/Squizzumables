@@ -1980,6 +1980,9 @@ function BH:RebuildBuffSoundEditor()
         -- matches (the grid ID can be the TALENT -- Infusion of Light 53576 --
         -- while the stacking lives on the buff, 54149). Secret while aura data
         -- is restricted, i.e. in combat; the editor is used out of it.
+        -- Returns 0 for many stacking buffs: Infusion of Light (all three IDs) and
+        -- Divine Purpose read 0 in game, 2026-10-06 -- their stacks come from
+        -- talents. 0 shows nothing rather than a misleading "Does not stack".
         local maxStacks = 0
         if C_Spell.GetSpellMaxCumulativeAuraApplications then
             for auraID in pairs(AuraIDsFor(spellID)) do
