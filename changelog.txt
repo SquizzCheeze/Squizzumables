@@ -1,51 +1,8 @@
 Squizzumables Changelog
 =======================
 
-V1.95
+V1.96
 
-- Border Inside Icon, a new option under each Cooldown Manager group's
-  Appearance: the border is drawn over the icon's own edge instead of
-  around the outside, for square and shaped icons, buffs and buff bars.
-  The group then takes up exactly its icons' size, so a SquizzFrames cast
-  bar or resource bar set to match its width now lines up with the outer
-  edge of the border instead of falling short by the border's width. Off
-  by default, so nothing changes until you tick it.
-- Fixed: a Cooldown Manager group could throw "bad argument #6 to
-  'format'" on every refresh after cancelling a colour picker, which saved
-  the colour without its opacity. Cancel now restores exactly the colour
-  you had, and a colour already saved that way works again.
-- Buff images, in Kelerts (the Buff Sounds tab is now Buff Alerts): give
-  any of your own buffs an image that is on screen for exactly as long as
-  the buff is up - and it works in combat, because the game itself shows
-  and hides it. Each buff can have its own: a coloured screen edge glow,
-  or any texture of yours (a game atlas name or an image file), with its
-  own colour and opacity. Fill the whole screen behind your interface, or
-  place it anywhere at a size you choose with its own Move button. A Test
-  button shows how it will look.
-- Animated buff images: four bundled flame animations - flames along the
-  bottom and sides, both sides, the bottom, or all round the screen - and
-  your own animations as a flipbook sheet (frames in a grid), with frames,
-  speed and looping settings. A numbered sequence of images can be packed
-  into a sheet for you.
-- Flames: ( ) arcs - two animated arcs of fire meant to frame your
-  character rather than the screen. They start in the middle of the
-  screen, taller than wide; size them, stretch them with the new Height %
-  setting, set how thick the fire is with Flame Thickness (1-5), and Move
-  them into place.
-- Eight more images to frame your character. Animated: Lightning ( ) arcs
-  that crackle and fork, Frost ( ) arcs with ice shards, rising mist and
-  sparkles, a beating Heartbeat, and an Arcane orbit of two rune rings with
-  orbs circling in opposite directions. Still: Angel wings, a Shield
-  bubble, a Sunburst and a Rune circle. Picking one sets Height % to suit
-  its shape. A Centre button puts any placed image
-  back in the middle of the screen.
-- A buff with one of these images no longer also shows Blizzard's own spell
-  alert art for it (Demonic Core's, for example), so yours replaces theirs
-  rather than sitting on top of it. Every other spell alert is untouched,
-  and removing the image brings Blizzard's back.
-- Buff Alerts now lists every buff Blizzard's Cooldown Manager tracks for
-  your spec as well as the ones from your spellbook, so buffs from passive
-  talents and procs (Demonic Core, for example) appear without adding them
-  by spell ID. Sounds and images also match a buff under any of the spell
-  IDs the game uses for it, so one whose buff ID differs from the spell you
-  cast now triggers too.
+- Mouse cursor: the rings no longer end up slightly off the cursor after
+  turning the camera with the right mouse button. The hidden cursor drifts
+  a little while you turn, and the rings now follow it.

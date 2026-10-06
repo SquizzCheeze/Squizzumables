@@ -568,17 +568,19 @@ local function OnUpdate(_, elapsed)
     local s = BH.settings
     local show = ShouldShowRings()
     if show then
+        -- Placed from GetCursorPosition even while turning the camera: the
+        -- hidden cursor still drifts a little as the camera turns, and rings
+        -- held where it was pressed came back off the real cursor by that
+        -- much (user report 2026-10-06). Turning lays no trail and is not a
+        -- shake, though.
+        local scale = UIParent:GetEffectiveScale()
+        local cx, cy = GetCursorPosition()
+        local x, y = cx / scale, cy / scale
+        root:ClearAllPoints()
+        root:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
         if IsMouselooking() then
-            -- Turning the camera: hold the rings where the cursor was rather
-            -- than trust GetCursorPosition while the cursor is hidden, and lay
-            -- no trail.
             lastX, lastY, shakeX = nil, nil, nil
         else
-            local scale = UIParent:GetEffectiveScale()
-            local cx, cy = GetCursorPosition()
-            local x, y = cx / scale, cy / scale
-            root:ClearAllPoints()
-            root:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
             if s.cursorTrail then StrokeTrail(x, y) end
             if s.cursorShakeFind then DetectShake(x, GetTime()) end
         end
