@@ -21,3 +21,6 @@ V1.96
   rebuilt. It now rebuilds as soon as they are learned, after login and on
   every talent or spec change. A Blizzard spell alert for a buff with an
   image is also matched by name, which teaches the image that ID too.
+- Fixed: Blizzard's spell alert art for a buff with an image could still
+  show for about a second on the first proc after logging in or reloading.
+  The buff's other spell IDs are now remembered between sessions.

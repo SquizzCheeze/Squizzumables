@@ -424,6 +424,7 @@ local function QueueAliasRefresh()
     end)
 end
 
+local seeding = false
 local function AddAlias(gridID, auraID)
     if not (gridID and auraID) then return end
     local set = buffAliases[gridID]
@@ -432,13 +433,41 @@ local function AddAlias(gridID, auraID)
     set[auraID] = true
     aliasOwner[auraID] = aliasOwner[auraID] or gridID
     -- Only an ID that adds something to an entry already in use.
-    if auraID ~= gridID and BH.settings and BH.settings.buffSounds and BH.settings.buffSounds[gridID] then
-        QueueAliasRefresh()
+    local entry = auraID ~= gridID and BH.settings and BH.settings.buffSounds and BH.settings.buffSounds[gridID]
+    if type(entry) == "table" then
+        -- Remembered with the buff's settings, so after a /reload it is known
+        -- before the first proc rather than learned a second into it (the
+        -- one-second flash of Blizzard's art on the first proc of a session,
+        -- user report 2026-10-06).
+        entry.auraIDs = type(entry.auraIDs) == "table" and entry.auraIDs or {}
+        entry.auraIDs[auraID] = true
+        if not seeding then QueueAliasRefresh() end
     end
+end
+
+-- Load the remembered aura IDs, once, before anything matches against them,
+-- and ask the client to cache the buffs' spell data so the name fallback in
+-- OverlayHidden works on the very first alert of the session too.
+local aliasesSeeded = false
+local function SeedAliases()
+    if aliasesSeeded or not (BH.settings and BH.settings.buffSounds) then return end
+    aliasesSeeded = true
+    seeding = true
+    for gridID, entry in pairs(BH.settings.buffSounds) do
+        local id = tonumber(gridID)
+        if id and type(entry) == "table" then
+            if type(entry.auraIDs) == "table" then
+                for auraID in pairs(entry.auraIDs) do AddAlias(id, tonumber(auraID)) end
+            end
+            if C_Spell.RequestLoadSpellData then pcall(C_Spell.RequestLoadSpellData, id) end
+        end
+    end
+    seeding = false
 end
 
 -- Every aura ID a grid icon matches, as a set.
 local function AuraIDsFor(gridID)
+    SeedAliases()
     return buffAliases[gridID] or { [gridID] = true }
 end
 
@@ -448,6 +477,7 @@ end
 -- entries whose aura lands on the player (selfAura not false), and only real
 -- spells (equip-slot trinket entries have no spellID of their own).
 local function ScanCDMBuffs()
+    SeedAliases()
     local out = {}
     local CV = C_CooldownViewer
     if not (CV and CV.GetCooldownViewerCategorySet and CV.GetCooldownViewerCooldownInfo) then return out end
@@ -922,6 +952,7 @@ end
 -- ----------------------------------------------------------------------------
 local function OverlayHidden(spellID)
     if not spellID then return false end
+    SeedAliases()
     -- Blizzard's alert may carry any of the buff's aura IDs.
     local entry = BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
     if type(entry) == "table" then return entry.image ~= nil end
