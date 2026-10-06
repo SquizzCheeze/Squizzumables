@@ -978,6 +978,25 @@ end
 local overlayHookCounts = { showOverlay = 0, overlayOnShow = 0 }
 BH.BlizzardOverlayHookCounts = overlayHookCounts
 
+-- Timeline of the last 16 spell-alert events and hook runs, for
+-- /sq buffimages: stacked buffs' art still hid late (user report
+-- 2026-10-06), and only the order and timing of these says why.
+local overlayLog = {}
+BH.BlizzardOverlayLog = overlayLog
+local function LogOverlay(what, spellID, extra)
+    local id = (spellID ~= nil and not BH.Secrets.IsSecret(spellID)) and tostring(spellID) or "secret"
+    table.insert(overlayLog, ("%.2f %s %s%s"):format(GetTime(), what, id, extra or ""))
+    if #overlayLog > 16 then table.remove(overlayLog, 1) end
+end
+do
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("SPELL_ACTIVATION_OVERLAY_SHOW")
+    f:RegisterEvent("SPELL_ACTIVATION_OVERLAY_HIDE")
+    f:SetScript("OnEvent", function(_, event, spellID)
+        LogOverlay(event == "SPELL_ACTIVATION_OVERLAY_SHOW" and "event SHOW" or "event HIDE", spellID)
+    end)
+end
+
 -- Hook 1, at FILE LOAD: every overlay is a SpellActivationOverlayTemplate
 -- frame, whose mixin's OnShow runs as it appears -- after spellID is set on
 -- it. Mixin() copies methods into each frame as it is CREATED, and the pool
@@ -988,7 +1007,11 @@ if _G.SpellActivationOverlayTextureMixin and _G.SpellActivationOverlayTextureMix
     hooksecurefunc(_G.SpellActivationOverlayTextureMixin, "OnShow", function(overlay)
         overlayHookCounts.overlayOnShow = overlayHookCounts.overlayOnShow + 1
         local parent = overlay:GetParent()
-        if parent and overlay.spellID ~= nil then pcall(ApplyOverlayHiding, parent, overlay.spellID) end
+        if parent and overlay.spellID ~= nil then
+            local ok, err = pcall(ApplyOverlayHiding, parent, overlay.spellID)
+            LogOverlay("hook OnShow", overlay.spellID, ok and (" alpha " .. tostring(overlay.texture and overlay.texture:GetAlpha()))
+                or (" ERROR " .. tostring(err)))
+        end
     end)
 end
 
@@ -999,7 +1022,9 @@ local function HookBlizzardOverlay()
     overlayHooked = true
     hooksecurefunc(frame, "ShowOverlay", function(self, spellID)
         overlayHookCounts.showOverlay = overlayHookCounts.showOverlay + 1
-        pcall(ApplyOverlayHiding, self, spellID)
+        local ok, err = pcall(ApplyOverlayHiding, self, spellID)
+        LogOverlay("hook ShowOverlay", spellID, ok and (" hide=" .. tostring(select(2, pcall(OverlayHidden, spellID))))
+            or (" ERROR " .. tostring(err)))
     end)
     hooksecurefunc(frame, "Show", function(self)
         if BH.settings and BH.settings.kelHideBlizzardAlerts then self:Hide() end
@@ -1170,6 +1195,9 @@ local function PrintBuffImageDiagnosticsBody()
     local hc = BH.BlizzardOverlayHookCounts or {}
     P(("alert hooks fired: ShowOverlay %d, overlay OnShow %d")
         :format(hc.showOverlay or 0, hc.overlayOnShow or 0))
+    local log = BH.BlizzardOverlayLog or {}
+    P(("alert timeline (game time, last %d, oldest first; now %.2f):"):format(#log, GetTime()))
+    for _, line in ipairs(log) do P("    " .. line) end
 
     if InCombatLockdown() then
         P("buffs on you: run this again OUT of combat -- the game hides aura data in combat")
