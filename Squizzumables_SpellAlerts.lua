@@ -973,12 +973,32 @@ local function ApplyHideAll()
     end
 end
 
+-- How often each hook has fired, for /sq buffimages: an alert hidden only
+-- after a lag means neither caught the show (user report 2026-10-06).
+local overlayHookCounts = { showOverlay = 0, overlayOnShow = 0 }
+BH.BlizzardOverlayHookCounts = overlayHookCounts
+
+-- Hook 1, at FILE LOAD: every overlay is a SpellActivationOverlayTemplate
+-- frame, whose mixin's OnShow runs as it appears -- after spellID is set on
+-- it. Mixin() copies methods into each frame as it is CREATED, and the pool
+-- creates them on first use, so hooking the mixin table now (before any
+-- proc) puts the check into every overlay Blizzard will ever make. Unlike
+-- the instance hook below, this cannot miss because it was installed late.
+if _G.SpellActivationOverlayTextureMixin and _G.SpellActivationOverlayTextureMixin.OnShow then
+    hooksecurefunc(_G.SpellActivationOverlayTextureMixin, "OnShow", function(overlay)
+        overlayHookCounts.overlayOnShow = overlayHookCounts.overlayOnShow + 1
+        local parent = overlay:GetParent()
+        if parent and overlay.spellID ~= nil then pcall(ApplyOverlayHiding, parent, overlay.spellID) end
+    end)
+end
+
 local overlayHooked = false
 local function HookBlizzardOverlay()
     local frame = _G.SpellActivationOverlayFrame
     if overlayHooked or not (frame and frame.ShowOverlay) then return end
     overlayHooked = true
     hooksecurefunc(frame, "ShowOverlay", function(self, spellID)
+        overlayHookCounts.showOverlay = overlayHookCounts.showOverlay + 1
         pcall(ApplyOverlayHiding, self, spellID)
     end)
     hooksecurefunc(frame, "Show", function(self)
@@ -1147,6 +1167,9 @@ local function PrintBuffImageDiagnosticsBody()
     P("Blizzard spell alerts on screen: " .. (#shown > 0 and table.concat(shown, ", ") or "none"))
     P(("Blizzard alert frame shown: %s   hide all: %s"):format(tostring(sao and sao:IsShown()),
         tostring(BH.settings.kelHideBlizzardAlerts == true)))
+    local hc = BH.BlizzardOverlayHookCounts or {}
+    P(("alert hooks fired: ShowOverlay %d, overlay OnShow %d")
+        :format(hc.showOverlay or 0, hc.overlayOnShow or 0))
 
     if InCombatLockdown() then
         P("buffs on you: run this again OUT of combat -- the game hides aura data in combat")
