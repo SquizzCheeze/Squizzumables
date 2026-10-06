@@ -980,9 +980,18 @@ local function ApplyOverlayHiding(frame, spellID)
     if spellID == nil or BH.Secrets.IsSecret(spellID) then return end
     local list = frame.overlaysInUse and frame.overlaysInUse[spellID]
     if not list then return end
-    local a = OverlayHidden(spellID) and 0 or 1
+    local hide = OverlayHidden(spellID)
     for _, overlay in pairs(list) do
-        if overlay.texture then overlay.texture:SetAlpha(a) end
+        -- Alpha 0 AND hidden: alpha alone still let the first proc of a
+        -- session flash (user screenshots 2026-10-06, the log reading alpha 0
+        -- throughout). Blizzard never shows or hides the texture itself --
+        -- only the overlay frame round it -- so a hidden texture stays hidden
+        -- until we show it again for a spell that is not hidden (the
+        -- overlays are pooled).
+        if overlay.texture then
+            overlay.texture:SetAlpha(hide and 0 or 1)
+            overlay.texture:SetShown(not hide)
+        end
     end
 end
 
@@ -1009,7 +1018,7 @@ end
 local overlayHookCounts = { showOverlay = 0, overlayOnShow = 0 }
 BH.BlizzardOverlayHookCounts = overlayHookCounts
 
--- Timeline of the last 16 spell-alert events and hook runs, for
+-- Timeline of the last 40 spell-alert events and hook runs, for
 -- /sq buffimages: stacked buffs' art still hid late (user report
 -- 2026-10-06), and only the order and timing of these says why.
 local overlayLog = {}
@@ -1017,14 +1026,32 @@ BH.BlizzardOverlayLog = overlayLog
 local function LogOverlay(what, spellID, extra)
     local id = (spellID ~= nil and not BH.Secrets.IsSecret(spellID)) and tostring(spellID) or "secret"
     table.insert(overlayLog, ("%.2f %s %s%s"):format(GetTime(), what, id, extra or ""))
-    if #overlayLog > 16 then table.remove(overlayLog, 1) end
+    if #overlayLog > 40 then table.remove(overlayLog, 1) end
 end
 do
     local f = CreateFrame("Frame")
     f:RegisterEvent("SPELL_ACTIVATION_OVERLAY_SHOW")
     f:RegisterEvent("SPELL_ACTIVATION_OVERLAY_HIDE")
+    -- After a SHOW, spot-check that spell's overlays a few times: is the
+    -- texture still hidden, and what alpha actually reaches the screen?
+    local function Check(spellID, label)
+        local sao = _G.SpellActivationOverlayFrame
+        local list = sao and sao.overlaysInUse and sao.overlaysInUse[spellID]
+        if not list then LogOverlay("check" .. label, spellID, " (gone)") return end
+        for pos, overlay in pairs(list) do
+            local tex = overlay.texture
+            LogOverlay("check" .. label, spellID, (" pos %s tex %s a%.2f eff %.2f"):format(tostring(pos),
+                tex and (tex:IsShown() and "shown" or "hidden") or "?", tex and tex:GetAlpha() or -1,
+                tex and tex:GetEffectiveAlpha() or -1))
+        end
+    end
     f:SetScript("OnEvent", function(_, event, spellID)
         LogOverlay(event == "SPELL_ACTIVATION_OVERLAY_SHOW" and "event SHOW" or "event HIDE", spellID)
+        if event == "SPELL_ACTIVATION_OVERLAY_SHOW" and spellID ~= nil and not BH.Secrets.IsSecret(spellID) then
+            C_Timer.After(0.05, function() Check(spellID, "+0.05") end)
+            C_Timer.After(0.3, function() Check(spellID, "+0.3") end)
+            C_Timer.After(0.8, function() Check(spellID, "+0.8") end)
+        end
     end)
 end
 
