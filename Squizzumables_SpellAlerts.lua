@@ -406,12 +406,35 @@ BH.BuffSounds = BuffSounds
 -- ----------------------------------------------------------------------------
 local buffAliases, aliasOwner = {}, {}
 
+-- A NEW alias must reach the images and sounds already built, or they keep
+-- matching only the IDs known when they were built. That was the bug: images
+-- built at login, before the Cooldown Manager had its data, watched only the
+-- talent IDs (Infusion of Light 53576, aura 54149) and never showed, while
+-- Blizzard's alert -- matched later, against the learned alias -- read
+-- "hidden" (user report 2026-10-06). So a new alias schedules one full
+-- re-registration, a second later; the images rebuild out of combat only,
+-- and RefreshBuffImages defers that itself.
+local aliasRefreshQueued = false
+local function QueueAliasRefresh()
+    if aliasRefreshQueued then return end
+    aliasRefreshQueued = true
+    C_Timer.After(1, function()
+        aliasRefreshQueued = false
+        if BH.RefreshAuraSoundRegistrations then BH:RefreshAuraSoundRegistrations("aura IDs learned") end
+    end)
+end
+
 local function AddAlias(gridID, auraID)
     if not (gridID and auraID) then return end
     local set = buffAliases[gridID]
     if not set then set = { [gridID] = true }; buffAliases[gridID] = set end
+    if set[auraID] then return end
     set[auraID] = true
     aliasOwner[auraID] = aliasOwner[auraID] or gridID
+    -- Only an ID that adds something to an entry already in use.
+    if auraID ~= gridID and BH.settings and BH.settings.buffSounds and BH.settings.buffSounds[gridID] then
+        QueueAliasRefresh()
+    end
 end
 
 -- Every aura ID a grid icon matches, as a set.
@@ -901,7 +924,22 @@ local function OverlayHidden(spellID)
     if not spellID then return false end
     -- Blizzard's alert may carry any of the buff's aura IDs.
     local entry = BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
-    return type(entry) == "table" and entry.image ~= nil
+    if type(entry) == "table" then return entry.image ~= nil end
+    -- Not an ID we know: match by NAME against the buffs given an image, and
+    -- learn the ID. Blizzard's alert names exactly the ID the game uses, which
+    -- the Cooldown Manager does not always list (Infusion of Light alerts
+    -- under 458213 as well as 54149), so the image starts matching it too.
+    local name = BH.Secrets.SafeString(C_Spell.GetSpellName(spellID), nil)
+    if not name then return false end
+    for gridID, e in pairs(BuffSounds()) do
+        local id = tonumber(gridID)
+        if id and type(e) == "table" and e.image
+           and BH.Secrets.SafeString(C_Spell.GetSpellName(id), nil) == name then
+            AddAlias(id, spellID)
+            return true
+        end
+    end
+    return false
 end
 
 local function ApplyOverlayHiding(frame, spellID)
@@ -1144,8 +1182,25 @@ end
 do
     local ev = CreateFrame("Frame")
     ev:RegisterEvent("PLAYER_REGEN_ENABLED")
-    ev:SetScript("OnEvent", function()
-        if imagesPending then BH:RefreshBuffImages() end
+    -- The Cooldown Manager's lists (the source of the aura ID aliases) are not
+    -- ready at login and change with talents and spec, so they are re-read a
+    -- few seconds after each of these. AddAlias queues the rebuild when the
+    -- scan turns up something new; an unchanged scan costs nothing.
+    ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ev:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    ev:RegisterEvent("TRAIT_CONFIG_UPDATED")
+    local scanQueued = false
+    ev:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_ENABLED" then
+            if imagesPending then BH:RefreshBuffImages() end
+            return
+        end
+        if scanQueued then return end
+        scanQueued = true
+        C_Timer.After(3, function()
+            scanQueued = false
+            ScanCDMBuffs()
+        end)
     end)
 end
 

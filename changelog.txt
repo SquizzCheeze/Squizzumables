@@ -14,3 +14,10 @@ V1.96
 - Hide all of Blizzard's spell alerts (Buff Alerts, off by default): hides
   the proc art Blizzard draws round the middle of the screen for every
   spell, not just the buffs you give an image. The alert sound still plays.
+- Fixed: a buff image picked from Buff Alerts could never show when the
+  buff's icon there is its talent rather than the buff itself (Infusion of
+  Light, Divine Purpose). The real buff IDs were learned from the Cooldown
+  Manager only after the image had been built, and the image was never
+  rebuilt. It now rebuilds as soon as they are learned, after login and on
+  every talent or spec change. A Blizzard spell alert for a buff with an
+  image is also matched by name, which teaches the image that ID too.
