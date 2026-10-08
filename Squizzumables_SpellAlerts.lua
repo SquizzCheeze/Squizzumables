@@ -1009,16 +1009,21 @@ end
 
 -- Place a frame where an image for `entry` goes: the whole screen, behind the
 -- interface, or a square at the image's OWN position (imageX/imageY, offset
--- from the screen's centre), above it. Its own, not the lust alert's: each
--- buff's image is placed independently (user decision 2026-10-05), with the
--- editor's Move button.
+-- from the screen's centre). Its own, not the lust alert's: each buff's image
+-- is placed independently (user decision 2026-10-05), with the editor's Move
+-- button.
+--
+-- BOTH at BACKGROUND strata: behind every interface window, in front of the
+-- game world. Placed images were HIGH, which drew the ( ) arcs over the
+-- spellbook and the world map (user screenshots 2026-10-09); framing the
+-- character never needs to beat a window. (The Move handle raises itself to
+-- DIALOG while it is out, so it can still be grabbed.)
 local function PlaceImageFrame(f, entry)
     f:ClearAllPoints()
+    f:SetFrameStrata("BACKGROUND")
     if entry.imageFill ~= false then
-        f:SetFrameStrata("BACKGROUND")
         f:SetAllPoints(UIParent)
     else
-        f:SetFrameStrata("HIGH")
         local size = entry.imageSize or 200
         local lv = ImageLevel(entry)
         f:SetSize(size * (lv and lv.sw or 1), size * (entry.imageHeight or 100) / 100 * (lv and lv.sh or 1))
@@ -2151,7 +2156,8 @@ function BH:RebuildBuffSoundEditor()
         fillCb:SetChecked(entry.imageFill ~= false)
         ns.Rows.AddTooltip(fillCb, "Fill the screen",
             "Stretch the image over the whole screen, behind your interface -- right for an edge glow. Unticked, "
-            .. "it is a square with its own position and size, above the interface; place it with Move.")
+            .. "it is a square with its own position and size; place it with Move. Either way it stays behind "
+            .. "your interface windows.")
         y = y - 30
 
         local alpha = CreateSQSlider(editor, "Opacity %", 200, 5, 100, 5)

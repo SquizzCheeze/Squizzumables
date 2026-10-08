@@ -13,3 +13,6 @@ V1.97
   Howl of the Pack Leader's Wyvern, Boar and Bear are three, alongside a
   fourth, unrelated Howl - so tick the ones that belong together and they
   share one image and one set of sounds, and leave the list.
+- Fixed: buff images placed round your character (the ( ) arcs and the
+  other shapes) were drawn on top of the spellbook, the world map and other
+  windows. They now sit behind your interface, like the full-screen images.
