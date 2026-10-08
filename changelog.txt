@@ -8,3 +8,8 @@ V1.97
   be given to just one of them - it showed for both. They are now listed
   separately, an image set while they were merged is untangled, and
   Blizzard's spell alert art is only hidden for the one with the image.
+- Buff Alerts: "Also show for" lets one icon answer for other buffs with
+  the same name. Blizzard lists some buffs as several separate entries -
+  Howl of the Pack Leader's Wyvern, Boar and Bear are three, alongside a
+  fourth, unrelated Howl - so tick the ones that belong together and they
+  share one image and one set of sounds, and leave the list.

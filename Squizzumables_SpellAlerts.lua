@@ -470,9 +470,42 @@ local function SeedAliases()
 end
 
 -- Every aura ID a grid icon matches, as a set.
+-- "Also show for" (user request 2026-10-09): buffs the player has merged into
+-- an icon, entry.mergedIDs = { [spellID] = true }. Blizzard lists the three
+-- Howl of the Pack Leader variants (471878 / 472324 / 472325) as separate,
+-- unlinked Cooldown Manager entries, and a fourth, unrelated Howl shares the
+-- name, so nothing in the data can group them -- the player does. A merged
+-- buff's IDs are unioned in at lookup time below rather than written into
+-- buffAliases, so UnmergeSeparateBuffs (which keeps separately listed buffs
+-- apart) never fights a merge the player asked for.
+local function MergedInto()
+    local map = {}
+    for gridID, entry in pairs(BH.settings and BH.settings.buffSounds or {}) do
+        local id = tonumber(gridID)
+        if id and type(entry) == "table" and type(entry.mergedIDs) == "table" then
+            for m in pairs(entry.mergedIDs) do map[tonumber(m)] = id end
+        end
+    end
+    return map
+end
+BH.BuffMergedInto = MergedInto
+
 local function AuraIDsFor(gridID)
     SeedAliases()
-    return buffAliases[gridID] or { [gridID] = true }
+    local base = buffAliases[gridID] or { [gridID] = true }
+    local entry = BH.settings and BH.settings.buffSounds and BH.settings.buffSounds[gridID]
+    if not (type(entry) == "table" and type(entry.mergedIDs) == "table" and next(entry.mergedIDs)) then
+        return base
+    end
+    local set = {}
+    for a in pairs(base) do set[a] = true end
+    for m in pairs(entry.mergedIDs) do
+        m = tonumber(m)
+        if m then
+            for a in pairs(buffAliases[m] or { [m] = true }) do set[a] = true end
+        end
+    end
+    return set
 end
 
 -- The Cooldown Manager's two buff categories (buff icons, buff bars) for the
@@ -1030,8 +1063,12 @@ end
 local function OverlayHidden(spellID)
     if not spellID then return false end
     SeedAliases()
-    -- Blizzard's alert may carry any of the buff's aura IDs.
-    local entry = BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
+    -- Blizzard's alert may carry any of the buff's aura IDs -- or belong to a
+    -- buff merged into another icon ("Also show for"), which answers for it.
+    local merged = MergedInto()
+    local owner = aliasOwner[spellID] or spellID
+    local entry = BuffSounds()[merged[spellID] or 0] or BuffSounds()[merged[owner] or 0]
+        or BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
     if type(entry) == "table" then return entry.image ~= nil end
     -- A KNOWN ID with no image is a buff of its own, not an unknown alias:
     -- name-matching it would hide the art of a different buff that merely
@@ -1661,8 +1698,19 @@ local function BuffGridEntries()
     end
     table.sort(extra, function(a, b) return (a.name or ""):lower() < (b.name or ""):lower() end)
     for _, e in ipairs(extra) do entries[#entries + 1] = e end
+    -- Buffs merged into another icon ("Also show for") are not icons of
+    -- their own.
+    local merged = MergedInto()
+    if next(merged) then
+        local kept = {}
+        for _, e in ipairs(entries) do
+            if not merged[e.spellID] then kept[#kept + 1] = e end
+        end
+        entries = kept
+    end
     return entries
 end
+BH.BuffGridEntries = BuffGridEntries
 
 local BUFF_ICON_SIZE = 30
 local BUFF_ICON_GAP  = 4
@@ -1888,6 +1936,66 @@ function BH:RebuildBuffSoundEditor()
         BH:RefreshBuffImages()
         BH:RebuildBuffSoundGrid()
         if rebuildEditor then BH:RebuildBuffSoundEditor() end
+    end
+
+    -- "Also show for": other buffs with this one's NAME, each a tick box that
+    -- folds it into this icon (see MergedInto). Only same-name buffs are
+    -- offered: that is the case the game cannot group for us, and offering
+    -- every buff would be a list of dozens.
+    do
+        local myName = BH.Secrets.SafeString(C_Spell.GetSpellName(spellID), nil)
+        local mergedMap = MergedInto()
+        local own = (BH.BuffSounds()[spellID] or {}).mergedIDs or {}
+        local candidates = {}
+        if myName then
+            local listed = {}
+            for _, e in ipairs(BuffGridEntries()) do listed[e.spellID] = true end
+            for m in pairs(own) do listed[tonumber(m)] = true end
+            for id in pairs(listed) do
+                if id ~= spellID and (mergedMap[id] == nil or mergedMap[id] == spellID)
+                   and BH.Secrets.SafeString(C_Spell.GetSpellName(id), nil) == myName then
+                    candidates[#candidates + 1] = id
+                end
+            end
+            table.sort(candidates)
+        end
+        if #candidates > 0 then
+            local lbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            lbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+            lbl:SetText("Also show for:")
+            lbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+            ns.Rows.AddTooltip(lbl, "Also show for",
+                "Other buffs with the same name. Tick one to make this icon answer for it too -- its image and "
+                .. "sounds, and hiding Blizzard's art -- and it leaves the list. Whatever it had set up of its own "
+                .. "is replaced by this icon's. Untick to make it its own icon again.")
+            local x = 84
+            for _, id in ipairs(candidates) do
+                local cb = CreateSQCheckbox(editor, tostring(id), function(checked)
+                    local e = Entry()
+                    e.mergedIDs = type(e.mergedIDs) == "table" and e.mergedIDs or {}
+                    if checked then
+                        e.mergedIDs[id] = true
+                        -- Its own settings would fight this icon's: one image
+                        -- for the group, not two drawn on top of each other.
+                        BH.BuffSounds()[id] = nil
+                    else
+                        e.mergedIDs[id] = nil
+                        if not next(e.mergedIDs) then e.mergedIDs = nil end
+                    end
+                    BH:SaveSettings()
+                    BH:RefreshAuraSoundRegistrations("buffs merged")
+                    BH:RebuildBuffSoundGrid()
+                    BH:RebuildBuffSoundEditor()
+                end)
+                cb:SetPoint("TOPLEFT", editor, "TOPLEFT", x, y)
+                cb:SetChecked(own[id] == true)
+                ns.Rows.AddTooltip(cb, ("Spell %d"):format(id),
+                    "Tick to have this icon's image and sounds show for this buff too.")
+                x = x + 96
+                if x > 300 then x = 84; y = y - 24 end
+            end
+            y = y - 30
+        end
     end
 
     local imgLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
