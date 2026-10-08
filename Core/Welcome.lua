@@ -23,6 +23,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.97"] = {
         "Buff Alerts: buffs that share a name each get their own icon, and \"Also show for\" merges the ones that belong together into one (like Howl of the Pack Leader's three beasts).",
+        "Buff images placed round your character now sit behind the spellbook, map and other windows.",
     },
     ["1.96"] = {
         "Mouse cursor: the rings stay on the cursor after you turn the camera with the right mouse button.",
