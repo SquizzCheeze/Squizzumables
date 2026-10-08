@@ -405,6 +405,10 @@ BH.BuffSounds = BuffSounds
 -- so all three match whichever ID the buff turns up under.
 -- ----------------------------------------------------------------------------
 local buffAliases, aliasOwner = {}, {}
+-- [CDM entry spellID] = the IDs that entry ITSELF reports (spellID, override,
+-- linked) -- as opposed to buffAliases, which also holds IDs folded in or
+-- learned from Blizzard's alerts. What UnmergeSeparateBuffs keeps.
+local cdmOwnIDs = {}
 
 -- A NEW alias must reach the images and sounds already built, or they keep
 -- matching only the IDs known when they were built. That was the bug: images
@@ -490,10 +494,19 @@ local function ScanCDMBuffs()
                 local info = CV.GetCooldownViewerCooldownInfo(cdID)
                 local spellID = info and info.spellID
                 if spellID and info.isKnown and info.selfAura ~= false then
+                    local own = cdmOwnIDs[spellID] or {}
+                    cdmOwnIDs[spellID] = own
+                    own[spellID] = true
                     AddAlias(spellID, spellID)
-                    if info.overrideSpellID then AddAlias(spellID, info.overrideSpellID) end
+                    if info.overrideSpellID then
+                        own[info.overrideSpellID] = true
+                        AddAlias(spellID, info.overrideSpellID)
+                    end
                     if type(info.linkedSpellIDs) == "table" then
-                        for _, lid in ipairs(info.linkedSpellIDs) do AddAlias(spellID, lid) end
+                        for _, lid in ipairs(info.linkedSpellIDs) do
+                            own[lid] = true
+                            AddAlias(spellID, lid)
+                        end
                     end
                     out[#out + 1] = spellID
                 end
@@ -503,6 +516,37 @@ local function ScanCDMBuffs()
     return out
 end
 BH.ScanCDMBuffs = ScanCDMBuffs
+
+-- Undo name-folds that should never have happened: before 2026-10-08 two
+-- Cooldown Manager buffs sharing a name were folded into one icon, and the
+-- second's IDs were saved on the first's image (entry.auraIDs), so the image
+-- kept answering for both. For each buff now listed separately, take its own
+-- IDs back off every other icon -- except IDs that other icon's own CDM entry
+-- also reports, which it may legitimately share.
+local function UnmergeSeparateBuffs(ids)
+    local changed = false
+    local store = BH.settings and BH.settings.buffSounds or {}
+    for _, x in ipairs(ids) do
+        local own = cdmOwnIDs[x]
+        if own then
+            for g, set in pairs(buffAliases) do
+                if g ~= x then
+                    local keep = cdmOwnIDs[g] or {}
+                    for a in pairs(own) do
+                        if a ~= g and set[a] and not keep[a] then
+                            set[a] = nil
+                            if aliasOwner[a] == g then aliasOwner[a] = x end
+                            local e = store[g]
+                            if type(e) == "table" and type(e.auraIDs) == "table" then e.auraIDs[a] = nil end
+                            changed = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if changed then QueueAliasRefresh() end
+end
 
 local function ClearAuraSoundRegistrations()
     if not AuraSoundsAvailable() then return end
@@ -956,6 +1000,11 @@ local function OverlayHidden(spellID)
     -- Blizzard's alert may carry any of the buff's aura IDs.
     local entry = BuffSounds()[spellID] or BuffSounds()[aliasOwner[spellID] or 0]
     if type(entry) == "table" then return entry.image ~= nil end
+    -- A KNOWN ID with no image is a buff of its own, not an unknown alias:
+    -- name-matching it would hide the art of a different buff that merely
+    -- shares a name, and learn it as an alias -- re-merging the two Howl of
+    -- the Pack Leader buffs (471878 / 472325, 2026-10-08).
+    if aliasOwner[spellID] ~= nil or cdmOwnIDs[spellID] then return false end
     -- Not an ID we know: match by NAME against the buffs given an image, and
     -- learn the ID. Blizzard's alert names exactly the ID the game uses, which
     -- the Cooldown Manager does not always list (Infusion of Light alerts
@@ -1301,7 +1350,9 @@ do
         scanQueued = true
         C_Timer.After(3, function()
             scanQueued = false
-            ScanCDMBuffs()
+            -- The full list, not just the scan: building it also undoes stale
+            -- name-folds (UnmergeSeparateBuffs) before any image is rebuilt.
+            BH.GetKnownBuffSpells()
         end)
     end)
 end
@@ -1487,20 +1538,29 @@ function BH.GetKnownBuffSpells()
     -- the spellbook's cast ID against the CDM's aura ID, Burning Rush style --
     -- is not listed twice; its aura IDs are folded into the existing icon, so
     -- that icon now matches either.
+    --
+    -- Only into a SPELLBOOK entry, and only once each. Two Cooldown Manager
+    -- buffs that share a name are genuinely different buffs (Howl of the Pack
+    -- Leader has two, user report 2026-10-08) and folding one into the other
+    -- made a single icon that answered for both, so an image could not be
+    -- given to just one. byName holds spellbook names only, and a name is
+    -- used up by the first fold.
     local byName = {}
     for _, e in ipairs(out) do
         local nm = BH.Secrets.SafeString(e.name, nil)
         if nm then byName[nm] = e.spellID end
     end
+    local separate = {}   -- CDM entries listed as icons of their own
     for _, cdmID in ipairs(ScanCDMBuffs()) do
         if not seen[cdmID] then
             seen[cdmID] = true
             local name = BH.Secrets.SafeString(C_Spell.GetSpellName(cdmID), nil)
             local existing = name and byName[name]
             if existing then
+                byName[name] = nil
                 for auraID in pairs(AuraIDsFor(cdmID)) do AddAlias(existing, auraID) end
             else
-                if name then byName[name] = cdmID end
+                separate[#separate + 1] = cdmID
                 out[#out + 1] = {
                     spellID = cdmID,
                     name    = name or ("Spell " .. cdmID),
@@ -1509,6 +1569,7 @@ function BH.GetKnownBuffSpells()
             end
         end
     end
+    UnmergeSeparateBuffs(separate)
 
     local _, playerClass = UnitClass("player")
     for _, extra in ipairs(BUFF_SOUND_EXTRAS) do

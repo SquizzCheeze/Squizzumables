@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.97"] = {
+        "Buff Alerts: two different buffs that share a name (like the two Howl of the Pack Leader buffs) each get their own icon and image again.",
+    },
     ["1.96"] = {
         "Mouse cursor: the rings stay on the cursor after you turn the camera with the right mouse button.",
         "Buff images can build up with stacks (Reveal by Stacks): the ( ) arcs can show one side per stack of a two-stack buff.",

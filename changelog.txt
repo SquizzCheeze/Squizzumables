@@ -1,29 +1,10 @@
 Squizzumables Changelog
 =======================
 
-V1.96
+V1.97
 
-- Mouse cursor: the rings no longer end up slightly off the cursor after
-  turning the camera with the right mouse button. The hidden cursor drifts
-  a little while you turn, and the rings now follow it.
-- Buff images can build up with stacks: Reveal by Stacks uncovers the image
-  a piece at a time as a buff stacks, whole at the number you choose, left
-  to right or bottom to top. Set the ( ) arcs to 2 for a two-stack buff and
-  1 stack shows the left arc, 2 stacks both. For buffs where the game says
-  how far they stack, that is shown beside it with a Match button (many
-  buffs, Infusion of Light among them, report nothing). The game tracks the
-  stacks, so it works in combat.
-- Hide all of Blizzard's spell alerts (Buff Alerts, off by default): hides
-  the proc art Blizzard draws round the middle of the screen for every
-  spell, not just the buffs you give an image. The alert sound still plays.
-- Fixed: a buff image picked from Buff Alerts could never show when the
-  buff's icon there is its talent rather than the buff itself (Infusion of
-  Light, Divine Purpose). The real buff IDs were learned from the Cooldown
-  Manager only after the image had been built, and the image was never
-  rebuilt. It now rebuilds as soon as they are learned, after login and on
-  every talent or spec change. A Blizzard spell alert for a buff with an
-  image is also matched by name, which teaches the image that ID too.
-- Fixed: Blizzard's spell alert art for a buff with an image could still
-  show for about a second on the first proc after logging in or reloading.
-  The alert hook is now in place from the moment the addon loads, and the
-  buff's other spell IDs are remembered between sessions.
+- Fixed: two different buffs with the same name (Howl of the Pack Leader
+  has two) were merged into one icon in Buff Alerts, so an image could not
+  be given to just one of them - it showed for both. They are now listed
+  separately, an image set while they were merged is untangled, and
+  Blizzard's spell alert art is only hidden for the one with the image.
