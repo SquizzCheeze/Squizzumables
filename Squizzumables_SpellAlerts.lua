@@ -517,6 +517,39 @@ local function ScanCDMBuffs()
 end
 BH.ScanCDMBuffs = ScanCDMBuffs
 
+-- /sq cdmbuffs [name] -- unlisted; the Cooldown Manager's buff entries as it
+-- reports them (category, entry, spell, override, linked IDs), filtered by
+-- name. What Buff Alerts builds its icons from; written to settle whether
+-- buffs that share a name are one entry or several (Howl of the Pack Leader,
+-- 2026-10-09). A /run version does not fit chat's 255 characters.
+function BH:PrintCDMBuffEntries(filter)
+    local ok, err = pcall(function()
+        local CV, cats = C_CooldownViewer, Enum.CooldownViewerCategory
+        if not (CV and cats) then print("  no Cooldown Manager API") return end
+        filter = filter and filter:lower() or ""
+        print("|cFF00FF00Squizzumables CDM buff entries|r" .. (filter ~= "" and (" matching \"" .. filter .. "\"") or ""))
+        local n = 0
+        for _, cat in ipairs({ cats.TrackedBuff, cats.TrackedBar }) do
+            local okS, ids = pcall(CV.GetCooldownViewerCategorySet, cat, true)
+            for _, cdID in ipairs(okS and ids or {}) do
+                local i = CV.GetCooldownViewerCooldownInfo(cdID)
+                local name = i and i.spellID and BH.Secrets.SafeString(C_Spell.GetSpellName(i.spellID), "?") or "?"
+                if i and (filter == "" or name:lower():find(filter, 1, true)) then
+                    n = n + 1
+                    local linked = type(i.linkedSpellIDs) == "table" and table.concat(i.linkedSpellIDs, ",") or "-"
+                    print(("  %s  entry %s  spell %s  override %s  linked %s  known %s  selfAura %s"):format(
+                        cat == cats.TrackedBuff and "buff" or "bar", tostring(cdID), tostring(i.spellID),
+                        tostring(i.overrideSpellID), linked, tostring(i.isKnown), tostring(i.selfAura)))
+                    print("      " .. name)
+                end
+            end
+        end
+        if n == 0 then print("  none") end
+    end)
+    if not ok then print("  |cffff4444failed:|r " .. tostring(err)) end
+    print("  -- end of cdmbuffs --")
+end
+
 -- Undo name-folds that should never have happened: before 2026-10-08 two
 -- Cooldown Manager buffs sharing a name were folded into one icon, and the
 -- second's IDs were saved on the first's image (entry.auraIDs), so the image

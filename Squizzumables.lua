@@ -11356,6 +11356,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": Spell alerts module not loaded.")
         end
+    elseif msg and (msg == "cdmbuffs" or msg:match("^cdmbuffs ")) then
+        if BH.PrintCDMBuffEntries then
+            BH:PrintCDMBuffEntries(msg:match("^cdmbuffs%s+(.+)$"))
+        else
+            print(addonName .. ": Spell alerts module not loaded.")
+        end
     elseif msg == "notes" then
         if BH.ShowReleaseNotes then BH.ShowReleaseNotes() end
     elseif msg == "welcome" then
