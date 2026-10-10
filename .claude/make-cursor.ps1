@@ -9,8 +9,8 @@
 #              than hard-edged so overlapping particles blend into a ribbon.
 #   duck.png   a rubber-duck silhouette facing RIGHT, eye cut out: the Duck
 #              trail style. Core/Cursor.lua mirrors it when the cursor moves left.
-#   shark.png  a side-on shark silhouette facing RIGHT, eye cut out: the Shark
-#              trail style, mirrored the same way.
+#   (shark.png, the Sharks trail style, is NOT made here any more: it is cut
+#              from an AI image by cut-shark-silhouette.ps1.)
 #
 # Our own images, deliberately: Ultimate Mouse Cursor (what this replaces) ships
 # no licence, so none of its art is reused.
@@ -101,50 +101,3 @@ function Write-Duck {
 }
 Write-Duck
 
-# The shark (V1.98, the Shark trail style; user request 2026-10-11): a side-on
-# silhouette facing RIGHT like the duck, so Core/Cursor.lua mirrors it the same
-# way. Drawn for a 16-30 px trail piece, so it is the outline that has to
-# read -- torpedo body, tall swept-back dorsal fin, forked tail, pectoral fin --
-# with the eye punched out. Body edges are Beziers; fins are polygons.
-function Write-Shark {
-    $bmp = New-Object System.Drawing.Bitmap $Size, $Size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.Clear([System.Drawing.Color]::Transparent)
-    $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
-    function P([double]$x, [double]$y) { New-Object System.Drawing.PointF $x, $y }
-
-    # Body: nose at the right, tail stock at the left; top edge then bottom.
-    $body = New-Object System.Drawing.Drawing2D.GraphicsPath
-    # Deep in the body: a slim one read as a fish (or a plane) at trail size.
-    $body.AddBezier((P 124 70), (P 114 52), (P 84 46), (P 54 52))     # pointed nose up over the back
-    $body.AddBezier((P 54 52), (P 40 56), (P 32 60), (P 22 64))       # back down to the tail stock
-    $body.AddLine((P 22 64), (P 22 74))
-    $body.AddBezier((P 22 74), (P 38 78), (P 62 88), (P 94 86))       # belly
-    $body.AddBezier((P 94 86), (P 110 84), (P 120 78), (P 124 70))    # jaw up to the nose
-    $body.CloseFigure()
-    $g.FillPath($white, $body)
-
-    # Dorsal fin, tall and swept back.
-    $g.FillPolygon($white, [System.Drawing.PointF[]]@((P 50 54), (P 62 8), (P 70 8), (P 88 50)))
-    # Forked tail: two lobes, each a wide-based triangle sitting ON the tail
-    # stock (thin spikes with a gap read as a fish); the upper one longer, as
-    # on a real shark.
-    $g.FillPolygon($white, [System.Drawing.PointF[]]@((P 36 60), (P 4 16), (P 22 68)))
-    $g.FillPolygon($white, [System.Drawing.PointF[]]@((P 22 70), (P 10 102), (P 36 78)))
-    # Pectoral fin, small and swept back: a big one beside the dorsal made the
-    # silhouette read as a plane at trail size.
-    $g.FillPolygon($white, [System.Drawing.PointF[]]@((P 84 84), (P 70 102), (P 76 103), (P 96 86)))
-
-    # The eye, punched out.
-    $g.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
-    $clear = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(0, 0, 0, 0))
-    $g.FillEllipse($clear, 103, 58, 8, 8)
-
-    $g.Dispose()
-    $path = Join-Path $OutDir 'shark.png'
-    $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-    $bmp.Dispose()
-    Write-Host "wrote $path"
-}
-Write-Shark

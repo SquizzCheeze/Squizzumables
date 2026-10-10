@@ -65,7 +65,7 @@ local TRAIL_STYLES = {
     heart   = { file = SHAPES .. "heart.png",   blend = "BLEND" },
     diamond = { file = SHAPES .. "diamond.png", blend = "BLEND" },
     duck    = { file = MEDIA .. "duck.png", blend = "BLEND", faces = true },
-    shark   = { file = MEDIA .. "shark.png", blend = "BLEND", faces = true },   -- V1.98, make-cursor.ps1
+    shark   = { file = MEDIA .. "shark.png", blend = "BLEND", faces = true },   -- V1.98, cut-shark-silhouette.ps1
     custom  = { custom = true, blend = "ADD" },
 }
 
