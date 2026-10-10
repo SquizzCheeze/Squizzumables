@@ -7996,10 +7996,19 @@ function BH:SyncDeathTallyRoster()
     end
 end
 
+-- Spirit of Redemption state (see BH:ReconcileDeathTally). On BH rather than
+-- in new file-level locals: this file is long enough to mind Lua's 200-local
+-- limit. base = GetDeathCount minus our total when the key was picked up;
+-- behind = polls the key has been ahead; untilT = GUID -> GetTime() until
+-- which a credited priest's flag flip is the same death, not a second.
+BH._tallySoR = { base = nil, behind = 0, untilT = {} }
+
 -- Rebuilds the tally from the current party/raid roster with all counts at 0.
 function BH:ResetDeathTally()
     wipe(deathTallyData)
     wipe(deathTallyOrder)
+    self._tallySoR.base, self._tallySoR.behind = nil, 0
+    wipe(self._tallySoR.untilT)
     deathTallyManuallyClosed = false
     self:SyncDeathTallyRoster()
     self:UpdateDeathTallyDisplay()
@@ -8032,15 +8041,83 @@ function BH:PollDeathTally()
             if entry then
                 local isDead = UnitIsDeadOrGhost(unit) and true or false
                 if isDead and not entry.wasDead then
-                    entry.count = entry.count + 1
-                    changed = true
+                    -- guid already indexed deathTallyData above, so it is
+                    -- not a secret here (an entry exists only for a plain one).
+                    ---@diagnostic disable-next-line: secret-table-key
+                    if (self._tallySoR.untilT[guid] or 0) > GetTime() then
+                        -- Already credited by ReconcileDeathTally when the
+                        -- angel form began; this is that death landing.
+                        ---@diagnostic disable-next-line: secret-table-key
+                        self._tallySoR.untilT[guid] = nil
+                    else
+                        entry.count = entry.count + 1
+                        changed = true
+                    end
                 end
                 entry.wasDead = isDead
             end
         end
     end
+    if self:ReconcileDeathTally() then changed = true end
 
     if changed then self:UpdateDeathTallyDisplay() end
+end
+
+-- Spirit of Redemption (user report 2026-10-11). A Holy priest who "dies" turns
+-- into an angel instead of a corpse, so UnitIsDeadOrGhost never flips and the
+-- poll never sees it -- with Restitution they come back without ever being
+-- flagged dead. The KEY still counts it (GetDeathCount, and the time penalty).
+-- When the key's count runs ahead of our total for three polls (it can lead by
+-- a tick), someone died unseen; with exactly one priest healer in the group
+-- that is their Spirit of Redemption, credited to them. If the angel form then
+-- ends in a real death within 20 s, the poll treats that flip as the same death.
+-- With no lone priest healer the gap is accepted, not guessed at. GetDeathCount
+-- is feign-free, so Feign Death stays out. DPSReport does the same
+-- (DeathTracker:Reconcile). Returns true when it credited a death.
+function BH:ReconcileDeathTally()
+    local sor = self._tallySoR
+    local active = C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive
+        and C_ChallengeMode.IsChallengeModeActive()
+    if not active then sor.base, sor.behind = nil, 0 return false end
+    local ok, kc = pcall(C_ChallengeMode.GetDeathCount)
+    if not ok or type(kc) ~= "number" or (issecretvalue and issecretvalue(kc)) then return false end
+    local ours = 0
+    for _, e in pairs(deathTallyData) do ours = ours + e.count end
+    if not sor.base then
+        sor.base, sor.behind = kc - ours, 0
+        return false
+    end
+    local extra = kc - sor.base - ours
+    if extra <= 0 then
+        sor.behind = 0
+        if extra < 0 then sor.base = kc - ours end
+        return false
+    end
+    sor.behind = sor.behind + 1
+    if sor.behind < 3 then return false end
+    sor.behind = 0
+    local found
+    for _, unit in ipairs(GetGroupUnits()) do
+        if UnitExists(unit) and UnitIsPlayer(unit) then
+            local _, class = UnitClass(unit)
+            local role = UnitGroupRolesAssigned(unit)
+            local guid = UnitGUID(unit)
+            if class and not (issecretvalue and issecretvalue(class)) and role
+               and not (issecretvalue and issecretvalue(role)) and guid
+               and not (issecretvalue and issecretvalue(guid))
+               and class == "PRIEST" and role == "HEALER" and deathTallyData[guid] then
+                if found and found ~= guid then found = false break end
+                found = guid
+            end
+        end
+    end
+    if found then
+        deathTallyData[found].count = deathTallyData[found].count + extra
+        sor.untilT[found] = GetTime() + 20
+        return true
+    end
+    sor.base = sor.base + extra
+    return false
 end
 
 -- Earth Shield aura IDs (974 = base, 383648 = Elemental Orbit variant)

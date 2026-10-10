@@ -12,3 +12,8 @@ V1.98
 - Sharks, a new cursor Trail Style: little shark silhouettes that face the
   way you move the mouse, like the ducks.
 - Cursor Trail Size now goes up to 500% (was 300%).
+- Fixed: the M+ Death Tally missed a Holy Priest's death when Spirit of
+  Redemption took it (they become an angel rather than dying, and with
+  Restitution never die at all), though the key counted it and took the
+  time. When the key's death count goes up with nobody seen dying, the
+  death is credited to the group's priest healer.
