@@ -3,9 +3,11 @@ Squizzumables Changelog
 
 V1.98
 
-- Shark Bite (Cursor > Shark Bite, off by default): when you left-click, a
+- Shark Bite (Cursor > Trail, under Click Burst; off by default): when you left-click, a
   pixel-art shark surfaces from the water under your cursor, chomps over
   it and sinks back with a splash. Purely for fun - your cursor and your
   click work as normal. Choose how often it happens (a chance per click),
   its size, and whether it only bites on clicks in the game world rather
   than on windows and buttons. A Test button shows it straight away.
+- Sharks, a new cursor Trail Style: little shark silhouettes that face the
+  way you move the mouse, like the ducks.

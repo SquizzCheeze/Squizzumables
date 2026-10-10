@@ -65,6 +65,7 @@ local TRAIL_STYLES = {
     heart   = { file = SHAPES .. "heart.png",   blend = "BLEND" },
     diamond = { file = SHAPES .. "diamond.png", blend = "BLEND" },
     duck    = { file = MEDIA .. "duck.png", blend = "BLEND", faces = true },
+    shark   = { file = MEDIA .. "shark.png", blend = "BLEND", faces = true },   -- V1.98, make-cursor.ps1
     custom  = { custom = true, blend = "ADD" },
 }
 
@@ -945,6 +946,7 @@ local TRAIL_STYLE_ITEMS = {
     { text = "Hearts",      value = "heart" },
     { text = "Diamonds",    value = "diamond" },
     { text = "Ducks",       value = "duck" },
+    { text = "Sharks",      value = "shark" },
     { text = "Your own texture", value = "custom" },
 }
 local TRAIL_BLENDS = {
@@ -966,7 +968,6 @@ function BH:BuildCursorTab(parent)
         { key = "rings",  label = "Rings" },
         { key = "trail",  label = "Trail" },
         { key = "trailcolour", label = "Trail Colour" },
-        { key = "shark", label = "Shark Bite" },
     })
 
     local function Set(key, v)
@@ -1079,9 +1080,26 @@ function BH:BuildCursorTab(parent)
     y = y - Rows.Add(content, y, Check("Click Burst", "cursorClickBurst",
         "A burst of particles flies out from the cursor when you left-click. It uses the look set below; "
             .. "with a rainbow colour it spreads round the colour wheel. Works with the trail off."))
+    -- Shark Bite sits with Click Burst, the other left-click effect (user
+    -- request 2026-10-11; it had a sub-tab of its own first).
+    local function SharkOff() return Off() or not BH.settings.cursorSharkBite end
+    y = y - Rows.Add(content, y, Check("Shark Bite", "cursorSharkBite",
+        "When you left-click, a shark surfaces under the cursor, chomps over it and sinks back into the "
+            .. "water. Purely for fun: your cursor and your click work as normal."))
+    y = y - Rows.Add(content, y, Slider("Chance Per Click (%)", "cursorSharkChance", 5, 100, 5, 100,
+        "How often a left click brings the shark. 100% is every click; lower keeps it a surprise.", SharkOff))
+    y = y - Rows.Add(content, y, Slider("Shark Size", "cursorSharkSize", 50, 300, 10, 100,
+        "How big the shark is, as a percentage.", SharkOff))
+    y = y - Rows.Add(content, y, Check("Only When Clicking The Game World", "cursorSharkWorldOnly",
+        "Bite only on clicks in the game world -- not on windows, buttons or your action bars.", SharkOff))
+    local test = ns.CreateSQButton(content, "Test Shark", 100, 22)
+    test:SetPoint("TOPLEFT", content, "TOPLEFT", 14, y - 6)
+    test:SetScript("OnClick", function() BH:TestSharkBite() end)
+    ns.Rows.AddTooltip(test, "Test Shark", "A bite right now, where the mouse is.")
+    y = y - 40
     y = y - Rows.Add(content, y, Dropdown("Trail Style", "cursorTrailStyle", TRAIL_STYLE_ITEMS, "glow",
         "Soft glow blends into a bright ribbon; sparkle drifts, falls and twinkles like sparks; dots, rings, "
-            .. "stars, hearts and diamonds draw each piece on its own; ducks face the way you move the mouse. "
+            .. "stars, hearts and diamonds draw each piece on its own; ducks and sharks face the way you move the mouse. "
             .. "Your own texture uses the name typed below.", ParticlesOff))
     y = y - Rows.Add(content, y, {
         type = "editbox", label = "Your Own Texture (atlas name or file path)", width = 300,
@@ -1151,26 +1169,5 @@ function BH:BuildCursorTab(parent)
             disabled = function() return PaletteOff() or i > (BH.settings.cursorTrailPaletteCount or 3) end,
         })
     end
-    content:SetHeight(math.abs(y) + 20)
-
-    -- Shark bite
-    content = pages.shark
-    Rows.currentSection = content.section
-    y = -14
-    local function SharkOff() return Off() or not BH.settings.cursorSharkBite end
-    y = y - Rows.Add(content, y, Check("Shark Bite", "cursorSharkBite",
-        "When you left-click, a shark surfaces under the cursor, chomps over it and sinks back into the "
-            .. "water. Purely for fun: your cursor and your click work as normal."))
-    y = y - Rows.Add(content, y, Slider("Chance Per Click (%)", "cursorSharkChance", 5, 100, 5, 100,
-        "How often a left click brings the shark. 100% is every click; lower keeps it a surprise.", SharkOff))
-    y = y - Rows.Add(content, y, Slider("Shark Size", "cursorSharkSize", 50, 300, 10, 100,
-        "How big the shark is, as a percentage.", SharkOff))
-    y = y - Rows.Add(content, y, Check("Only When Clicking The Game World", "cursorSharkWorldOnly",
-        "Bite only on clicks in the game world -- not on windows, buttons or your action bars.", SharkOff))
-    local test = ns.CreateSQButton(content, "Test", 80, 22)
-    test:SetPoint("TOPLEFT", content, "TOPLEFT", 14, y - 6)
-    test:SetScript("OnClick", function() BH:TestSharkBite() end)
-    ns.Rows.AddTooltip(test, "Test", "A bite right now, where the mouse is.")
-    y = y - 40
     content:SetHeight(math.abs(y) + 20)
 end
