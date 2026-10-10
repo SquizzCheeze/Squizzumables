@@ -151,6 +151,10 @@ BH.defaultSettings = {
     cursorHealthColor = false,          -- ring turns amber/red as your health drops
     cursorHealthStart = 70,             -- percent health the warning starts at
     cursorClickBurst = false,           -- particles fly out on a left click
+    cursorSharkBite = false,            -- a shark surfaces and chomps on a left click (V1.98)
+    cursorSharkChance = 100,            -- percent of left clicks
+    cursorSharkSize = 100,              -- percent
+    cursorSharkWorldOnly = false,       -- only on clicks in the game world
     cursorColorMode = "custom",         -- "custom" | "class" | "rainbow"
     cursorColor = { r = 1, g = 1, b = 1 },
     cursorDot = true,

@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.98"] = {
+        "Shark Bite (Cursor > Shark Bite): left-click and a shark surfaces under your cursor, chomps over it and sinks back with a splash. Just for fun.",
+    },
     ["1.97"] = {
         "Buff Alerts: buffs that share a name each get their own icon, and \"Also show for\" merges the ones that belong together into one (like Howl of the Pack Leader's three beasts).",
         "Buff images placed round your character now sit behind the spellbook, map and other windows.",

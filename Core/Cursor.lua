@@ -113,6 +113,32 @@ local shakeX, shakeDir, shakeCount, shakeLast, strokeLen, shakeReady = nil, 0, 0
 local locT                       -- seconds into the locator, nil when idle
 
 -- ============================================================================
+-- Shark bite (V1.98, user request 2026-10-11)
+--
+-- On a left click a shark surfaces under the cursor, chomps over its tip and
+-- sinks again -- purely visual, the cursor itself is untouched. The art is a
+-- 12-frame chomp the user supplied (AI-generated, cleared to ship), cut out of
+-- a JPG by .claude/cut-shark.ps1 into Media/Cursor/shark_bite.png: 4 x 4 grid
+-- of 256 x 256 frames, 12 used, wide open -> shut. Each frame's centre is the
+-- mouth, so that is the point pinned to the click.
+--
+-- The rise and sink are drawn here, not in the art: the shark texture slides
+-- up and down inside a CLIPPING frame whose bottom edge is the waterline, so
+-- it emerges from the water rather than fading in. A flattened ring ripples
+-- out at the waterline and a few droplets splash on the way up and down.
+-- About 0.7 s in all, at the click point (not following the cursor).
+-- ============================================================================
+local Shark = {
+    FRAMES = 12, COLS = 4, ROWS = 4,
+    SIZE = 110,                          -- on screen at 100%, UIParent units
+    RISE = 0.14, CHOMP = 0.30, SINK = 0.24,
+    WATERLINE = -0.38,                   -- of the size, below the mouth
+    SPLASH = 12,                         -- droplet pool
+    t = nil,                             -- seconds into a bite, nil when none
+    drops = {},                          -- { tex, age, life, x, y, vx, vy }
+}
+
+-- ============================================================================
 -- Colour
 -- ============================================================================
 
@@ -282,6 +308,165 @@ local function Build()
 
     driver = CreateFrame("Frame")
     driver:Hide()
+
+    -- Shark bite: a holder placed at the click, the clipping "above water"
+    -- frame inside it, the shark texture in that, and the ripple and droplets
+    -- on the holder (they belong at and above the waterline, unclipped).
+    local f = CreateFrame("Frame", nil, UIParent)
+    f:SetSize(1, 1)
+    f:EnableMouse(false)
+    f:Hide()
+    Shark.frame = f
+    local clip = CreateFrame("Frame", nil, f)
+    clip:SetClipsChildren(true)
+    Shark.clip = clip
+    local tex = clip:CreateTexture(nil, "ARTWORK")
+    -- NEAREST: it is pixel art; a smooth filter would blur it when scaled.
+    tex:SetTexture(MEDIA .. "shark_bite.png", "CLAMP", "CLAMP", "NEAREST")
+    Shark.tex = tex
+    local ripple = f:CreateTexture(nil, "ARTWORK", nil, -1)
+    ripple:SetTexture(MEDIA .. "ring.png")
+    ripple:SetVertexColor(0.6, 0.85, 1)
+    ripple:Hide()
+    Shark.ripple = ripple
+    for i = 1, Shark.SPLASH do
+        local d = f:CreateTexture(nil, "OVERLAY")
+        d:SetTexture(MEDIA .. "soft.png")
+        d:SetBlendMode("ADD")
+        d:SetVertexColor(0.65, 0.88, 1)
+        d:Hide()
+        Shark.drops[i] = { tex = d, age = 0, life = 0, x = 0, y = 0, vx = 0, vy = 0 }
+    end
+end
+
+-- ============================================================================
+-- Shark bite
+-- ============================================================================
+
+local function SharkFrame(n)
+    n = n - 1
+    local c, r = n % Shark.COLS, math.floor(n / Shark.COLS)
+    Shark.tex:SetTexCoord(c / Shark.COLS, (c + 1) / Shark.COLS, r / Shark.ROWS, (r + 1) / Shark.ROWS)
+end
+
+-- A handful of droplets thrown up from the waterline.
+local function SharkSplash(count)
+    local S = Shark.size
+    local n = 0
+    for _, d in ipairs(Shark.drops) do
+        if d.life == 0 then
+            d.age, d.life = 0, 0.45 + math.random() * 0.2
+            d.x = (math.random() - 0.5) * S * 0.7
+            d.y = S * Shark.WATERLINE
+            d.vx = (math.random() - 0.5) * 160
+            d.vy = 110 + math.random() * 120
+            local sz = 5 + math.random() * 6
+            d.tex:SetSize(sz, sz)
+            d.tex:Show()
+            n = n + 1
+            if n >= count then break end
+        end
+    end
+end
+
+-- Start a bite with the mouth at x, y (UIParent units). A new click mid-bite
+-- starts over at the new spot.
+local function StartBite(x, y)
+    if not Shark.frame then return end
+    local s = BH.settings
+    local S = Shark.SIZE * (s.cursorSharkSize or 100) / 100
+    Shark.size = S
+    local f = Shark.frame
+    f:ClearAllPoints()
+    f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
+    f:SetAlpha((s.cursorOpacity or 100) / 100)
+    -- Above the waterline only: the clip frame's bottom IS the waterline.
+    Shark.clip:ClearAllPoints()
+    Shark.clip:SetPoint("BOTTOMLEFT", f, "CENTER", -S, S * Shark.WATERLINE)
+    Shark.clip:SetSize(S * 2, S * 2)
+    Shark.tex:SetSize(S, S)
+    Shark.ripple:ClearAllPoints()
+    Shark.ripple:SetPoint("CENTER", f, "CENTER", 0, S * Shark.WATERLINE)
+    Shark.t, Shark.sank = 0, false
+    SharkFrame(1)
+    f:Show()
+    SharkSplash(6)
+end
+
+local function SmoothStep(p) return p * p * (3 - 2 * p) end
+
+local function AnimateShark(elapsed)
+    local t = Shark.t + elapsed
+    Shark.t = t
+    local S = Shark.size
+    local rise, chomp, sink = Shark.RISE, Shark.CHOMP, Shark.SINK
+    local total = rise + chomp + sink
+    local off   -- the shark's drop below its full height, as a fraction of S
+    if t < rise then
+        off = 1 - SmoothStep(t / rise)
+        SharkFrame(1)
+    elseif t < rise + chomp then
+        off = 0
+        -- Frames 1..12 across the chomp: open, snapping shut, mouth closed.
+        local u = (t - rise) / chomp
+        SharkFrame(math.min(Shark.FRAMES, 1 + math.floor(u * Shark.FRAMES)))
+    else
+        if not Shark.sank then Shark.sank = true; SharkSplash(6) end
+        off = SmoothStep(math.min(1, (t - rise - chomp) / sink))
+        SharkFrame(Shark.FRAMES)
+    end
+    Shark.tex:ClearAllPoints()
+    Shark.tex:SetPoint("CENTER", Shark.frame, "CENTER", 0, -off * S * 1.05)
+
+    -- The ripple: a flattened ring spreading and fading over the whole bite.
+    local p = math.min(1, t / total)
+    local w = S * (0.55 + 0.9 * p)
+    Shark.ripple:SetSize(w, w * 0.22)
+    Shark.ripple:SetAlpha(0.8 * (1 - p))
+    Shark.ripple:Show()
+
+    -- Droplets: thrown up, pulled down hard, fading.
+    local alive = false
+    for _, d in ipairs(Shark.drops) do
+        if d.life > 0 then
+            d.age = d.age + elapsed
+            if d.age >= d.life then
+                d.life = 0
+                d.tex:Hide()
+            else
+                alive = true
+                d.vy = d.vy - 650 * elapsed
+                d.x, d.y = d.x + d.vx * elapsed, d.y + d.vy * elapsed
+                d.tex:ClearAllPoints()
+                d.tex:SetPoint("CENTER", Shark.frame, "CENTER", d.x, d.y)
+                d.tex:SetAlpha(1 - d.age / d.life)
+            end
+        end
+    end
+
+    if t >= total and not alive then
+        Shark.t = nil
+        Shark.ripple:Hide()
+        Shark.frame:Hide()
+    end
+end
+
+-- Was the click on the game world rather than on a window or button?
+local function ClickedWorld()
+    local foci = GetMouseFoci and GetMouseFoci()
+    local first = foci and foci[1]
+    return first == nil or first == WorldFrame
+end
+
+--- The options page's Test button: a bite where the mouse is now.
+function BH:TestSharkBite()
+    if not (self.settings and self.settings.cursorEnabled) then
+        print("Squizzumables: turn on Enable Mouse Cursor first.")
+        return
+    end
+    local scale = UIParent:GetEffectiveScale()
+    local cx, cy = GetCursorPosition()
+    StartBite(cx / scale, cy / scale)
 end
 
 -- ============================================================================
@@ -593,6 +778,7 @@ local function OnUpdate(_, elapsed)
         locator:Hide()
     end
     if active > 0 then FadeTrail(elapsed) end
+    if Shark.t then AnimateShark(elapsed) end
 end
 
 -- ============================================================================
@@ -628,6 +814,14 @@ function BH:ApplyCursor()
     root:SetFrameStrata(strata)
     trailFrame:SetFrameStrata(strata)
     trailFrame:SetFrameLevel(math.max(0, root:GetFrameLevel() - 1))
+    -- The shark sits with the trail, under the rings: the cursor's own dot
+    -- and ring stay visible between its jaws.
+    Shark.frame:SetFrameStrata(strata)
+    Shark.frame:SetFrameLevel(math.max(0, root:GetFrameLevel() - 1))
+    if not s.cursorSharkBite and Shark.t then
+        Shark.t = nil
+        Shark.frame:Hide()
+    end
     root:SetAlpha((s.cursorOpacity or 100) / 100)
 
     PaintRings(ModeRGB(RingColor()))
@@ -710,6 +904,13 @@ ev:SetScript("OnEvent", function(_, event, arg1)
             local cx, cy = GetCursorPosition()
             Burst(cx / scale, cy / scale)
         end
+        if arg1 == "LeftButton" and s.cursorSharkBite and root:IsShown() and not IsMouselooking()
+           and (not s.cursorSharkWorldOnly or ClickedWorld())
+           and math.random(100) <= (s.cursorSharkChance or 100) then
+            local scale = UIParent:GetEffectiveScale()
+            local cx, cy = GetCursorPosition()
+            StartBite(cx / scale, cy / scale)
+        end
     else
         UpdateCast()
     end
@@ -765,6 +966,7 @@ function BH:BuildCursorTab(parent)
         { key = "rings",  label = "Rings" },
         { key = "trail",  label = "Trail" },
         { key = "trailcolour", label = "Trail Colour" },
+        { key = "shark", label = "Shark Bite" },
     })
 
     local function Set(key, v)
@@ -949,5 +1151,26 @@ function BH:BuildCursorTab(parent)
             disabled = function() return PaletteOff() or i > (BH.settings.cursorTrailPaletteCount or 3) end,
         })
     end
+    content:SetHeight(math.abs(y) + 20)
+
+    -- Shark bite
+    content = pages.shark
+    Rows.currentSection = content.section
+    y = -14
+    local function SharkOff() return Off() or not BH.settings.cursorSharkBite end
+    y = y - Rows.Add(content, y, Check("Shark Bite", "cursorSharkBite",
+        "When you left-click, a shark surfaces under the cursor, chomps over it and sinks back into the "
+            .. "water. Purely for fun: your cursor and your click work as normal."))
+    y = y - Rows.Add(content, y, Slider("Chance Per Click (%)", "cursorSharkChance", 5, 100, 5, 100,
+        "How often a left click brings the shark. 100% is every click; lower keeps it a surprise.", SharkOff))
+    y = y - Rows.Add(content, y, Slider("Shark Size", "cursorSharkSize", 50, 300, 10, 100,
+        "How big the shark is, as a percentage.", SharkOff))
+    y = y - Rows.Add(content, y, Check("Only When Clicking The Game World", "cursorSharkWorldOnly",
+        "Bite only on clicks in the game world -- not on windows, buttons or your action bars.", SharkOff))
+    local test = ns.CreateSQButton(content, "Test", 80, 22)
+    test:SetPoint("TOPLEFT", content, "TOPLEFT", 14, y - 6)
+    test:SetScript("OnClick", function() BH:TestSharkBite() end)
+    ns.Rows.AddTooltip(test, "Test", "A bite right now, where the mouse is.")
+    y = y - 40
     content:SetHeight(math.abs(y) + 20)
 end

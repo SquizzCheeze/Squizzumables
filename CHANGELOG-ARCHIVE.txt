@@ -8,6 +8,22 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V1.97
+
+- Fixed: two different buffs with the same name (Howl of the Pack Leader
+  has two) were merged into one icon in Buff Alerts, so an image could not
+  be given to just one of them - it showed for both. They are now listed
+  separately, an image set while they were merged is untangled, and
+  Blizzard's spell alert art is only hidden for the one with the image.
+- Buff Alerts: "Also show for" lets one icon answer for other buffs with
+  the same name. Blizzard lists some buffs as several separate entries -
+  Howl of the Pack Leader's Wyvern, Boar and Bear are three, alongside a
+  fourth, unrelated Howl - so tick the ones that belong together and they
+  share one image and one set of sounds, and leave the list.
+- Fixed: buff images placed round your character (the ( ) arcs and the
+  other shapes) were drawn on top of the spellbook, the world map and other
+  windows. They now sit behind your interface, like the full-screen images.
+
 V1.96
 
 - Mouse cursor: the rings no longer end up slightly off the cursor after
