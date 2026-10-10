@@ -11,3 +11,4 @@ V1.98
   than on windows and buttons. A Test button shows it straight away.
 - Sharks, a new cursor Trail Style: little shark silhouettes that face the
   way you move the mouse, like the ducks.
+- Cursor Trail Size now goes up to 500% (was 300%).

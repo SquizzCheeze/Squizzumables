@@ -1122,7 +1122,7 @@ function BH:BuildCursorTab(parent)
         ParticlesOff))
     y = y - Rows.Add(content, y, Slider("Density", "cursorTrailDensity", 25, 400, 25, 100,
         "How close together the pieces are. Low makes a dotted line, high a smooth ribbon.", TrailOff))
-    y = y - Rows.Add(content, y, Slider("Trail Size", "cursorTrailSize", 25, 300, 5, 100,
+    y = y - Rows.Add(content, y, Slider("Trail Size", "cursorTrailSize", 25, 500, 5, 100,
         "Width of each piece, as a percentage.", ParticlesOff))
     y = y - Rows.Add(content, y, Slider("Trail Height", "cursorTrailHeight", 25, 400, 5, 100,
         "Height of each piece as a percentage of its width. 100% keeps it in proportion; other values "
