@@ -23,6 +23,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 local RELEASE_NOTES = {
     ["1.98"] = {
         "Shark Bite (Cursor > Trail): left-click and a shark surfaces under your cursor, chomps over it and sinks back with a splash. Just for fun. And a Sharks trail style to go with it.",
+        "The M+ Death Tally now counts a Holy Priest's death taken by Spirit of Redemption.",
     },
     ["1.97"] = {
         "Buff Alerts: buffs that share a name each get their own icon, and \"Also show for\" merges the ones that belong together into one (like Howl of the Pack Leader's three beasts).",
