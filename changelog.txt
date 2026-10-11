@@ -17,3 +17,7 @@ V1.98
   Restitution never die at all), though the key counted it and took the
   time. When the key's death count goes up with nobody seen dying, the
   death is credited to the group's priest healer.
+- Fixed: opening or rebuilding the Cooldown Manager settings could stop
+  with "script ran too long". The settings search kept looking options up
+  the slow way, and with over a thousand options across the CDM groups
+  that added up; it now finds them instantly.

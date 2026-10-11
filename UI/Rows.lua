@@ -98,12 +98,18 @@ end
 -- Search index
 --
 -- Rows register their label and tooltip as they are built. The search UI reads
--- this to offer jump-to-setting. Kept deliberately dumb -- just a flat list --
--- because the whole panel is only ~100 rows.
+-- this to offer jump-to-setting. A flat list -- the search itself scans it once
+-- per keystroke, which is cheap -- with entryByFrame for per-widget lookups.
 -- ============================================================================
 
 local searchIndex = {}
 Rows.searchIndex = searchIndex
+-- widget -> its entry. The "~100 rows" above stopped being true: the CDM's
+-- per-group pages took the index past 1,250 entries, and AddTooltip found a
+-- widget's entry by scanning the whole list -- once per tooltip, so building
+-- the CDM page did over a million comparisons and hit "script ran too long"
+-- (user report 2026-10-11). Looked up here instead, it costs nothing.
+local entryByFrame = {}
 
 -- Set by the panel while it builds a page, so rows know where they live without
 -- every call site having to pass it. Holds the page descriptor
@@ -115,17 +121,20 @@ Rows.currentSection = nil
 
 function Rows.RegisterSearchEntry(label, tooltip, frame)
     if not label or label == "" or not Rows.currentPage then return end
-    searchIndex[#searchIndex + 1] = {
+    local entry = {
         label   = label,
         tooltip = tooltip,
         page    = Rows.currentPage,
         section = Rows.currentSection,
         frame   = frame,
     }
+    searchIndex[#searchIndex + 1] = entry
+    if frame then entryByFrame[frame] = entry end
 end
 
 function Rows.ClearSearchIndex()
     wipe(searchIndex)
+    wipe(entryByFrame)
 end
 
 -- ============================================================================
@@ -180,12 +189,8 @@ function Rows.AddTooltip(widget, label, tooltip)
     if widget and tooltip then
         AttachTooltip(widget, label, tooltip)
         -- Re-index with the tooltip text so search can match on it too.
-        for i = 1, #searchIndex do
-            if searchIndex[i].frame == widget then
-                searchIndex[i].tooltip = tooltip
-                return widget
-            end
-        end
+        local entry = entryByFrame[widget]
+        if entry then entry.tooltip = tooltip end
     end
     return widget
 end
