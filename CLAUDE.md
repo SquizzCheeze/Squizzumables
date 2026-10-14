@@ -802,10 +802,12 @@ tainted depends on what else has run first. Three things learned the hard way:
   PvPMatch, Map, Chat — queried with `C_RestrictedActions.IsAddOnRestrictionActive` and announced
   by `ADDON_RESTRICTION_STATE_CHANGED` (which reports everything inactive *during its own
   dispatch*, so check a frame later). "Mostly in M+" and "LFR, out of combat" are both an active
-  non-combat restriction. `RunRegistration` now queues under any of them (except Chat) whenever
-  it has working registrations to lose, and flushes when the restriction lifts; `/sq buffsounds`
-  prints the active one. Whether `HasRestrictions` really keys off these states is INFERRED from
-  the fit, not documented — confirm with `/sq buffsounds` the next time a refusal is reported.
+  non-combat restriction. `RunRegistration` now queues under any of them (except Chat), even with
+  nothing registered, and flushes when the restriction lifts; `/sq buffsounds` prints the active
+  one. Reproduced 2026-10-14: every `/reload` inside the 12.1.5 labyrinth raised the block once
+  per sound, never before a reload (registrations made outside survive until then). A first cut
+  that still tried when nothing was registered ("nothing to lose") only produced the error. Which
+  restriction the labyrinth sets (Map is the guess) is not yet confirmed — ask for `/sq buffsounds`.
 
   Generalise this: for anything protected that runs on a tear-down-then-rebuild shape, assume the
   rebuild half can be refused for reasons you will not be able to explain, and make it retry.

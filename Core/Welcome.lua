@@ -22,7 +22,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
     ["1.99"] = {
-        "Fixed: buff sounds could all stop, with a protected-function error, if they were rebuilt during a Mythic+ key, a boss or a PvP match. They now wait for it to finish, and the ones you had keep playing.",
+        "Fixed: protected-function errors after a /reload in the new labyrinth, a Mythic+ key, a boss or a PvP match, and buff sounds that could all stop there. They now wait until you leave or it ends, and the ones you had keep playing.",
     },
     ["1.98"] = {
         "Shark Bite (Cursor > Trail): left-click and a shark surfaces under your cursor, chomps over it and sinks back with a splash. Just for fun. And a Sharks trail style to go with it.",

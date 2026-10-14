@@ -742,14 +742,17 @@ end
 BH.AuraSoundRestriction = ActiveRestriction
 
 local function RunRegistration()
-    -- Never under an addon restriction, and in particular never tear down
-    -- registrations that are working.
+    -- Never under an addon restriction: it tears down registrations that are
+    -- working, and the re-add is refused.
     --
-    -- The exception is having none at all (a /reload inside a key): then there
-    -- is nothing to lose by trying, and the retries below still apply. If the
-    -- attempt is refused it is queued like the rest.
+    -- Not even with nothing registered. V1.99 first tried anyway after a /reload
+    -- on the grounds that there was nothing to lose, and the user disproved it
+    -- straight away: every /reload inside the 12.1.5 labyrinth raised
+    -- ADDON_ACTION_BLOCKED, once per sound, and never before a reload, because
+    -- registrations made outside survive until then. The attempt never
+    -- succeeds there, so it only produces the error.
     local restriction = ActiveRestriction()
-    if restriction and restriction ~= "Combat" and next(registeredAuraSounds) then
+    if restriction and restriction ~= "Combat" then
         registrationQueued = true
         return
     end
