@@ -1,23 +1,11 @@
 Squizzumables Changelog
 =======================
 
-V1.98
+V1.99
 
-- Shark Bite (Cursor > Trail, under Click Burst; off by default): when you left-click, a
-  pixel-art shark surfaces from the water under your cursor, chomps over
-  it and sinks back with a splash. Purely for fun - your cursor and your
-  click work as normal. Choose how often it happens (a chance per click),
-  its size, and whether it only bites on clicks in the game world rather
-  than on windows and buttons. A Test button shows it straight away.
-- Sharks, a new cursor Trail Style: little shark silhouettes that face the
-  way you move the mouse, like the ducks.
-- Cursor Trail Size now goes up to 500% (was 300%).
-- Fixed: the M+ Death Tally missed a Holy Priest's death when Spirit of
-  Redemption took it (they become an angel rather than dying, and with
-  Restitution never die at all), though the key counted it and took the
-  time. When the key's death count goes up with nobody seen dying, the
-  death is credited to the group's priest healer.
-- Fixed: opening or rebuilding the Cooldown Manager settings could stop
-  with "script ran too long". The settings search kept looking options up
-  the slow way, and with over a thousand options across the CDM groups
-  that added up; it now finds them instantly.
+- Fixed: buff sounds could all stop until you logged out, with a
+  "Squizzumables tried to call the protected function" error, if a rebuild
+  of them happened during a Mythic+ key, a boss encounter or a PvP match.
+  Those count as restricted even out of combat, and only combat was being
+  waited out. The rebuild now waits for the key, boss or match to finish,
+  and the sounds you already had keep playing in the meantime.

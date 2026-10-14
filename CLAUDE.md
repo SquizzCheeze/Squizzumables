@@ -239,7 +239,7 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.98 (2026-10-11)**. Next change: archive V1.98 first (step 1 below).
+Last shipped: **v1.98 (2026-10-11)**. V1.99 is open (V1.98 archived).
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
@@ -796,6 +796,16 @@ tainted depends on what else has run first. Three things learned the hard way:
   every registration down before rebuilding, so a refused rebuild left the player with **no buff
   sounds until relog**. The fix is a bounded retry (5 attempts, 3s apart) so a transient refusal
   recovers on its own, plus `BH.auraSoundRefusal` and `/sq buffsounds` to make it visible.
+
+  **Likely cause, V1.99 (2026-10-14): combat is only ONE of the client's addon restrictions.**
+  `Enum.AddOnRestrictionType` has six — Combat, Encounter, ChallengeMode (a whole active key),
+  PvPMatch, Map, Chat — queried with `C_RestrictedActions.IsAddOnRestrictionActive` and announced
+  by `ADDON_RESTRICTION_STATE_CHANGED` (which reports everything inactive *during its own
+  dispatch*, so check a frame later). "Mostly in M+" and "LFR, out of combat" are both an active
+  non-combat restriction. `RunRegistration` now queues under any of them (except Chat) whenever
+  it has working registrations to lose, and flushes when the restriction lifts; `/sq buffsounds`
+  prints the active one. Whether `HasRestrictions` really keys off these states is INFERRED from
+  the fit, not documented — confirm with `/sq buffsounds` the next time a refusal is reported.
 
   Generalise this: for anything protected that runs on a tear-down-then-rebuild shape, assume the
   rebuild half can be refused for reasons you will not be able to explain, and make it retry.

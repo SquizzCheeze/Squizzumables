@@ -718,7 +718,41 @@ BH.auraSoundRefusal = nil
 -- is long gone, which is exactly what made the 1.67 report hard to place.
 local lastTrigger = "startup"
 
+-- Combat is only one of the client's addon restrictions (V1.99).
+--
+-- 12.1 enforces six (Enum.AddOnRestrictionType): Combat, Encounter,
+-- ChallengeMode (the whole of an active Mythic+ key), PvPMatch, Map and Chat.
+-- Only combat was ever waited out here, which fits every refusal on record:
+-- "mostly in M+", and the 1.67 one in LFR *out of combat* -- a boss encounter
+-- still running while the player was not. Chat is left out: it restricts addon
+-- messages, not this.
+local RESTRICTIONS = { "Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map" }
+
+-- Name of the first restriction in force, or nil. Nil too on a client without
+-- C_RestrictedActions, where the combat check alone is all there is.
+local function ActiveRestriction()
+    if InCombatLockdown() then return "Combat" end
+    local RA, types = C_RestrictedActions, Enum and Enum.AddOnRestrictionType
+    if not (RA and RA.IsAddOnRestrictionActive and types) then return nil end
+    for _, name in ipairs(RESTRICTIONS) do
+        local t = types[name]
+        if t ~= nil and RA.IsAddOnRestrictionActive(t) then return name end
+    end
+end
+BH.AuraSoundRestriction = ActiveRestriction
+
 local function RunRegistration()
+    -- Never under an addon restriction, and in particular never tear down
+    -- registrations that are working.
+    --
+    -- The exception is having none at all (a /reload inside a key): then there
+    -- is nothing to lose by trying, and the retries below still apply. If the
+    -- attempt is refused it is queued like the rest.
+    local restriction = ActiveRestriction()
+    if restriction and restriction ~= "Combat" and next(registeredAuraSounds) then
+        registrationQueued = true
+        return
+    end
     -- Never in combat.
     --
     -- AddAuraSound is protected, and protected calls are refused in combat the
@@ -745,8 +779,13 @@ local function RunRegistration()
             attempt  = retryCount + 1,
             trigger  = lastTrigger,
             when     = GetTime(),
+            restriction = restriction,
         }
-        if retryCount < RETRY_LIMIT and not retryScheduled then
+        if restriction then
+            -- Retrying inside a key or an encounter only burns the budget;
+            -- the restriction lifting is what flushes this.
+            registrationQueued = true
+        elseif retryCount < RETRY_LIMIT and not retryScheduled then
             retryCount = retryCount + 1
             retryScheduled = true
             C_Timer.After(RETRY_DELAY, function()
@@ -793,6 +832,22 @@ function BH:FlushQueuedAuraSoundRegistrations()
     if registrationQueued then RunRegistration() end
 end
 
+-- ...and on any other restriction lifting. Deferred a frame: the client reports
+-- every restriction as inactive WHILE this event is being dispatched, so a
+-- check made inside the handler would always pass.
+do
+    local f = CreateFrame("Frame")
+    if C_RestrictedActions and C_RestrictedActions.IsAddOnRestrictionActive then
+        f:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
+    end
+    f:SetScript("OnEvent", function(_, _, _, state)
+        if state ~= 0 or not registrationQueued then return end   -- 0 = Inactive
+        C_Timer.After(0, function()
+            if registrationQueued and not ActiveRestriction() then RunRegistration() end
+        end)
+    end)
+end
+
 -- Did the client accept this spell's registration? Read by the tab, so a
 -- refusal is visible rather than silently doing nothing.
 function BH.BuffSoundRegistered(spellID, field)
@@ -817,6 +872,8 @@ function BH:PrintBuffSoundDiagnostics()
     print("|cFF00FF00Squizzumables buff sounds|r")
     print(("  last rebuild asked for by: %s"):format(lastTrigger))
     print(("  in combat now: %s"):format(tostring(InCombatLockdown())))
+    print(("  addon restriction now: %s%s"):format(ActiveRestriction() or "none",
+        registrationQueued and " (a rebuild is waiting for it to lift)" or ""))
 
     local n = 0
     for key, soundID in pairs(registeredAuraSounds) do
@@ -834,8 +891,9 @@ function BH:PrintBuffSoundDiagnostics()
 
     local r = BH.auraSoundRefusal
     if r then
-        print(("|cFFFF5555  REFUSED: %d of %d registered on attempt %d (trigger: %s, %.0fs ago)|r")
-            :format(r.got, r.wanted, r.attempt, tostring(r.trigger), GetTime() - (r.when or GetTime())))
+        print(("|cFFFF5555  REFUSED: %d of %d registered on attempt %d (trigger: %s, restriction: %s, %.0fs ago)|r")
+            :format(r.got, r.wanted, r.attempt, tostring(r.trigger), r.restriction or "none",
+                GetTime() - (r.when or GetTime())))
         print("|cFFFF5555  Retrying automatically. If this persists, another addon is likely")
         print("  tainting the protected path -- check a BugGrabber traceback for the addon named.|r")
     else
