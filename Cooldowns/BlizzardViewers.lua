@@ -246,14 +246,16 @@ end
 local function HoldParked(f)
     if BS(f).pointHooked then return end
     BS(f).pointHooked = true
+    -- `editParked`: a borrowed buff viewer moved offscreen for Edit Mode
+    -- only (see ApplyBlizzardVisibility), held there the same way.
     local function QueueRepark(self)
-        if not BS(self).dimmed or BS(self).parkGuard or BS(self).restoring
+        if not (BS(self).dimmed or BS(self).editParked) or BS(self).parkGuard or BS(self).restoring
            or BS(self).parkQueued then return end
         BS(self).parkQueued = true
         C_Timer.After(0, function()
             BS(self).parkQueued = nil
             -- Re-park to the same place it was, following or offscreen.
-            if BS(self).dimmed then ParkFrame(self, BS(self).followFrame) end
+            if BS(self).dimmed or BS(self).editParked then ParkFrame(self, BS(self).followFrame) end
         end)
     end
     hooksecurefunc(f, "SetPoint", QueueRepark)
@@ -520,6 +522,26 @@ function cdmModule:ApplyBlizzardVisibility()
         -- is exactly how EllesmereUI leaves the primary viewers alone.
         local borrowed = BorrowBuffIcons()
             and (name == "BuffIconCooldownViewer" or name == "BuffBarCooldownViewer")
+        -- In Edit Mode a borrowed viewer is still moved OFFSCREEN -- never
+        -- dimmed. Its Edit Mode box sat over our Buffs group and got in the way
+        -- of moving it (user report 2026-10-16). Position is safe to change
+        -- where alpha is not: the borrowed icons are anchored to our group's
+        -- frame, so they stay put; only visibility passes down from the
+        -- viewer. Put back where it was when Edit Mode closes.
+        if f and borrowed then
+            if editing and BH.settings and BH.settings.cdmEnabled then
+                if not BS(f).editParked then
+                    SaveOrigPoints(f)
+                    HoldParked(f)
+                    BS(f).editParked = true
+                    BS(f).followFrame = nil
+                    ParkFrame(f, nil)
+                end
+            elseif BS(f).editParked then
+                BS(f).editParked = nil
+                RestoreFramePoints(f)
+            end
+        end
         if borrowed then f = nil end
         if f then
             if hide then
