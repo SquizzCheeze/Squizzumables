@@ -325,7 +325,9 @@ shell, setup and polish), each gated.
   lists, preview / lock / reset integration), `Cooldowns/Layout.lua` (anchoring incl. other addons' frames
   + the public Squizzumables_RegisterAnchorTarget, LayoutGroup, free icons; GroupAlpha and
   ApplyBarBackground are FORWARD-DECLARED locals assigned at load above the shared table, so the
-  alias is valid -- check that for any forward declaration). Squizzumables_CDM.lua 8,779 -> 6,226. The alert
+  alias is valid -- check that for any forward declaration), `Cooldowns/Reconcile.lua` (Reconcile +
+  ScheduleReconcile; UpdateAllProxyCooldowns is forward-declared too, same check). Squizzumables_CDM.lua
+  8,779 -> 5,736. The alert
   block (512-2045: alert hook, spell-ID resolution, PlayAlertsFor, buff borrowing/mirroring) has ~15
   links EACH WAY with the engine -- leave it until the engine around it has moved. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
