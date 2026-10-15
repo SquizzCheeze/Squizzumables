@@ -1707,7 +1707,58 @@ function BH:CreateOptionsPanel()
     navEdge:SetPoint("BOTTOMRIGHT", navBar, "BOTTOMRIGHT", 0, 0)
     navEdge:SetColorTexture(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.5)
 
+    -- The pages, in six named groups (2.0 shell, design doc "Options window").
+    -- Keys are the 1.x tab keys, which search, BH.switchTab and the slash
+    -- commands use; `field` is the frame's name on BH, which the page builders
+    -- and refreshers use; `build` is the BH method that fills it (Consumables
+    -- is built further down, by hand). No Nameplates page: the purge-glow
+    -- module is disabled and unloaded -- see the Nameplate purge glow note in
+    -- CLAUDE.md for what to restore when the feature comes back.
+    local NAV = {
+        { group = "Reminders", pages = {
+            { key = "items",      label = "Consumables",      field = "itemsTab" },
+            { key = "classbuffs", label = "Class Buffs",      field = "classBuffsTab",    build = "BuildClassBuffsTab" },
+            { key = "reminders",  label = "Text Reminders",   field = "textRemindersTab", build = "BuildTextRemindersTab" },
+        } },
+        { group = "Cooldowns", pages = {
+            { key = "cdm",        label = "Cooldown Manager", field = "cdmTab",           build = "BuildCDMTab" },
+            { key = "cdmcustom",  label = "Custom Icons",     field = "cdmCustomTab",     build = "BuildCustomCooldownsTab" },
+        } },
+        { group = "Alerts", pages = {
+            { key = "kel",        label = "Kelerts",          field = "kelTab",           build = "BuildJustForKelTab" },
+            { key = "sounds",     label = "Sounds",           field = "soundsTab",        build = "BuildSoundsTab" },
+        } },
+        { group = "Group", pages = {
+            { key = "raidtools",  label = "Raid Tools",       field = "raidToolsTab",     build = "BuildRaidToolsTab" },
+            { key = "callouts",   label = "Callouts",         field = "calloutsTab",      build = "BuildCalloutsTab" },
+        } },
+        { group = "Fun", pages = {
+            { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab" },
+        } },
+        { group = "General", pages = {
+            { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab" },
+        } },
+    }
+    -- The order the pages were always BUILT in, kept as it was: a builder may
+    -- lean on something an earlier one set up, and the sidebar's new order is
+    -- no reason to find out.
+    local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
+        "classbuffs", "callouts", "kel", "cursor" }
+
+    local NAV_GROUP_H = 22
+
     local navCursorY = -6
+
+    -- A group's name above its pages: small, accent-coloured, not clickable.
+    local function CreateGroupHeading(text)
+        local fs = navBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOPLEFT", navBar, "TOPLEFT", 12, navCursorY - 8)
+        fs:SetJustifyH("LEFT")
+        fs:SetText(text:upper())
+        ns.ApplyAccent(fs, "text", 0.85)
+        navCursorY = navCursorY - NAV_GROUP_H
+        return fs
+    end
 
     local function CreateTab(text)
         local item = CreateFrame("Button", nil, navBar, "BackdropTemplate")
@@ -1720,7 +1771,7 @@ function BH:CreateOptionsPanel()
         item:SetBackdropColor(0, 0, 0, 0)
 
         local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        itemLabel:SetPoint("LEFT", item, "LEFT", 16, 0)
+        itemLabel:SetPoint("LEFT", item, "LEFT", 22, 0)
         itemLabel:SetJustifyH("LEFT")
         itemLabel:SetText(text)
         itemLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
@@ -1760,153 +1811,51 @@ function BH:CreateOptionsPanel()
         return item
     end
 
-    local settingsTabBtn = CreateTab("Settings")
-    local itemsTabBtn = CreateTab("Items")
-    local classBuffsTabBtn = CreateTab("Class Buffs")
-    local raidToolsTabBtn = CreateTab("Raid Tools")
-    local textRemindersTabBtn = CreateTab("Reminders")
-    local cdmTabBtn = CreateTab("CDM")
-    local cdmCustomTabBtn = CreateTab("Custom Icons")
-    local soundsTabBtn = CreateTab("Sounds")
-    local calloutsTabBtn = CreateTab("Callouts")
-    local kelTabBtn = CreateTab("Kelerts")
-    local cursorTabBtn = CreateTab("Cursor")
-    -- No Nameplates tab: the purge-glow module is disabled and unloaded, so it
-    -- has no page to build. See the Nameplate purge glow note in CLAUDE.md for
-    -- what to restore here when the feature comes back.
-
     -- Content area: everything right of the sidebar.
     local contentArea = CreateFrame("Frame", nil, panel)
     contentArea:SetPoint("TOPLEFT", navBar, "TOPRIGHT", 1, 0)
     contentArea:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 40)
 
-    -- Settings tab content
-    local settingsTab = CreateFrame("Frame", nil, contentArea)
-    settingsTab:SetAllPoints()
-    self.settingsTab = settingsTab
-
-    -- Items tab content
-    local itemsTab = CreateFrame("Frame", nil, contentArea)
-    itemsTab:SetAllPoints()
-    itemsTab:Hide()
-    self.itemsTab = itemsTab
-
-    -- Raid Tools tab content
-    local raidToolsTab = CreateFrame("Frame", nil, contentArea)
-    raidToolsTab:SetAllPoints()
-    raidToolsTab:Hide()
-    self.raidToolsTab = raidToolsTab
-
-    -- Text Reminders tab content
-    local textRemindersTab = CreateFrame("Frame", nil, contentArea)
-    textRemindersTab:SetAllPoints()
-    textRemindersTab:Hide()
-    self.textRemindersTab = textRemindersTab
-
-    -- Cooldown Manager tab content
-    local cdmTab = CreateFrame("Frame", nil, contentArea)
-    cdmTab:SetAllPoints()
-    cdmTab:Hide()
-    self.cdmTab = cdmTab
-
-    -- Custom cooldown icons tab content
-    local cdmCustomTab = CreateFrame("Frame", nil, contentArea)
-    cdmCustomTab:SetAllPoints()
-    cdmCustomTab:Hide()
-    self.cdmCustomTab = cdmCustomTab
-
-    -- Sounds tab content
-    local soundsTab = CreateFrame("Frame", nil, contentArea)
-    soundsTab:SetAllPoints()
-    soundsTab:Hide()
-    self.soundsTab = soundsTab
-
-    -- Callouts tab content
-    local calloutsTab = CreateFrame("Frame", nil, contentArea)
-    calloutsTab:SetAllPoints()
-    calloutsTab:Hide()
-    self.calloutsTab = calloutsTab
-
-    -- Just For Kel tab content
-    local kelTab = CreateFrame("Frame", nil, contentArea)
-    kelTab:SetAllPoints()
-    kelTab:Hide()
-    self.kelTab = kelTab
-
-    -- Mouse cursor tab content (Core/Cursor.lua builds it)
-    local cursorTab = CreateFrame("Frame", nil, contentArea)
-    cursorTab:SetAllPoints()
-    cursorTab:Hide()
-    self.cursorTab = cursorTab
-
-    -- Class Buffs tab content
-    local classBuffsTab = CreateFrame("Frame", nil, contentArea)
-    classBuffsTab:SetAllPoints()
-    classBuffsTab:Hide()
-    self.classBuffsTab = classBuffsTab
-
-    -- Tab switching
-    local function SwitchTab(active)
-        settingsTabBtn:SetActive(active == "settings")
-        itemsTabBtn:SetActive(active == "items")
-        raidToolsTabBtn:SetActive(active == "raidtools")
-        textRemindersTabBtn:SetActive(active == "reminders")
-        cdmTabBtn:SetActive(active == "cdm")
-        soundsTabBtn:SetActive(active == "sounds")
-        classBuffsTabBtn:SetActive(active == "classbuffs")
-        calloutsTabBtn:SetActive(active == "callouts")
-        kelTabBtn:SetActive(active == "kel")
-        cdmCustomTabBtn:SetActive(active == "cdmcustom")
-        cursorTabBtn:SetActive(active == "cursor")
-        if active == "settings" then settingsTab:Show() else settingsTab:Hide() end
-        if active == "items" then itemsTab:Show() else itemsTab:Hide() end
-        if active == "raidtools" then raidToolsTab:Show() else raidToolsTab:Hide() end
-        if active == "reminders" then textRemindersTab:Show() else textRemindersTab:Hide() end
-        if active == "cdm" then cdmTab:Show() else cdmTab:Hide() end
-        if active == "cdmcustom" then cdmCustomTab:Show() else cdmCustomTab:Hide() end
-        if active == "sounds" then soundsTab:Show() else soundsTab:Hide() end
-        if active == "classbuffs" then classBuffsTab:Show() else classBuffsTab:Hide() end
-        if active == "callouts" then calloutsTab:Show() else calloutsTab:Hide() end
-        if active == "kel" then kelTab:Show() else kelTab:Hide() end
-        if active == "cursor" then cursorTab:Show() else cursorTab:Hide() end
+    -- One sidebar entry and one content frame per page.
+    local navButtons, tabFrames, pageByKey = {}, {}, {}
+    for _, group in ipairs(NAV) do
+        CreateGroupHeading(group.group)
+        for _, page in ipairs(group.pages) do
+            local frame = CreateFrame("Frame", nil, contentArea)
+            frame:SetAllPoints()
+            frame:Hide()
+            self[page.field] = frame
+            tabFrames[page.key] = frame
+            pageByKey[page.key] = page
+            local key = page.key
+            local btn = CreateTab(page.label)
+            navButtons[key] = btn
+            btn:SetScript("OnClick", function() self.switchTab(key) end)
+        end
     end
-    settingsTabBtn:SetScript("OnClick", function() SwitchTab("settings") end)
-    itemsTabBtn:SetScript("OnClick", function() SwitchTab("items") end)
-    raidToolsTabBtn:SetScript("OnClick", function() SwitchTab("raidtools") end)
-    textRemindersTabBtn:SetScript("OnClick", function() SwitchTab("reminders") end)
-    cdmTabBtn:SetScript("OnClick", function() SwitchTab("cdm") end)
-    cdmCustomTabBtn:SetScript("OnClick", function() SwitchTab("cdmcustom") end)
-    soundsTabBtn:SetScript("OnClick", function() SwitchTab("sounds") end)
-    classBuffsTabBtn:SetScript("OnClick", function() SwitchTab("classbuffs") end)
-    calloutsTabBtn:SetScript("OnClick", function() SwitchTab("callouts") end)
-    kelTabBtn:SetScript("OnClick", function() SwitchTab("kel") end)
-    cursorTabBtn:SetScript("OnClick", function() SwitchTab("cursor") end)
+
+    local function SwitchTab(active)
+        for key, btn in pairs(navButtons) do
+            btn:SetActive(key == active)
+            tabFrames[key]:SetShown(key == active)
+        end
+    end
     self.switchTab = SwitchTab
     SwitchTab("settings")
 
     -- Build each page with ns.Rows.currentPage set, so every option widget the
     -- page creates is indexed against the right sidebar category. That is what
     -- lets the settings search say where a result lives and jump to it.
-    local pages = {
-        { key = "settings",   label = "Settings",    frame = settingsTab,      build = "BuildSettingsTab" },
-        { key = "raidtools",  label = "Raid Tools",  frame = raidToolsTab,     build = "BuildRaidToolsTab" },
-        { key = "reminders",  label = "Reminders",   frame = textRemindersTab, build = "BuildTextRemindersTab" },
-        { key = "cdm",        label = "CDM",         frame = cdmTab,           build = "BuildCDMTab" },
-        { key = "cdmcustom",  label = "Custom Icons", frame = cdmCustomTab,    build = "BuildCustomCooldownsTab" },
-        { key = "sounds",     label = "Sounds",      frame = soundsTab,        build = "BuildSoundsTab" },
-        { key = "classbuffs", label = "Class Buffs", frame = classBuffsTab,    build = "BuildClassBuffsTab" },
-        { key = "callouts",   label = "Callouts",    frame = calloutsTab,      build = "BuildCalloutsTab" },
-        { key = "kel",        label = "Kelerts",     frame = kelTab,           build = "BuildJustForKelTab" },
-        { key = "cursor",     label = "Cursor",      frame = cursorTab,        build = "BuildCursorTab" },
-    }
-    for _, page in ipairs(pages) do
+    for _, key in ipairs(BUILD_ORDER) do
+        local page = pageByKey[key]
         local builder = self[page.build]
         if builder then
             ns.Rows.currentPage = page
-            builder(self, page.frame)
+            builder(self, tabFrames[key])
         end
     end
     ns.Rows.currentPage = nil
+    local itemsTab = tabFrames.items
 
     -- Build items tab
     local desc = itemsTab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

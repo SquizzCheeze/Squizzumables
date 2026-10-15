@@ -357,7 +357,13 @@ shell, setup and polish), each gated.
   unlock / grid code sits between Role CC pieces and stays in core until the Edit Mode step.
 - **Phase order (user agreed 2026-10-15):** theme -> split the code (phase 2) -> settings descriptions
   as a pilot on one page (Cursor), then page by page as each moves into the phase-3 shell.
-- Settings descriptions: PILOT BUILT on Cursor (2026-10-16), untested in game. `UI/Settings.lua`
+- Phase 3 steps (2026-10-16): 1 grouped sidebar -> 2 theme picker (replaces the class-colour tick box;
+  five presets) -> 3 preview column page by page -> 4 one Edit Mode -> each page onto descriptions as
+  it enters the shell. Step 1 BUILT, untested: `CreateOptionsPanel` has one `NAV` table (group ->
+  pages {key, label, field, build}); keys are the 1.x tab keys (search / BH.switchTab / slash commands
+  depend on them), `field` the BH frame name the builders and refreshers use. Pages are still BUILT
+  in the old order (`BUILD_ORDER`), not the sidebar's.
+- Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. `UI/Settings.lua`
   (`ns.Settings.Describe` / `.Build`): each row = key, type, default, label, tip, `when(s)`; Describe
   registers the defaults into `BH.defaultSettings` AT LOAD (asserts a key is never described twice), Build
   makes the sub-tabs + Rows specs, and Rows indexes each row for search. A page's `master` key greys out
