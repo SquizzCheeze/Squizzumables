@@ -492,22 +492,22 @@ local function HookEditMode()
 end
 
 function cdmModule:ApplyBlizzardVisibility()
-    -- Never dim while Edit Mode is open.
+    -- In Edit Mode the viewers stay hidden and go OFFSCREEN.
     --
-    -- Edit Mode still draws its selection region for a dimmed viewer, so the
-    -- player got an empty box they could not see the contents of, sitting
-    -- wherever Blizzard's frame really is -- while the icons on screen were our
-    -- proxies at the group's own position. That reads as the region being
-    -- misaligned, and it makes Blizzard's own cooldown bars impossible to
-    -- position while this option is on.
-    --
-    -- Releasing for the duration of Edit Mode costs nothing: it is not a
-    -- situation anyone is playing through, and ApplyBlizzardVisibility is
-    -- called again on exit.
+    -- Edit Mode draws its selection box for a viewer even while it is dimmed,
+    -- so a dimmed viewer left where it was -- or following our group, sat on
+    -- top of it -- puts an empty Blizzard box over our group. Until 2.0 the
+    -- answer was to release the viewers for the duration of Edit Mode. But
+    -- Blizzard's Edit Mode now unlocks our groups too (UI/EditMode.lua), and
+    -- released viewers sat right over them, their boxes in the way of moving
+    -- ours (user screenshot 2026-10-16). Parked offscreen, the boxes go with
+    -- them. Nothing is lost: with this option on, Blizzard's bars are replaced
+    -- by our groups, so there is nothing of theirs to position. Re-applied on
+    -- exit, which puts them back to following the groups.
     HookEditMode()
 
+    local editing = EditModeActive()
     local hide = BH.settings and BH.settings.cdmEnabled and BH.settings.cdmHideBlizzard
-                 and not EditModeActive()
     for _, name in ipairs(BLIZZARD_VIEWERS) do
         local f = _G[name]
         -- Never suppress a viewer whose icons we are borrowing.
@@ -530,7 +530,8 @@ function cdmModule:ApplyBlizzardVisibility()
                 f:SetAlpha(0)
                 -- Follow the group that replaced it when there is one and the
                 -- option is on, so this viewer stays a valid anchor target.
-                local follow = BH.settings.cdmViewersFollowGroups ~= false
+                -- Not in Edit Mode: offscreen there (see the top).
+                local follow = BH.settings.cdmViewersFollowGroups ~= false and not editing
                 local groupFrame = follow and self:GetGroupFrame(VIEWER_TO_GROUP[name]) or nil
                 BS(f).followFrame = groupFrame
                 ParkFrame(f, groupFrame)
