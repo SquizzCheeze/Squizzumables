@@ -429,7 +429,17 @@ shell, setup and polish), each gated.
   hand-built bits (theme picker, profile manager, Reset to Defaults, Show In's nested contentTypes).
   Format additions: check `invert`, slider `show`/`store`. Not describable as settings (they edit
   data, not settings keys): Callouts, Consumables, the Kelerts alert editor, the CDM group pages
-  (per-group spec data). Class Buffs has only its three pet rows. `UI/Settings.lua`
+  (per-group spec data). Class Buffs has only its three pet rows.
+  PHASE 3 COMPLETE 2026-10-16 (scheduled run), pending in-game test: Text Reminders (29 keys, 5d57978;
+  AddReminderSection + Repair's extraRows removed, `sound` row type + `indent` added), Death Tally (7,
+  c3bed9b; its hand re-sync in RefreshJustForKelTab removed), Kelerts kelAlertScale + kelHideBlizzardAlerts
+  (1fa2cc6). Left in defaultSettings ON PURPOSE: legacy/no-control keys (anchorPoint, useClassColorAccent,
+  timelineTimers, cdmProxyBuffIcons, minimapButtonAngle, the four class reminders' old lock/scale keys);
+  Coach's Whistle (user: leave it); the CDM page's four switches -- that page is REBUILT on every change
+  and Rows has no way to unregister a row's refresh closure, so described rows there would leak one set
+  per rebuild (needs Rows.Unregister first); npPurge* (module unloaded); data tables (contentTypes,
+  feastAnnounceChannel / feastAnnounceText -- hand-built grid and placeholder box, dungeonCallouts,
+  classBuffSounds, customSounds, buffSounds, alerts). `UI/Settings.lua`
   (`ns.Settings.Describe` / `.Build`): each row = key, type, default, label, tip, `when(s)`; Describe
   registers the defaults into `BH.defaultSettings` AT LOAD (asserts a key is never described twice), Build
   makes the sub-tabs + Rows specs, and Rows indexes each row for search. A page's `master` key greys out

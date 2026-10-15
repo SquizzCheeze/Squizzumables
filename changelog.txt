@@ -60,6 +60,12 @@ V2.0
   the mouse; click one to select it, then the arrow keys nudge it 1px
   (10px with Shift), and if the options window is open it jumps to that
   frame's settings.
+- Behind the scenes, every page's settings now come from one description
+  each (its default, control and search entry together), so they can no
+  longer disagree. You may notice: every one of those settings is now in
+  the settings search; Repair's Durability Threshold and the font sizes
+  no longer show a different number from the one in use; and a few rows
+  are spaced slightly differently.
 - One Class Reminder: Remember Your Beacon, Remember Earth Shield,
   Symbiotic Relationship and No Pet each belong to one class, so they now
   share one frame - one place, one size, one lock, one box in Edit Mode.
