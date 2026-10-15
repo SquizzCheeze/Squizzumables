@@ -357,7 +357,16 @@ shell, setup and polish), each gated.
   unlock / grid code sits between Role CC pieces and stays in core until the Edit Mode step.
 - **Phase order (user agreed 2026-10-15):** theme -> split the code (phase 2) -> settings descriptions
   as a pilot on one page (Cursor), then page by page as each moves into the phase-3 shell.
-- Settings descriptions: not started.
+- Settings descriptions: PILOT BUILT on Cursor (2026-10-16), untested in game. `UI/Settings.lua`
+  (`ns.Settings.Describe` / `.Build`): each row = key, type, default, label, tip, `when(s)`; Describe
+  registers the defaults into `BH.defaultSettings` AT LOAD (asserts a key is never described twice), Build
+  makes the sub-tabs + Rows specs, and Rows indexes each row for search. A page's `master` key greys out
+  every other row. The Cursor block left Squizzumables.lua's defaultSettings; all 43 keys and default
+  values were checked identical by script. Row types: check, slider, dropdown, color, editbox, palette,
+  button. The runtime code in Cursor.lua still carries `or <default>` fallbacks (harmless duplicates,
+  ApplyDefaults fills every key) -- leave until the pattern is confirmed. GATE NOTE: the settings-key
+  check must also collect `key = "X"` from descriptions, or described keys vanish from a plain
+  `settings.X` grep (the baseline was widened to that on 2026-10-16).
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.

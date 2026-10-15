@@ -142,59 +142,6 @@ BH.defaultSettings = {
     targetDistanceFriendly = false,     -- probes are harmful, so hostile only
     targetDistanceColor = { r = 1, g = 1, b = 1 },
 
-    -- Mouse cursor rings and trail (Core/Cursor.lua). Off by default, like the
-    -- distance readout: it changes how the mouse looks, so it is asked for.
-    cursorEnabled = false,
-    cursorSize = 100,                   -- percent
-    cursorOpacity = 100,                -- percent
-    cursorStrata = "HIGH",
-    cursorCombatOnly = false,
-    cursorHideMouselook = false,        -- keep the rings while right-click turns the camera
-    cursorCombatColor = false,          -- a second ring colour while in combat
-    cursorCombatColorMode = "class",    -- "custom" | "class" | "rainbow"
-    cursorCombatCustomColor = { r = 1, g = 0.2, b = 0.2 },
-    cursorShakeFind = true,             -- shake the mouse to flash a locator ring
-    cursorHealthColor = false,          -- ring turns amber/red as your health drops
-    cursorHealthStart = 70,             -- percent health the warning starts at
-    cursorClickBurst = false,           -- particles fly out on a left click
-    cursorSharkBite = false,            -- a shark surfaces and chomps on a left click (V1.98)
-    cursorSharkChance = 100,            -- percent of left clicks
-    cursorSharkSize = 100,              -- percent
-    cursorSharkWorldOnly = false,       -- only on clicks in the game world
-    cursorColorMode = "custom",         -- "custom" | "class" | "rainbow"
-    cursorColor = { r = 1, g = 1, b = 1 },
-    cursorDot = true,
-    cursorDotSize = 8,
-    cursorRing = true,
-    cursorGCD = true,
-    cursorCast = true,
-    cursorTrail = false,
-    cursorTrailColorMode = "rainbow",   -- "custom" | "class" | "rainbow"
-    cursorTrailColor = { r = 1, g = 1, b = 1 },
-    cursorTrailLength = 0.5,            -- seconds each particle lives ("Linger Time")
-    cursorTrailSize = 100,              -- percent
-    cursorTrailStyle = "glow",          -- "glow" | "dot" | "ring"
-    cursorTrailOpacity = 100,           -- percent, on top of cursorOpacity
-    cursorTrailShrink = 60,             -- percent a particle shrinks by the end
-    cursorTrailDensity = 100,           -- percent; higher packs particles closer
-    cursorTrailHeight = 100,            -- percent of the width; stretch or squash
-    cursorTrailOffsetX = 0,             -- trail laid down offset from the cursor
-    cursorTrailOffsetY = 0,
-    cursorTrailBlend = "style",         -- "style" | "glow" | "solid"
-    cursorTrailTexture = "",            -- atlas name or file path, Trail Style "custom"
-    cursorTrailPaletteFlow = "time",    -- "time" | "trail" (head to tail)
-    cursorTrailPaletteCount = 3,        -- how many palette colours are used
-    cursorTrailPaletteSeconds = 1.5,    -- "time" flow: seconds from one colour to the next
-    cursorTrailPalette = {
-        { r = 1.00, g = 0.20, b = 0.20 },
-        { r = 1.00, g = 0.75, b = 0.10 },
-        { r = 0.20, g = 0.85, b = 1.00 },
-        { r = 0.25, g = 0.90, b = 0.30 },
-        { r = 0.65, g = 0.35, b = 1.00 },
-        { r = 1.00, g = 0.45, b = 0.80 },
-    },
-    cursorRainbowSpeed = 100,           -- percent
-
     deathTallyEnabled = true,
     deathTallyLocked = false,
     deathTallyScale = 1.0,

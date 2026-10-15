@@ -961,213 +961,202 @@ local STRATAS = {
     { text = "Tooltip (above everything)", value = "TOOLTIP" },
 }
 
+-- The page, described once (UI/Settings.lua, the 2.0 settings-description
+-- pilot): each row below is the setting's default, its control and its search
+-- entry. The defaults used to live in Squizzumables.lua's defaultSettings and
+-- again as fallbacks in the page's helper calls.
+--
+-- `when` says when a row applies (it greys out otherwise); everything also
+-- greys out while Enable Mouse Cursor is off.
+local function TrailOn(s)     return s.cursorTrail end
+-- The click burst is drawn from the trail's particles, so the trail's look
+-- (colour, style, opacity, shrink, size) applies to both; only Linger Time,
+-- Density and the offsets are the trail's alone.
+local function ParticlesOn(s) return s.cursorTrail or s.cursorClickBurst end
+local function SharkOn(s)     return s.cursorSharkBite end
+local function CombatOn(s)    return s.cursorCombatColor end
+local function PaletteOn(s)   return ParticlesOn(s) and s.cursorTrailColorMode == "palette" end
+
+local CURSOR = ns.Settings.Describe({
+    master = "cursorEnabled",
+    apply = function() BH:ApplyCursor() end,
+    pages = {
+        { key = "cursor", label = "Cursor", rows = {
+            -- Off by default, like the distance readout: it changes how the
+            -- mouse looks, so it is asked for.
+            { key = "cursorEnabled", type = "check", default = false,
+              label = "Enable Mouse Cursor",
+              tip = "Rings around your mouse cursor: a centre dot, a ring, your global cooldown and your cast "
+                .. "filling round it, and an optional trail." },
+            { key = "cursorSize", type = "slider", default = 100, min = 50, max = 200, step = 5,
+              label = "Size", tip = "Size of everything around the cursor, as a percentage." },
+            { key = "cursorOpacity", type = "slider", default = 100, min = 10, max = 100, step = 5,
+              label = "Opacity", tip = "How see-through the rings and the trail are." },
+            { key = "cursorColorMode", type = "dropdown", default = "custom", items = COLOR_MODES,
+              label = "Colour", tip = "Colour of the dot and rings. Rainbow cycles through the colour wheel." },
+            { key = "cursorColor", type = "color", default = { r = 1, g = 1, b = 1 },
+              label = "Custom Colour", tip = "Used when Colour is Custom colour.",
+              when = function(s) return s.cursorColorMode == "custom" end },
+            { key = "cursorCombatColor", type = "check", default = false,
+              label = "Different Colour In Combat",
+              tip = "Switch the rings to a second colour while you are in combat." },
+            { key = "cursorCombatColorMode", type = "dropdown", default = "class", items = COLOR_MODES,
+              label = "Combat Colour", tip = "The rings' colour while you are in combat.", when = CombatOn },
+            { key = "cursorCombatCustomColor", type = "color", default = { r = 1, g = 0.2, b = 0.2 },
+              label = "Custom Combat Colour", tip = "Used when Combat Colour is Custom colour.",
+              when = function(s) return CombatOn(s) and s.cursorCombatColorMode == "custom" end },
+            { key = "cursorRainbowSpeed", type = "slider", default = 100, min = 10, max = 400, step = 10,
+              label = "Rainbow Speed",
+              tip = "How fast Rainbow goes round the colour wheel, for the rings and the trail. At 100% once every "
+                .. "4 seconds. The trail palette has its own pace on the Trail Colour tab." },
+            { key = "cursorCombatOnly", type = "check", default = false,
+              label = "Only In Combat", tip = "Show the rings only while you are in combat." },
+            { key = "cursorShakeFind", type = "check", default = true,
+              label = "Shake To Find Cursor",
+              tip = "Shake the mouse quickly left and right and a big ring shrinks onto the cursor, to find it "
+                .. "in a busy fight." },
+            { key = "cursorHideMouselook", type = "check", default = false,
+              label = "Hide While Turning The Camera",
+              tip = "Hide the rings while you hold a mouse button to turn the camera. Off, they stay where the "
+                .. "cursor was, which is where it comes back when you let go." },
+            { key = "cursorStrata", type = "dropdown", default = "HIGH", items = STRATAS,
+              label = "Frame Strata",
+              tip = "How far in front of other frames the rings sit. Tooltip puts them above every window." },
+        } },
+
+        { key = "rings", label = "Rings", rows = {
+            { key = "cursorDot", type = "check", default = true,
+              label = "Centre Dot", tip = "A dot at the cursor's tip." },
+            { key = "cursorDotSize", type = "slider", default = 8, min = 2, max = 30, step = 1,
+              label = "Dot Size", tip = "Size of the centre dot.",
+              when = function(s) return s.cursorDot end },
+            { key = "cursorRing", type = "check", default = true,
+              label = "Ring", tip = "A plain ring around the cursor." },
+            { key = "cursorHealthColor", type = "check", default = false,
+              label = "Ring Warns On Low Health",
+              tip = "The ring turns amber and then red as your health drops, over whatever colour it already is. "
+                .. "Works in combat.",
+              when = function(s) return s.cursorRing end },
+            { key = "cursorHealthStart", type = "slider", default = 70, min = 20, max = 100, step = 5,
+              label = "Warn Below (% health)",
+              tip = "The health at which the warning starts to show. It is fully amber a little below this and "
+                .. "red near death.",
+              when = function(s) return s.cursorRing and s.cursorHealthColor end },
+            { key = "cursorGCD", type = "check", default = true,
+              label = "Global Cooldown", tip = "A ring inside the main one that fills as your global cooldown runs." },
+            { key = "cursorCast", type = "check", default = true,
+              label = "Cast", tip = "A ring outside the main one that fills as you cast or channel." },
+        } },
+
+        { key = "trail", label = "Trail", rows = {
+            { key = "cursorTrail", type = "check", default = false,
+              label = "Show Trail",
+              tip = "A fading trail behind the cursor as it moves. Shown only while the rings are." },
+            { key = "cursorClickBurst", type = "check", default = false,
+              label = "Click Burst",
+              tip = "A burst of particles flies out from the cursor when you left-click. It uses the look set "
+                .. "below; with a rainbow colour it spreads round the colour wheel. Works with the trail off." },
+            -- Shark Bite sits with Click Burst, the other left-click effect
+            -- (user request 2026-10-11; it had a sub-tab of its own first).
+            { key = "cursorSharkBite", type = "check", default = false,
+              label = "Shark Bite",
+              tip = "When you left-click, a shark surfaces under the cursor, chomps over it and sinks back into "
+                .. "the water. Purely for fun: your cursor and your click work as normal." },
+            { key = "cursorSharkChance", type = "slider", default = 100, min = 5, max = 100, step = 5,
+              label = "Chance Per Click (%)",
+              tip = "How often a left click brings the shark. 100% is every click; lower keeps it a surprise.",
+              when = SharkOn },
+            { key = "cursorSharkSize", type = "slider", default = 100, min = 50, max = 300, step = 10,
+              label = "Shark Size", tip = "How big the shark is, as a percentage.", when = SharkOn },
+            { key = "cursorSharkWorldOnly", type = "check", default = false,
+              label = "Only When Clicking The Game World",
+              tip = "Bite only on clicks in the game world -- not on windows, buttons or your action bars.",
+              when = SharkOn },
+            { type = "button", label = "Test Shark", width = 100, height = 22,
+              tip = "A bite right now, where the mouse is.",
+              onClick = function() BH:TestSharkBite() end },
+            { key = "cursorTrailStyle", type = "dropdown", default = "glow", items = TRAIL_STYLE_ITEMS,
+              label = "Trail Style",
+              tip = "Soft glow blends into a bright ribbon; sparkle drifts, falls and twinkles like sparks; dots, "
+                .. "rings, stars, hearts and diamonds draw each piece on its own; ducks and sharks face the way "
+                .. "you move the mouse. Your own texture uses the name typed below.",
+              when = ParticlesOn },
+            { key = "cursorTrailTexture", type = "editbox", default = "",
+              label = "Your Own Texture (atlas name or file path)",
+              tip = "Any of the game's atlas names, for example \"titleprestige-starglow\" or "
+                .. "\"bags-glow-flash\", or a texture file path. Press Enter to apply. Used when Trail Style is "
+                .. "Your own texture; an empty box falls back to the soft glow.",
+              when = function(s) return ParticlesOn(s) and s.cursorTrailStyle == "custom" end },
+            { key = "cursorTrailBlend", type = "dropdown", default = "style", items = TRAIL_BLENDS,
+              label = "Blending",
+              tip = "Glow adds the pieces' light together, so overlaps go bright; solid draws them as they are. "
+                .. "By default each style uses whichever suits it.",
+              when = ParticlesOn },
+            { key = "cursorTrailLength", type = "slider", default = 0.5, min = 0.1, max = 3, step = 0.1,
+              label = "Linger Time",
+              tip = "How long, in seconds, the trail lingers before it has faded away.", when = TrailOn },
+            { key = "cursorTrailOpacity", type = "slider", default = 100, min = 10, max = 100, step = 5,
+              label = "Trail Opacity",
+              tip = "How see-through the trail is, on top of the overall Opacity on the Cursor tab.",
+              when = ParticlesOn },
+            { key = "cursorTrailShrink", type = "slider", default = 60, min = 0, max = 100, step = 5,
+              label = "Shrink As It Fades",
+              tip = "How much each piece shrinks as it fades. 0% keeps it full size to the end; 100% shrinks it "
+                .. "to nothing.",
+              when = ParticlesOn },
+            { key = "cursorTrailDensity", type = "slider", default = 100, min = 25, max = 400, step = 25,
+              label = "Density",
+              tip = "How close together the pieces are. Low makes a dotted line, high a smooth ribbon.",
+              when = TrailOn },
+            { key = "cursorTrailSize", type = "slider", default = 100, min = 25, max = 500, step = 5,
+              label = "Trail Size", tip = "Width of each piece, as a percentage.", when = ParticlesOn },
+            { key = "cursorTrailHeight", type = "slider", default = 100, min = 25, max = 400, step = 5,
+              label = "Trail Height",
+              tip = "Height of each piece as a percentage of its width. 100% keeps it in proportion; other "
+                .. "values stretch or squash it.",
+              when = ParticlesOn },
+            { key = "cursorTrailOffsetX", type = "slider", default = 0, min = -60, max = 60, step = 1,
+              label = "Trail Offset X", tip = "Moves the trail left or right of the cursor.", when = TrailOn },
+            { key = "cursorTrailOffsetY", type = "slider", default = 0, min = -60, max = 60, step = 1,
+              label = "Trail Offset Y", tip = "Moves the trail above or below the cursor.", when = TrailOn },
+        } },
+
+        { key = "trailcolour", label = "Trail Colour", rows = {
+            { key = "cursorTrailColorMode", type = "dropdown", default = "rainbow", items = TRAIL_COLOR_MODES,
+              label = "Trail Colour",
+              tip = "Rainbow runs through the colour wheel along the trail. Palette uses colours you choose below.",
+              when = ParticlesOn },
+            { key = "cursorTrailColor", type = "color", default = { r = 1, g = 1, b = 1 },
+              label = "Custom Trail Colour", tip = "Used when Trail Colour is Custom colour.",
+              when = function(s) return ParticlesOn(s) and s.cursorTrailColorMode == "custom" end },
+            { key = "cursorTrailPaletteFlow", type = "dropdown", default = "time", items = PALETTE_FLOWS,
+              label = "Palette Flow",
+              tip = "Flows over time: the trail cycles through your colours, at the pace set below. "
+                .. "Along the trail: the head of the trail is your first colour and the tail your last.",
+              when = PaletteOn },
+            { key = "cursorTrailPaletteSeconds", type = "slider", default = 1.5, min = 0.2, max = 10, step = 0.1,
+              label = "Seconds Per Colour",
+              tip = "How long the trail takes to blend from one palette colour to the next when it flows over "
+                .. "time. A full cycle through every colour is this times the number of colours used.",
+              when = function(s) return PaletteOn(s) and s.cursorTrailPaletteFlow ~= "trail" end },
+            { key = "cursorTrailPaletteCount", type = "slider", default = 3, min = 2, max = PALETTE_MAX, step = 1,
+              label = "Palette Colours Used",
+              tip = "How many of the colours below the palette uses, from the first.", when = PaletteOn },
+            { key = "cursorTrailPalette", type = "palette", size = PALETTE_MAX,
+              countKey = "cursorTrailPaletteCount",
+              label = "Palette Colour", tip = "Colour %d of the trail palette.", when = PaletteOn,
+              default = {
+                  { r = 1.00, g = 0.20, b = 0.20 },
+                  { r = 1.00, g = 0.75, b = 0.10 },
+                  { r = 0.20, g = 0.85, b = 1.00 },
+                  { r = 0.25, g = 0.90, b = 0.30 },
+                  { r = 0.65, g = 0.35, b = 1.00 },
+                  { r = 1.00, g = 0.45, b = 0.80 },
+              } },
+        } },
+    },
+})
+
 function BH:BuildCursorTab(parent)
-    local Rows = ns.Rows
-    local pages = ns.SubTabs.Create(parent, {
-        { key = "cursor", label = "Cursor" },
-        { key = "rings",  label = "Rings" },
-        { key = "trail",  label = "Trail" },
-        { key = "trailcolour", label = "Trail Colour" },
-    })
-
-    local function Set(key, v)
-        BH.settings[key] = v
-        BH:SaveSettings()
-        BH:ApplyCursor()
-    end
-    local function Off() return not BH.settings.cursorEnabled end
-    local function Check(label, key, tooltip, disabled)
-        return { type = "check", label = label, tooltip = tooltip,
-            get = function() return BH.settings[key] and true or false end,
-            set = function(v) Set(key, v) end,
-            disabled = disabled or Off }
-    end
-    local function Slider(label, key, min, max, step, default, tooltip, disabled)
-        return { type = "slider", label = label, width = 300, min = min, max = max, step = step, tooltip = tooltip,
-            get = function() return BH.settings[key] or default end,
-            set = function(v) Set(key, v) end,
-            disabled = disabled or Off }
-    end
-    local function Dropdown(label, key, items, default, tooltip, disabled)
-        return { type = "dropdown", label = label, width = 200, items = items, tooltip = tooltip,
-            get = function() return BH.settings[key] or default end,
-            set = function(v) Set(key, v) end,
-            disabled = disabled or Off }
-    end
-    local function Color(label, key, tooltip, disabled)
-        return { type = "color", label = label, tooltip = tooltip,
-            get = function()
-                local c = BH.settings[key] or {}
-                return c.r or 1, c.g or 1, c.b or 1
-            end,
-            set = function(r, g, b) Set(key, { r = r, g = g, b = b }) end,
-            disabled = disabled }
-    end
-
-    -- Cursor
-    local content = pages.cursor
-    Rows.currentSection = content.section
-    local y = -14
-    y = y - Rows.Add(content, y, {
-        type = "check", label = "Enable Mouse Cursor",
-        tooltip = "Rings around your mouse cursor: a centre dot, a ring, your global cooldown and your cast "
-            .. "filling round it, and an optional trail.",
-        get = function() return BH.settings.cursorEnabled and true or false end,
-        set = function(v) Set("cursorEnabled", v) end,
-    })
-    y = y - Rows.Add(content, y, Slider("Size", "cursorSize", 50, 200, 5, 100,
-        "Size of everything around the cursor, as a percentage."))
-    y = y - Rows.Add(content, y, Slider("Opacity", "cursorOpacity", 10, 100, 5, 100,
-        "How see-through the rings and the trail are."))
-    y = y - Rows.Add(content, y, Dropdown("Colour", "cursorColorMode", COLOR_MODES, "custom",
-        "Colour of the dot and rings. Rainbow cycles through the colour wheel."))
-    y = y - Rows.Add(content, y, Color("Custom Colour", "cursorColor", "Used when Colour is Custom colour.",
-        function() return Off() or BH.settings.cursorColorMode ~= "custom" end))
-    y = y - Rows.Add(content, y, Check("Different Colour In Combat", "cursorCombatColor",
-        "Switch the rings to a second colour while you are in combat."))
-    local function CombatOff() return Off() or not BH.settings.cursorCombatColor end
-    y = y - Rows.Add(content, y, Dropdown("Combat Colour", "cursorCombatColorMode", COLOR_MODES, "class",
-        "The rings' colour while you are in combat.", CombatOff))
-    y = y - Rows.Add(content, y, Color("Custom Combat Colour", "cursorCombatCustomColor",
-        "Used when Combat Colour is Custom colour.",
-        function() return CombatOff() or BH.settings.cursorCombatColorMode ~= "custom" end))
-    y = y - Rows.Add(content, y, Slider("Rainbow Speed", "cursorRainbowSpeed", 10, 400, 10, 100,
-        "How fast Rainbow goes round the colour wheel, for the rings and the trail. At 100% once every "
-            .. "4 seconds. The trail palette has its own pace on the Trail Colour tab."))
-    y = y - Rows.Add(content, y, Check("Only In Combat", "cursorCombatOnly",
-        "Show the rings only while you are in combat."))
-    y = y - Rows.Add(content, y, Check("Shake To Find Cursor", "cursorShakeFind",
-        "Shake the mouse quickly left and right and a big ring shrinks onto the cursor, to find it in a busy fight."))
-    y = y - Rows.Add(content, y, Check("Hide While Turning The Camera", "cursorHideMouselook",
-        "Hide the rings while you hold a mouse button to turn the camera. Off, they stay where the "
-            .. "cursor was, which is where it comes back when you let go."))
-    y = y - Rows.Add(content, y, Dropdown("Frame Strata", "cursorStrata", STRATAS, "HIGH",
-        "How far in front of other frames the rings sit. Tooltip puts them above every window."))
-    content:SetHeight(math.abs(y) + 20)
-
-    -- Rings
-    content = pages.rings
-    Rows.currentSection = content.section
-    y = -14
-    y = y - Rows.Add(content, y, Check("Centre Dot", "cursorDot", "A dot at the cursor's tip."))
-    y = y - Rows.Add(content, y, Slider("Dot Size", "cursorDotSize", 2, 30, 1, 8, "Size of the centre dot.",
-        function() return Off() or not BH.settings.cursorDot end))
-    y = y - Rows.Add(content, y, Check("Ring", "cursorRing", "A plain ring around the cursor."))
-    y = y - Rows.Add(content, y, Check("Ring Warns On Low Health", "cursorHealthColor",
-        "The ring turns amber and then red as your health drops, over whatever colour it already is. "
-            .. "Works in combat.",
-        function() return Off() or not BH.settings.cursorRing end))
-    y = y - Rows.Add(content, y, Slider("Warn Below (% health)", "cursorHealthStart", 20, 100, 5, 70,
-        "The health at which the warning starts to show. It is fully amber a little below this and red near death.",
-        function() return Off() or not (BH.settings.cursorRing and BH.settings.cursorHealthColor) end))
-    y = y - Rows.Add(content, y, Check("Global Cooldown", "cursorGCD",
-        "A ring inside the main one that fills as your global cooldown runs."))
-    y = y - Rows.Add(content, y, Check("Cast", "cursorCast",
-        "A ring outside the main one that fills as you cast or channel."))
-    content:SetHeight(math.abs(y) + 20)
-
-    -- Trail
-    content = pages.trail
-    Rows.currentSection = content.section
-    y = -14
-    -- The click burst is drawn from the trail's particles, so the look below
-    -- (colour, style, opacity, shrink, size) applies to both; only Linger
-    -- Time and Density are the trail's alone.
-    local function TrailOff() return Off() or not BH.settings.cursorTrail end
-    local function ParticlesOff() return Off() or not (BH.settings.cursorTrail or BH.settings.cursorClickBurst) end
-    y = y - Rows.Add(content, y, Check("Show Trail", "cursorTrail",
-        "A fading trail behind the cursor as it moves. Shown only while the rings are."))
-    y = y - Rows.Add(content, y, Check("Click Burst", "cursorClickBurst",
-        "A burst of particles flies out from the cursor when you left-click. It uses the look set below; "
-            .. "with a rainbow colour it spreads round the colour wheel. Works with the trail off."))
-    -- Shark Bite sits with Click Burst, the other left-click effect (user
-    -- request 2026-10-11; it had a sub-tab of its own first).
-    local function SharkOff() return Off() or not BH.settings.cursorSharkBite end
-    y = y - Rows.Add(content, y, Check("Shark Bite", "cursorSharkBite",
-        "When you left-click, a shark surfaces under the cursor, chomps over it and sinks back into the "
-            .. "water. Purely for fun: your cursor and your click work as normal."))
-    y = y - Rows.Add(content, y, Slider("Chance Per Click (%)", "cursorSharkChance", 5, 100, 5, 100,
-        "How often a left click brings the shark. 100% is every click; lower keeps it a surprise.", SharkOff))
-    y = y - Rows.Add(content, y, Slider("Shark Size", "cursorSharkSize", 50, 300, 10, 100,
-        "How big the shark is, as a percentage.", SharkOff))
-    y = y - Rows.Add(content, y, Check("Only When Clicking The Game World", "cursorSharkWorldOnly",
-        "Bite only on clicks in the game world -- not on windows, buttons or your action bars.", SharkOff))
-    local test = ns.CreateSQButton(content, "Test Shark", 100, 22)
-    test:SetPoint("TOPLEFT", content, "TOPLEFT", 14, y - 6)
-    test:SetScript("OnClick", function() BH:TestSharkBite() end)
-    ns.Rows.AddTooltip(test, "Test Shark", "A bite right now, where the mouse is.")
-    y = y - 40
-    y = y - Rows.Add(content, y, Dropdown("Trail Style", "cursorTrailStyle", TRAIL_STYLE_ITEMS, "glow",
-        "Soft glow blends into a bright ribbon; sparkle drifts, falls and twinkles like sparks; dots, rings, "
-            .. "stars, hearts and diamonds draw each piece on its own; ducks and sharks face the way you move the mouse. "
-            .. "Your own texture uses the name typed below.", ParticlesOff))
-    y = y - Rows.Add(content, y, {
-        type = "editbox", label = "Your Own Texture (atlas name or file path)", width = 300,
-        tooltip = "Any of the game's atlas names, for example \"titleprestige-starglow\" or "
-            .. "\"bags-glow-flash\", or a texture file path. Press Enter to apply. Used when Trail Style is "
-            .. "Your own texture; an empty box falls back to the soft glow.",
-        get = function() return BH.settings.cursorTrailTexture or "" end,
-        set = function(v) Set("cursorTrailTexture", strtrim(v or "")) end,
-        disabled = function() return ParticlesOff() or BH.settings.cursorTrailStyle ~= "custom" end,
-    })
-    y = y - Rows.Add(content, y, Dropdown("Blending", "cursorTrailBlend", TRAIL_BLENDS, "style",
-        "Glow adds the pieces' light together, so overlaps go bright; solid draws them as they are. "
-            .. "By default each style uses whichever suits it.", ParticlesOff))
-    y = y - Rows.Add(content, y, Slider("Linger Time", "cursorTrailLength", 0.1, 3, 0.1, 0.5,
-        "How long, in seconds, the trail lingers before it has faded away.", TrailOff))
-    y = y - Rows.Add(content, y, Slider("Trail Opacity", "cursorTrailOpacity", 10, 100, 5, 100,
-        "How see-through the trail is, on top of the overall Opacity on the Cursor tab.", ParticlesOff))
-    y = y - Rows.Add(content, y, Slider("Shrink As It Fades", "cursorTrailShrink", 0, 100, 5, 60,
-        "How much each piece shrinks as it fades. 0% keeps it full size to the end; 100% shrinks it to nothing.",
-        ParticlesOff))
-    y = y - Rows.Add(content, y, Slider("Density", "cursorTrailDensity", 25, 400, 25, 100,
-        "How close together the pieces are. Low makes a dotted line, high a smooth ribbon.", TrailOff))
-    y = y - Rows.Add(content, y, Slider("Trail Size", "cursorTrailSize", 25, 500, 5, 100,
-        "Width of each piece, as a percentage.", ParticlesOff))
-    y = y - Rows.Add(content, y, Slider("Trail Height", "cursorTrailHeight", 25, 400, 5, 100,
-        "Height of each piece as a percentage of its width. 100% keeps it in proportion; other values "
-            .. "stretch or squash it.", ParticlesOff))
-    y = y - Rows.Add(content, y, Slider("Trail Offset X", "cursorTrailOffsetX", -60, 60, 1, 0,
-        "Moves the trail left or right of the cursor.", TrailOff))
-    y = y - Rows.Add(content, y, Slider("Trail Offset Y", "cursorTrailOffsetY", -60, 60, 1, 0,
-        "Moves the trail above or below the cursor.", TrailOff))
-    content:SetHeight(math.abs(y) + 20)
-
-    -- Trail colour
-    content = pages.trailcolour
-    Rows.currentSection = content.section
-    y = -14
-    y = y - Rows.Add(content, y, Dropdown("Trail Colour", "cursorTrailColorMode", TRAIL_COLOR_MODES, "rainbow",
-        "Rainbow runs through the colour wheel along the trail. Palette uses colours you choose below.",
-        ParticlesOff))
-    y = y - Rows.Add(content, y, Color("Custom Trail Colour", "cursorTrailColor", "Used when Trail Colour is Custom colour.",
-        function() return ParticlesOff() or BH.settings.cursorTrailColorMode ~= "custom" end))
-    local function PaletteOff() return ParticlesOff() or BH.settings.cursorTrailColorMode ~= "palette" end
-    y = y - Rows.Add(content, y, Dropdown("Palette Flow", "cursorTrailPaletteFlow", PALETTE_FLOWS, "time",
-        "Flows over time: the trail cycles through your colours, at the pace set below. "
-            .. "Along the trail: the head of the trail is your first colour and the tail your last.",
-        PaletteOff))
-    y = y - Rows.Add(content, y, Slider("Seconds Per Colour", "cursorTrailPaletteSeconds", 0.2, 10, 0.1, 1.5,
-        "How long the trail takes to blend from one palette colour to the next when it flows over time. "
-            .. "A full cycle through every colour is this times the number of colours used.",
-        function() return PaletteOff() or BH.settings.cursorTrailPaletteFlow == "trail" end))
-    y = y - Rows.Add(content, y, Slider("Palette Colours Used", "cursorTrailPaletteCount", 2, PALETTE_MAX, 1, 3,
-        "How many of the colours below the palette uses, from the first.", PaletteOff))
-    for i = 1, PALETTE_MAX do
-        y = y - Rows.Add(content, y, {
-            type = "color", label = "Palette Colour " .. i,
-            tooltip = "Colour " .. i .. " of the trail palette.",
-            get = function()
-                local c = (BH.settings.cursorTrailPalette or {})[i] or {}
-                return c.r or 1, c.g or 1, c.b or 1
-            end,
-            set = function(r, g, b)
-                local pal = BH.settings.cursorTrailPalette or {}
-                pal[i] = { r = r, g = g, b = b }
-                Set("cursorTrailPalette", pal)
-            end,
-            disabled = function() return PaletteOff() or i > (BH.settings.cursorTrailPaletteCount or 3) end,
-        })
-    end
-    content:SetHeight(math.abs(y) + 20)
+    ns.Settings.Build(CURSOR, parent)
 end
