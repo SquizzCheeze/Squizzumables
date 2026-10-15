@@ -1743,7 +1743,7 @@ function BH:CreateOptionsPanel()
         { group = "Reminders", pages = {
             { key = "items",      label = "Consumables",      field = "itemsTab",         preview = "buttons" },
             { key = "classbuffs", label = "Class Buffs",      field = "classBuffsTab",    build = "BuildClassBuffsTab", preview = "buttons" },
-            { key = "reminders",  label = "Text Reminders",   field = "textRemindersTab", build = "BuildTextRemindersTab" },
+            { key = "reminders",  label = "Text Reminders",   field = "textRemindersTab", build = "BuildTextRemindersTab", preview = "textreminders" },
         } },
         { group = "Cooldowns", pages = {
             { key = "cdm",        label = "Cooldown Manager", field = "cdmTab",           build = "BuildCDMTab" },
@@ -2604,6 +2604,18 @@ local function ReminderBaseName(key)
 end
 BH.ReminderBaseName = ReminderBaseName
 
+-- What a reminder frame shows: its text, in its colour, centred. Shared by
+-- CreateReminderFrame and the Text Reminders page's preview
+-- (UI/PreviewColumn.lua), which draws plain copies with it.
+function BH.ReminderText(frame, def)
+    local text = frame:CreateFontString(nil, "OVERLAY")
+    text:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
+    text:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    text:SetText(def.text)
+    text:SetTextColor(def.color[1], def.color[2], def.color[3], 1)
+    return text
+end
+
 -- Build one reminder frame from its definition. Replaces ten copies of this.
 local function CreateReminderFrame(def)
     local key       = def.key
@@ -2630,11 +2642,7 @@ local function CreateReminderFrame(def)
     end)
     frame:Hide()
 
-    local text = frame:CreateFontString(nil, "OVERLAY")
-    text:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
-    text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    text:SetText(def.text)
-    text:SetTextColor(def.color[1], def.color[2], def.color[3], 1)
+    local text = BH.ReminderText(frame, def)
 
     -- Keep the historical field names: BH.beaconReminderFrame and friends are
     -- referenced throughout the addon and in POSITION_PAIRS / SCALED_FRAMES.

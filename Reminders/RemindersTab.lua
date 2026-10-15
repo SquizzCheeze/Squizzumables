@@ -95,6 +95,8 @@ function BH:BuildTextRemindersTab(parent)
         { key = "feast",  label = "Feast" },
         { key = "cc",     label = "Role CC" },
     })
+    -- The preview column follows the open sub-tab (UI/PreviewColumn.lua).
+    self.textReminderPages = pages
 
     local content = pages.class
     ns.Rows.currentSection = content.section

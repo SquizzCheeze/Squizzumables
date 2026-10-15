@@ -49,6 +49,12 @@ V2.0
   drawn where it shows - the Lust Alert's image or animation at its size
   and position, or on CDM Alerts the selected buff's or cooldown's image
   (full-screen glows, the arcs, placed images). It follows the sub-tab.
+- Text Reminders page: the preview shows the big reminders the open
+  sub-tab sets up - Beacon, Earth Shield, Symbiotic and Repair on Class,
+  No Food In Bags on Bags, Healer In CC on Role CC - at their Scale, faded
+  when turned off.
+- CDM Alerts: the icon you have selected gets a clear frame round it, so
+  you can see which one the editor below is changing.
 - The button preview fits vertical layouts and side labels instead of
   pushing the names off the column.
 - Cursor > Trail: the Test Shark button's bite now shows above the

@@ -373,6 +373,97 @@ drawers.kelerts = {
 }
 
 -- ----------------------------------------------------------------------------
+-- Text reminders
+-- ----------------------------------------------------------------------------
+
+-- The big text reminders each sub-tab sets up, drawn by the real code
+-- (BH.ReminderText, which CreateReminderFrame uses) at their Scale setting
+-- relative to each other, shrunk together if the widest would overflow. One
+-- turned off is shown faded. Sub-tabs with nothing on screen get a note.
+local REMINDERS_ON_TAB = {
+    class = { "beacon", "earthShield", "symbiotic", "repair" },
+    bags  = { "bags" },
+    cc    = { "healerCC" },
+}
+local NOTHING_ON_SCREEN = {
+    sounds = "Instance sounds play a sound only; nothing shows on screen.",
+    feast  = "Feast Announce posts in chat and plays the sound set below; nothing shows on screen.",
+}
+
+drawers.textreminders = {
+    build = function(col, host)
+        host.items = {}
+        for _, keys in pairs(REMINDERS_ON_TAB) do
+            for _, key in ipairs(keys) do
+                local def = BH.REMINDERS_BY_KEY and BH.REMINDERS_BY_KEY[key]
+                if def then
+                    -- Scaled inside an unscaled holder: a scaled frame's
+                    -- anchor offsets scale with it.
+                    local holder = CreateFrame("Frame", nil, host)
+                    local f = CreateFrame("Frame", nil, holder)
+                    f:SetSize(def.size[1], def.size[2])
+                    f:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+                    BH.ReminderText(f, def)
+                    holder:Hide()
+                    host.items[key] = { def = def, holder = holder, frame = f }
+                end
+            end
+        end
+        local note = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        note:SetJustifyH("LEFT")
+        note:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        host.note = note
+    end,
+
+    refresh = function(col, host)
+        local room = host:GetWidth()
+        if room <= 0 then return end
+        local s = BH.settings or {}
+        local sel = BH.textReminderPages and BH.textReminderPages.GetSelected
+            and BH.textReminderPages.GetSelected() or "class"
+        local keys = REMINDERS_ON_TAB[sel] or {}
+
+        for _, item in pairs(host.items) do item.holder:Hide() end
+
+        -- One fit for the whole tab, so their sizes stay true to each other.
+        local widest = 0
+        for _, key in ipairs(keys) do
+            local item = host.items[key]
+            if item then
+                widest = math.max(widest, item.def.size[1] * (s[key .. "ReminderScale"] or 1))
+            end
+        end
+        local fit = (widest > room) and (room / widest) or 1
+
+        local y = 0
+        for _, key in ipairs(keys) do
+            local item = host.items[key]
+            if item then
+                local def = item.def
+                local scale = (s[key .. "ReminderScale"] or 1) * fit
+                local enabledKey = def.enabledKey or (key .. "ReminderEnabled")
+                item.frame:SetScale(math.max(0.01, scale))
+                item.frame:SetAlpha(s[enabledKey] == false and 0.3 or 1)
+                item.holder:SetSize(def.size[1] * scale, def.size[2] * scale)
+                item.holder:ClearAllPoints()
+                item.holder:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
+                item.holder:Show()
+                y = y + def.size[2] * scale + 6
+            end
+        end
+
+        local text = NOTHING_ON_SCREEN[sel]
+            or ("At their Scale" .. (fit < 1 and ", shrunk together to fit" or "")
+                .. ". A faded one is turned off. Unlock Frames moves them.")
+        host.note:SetWidth(room)
+        host.note:ClearAllPoints()
+        host.note:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(y + (y > 0 and 6 or 0)))
+        host.note:SetText(text)
+        host:SetHeight(y + host.note:GetStringHeight() + 20)
+    end,
+}
+
+-- ----------------------------------------------------------------------------
 -- The column
 -- ----------------------------------------------------------------------------
 
