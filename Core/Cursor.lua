@@ -372,12 +372,17 @@ end
 
 -- Start a bite with the mouth at x, y (UIParent units). A new click mid-bite
 -- starts over at the new spot.
-local function StartBite(x, y)
+-- `onTop`: the Test button's bite. It always happens over the open settings
+-- window (DIALOG strata), which the player's Frame Strata -- HIGH by default --
+-- sits under, so the test bite goes above everything and a real one goes back
+-- to the setting.
+local function StartBite(x, y, onTop)
     if not Shark.frame then return end
     local s = BH.settings
     local S = Shark.SIZE * (s.cursorSharkSize or 100) / 100
     Shark.size = S
     local f = Shark.frame
+    f:SetFrameStrata(onTop and "TOOLTIP" or (s.cursorStrata or "HIGH"))
     f:ClearAllPoints()
     f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
     f:SetAlpha((s.cursorOpacity or 100) / 100)
@@ -467,7 +472,7 @@ function BH:TestSharkBite()
     end
     local scale = UIParent:GetEffectiveScale()
     local cx, cy = GetCursorPosition()
-    StartBite(cx / scale, cy / scale)
+    StartBite(cx / scale, cy / scale, true)
 end
 
 -- ============================================================================
