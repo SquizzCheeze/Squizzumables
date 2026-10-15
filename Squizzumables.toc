@@ -45,6 +45,7 @@ Core\Cursor.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
+Cooldowns\Discovery.lua
 Cooldowns\ProxyVisuals.lua
 Cooldowns\Reconcile.lua
 Cooldowns\BlizzardViewers.lua
