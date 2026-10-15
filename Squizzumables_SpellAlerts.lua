@@ -1439,11 +1439,13 @@ do
 end
 
 -- The Test button: the image as it will look, for a few seconds. A plain
--- frame of ours -- the real one only ever shows for a real buff. The same
--- frame is the Move handle (BH:MoveBuffImage), so what you drag is exactly
--- what will show.
+-- frame of ours -- the real one only ever shows for a real buff or cooldown.
+-- The same frame is the Move handle (BH:MoveImage), so what you drag is
+-- exactly what will show. Shared by Buff Alerts and Cooldown Alerts.
 local previewFrame, previewTimer
-local movingSpellID     -- the image being placed with Move, or nil
+-- The image being placed with Move, or nil:
+--   { key = any, entry = fn() -> its writable entry, done = fn() after a drop }
+local moving
 
 local function PreviewFrame()
     if previewFrame then return previewFrame end
@@ -1464,7 +1466,7 @@ local function PreviewFrame()
     f:SetScript("OnDragStart", function(self) BH:GridStartMoving(self) end)
     f:SetScript("OnDragStop", function(self)
         BH:GridStopMoving(self)
-        local entry = movingSpellID and BuffSounds()[movingSpellID]
+        local entry = moving and moving.entry()
         if not entry then return end
         -- Saved as an offset from the screen's centre. Both centres are read
         -- in UIParent's space (this frame is its child at scale 1).
@@ -1474,16 +1476,16 @@ local function PreviewFrame()
             entry.imageX = math.floor(fx - ux + 0.5)
             entry.imageY = math.floor(fy - uy + 0.5)
             BH:SaveSettings()
-            BH:RefreshBuffImages()
+            if moving.done then moving.done() end
         end
     end)
     previewFrame = f
     return f
 end
 
-function BH:PreviewBuffImage(spellID)
-    local entry = BuffSounds()[tonumber(spellID)]
-    if not (entry and entry.image) or movingSpellID then return end
+--- Show an image entry for a few seconds, as it will look.
+function BH:PreviewImage(entry)
+    if not (entry and entry.image) or moving then return end
     local f = PreviewFrame()
     PlaceImageFrame(f, entry)
     PaintImage(f.tex, entry)
@@ -1498,23 +1500,28 @@ function BH:PreviewBuffImage(spellID)
     end)
 end
 
---- Start or finish placing a buff's image by dragging it. Its own position,
---- independent of every other image and of the lust alert.
-function BH:MoveBuffImage(spellID)
-    local id = tonumber(spellID)
+function BH:PreviewBuffImage(spellID)
+    BH:PreviewImage(BuffSounds()[tonumber(spellID)])
+end
+
+--- Start or finish placing an image by dragging it. Each image has its own
+--- position, independent of every other image and of the lust alert. `key`
+--- names it (calling again with the same key is Done); `entryFn` returns its
+--- writable entry; `done` runs after each drop.
+function BH:MoveImage(key, entryFn, done)
     local f = PreviewFrame()
-    if movingSpellID then
-        -- Done (or switching to another buff): put the handle away.
-        local wasSame = movingSpellID == id
-        movingSpellID = nil
+    if moving then
+        -- Done (or switching to another image): put the handle away.
+        local wasSame = moving.key == key
+        moving = nil
         f:EnableMouse(false)
         f:Hide()
         if wasSame then return end
     end
-    local entry = id and BuffSounds()[id]
+    local entry = entryFn and entryFn()
     if not (entry and entry.image) or entry.imageFill ~= false then return end
     if previewTimer then previewTimer:Cancel(); previewTimer = nil end
-    movingSpellID = id
+    moving = { key = key, entry = entryFn, done = done }
     PlaceImageFrame(f, entry)
     -- Above everything while being placed, whatever the image sits at.
     f:SetFrameStrata("DIALOG")
@@ -1525,13 +1532,28 @@ function BH:MoveBuffImage(spellID)
     f:Show()
 end
 
-function BH.MovingBuffImage(spellID) return movingSpellID ~= nil and movingSpellID == tonumber(spellID) end
+function BH.MovingImage(key) return moving ~= nil and moving.key == key end
 
--- Re-place the Move handle from its buff's current settings, after the size,
+--- Put the Move handle away, whichever image it belongs to.
+function BH.StopMovingImage()
+    if moving then BH:MoveImage(moving.key) end
+end
+
+local function BuffMoveKey(spellID) return "buff:" .. tostring(tonumber(spellID)) end
+
+function BH:MoveBuffImage(spellID)
+    local id = tonumber(spellID)
+    BH:MoveImage(BuffMoveKey(id), function() return id and BuffSounds()[id] end,
+        function() BH:RefreshBuffImages() end)
+end
+
+function BH.MovingBuffImage(spellID) return BH.MovingImage(BuffMoveKey(spellID)) end
+
+-- Re-place the Move handle from its image's current settings, after the size,
 -- height, thickness or position changed while it is out. Through
 -- PlaceImageFrame, so the handle is always exactly what will show.
 local function RefitMoveHandle()
-    local entry = movingSpellID and previewFrame and BuffSounds()[movingSpellID]
+    local entry = moving and previewFrame and moving.entry()
     if not entry then return end
     PlaceImageFrame(previewFrame, entry)
     previewFrame:SetFrameStrata("DIALOG")
@@ -1680,7 +1702,7 @@ local selectedBuffSpellID
 function BH.SelectBuffSpell(spellID)
     -- A Move handle belongs to the buff it was opened for; picking another
     -- buff puts it away rather than leaving it to move the wrong image.
-    if movingSpellID and movingSpellID ~= tonumber(spellID) then BH:MoveBuffImage(movingSpellID) end
+    if moving and moving.key ~= BuffMoveKey(spellID) then BH.StopMovingImage() end
     selectedBuffSpellID = tonumber(spellID)
 end
 
@@ -1817,6 +1839,349 @@ function BH:RebuildBuffSoundGrid()
     end
 
     grid:SetHeight(rows * (BUFF_ICON_SIZE + BUFF_ICON_GAP))
+end
+
+-- The image controls, shared by every alert that can show an image: Buff
+-- Alerts (a buff's entry) and Cooldown Alerts (one alert of a cooldown). One
+-- copy, so the two pages cannot drift apart (2.0). The entry is anything
+-- PaintImage / PlaceImageFrame understand; `o` says where it lives:
+--   entry()        the entry as stored, or nil (read only)
+--   edit()         the entry, created if missing (for writing)
+--   changed(rb)    save and rebuild the image; rb = rebuild the editor too
+--   soon()         rebuild the image soon (drag-continuous controls; the
+--                  caller has already saved)
+--   rebuild()      rebuild the editor
+--   test()         show it for a few seconds
+--   state()        optional: "active" | "waiting" | other, shown by Test
+--   moving()/move() the Move handle: is it out / toggle it
+--   stacks         offer Reveal by Stacks (buffs only); spellID for its max
+--   imageTip       the Image dropdown's tooltip
+-- Returns the new y.
+local function BuildImageControls(editor, y, o)
+    local entry = o.entry()
+    local spellID = o.spellID
+    local Entry, Changed = o.edit, o.changed
+
+    local imgLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    imgLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+    imgLbl:SetWidth(60)
+    imgLbl:SetJustifyH("LEFT")
+    imgLbl:SetText("Image:")
+    imgLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+    local imgDrop = CreateSQDropdown(editor, "", 200, {
+        { text = "None",                      value = "none" },
+        { text = "Screen edge glow",          value = "vignette" },
+        { text = "Flames: bottom and sides",  value = "flames_u" },
+        { text = "Flames: both sides",        value = "flames_sides" },
+        { text = "Flames: bottom",            value = "flames_bottom" },
+        { text = "Flames: all round",         value = "flames_ring" },
+        { text = "Flames: ( ) arcs",          value = "flames_arcs" },
+        { text = "Lightning: ( ) arcs",       value = "lightning_arcs" },
+        { text = "Frost: ( ) arcs",           value = "frost_arcs" },
+        { text = "Heartbeat",                 value = "heartbeat" },
+        { text = "Arcane orbit",              value = "arcane_orbit" },
+        { text = "Angel wings (still)",       value = "angel_wings" },
+        { text = "Shield bubble (still)",     value = "shield_bubble" },
+        { text = "Sunburst (still)",          value = "sunburst" },
+        { text = "Rune circle (still)",       value = "rune_circle" },
+        { text = "Your own texture",          value = "custom" },
+    }, function(val)
+        local e = Entry()
+        local before = BUNDLED_IMAGES[e.image or ""]
+        e.image = (val ~= "none") and val or nil
+        -- These frame something, so they start placed (centre of the screen,
+        -- where a third-person character usually stands) -- the first time
+        -- only: a later re-pick keeps the player's placement. The Height %
+        -- follows the shape (the ( ) arcs taller than wide, the rest square)
+        -- when coming from a different one, since a heart at the arcs' 150%
+        -- is just a squashed heart; re-picking the same one keeps it.
+        local b = BUNDLED_IMAGES[val]
+        if b and b.placed then
+            if e.imageFill == nil then
+                e.imageFill = false
+                e.imageSize = e.imageSize or 260
+            end
+            if before ~= b then e.imageHeight = b.height or 100 end
+        end
+        Changed(true)
+    end)
+    imgDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+    imgDrop:SetSelectedValue((entry and entry.image) or "none")
+    ns.Rows.AddTooltip(imgDrop, "Image", o.imageTip)
+
+    if entry and entry.image then
+        local test = CreateSQButton(editor, "Test", 46, 22)
+        test:SetPoint("LEFT", imgDrop.btn, "RIGHT", 6, 0)
+        test:SetScript("OnClick", function() o.test() end)
+        ns.Rows.AddTooltip(test, "Test", "Show the image for a few seconds, as it will look.")
+
+        -- Buff images are built ahead of time by the aura engine, so whether
+        -- that happened is worth showing. Cooldown images are drawn on the
+        -- spot and have no such state.
+        if o.state then
+            local state = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            state:SetPoint("LEFT", test, "RIGHT", 6, 0)
+            local st = o.state()
+            if st == "active" then
+                state:SetText("active")
+                state:SetTextColor(0.4, 0.8, 0.4)
+            elseif st == "waiting" then
+                state:SetText("after combat")
+                state:SetTextColor(1, 0.8, 0.3)
+            else
+                state:SetText("not built")
+                state:SetTextColor(SQ_COLORS.danger[1], SQ_COLORS.danger[2], SQ_COLORS.danger[3])
+            end
+        end
+    end
+    y = y - 30
+
+    -- Controls only one kind of alert has, straight under the Image row
+    -- (Cooldown Alerts' "Show for").
+    if entry and entry.image and o.afterImage then y = o.afterImage(editor, y) end
+
+    if entry and entry.image then
+        if entry.image == "custom" then
+            local texLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            texLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+            texLbl:SetText("Texture:")
+            texLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+            local texEdit = CreateSQEditBox(editor, 200, 20, { maxLetters = 200 })
+            texEdit:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+            texEdit:SetText(entry.imageTexture or "")
+            local function SaveTex(box)
+                Entry().imageTexture = strtrim(box:GetText() or "")
+                Changed(false)
+            end
+            texEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveTex(box) end)
+            texEdit.onFocusLost = SaveTex
+            ns.Rows.AddTooltip(texEdit, "Texture",
+                "A game atlas name (for example \"bags-glow-flash\"), a texture path, or the name of an image "
+                .. "file in Squizzumables' Media folder. Press Enter to apply. Empty uses the screen edge glow.")
+            y = y - 28
+
+            -- Flipbook: the texture is a sheet of frames in a grid, played by
+            -- the game. A numbered sequence (name_001.png ...) can be packed
+            -- into one with .claude/make-flipbook.ps1, which prints the values
+            -- to enter here.
+            local function NumBox(label, key, default, x, width, tip)
+                local l = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                l:SetPoint("TOPLEFT", editor, "TOPLEFT", x, y - 4)
+                l:SetText(label)
+                l:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+                local box = CreateSQEditBox(editor, width, 20, { numeric = true, justifyH = "CENTER", maxLetters = 4 })
+                box:SetPoint("LEFT", l, "RIGHT", 4, 0)
+                box:SetText(tostring(entry[key] or default))
+                local function Save(b)
+                    Entry()[key] = tonumber(b:GetText()) or default
+                    Changed(false)
+                end
+                box:SetScript("OnEnterPressed", function(b) b:ClearFocus(); Save(b) end)
+                box.onFocusLost = Save
+                ns.Rows.AddTooltip(box, label, tip)
+            end
+            NumBox("Frames", "imageFrames", 1, 0, 30,
+                "How many frames the sheet holds. 1 is a still image; more makes it a flipbook animation.")
+            NumBox("Cols", "imageCols", 1, 86, 26, "How many frames across the sheet.")
+            NumBox("Rows", "imageRows", 1, 158, 26, "How many frames down the sheet.")
+            NumBox("FPS", "imageFps", 12, 232, 26, "Frames per second.")
+            y = y - 26
+            NumBox("Frame W", "imageFrameW", 0, 0, 36,
+                "Width of one frame in the sheet, in pixels. 0 works it out for a game atlas; give it for your own file.")
+            NumBox("H", "imageFrameH", 0, 98, 36, "Height of one frame in the sheet, in pixels.")
+            local loopCb = CreateSQCheckbox(editor, "Loop", function(checked)
+                Entry().imageLoop = checked
+                Changed(false)
+            end)
+            loopCb:SetPoint("TOPLEFT", editor, "TOPLEFT", 190, y + 2)
+            loopCb:SetChecked(entry.imageLoop ~= false)
+            ns.Rows.AddTooltip(loopCb, "Loop", "Repeat the animation for as long as the image is up, instead of playing it once.")
+            y = y - 30
+        end
+
+        local c = entry.imageColor or {}
+        local picker = ns.CreateSQColorPicker(editor, "Colour", c.r or 1, c.g or 1, c.b or 1, 1,
+            function(r, g, b)
+                Entry().imageColor = { r = r, g = g, b = b }
+                BH:SaveSettings()
+                o.soon()
+            end)
+        picker:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+        ns.Rows.AddTooltip(picker, "Colour", "Tint for the image. The screen edge glow is white, so this is its colour.")
+
+        local fillCb = CreateSQCheckbox(editor, "Fill the screen", function(checked)
+            Entry().imageFill = checked
+            if checked and o.moving() then o.move() end
+            Changed(true)
+        end)
+        fillCb:SetPoint("TOPLEFT", editor, "TOPLEFT", 190, y)
+        fillCb:SetChecked(entry.imageFill ~= false)
+        ns.Rows.AddTooltip(fillCb, "Fill the screen",
+            "Stretch the image over the whole screen, behind your interface -- right for an edge glow. Unticked, "
+            .. "it is a square with its own position and size; place it with Move. Either way it stays behind "
+            .. "your interface windows.")
+        y = y - 30
+
+        local alpha = CreateSQSlider(editor, "Opacity %", 200, 5, 100, 5)
+        alpha:SetValue(math.floor((entry.imageAlpha or 0.8) * 100 + 0.5))
+        alpha:SetAfterValueChanged(function(v)
+            Entry().imageAlpha = v / 100
+            BH:SaveSettings()
+            o.soon()
+        end)
+        alpha:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+        y = y - 46
+
+        if o.stacks then
+            local stacks = CreateSQSlider(editor, "Reveal by Stacks", 200, 0, 10, 1)
+            stacks:SetValue(tonumber(entry.imageStacks) or 0)
+            stacks:SetAfterValueChanged(function(v)
+                local e = Entry()
+                local wasOn = (tonumber(e.imageStacks) or 0) > 0
+                e.imageStacks = v > 0 and v or nil
+                BH:SaveSettings()
+                o.soon()
+                -- The direction control only exists while this is on.
+                if wasOn ~= (v > 0) then o.rebuild() end
+            end)
+            stacks:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+
+            -- How far this buff stacks, from the game: the highest
+            -- GetSpellMaxCumulativeAuraApplications over every aura ID the icon
+            -- matches (the grid ID can be the TALENT -- Infusion of Light 53576 --
+            -- while the stacking lives on the buff, 54149). Secret while aura data
+            -- is restricted, i.e. in combat; the editor is used out of it.
+            -- Returns 0 for many stacking buffs: Infusion of Light (all three IDs) and
+            -- Divine Purpose read 0 in game, 2026-10-06 -- their stacks come from
+            -- talents. 0 shows nothing rather than a misleading "Does not stack".
+            local maxStacks = 0
+            if C_Spell.GetSpellMaxCumulativeAuraApplications then
+                for auraID in pairs(AuraIDsFor(spellID)) do
+                    local ok, n = pcall(C_Spell.GetSpellMaxCumulativeAuraApplications, auraID)
+                    n = ok and BH.Secrets.SafeNumber(n, 0) or 0
+                    if n > maxStacks then maxStacks = n end
+                end
+            end
+            local maxLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            maxLbl:SetPoint("TOPLEFT", stacks, "TOPRIGHT", 12, -14)
+            maxLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+            if maxStacks > 1 then
+                maxLbl:SetText(("Stacks to %d"):format(maxStacks))
+                local match = CreateSQButton(editor, "Match", 54, 20)
+                match:SetPoint("LEFT", maxLbl, "RIGHT", 6, 0)
+                match:SetScript("OnClick", function()
+                    Entry().imageStacks = math.min(maxStacks, 10)
+                    BH:SaveSettings()
+                    o.changed(false)
+                    o.rebuild()
+                end)
+                ns.Rows.AddTooltip(match, "Match", "Set Reveal by Stacks to this buff's most stacks, so the image is "
+                    .. "whole at full stacks.")
+            else
+                maxLbl:SetText(maxStacks == 1 and "Does not stack" or "")
+            end
+            ns.Rows.AddTooltip(stacks, "Reveal by Stacks",
+                "For a buff that stacks: uncover the image a piece at a time as the stacks build, whole at this many "
+                .. "stacks. 2 with the ( ) arcs shows the left arc at 1 stack and both at 2. 0 shows the whole image "
+                .. "whenever the buff is up. A buff that does not stack shows nothing with this on. Test shows the "
+                .. "whole image.")
+            y = y - 46
+
+            if (tonumber(entry.imageStacks) or 0) > 0 then
+                local dirLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                dirLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+                dirLbl:SetText("Reveal:")
+                dirLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+                local dirDrop = CreateSQDropdown(editor, "", 160, {
+                    { text = "Left to right", value = "right" },
+                    { text = "Bottom to top", value = "up" },
+                }, function(val)
+                    Entry().imageReveal = val
+                    BH:SaveSettings()
+                    o.changed(false)
+                end)
+                dirDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+                dirDrop:SetSelectedValue(entry.imageReveal or "right")
+                y = y - 30
+            end
+        end
+
+        if entry.imageFill == false then
+            local size = CreateSQSlider(editor, "Size", 200, 50, 800, 10)
+            size:SetValue(entry.imageSize or 200)
+            size:SetAfterValueChanged(function(v)
+                Entry().imageSize = v
+                BH:SaveSettings()
+                o.soon()
+                -- Resize the Move handle too, if it is out.
+                RefitMoveHandle()
+            end)
+            size:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+            ns.Rows.AddTooltip(size, "Size", "Width of the image, in pixels.")
+            y = y - 46
+
+            local height = CreateSQSlider(editor, "Height %", 200, 25, 300, 5)
+            height:SetValue(entry.imageHeight or 100)
+            height:SetAfterValueChanged(function(v)
+                Entry().imageHeight = v
+                BH:SaveSettings()
+                o.soon()
+                RefitMoveHandle()
+            end)
+            height:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+            ns.Rows.AddTooltip(height, "Height %",
+                "Height as a percentage of the width: 100 is square, higher is taller. The ( ) arcs frame a "
+                .. "character best somewhere around 150.")
+            y = y - 46
+
+            local bundled = BUNDLED_IMAGES[entry.image]
+            if bundled and bundled.levels then
+                local thick = CreateSQSlider(editor, "Flame Thickness", 200, 1, #bundled.levels, 1)
+                thick:SetValue(tonumber(entry.imageThickness) or 3)
+                thick:SetAfterValueChanged(function(v)
+                    Entry().imageThickness = v
+                    BH:SaveSettings()
+                    o.soon()
+                    if o.moving() and previewFrame then
+                        RefitMoveHandle()
+                        PaintImage(previewFrame.tex, Entry())
+                    end
+                end)
+                thick:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+                ns.Rows.AddTooltip(thick, "Flame Thickness",
+                    "How thick the fire is, from 1 (a thin line of flame) to 5. The arcs stay where you placed "
+                    .. "them; only the flames grow or shrink. Press Test to see it.")
+                y = y - 46
+            end
+
+            local move = CreateSQButton(editor, o.moving() and "Done" or "Move", 70, 22)
+            move:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+            move:SetScript("OnClick", function()
+                o.move()
+                o.rebuild()
+            end)
+            ns.Rows.AddTooltip(move, "Move",
+                "Show this image as a box you can drag into place, then click Done. Each image has its own "
+                .. "position, separate from the others and from the lust alert.")
+
+            local centre = CreateSQButton(editor, "Centre", 70, 22)
+            centre:SetPoint("LEFT", move, "RIGHT", 6, 0)
+            centre:SetScript("OnClick", function()
+                local e = Entry()
+                e.imageX, e.imageY = 0, 0
+                BH:SaveSettings()
+                o.changed(false)
+                -- Snap the Move handle along with it, if it is out.
+                RefitMoveHandle()
+            end)
+            ns.Rows.AddTooltip(centre, "Centre",
+                "Put the image back in the middle of the screen -- where your character stands in third person, "
+                .. "so a good start before nudging it with Move.")
+            y = y - 30
+        end
+    end
+    return y
 end
 
 function BH:RebuildBuffSoundEditor()
@@ -2009,319 +2374,24 @@ function BH:RebuildBuffSoundEditor()
         end
     end
 
-    local imgLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    imgLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
-    imgLbl:SetWidth(60)
-    imgLbl:SetJustifyH("LEFT")
-    imgLbl:SetText("Image:")
-    imgLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-
-    local imgDrop = CreateSQDropdown(editor, "", 200, {
-        { text = "None",                      value = "none" },
-        { text = "Screen edge glow",          value = "vignette" },
-        { text = "Flames: bottom and sides",  value = "flames_u" },
-        { text = "Flames: both sides",        value = "flames_sides" },
-        { text = "Flames: bottom",            value = "flames_bottom" },
-        { text = "Flames: all round",         value = "flames_ring" },
-        { text = "Flames: ( ) arcs",          value = "flames_arcs" },
-        { text = "Lightning: ( ) arcs",       value = "lightning_arcs" },
-        { text = "Frost: ( ) arcs",           value = "frost_arcs" },
-        { text = "Heartbeat",                 value = "heartbeat" },
-        { text = "Arcane orbit",              value = "arcane_orbit" },
-        { text = "Angel wings (still)",       value = "angel_wings" },
-        { text = "Shield bubble (still)",     value = "shield_bubble" },
-        { text = "Sunburst (still)",          value = "sunburst" },
-        { text = "Rune circle (still)",       value = "rune_circle" },
-        { text = "Your own texture",          value = "custom" },
-    }, function(val)
-        local e = Entry()
-        local before = BUNDLED_IMAGES[e.image or ""]
-        e.image = (val ~= "none") and val or nil
-        -- These frame something, so they start placed (centre of the screen,
-        -- where a third-person character usually stands) -- the first time
-        -- only: a later re-pick keeps the player's placement. The Height %
-        -- follows the shape (the ( ) arcs taller than wide, the rest square)
-        -- when coming from a different one, since a heart at the arcs' 150%
-        -- is just a squashed heart; re-picking the same one keeps it.
-        local b = BUNDLED_IMAGES[val]
-        if b and b.placed then
-            if e.imageFill == nil then
-                e.imageFill = false
-                e.imageSize = e.imageSize or 260
-            end
-            if before ~= b then e.imageHeight = b.height or 100 end
-        end
-        Changed(true)
-    end)
-    imgDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
-    imgDrop:SetSelectedValue((entry and entry.image) or "none")
-    ns.Rows.AddTooltip(imgDrop, "Image",
-        "An image on screen for exactly as long as this buff is up, in combat too -- the game's aura engine "
-        .. "shows and hides it. Each buff can have its own. Screen edge glow is a coloured vignette round the "
-        .. "edge of the screen; the Flames are animated fire along the edges you pick (leave the colour white "
-        .. "for natural fire, or tint them). The ( ) arcs and the shapes below them are placed rather than "
-        .. "full screen: size and move them to frame your character. Those marked (still) do not animate.")
-
-    if entry and entry.image then
-        local test = CreateSQButton(editor, "Test", 46, 22)
-        test:SetPoint("LEFT", imgDrop.btn, "RIGHT", 6, 0)
-        test:SetScript("OnClick", function() BH:PreviewBuffImage(spellID) end)
-        ns.Rows.AddTooltip(test, "Test", "Show the image for a few seconds, as it will look.")
-
-        local state = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        state:SetPoint("LEFT", test, "RIGHT", 6, 0)
-        local st = BH.BuffImageState(spellID)
-        if st == "active" then
-            state:SetText("active")
-            state:SetTextColor(0.4, 0.8, 0.4)
-        elseif st == "waiting" then
-            state:SetText("after combat")
-            state:SetTextColor(1, 0.8, 0.3)
-        else
-            state:SetText("not built")
-            state:SetTextColor(SQ_COLORS.danger[1], SQ_COLORS.danger[2], SQ_COLORS.danger[3])
-        end
-    end
-    y = y - 30
-
-    if entry and entry.image then
-        if entry.image == "custom" then
-            local texLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            texLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
-            texLbl:SetText("Texture:")
-            texLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-            local texEdit = CreateSQEditBox(editor, 200, 20, { maxLetters = 200 })
-            texEdit:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
-            texEdit:SetText(entry.imageTexture or "")
-            local function SaveTex(box)
-                Entry().imageTexture = strtrim(box:GetText() or "")
-                Changed(false)
-            end
-            texEdit:SetScript("OnEnterPressed", function(box) box:ClearFocus(); SaveTex(box) end)
-            texEdit.onFocusLost = SaveTex
-            ns.Rows.AddTooltip(texEdit, "Texture",
-                "A game atlas name (for example \"bags-glow-flash\"), a texture path, or the name of an image "
-                .. "file in Squizzumables' Media folder. Press Enter to apply. Empty uses the screen edge glow.")
-            y = y - 28
-
-            -- Flipbook: the texture is a sheet of frames in a grid, played by
-            -- the game. A numbered sequence (name_001.png ...) can be packed
-            -- into one with .claude/make-flipbook.ps1, which prints the values
-            -- to enter here.
-            local function NumBox(label, key, default, x, width, tip)
-                local l = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                l:SetPoint("TOPLEFT", editor, "TOPLEFT", x, y - 4)
-                l:SetText(label)
-                l:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-                local box = CreateSQEditBox(editor, width, 20, { numeric = true, justifyH = "CENTER", maxLetters = 4 })
-                box:SetPoint("LEFT", l, "RIGHT", 4, 0)
-                box:SetText(tostring(entry[key] or default))
-                local function Save(b)
-                    Entry()[key] = tonumber(b:GetText()) or default
-                    Changed(false)
-                end
-                box:SetScript("OnEnterPressed", function(b) b:ClearFocus(); Save(b) end)
-                box.onFocusLost = Save
-                ns.Rows.AddTooltip(box, label, tip)
-            end
-            NumBox("Frames", "imageFrames", 1, 0, 30,
-                "How many frames the sheet holds. 1 is a still image; more makes it a flipbook animation.")
-            NumBox("Cols", "imageCols", 1, 86, 26, "How many frames across the sheet.")
-            NumBox("Rows", "imageRows", 1, 158, 26, "How many frames down the sheet.")
-            NumBox("FPS", "imageFps", 12, 232, 26, "Frames per second.")
-            y = y - 26
-            NumBox("Frame W", "imageFrameW", 0, 0, 36,
-                "Width of one frame in the sheet, in pixels. 0 works it out for a game atlas; give it for your own file.")
-            NumBox("H", "imageFrameH", 0, 98, 36, "Height of one frame in the sheet, in pixels.")
-            local loopCb = CreateSQCheckbox(editor, "Loop", function(checked)
-                Entry().imageLoop = checked
-                Changed(false)
-            end)
-            loopCb:SetPoint("TOPLEFT", editor, "TOPLEFT", 190, y + 2)
-            loopCb:SetChecked(entry.imageLoop ~= false)
-            ns.Rows.AddTooltip(loopCb, "Loop", "Repeat the animation for as long as the buff is up, instead of playing it once.")
-            y = y - 30
-        end
-
-        local c = entry.imageColor or {}
-        local picker = ns.CreateSQColorPicker(editor, "Colour", c.r or 1, c.g or 1, c.b or 1, 1,
-            function(r, g, b)
-                Entry().imageColor = { r = r, g = g, b = b }
-                BH:SaveSettings()
-                BH:RefreshBuffImagesSoon()
-            end)
-        picker:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
-        ns.Rows.AddTooltip(picker, "Colour", "Tint for the image. The screen edge glow is white, so this is its colour.")
-
-        local fillCb = CreateSQCheckbox(editor, "Fill the screen", function(checked)
-            Entry().imageFill = checked
-            if checked and BH.MovingBuffImage(spellID) then BH:MoveBuffImage(spellID) end
-            Changed(true)
-        end)
-        fillCb:SetPoint("TOPLEFT", editor, "TOPLEFT", 190, y)
-        fillCb:SetChecked(entry.imageFill ~= false)
-        ns.Rows.AddTooltip(fillCb, "Fill the screen",
-            "Stretch the image over the whole screen, behind your interface -- right for an edge glow. Unticked, "
-            .. "it is a square with its own position and size; place it with Move. Either way it stays behind "
-            .. "your interface windows.")
-        y = y - 30
-
-        local alpha = CreateSQSlider(editor, "Opacity %", 200, 5, 100, 5)
-        alpha:SetValue(math.floor((entry.imageAlpha or 0.8) * 100 + 0.5))
-        alpha:SetAfterValueChanged(function(v)
-            Entry().imageAlpha = v / 100
-            BH:SaveSettings()
-            BH:RefreshBuffImagesSoon()
-        end)
-        alpha:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
-        y = y - 46
-
-        local stacks = CreateSQSlider(editor, "Reveal by Stacks", 200, 0, 10, 1)
-        stacks:SetValue(tonumber(entry.imageStacks) or 0)
-        stacks:SetAfterValueChanged(function(v)
-            local e = Entry()
-            local wasOn = (tonumber(e.imageStacks) or 0) > 0
-            e.imageStacks = v > 0 and v or nil
-            BH:SaveSettings()
-            BH:RefreshBuffImagesSoon()
-            -- The direction control only exists while this is on.
-            if wasOn ~= (v > 0) then BH:RebuildBuffSoundEditor() end
-        end)
-        stacks:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
-
-        -- How far this buff stacks, from the game: the highest
-        -- GetSpellMaxCumulativeAuraApplications over every aura ID the icon
-        -- matches (the grid ID can be the TALENT -- Infusion of Light 53576 --
-        -- while the stacking lives on the buff, 54149). Secret while aura data
-        -- is restricted, i.e. in combat; the editor is used out of it.
-        -- Returns 0 for many stacking buffs: Infusion of Light (all three IDs) and
-        -- Divine Purpose read 0 in game, 2026-10-06 -- their stacks come from
-        -- talents. 0 shows nothing rather than a misleading "Does not stack".
-        local maxStacks = 0
-        if C_Spell.GetSpellMaxCumulativeAuraApplications then
-            for auraID in pairs(AuraIDsFor(spellID)) do
-                local ok, n = pcall(C_Spell.GetSpellMaxCumulativeAuraApplications, auraID)
-                n = ok and BH.Secrets.SafeNumber(n, 0) or 0
-                if n > maxStacks then maxStacks = n end
-            end
-        end
-        local maxLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        maxLbl:SetPoint("TOPLEFT", stacks, "TOPRIGHT", 12, -14)
-        maxLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-        if maxStacks > 1 then
-            maxLbl:SetText(("Stacks to %d"):format(maxStacks))
-            local match = CreateSQButton(editor, "Match", 54, 20)
-            match:SetPoint("LEFT", maxLbl, "RIGHT", 6, 0)
-            match:SetScript("OnClick", function()
-                Entry().imageStacks = math.min(maxStacks, 10)
-                BH:SaveSettings()
-                BH:RefreshBuffImages()
-                BH:RebuildBuffSoundEditor()
-            end)
-            ns.Rows.AddTooltip(match, "Match", "Set Reveal by Stacks to this buff's most stacks, so the image is "
-                .. "whole at full stacks.")
-        else
-            maxLbl:SetText(maxStacks == 1 and "Does not stack" or "")
-        end
-        ns.Rows.AddTooltip(stacks, "Reveal by Stacks",
-            "For a buff that stacks: uncover the image a piece at a time as the stacks build, whole at this many "
-            .. "stacks. 2 with the ( ) arcs shows the left arc at 1 stack and both at 2. 0 shows the whole image "
-            .. "whenever the buff is up. A buff that does not stack shows nothing with this on. Test shows the "
-            .. "whole image.")
-        y = y - 46
-
-        if (tonumber(entry.imageStacks) or 0) > 0 then
-            local dirLbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            dirLbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
-            dirLbl:SetText("Reveal:")
-            dirLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-            local dirDrop = CreateSQDropdown(editor, "", 160, {
-                { text = "Left to right", value = "right" },
-                { text = "Bottom to top", value = "up" },
-            }, function(val)
-                Entry().imageReveal = val
-                BH:SaveSettings()
-                BH:RefreshBuffImages()
-            end)
-            dirDrop:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
-            dirDrop:SetSelectedValue(entry.imageReveal or "right")
-            y = y - 30
-        end
-
-        if entry.imageFill == false then
-            local size = CreateSQSlider(editor, "Size", 200, 50, 800, 10)
-            size:SetValue(entry.imageSize or 200)
-            size:SetAfterValueChanged(function(v)
-                Entry().imageSize = v
-                BH:SaveSettings()
-                BH:RefreshBuffImagesSoon()
-                -- Resize the Move handle too, if it is out.
-                RefitMoveHandle()
-            end)
-            size:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
-            ns.Rows.AddTooltip(size, "Size", "Width of the image, in pixels.")
-            y = y - 46
-
-            local height = CreateSQSlider(editor, "Height %", 200, 25, 300, 5)
-            height:SetValue(entry.imageHeight or 100)
-            height:SetAfterValueChanged(function(v)
-                Entry().imageHeight = v
-                BH:SaveSettings()
-                BH:RefreshBuffImagesSoon()
-                RefitMoveHandle()
-            end)
-            height:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
-            ns.Rows.AddTooltip(height, "Height %",
-                "Height as a percentage of the width: 100 is square, higher is taller. The ( ) arcs frame a "
-                .. "character best somewhere around 150.")
-            y = y - 46
-
-            local bundled = BUNDLED_IMAGES[entry.image]
-            if bundled and bundled.levels then
-                local thick = CreateSQSlider(editor, "Flame Thickness", 200, 1, #bundled.levels, 1)
-                thick:SetValue(tonumber(entry.imageThickness) or 3)
-                thick:SetAfterValueChanged(function(v)
-                    Entry().imageThickness = v
-                    BH:SaveSettings()
-                    BH:RefreshBuffImagesSoon()
-                    if BH.MovingBuffImage(spellID) and previewFrame then
-                        RefitMoveHandle()
-                        PaintImage(previewFrame.tex, Entry())
-                    end
-                end)
-                thick:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
-                ns.Rows.AddTooltip(thick, "Flame Thickness",
-                    "How thick the fire is, from 1 (a thin line of flame) to 5. The arcs stay where you placed "
-                    .. "them; only the flames grow or shrink. Press Test to see it.")
-                y = y - 46
-            end
-
-            local move = CreateSQButton(editor, BH.MovingBuffImage(spellID) and "Done" or "Move", 70, 22)
-            move:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
-            move:SetScript("OnClick", function()
-                BH:MoveBuffImage(spellID)
-                BH:RebuildBuffSoundEditor()
-            end)
-            ns.Rows.AddTooltip(move, "Move",
-                "Show this image as a box you can drag into place, then click Done. Each image has its own "
-                .. "position, separate from the others and from the lust alert.")
-
-            local centre = CreateSQButton(editor, "Centre", 70, 22)
-            centre:SetPoint("LEFT", move, "RIGHT", 6, 0)
-            centre:SetScript("OnClick", function()
-                local e = Entry()
-                e.imageX, e.imageY = 0, 0
-                BH:SaveSettings()
-                BH:RefreshBuffImages()
-                -- Snap the Move handle along with it, if it is out.
-                RefitMoveHandle()
-            end)
-            ns.Rows.AddTooltip(centre, "Centre",
-                "Put the image back in the middle of the screen -- where your character stands in third person, "
-                .. "so a good start before nudging it with Move.")
-            y = y - 30
-        end
-    end
+    y = BuildImageControls(editor, y, {
+        spellID  = spellID,
+        stacks   = true,
+        entry    = function() return BH.BuffSounds()[spellID] end,
+        edit     = Entry,
+        changed  = Changed,
+        soon     = function() BH:RefreshBuffImagesSoon() end,
+        rebuild  = function() BH:RebuildBuffSoundEditor() end,
+        test     = function() BH:PreviewBuffImage(spellID) end,
+        state    = function() return BH.BuffImageState(spellID) end,
+        moving   = function() return BH.MovingBuffImage(spellID) end,
+        move     = function() BH:MoveBuffImage(spellID) end,
+        imageTip = "An image on screen for exactly as long as this buff is up, in combat too -- the game's aura engine "
+            .. "shows and hides it. Each buff can have its own. Screen edge glow is a coloured vignette round the "
+            .. "edge of the screen; the Flames are animated fire along the edges you pick (leave the colour white "
+            .. "for natural fire, or tint them). The ( ) arcs and the shapes below them are placed rather than "
+            .. "full screen: size and move them to frame your character. Those marked (still) do not animate.",
+    })
 
     editor:SetHeight(math.abs(y) + 4)
     if self.kelBuffPage and self.kelBuffEditorTop then
