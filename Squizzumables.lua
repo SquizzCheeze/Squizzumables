@@ -9086,14 +9086,16 @@ function BH:UpdateButtons()
         return
     end
 
-    -- Same out of combat wherever the client is hiding auras or restricting
-    -- addons (V1.99+, the 12.1.5 labyrinth). Every aura read comes back nil,
-    -- nil counts as "missing", and the rebuild below then showed EVERY button
-    -- at once (user report 2026-10-15) -- while also re-parenting secure
-    -- buttons the restriction may refuse. Keep the last readable pass's
-    -- buttons; the first readable pass after the restriction lifts rebuilds.
-    if BH.Secrets.AurasAreSecret()
-        or (BH.AuraSoundRestriction and BH.AuraSoundRestriction()) then
+    -- Same out of combat whenever the client is hiding auras. Every aura read
+    -- comes back nil, nil counts as "missing", and the rebuild below then
+    -- showed EVERY button at once (user report 2026-10-15, 12.1.5 labyrinth,
+    -- surviving /reload, cured by relog -- so a client state left stuck, not
+    -- the zone itself). Keep the last readable pass's buttons.
+    --
+    -- Deliberately NOT gated on the addon restrictions as well: ChallengeMode
+    -- is active for a whole Mythic+ key, so that would freeze the buttons
+    -- between pulls, where they have always worked.
+    if BH.Secrets.AurasAreSecret() then
         self:UpdateAllReminders()
         return
     end

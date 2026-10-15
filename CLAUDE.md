@@ -806,8 +806,14 @@ tainted depends on what else has run first. Three things learned the hard way:
   nothing registered, and flushes when the restriction lifts; `/sq buffsounds` prints the active
   one. Reproduced 2026-10-14: every `/reload` inside the 12.1.5 labyrinth raised the block once
   per sound, never before a reload (registrations made outside survive until then). A first cut
-  that still tried when nothing was registered ("nothing to lose") only produced the error. Which
-  restriction the labyrinth sets (Map is the guess) is not yet confirmed — ask for `/sq buffsounds`.
+  that still tried when nothing was registered ("nothing to lose") only produced the error.
+  **Correction, 2026-10-15:** after a RELOG the same labyrinth worked normally (reminders read and
+  updated fine), so the zone does not restrict by itself. The state got STUCK: it survived every
+  `/reload` and cleared on relog, and in the same moment GSE lost its keybind and every reminder
+  button showed (auras reading secret out of combat). Best guess: an Encounter restriction left
+  active by the labyrinth's known boss-kill-not-registering bug. Unconfirmed — `/sq buffsounds`
+  prints the active restriction. Do NOT gate the reminder buttons on the restrictions:
+  ChallengeMode lasts a whole key; `BH:UpdateButtons` gates on `AurasAreSecret()` only.
 
   Generalise this: for anything protected that runs on a tear-down-then-rebuild shape, assume the
   rebuild half can be refused for reasons you will not be able to explain, and make it retry.
