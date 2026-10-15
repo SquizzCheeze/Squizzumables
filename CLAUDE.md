@@ -288,7 +288,8 @@ shell, setup and polish), each gated.
   (`Theme.AccentMode()`: "fixed" | "class"), read by `ns.GetAccentColor`. Presets defined so far:
   `squizz_gold`, `class_colour`; `settings.theme.preset`, else the legacy `useClassColorAccent`
   (default now FALSE, so new installs/profiles get gold; saved values untouched). The class-colour
-  checkbox calls `Theme.SetPreset` until the phase-3 picker. Dark Glass / Rainbow / Minimal need their
+  checkbox calls `Theme.SetPreset` until the phase-3 picker, which REPLACES it (user confirmed 2026-10-15:
+  the tick box is removed then; Class Colour becomes one preset in the picker). Dark Glass / Rainbow / Minimal need their
   palettes + the picker. Options-window grey literals (~60 in Squizzumables.lua) are left for phase 3,
   which rebuilds those pages; the green move boxes for the Edit Mode step. One visible change: the CDM
   pages' headings used a private gold (0.87, 0.73, 0.37) ignoring the class accent; now
