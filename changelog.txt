@@ -21,6 +21,12 @@ V2.0
   headings and accents"; they now match the rest of the window.
 - New installs and new profiles start with the warm gold accent; class
   colour stays one tick away. Existing profiles keep what they had.
+- The reminder buttons now grow the way you set them without a second
+  setting: Grow Down keeps the top button where you placed it, Grow Up the
+  bottom one, Right the left end, Left the right end, Outward the middle.
+  The separate Anchor Point setting is gone. A vertical stack set to grow
+  down used to grow up and down from its middle unless Anchor Point was
+  changed to Top as well.
 - Fixed: after a /reload inside a delve, buff sounds stayed silent until
   you left it. They were waiting out the delve's addon restriction, which
   turns out not to block them; they now set themselves up straight away.

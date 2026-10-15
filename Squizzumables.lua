@@ -29,6 +29,8 @@ BH.defaultSettings = {
     buttonSize = 36,
     buttonSpacing = 5,
     frameLocked = false,
+    -- Unused since 2.0: the grow direction decides the anchor (BH:GrowAnchor).
+    -- Kept so profiles exported to an older copy still carry a value.
     anchorPoint = "LEFT",
     growDirection = "RIGHT",
     layoutDirection = "HORIZONTAL", -- HORIZONTAL or VERTICAL
@@ -1263,6 +1265,7 @@ end
 -- Kel alert and callouts were never re-anchored on a profile switch).
 function BH:LoadAllFramePositions()
     self:LoadFramePosition()        -- main button frame
+    self:UpdateFrameAnchor()        -- ...onto its grow edge, in place (2.0)
     self:LoadMarkersPosition()      -- has its own legacy raidToolsPosition migration
     for _, pair in ipairs(POSITION_PAIRS) do
         if pair[2] ~= "markersPosition" then   -- already done above, with migration
@@ -1302,9 +1305,26 @@ function BH:ApplyAllFrameScales()
     end
 end
 
--- Re-anchor the frame so the drag handle follows the buttons when anchor changes
+-- The edge of the button block that stays put, from the layout and grow
+-- direction (2.0, user request 2026-10-15). It used to be its own Anchor
+-- Point setting, defaulting to Left, so a vertical stack set to grow down
+-- still grew up AND down from the middle of its left edge unless the player
+-- also found and changed the anchor. Growing down means the top stays put.
+function BH:GrowAnchor()
+    local layout = self.settings and self.settings.layoutDirection or "HORIZONTAL"
+    local grow = self.settings and self.settings.growDirection or "RIGHT"
+    if grow == "OUTWARD" then return "CENTER" end
+    if layout == "VERTICAL" then
+        return grow == "UP" and "BOTTOM" or "TOP"
+    end
+    return grow == "LEFT" and "RIGHT" or "LEFT"
+end
+
+-- Re-anchor the frame on its grow edge, where it sits now, so the block grows
+-- away from that edge as buttons are added. Called when the layout or grow
+-- direction changes, after a drag, and after positions load.
 function BH:UpdateFrameAnchor()
-    local anchor = self.settings.anchorPoint or "LEFT"
+    local anchor = self:GrowAnchor()
     local width, height = self.frame:GetSize()
     local cx, cy = self.frame:GetCenter()
     if not cx then return end
@@ -2435,6 +2455,7 @@ function BH:BuildSettingsTab(parent)
             BH:ValidateGrowDirection()
             BH:SaveSettings()
             BH:UpdateButtons()
+            BH:UpdateFrameAnchor()
         end,
     })
 
@@ -2442,7 +2463,9 @@ function BH:BuildSettingsTab(parent)
         type = "dropdown",
         label = "Grow Direction",
         width = 160,
-        tooltip = "Which way new buttons are added from the anchor as the number of reminders changes.",
+        tooltip = "Which way new buttons are added as the number of reminders changes. The opposite "
+               .. "edge stays put: growing down keeps the top button where you placed it, growing "
+               .. "outward keeps the middle.",
         -- A function, so the options follow the layout above rather than the
         -- layout handler reaching across to rewrite them.
         items = function()
@@ -2453,29 +2476,11 @@ function BH:BuildSettingsTab(parent)
             BH.settings.growDirection = value
             BH:SaveSettings()
             BH:UpdateButtons()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Anchor Point",
-        width = 160,
-        tooltip = "Which edge of the button block stays put as buttons are added or removed.",
-        items = {
-            { text = "Top",    value = "TOP" },
-            { text = "Left",   value = "LEFT" },
-            { text = "Center", value = "CENTER" },
-            { text = "Right",  value = "RIGHT" },
-            { text = "Bottom", value = "BOTTOM" },
-        },
-        get = function() return BH.settings.anchorPoint or "CENTER" end,
-        set = function(value)
-            BH.settings.anchorPoint = value
-            BH:SaveSettings()
-            BH:UpdateButtons()
             BH:UpdateFrameAnchor()
         end,
     })
+    -- No Anchor Point control since 2.0: the grow direction decides which
+    -- edge stays put (BH:GrowAnchor).
 
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "check",
@@ -2545,7 +2550,6 @@ function BH:BuildSettingsTab(parent)
         BH.settings.buttonSize = BH.defaultSettings.buttonSize
         BH.settings.buttonSpacing = BH.defaultSettings.buttonSpacing
         BH.settings.frameLocked = BH.defaultSettings.frameLocked
-        BH.settings.anchorPoint = BH.defaultSettings.anchorPoint
         BH.settings.growDirection = BH.defaultSettings.growDirection
         BH.settings.layoutDirection = BH.defaultSettings.layoutDirection
         BH.settings.showLabelText = BH.defaultSettings.showLabelText
@@ -2554,6 +2558,7 @@ function BH:BuildSettingsTab(parent)
         BH:UpdateFrameLock()
         BH:RefreshSettingsTab()
         BH:UpdateButtons()
+        BH:UpdateFrameAnchor()
     end)
     yOffset = yOffset - 40
 
@@ -5066,7 +5071,9 @@ BH.frame:SetScript("OnDragStart", function(self)
 end)
 BH.frame:SetScript("OnDragStop", function(self)
     BH:GridStopMoving(self)
-    BH:SaveFramePosition()
+    -- Re-anchor on the grow edge where it was dropped (a drag re-anchors the
+    -- frame on its own); UpdateFrameAnchor saves the position.
+    BH:UpdateFrameAnchor()
 end)
 
 -- Non-secure container for pet summon buttons.
