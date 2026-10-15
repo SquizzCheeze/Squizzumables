@@ -385,6 +385,14 @@ local REMINDERS_ON_TAB = {
     bags  = { "bags" },
     cc    = { "healerCC" },
 }
+-- How wide a reminder really draws, unscaled. Its words are usually wider
+-- than its frame -- "REMEMBER EARTH SHIELD" at 24pt is well over 320 -- and
+-- simply spill past it, on screen as here, so fitting to the frame size let
+-- them run off the column (user screenshot 2026-10-16).
+local function ReminderWidth(item)
+    return math.max(item.def.size[1], (item.text:GetStringWidth() or 0) + 8)
+end
+
 local NOTHING_ON_SCREEN = {
     sounds = "Instance sounds play a sound only; nothing shows on screen.",
     feast  = "Feast Announce posts in chat and plays the sound set below; nothing shows on screen.",
@@ -402,10 +410,10 @@ drawers.textreminders = {
                     local holder = CreateFrame("Frame", nil, host)
                     local f = CreateFrame("Frame", nil, holder)
                     f:SetSize(def.size[1], def.size[2])
-                    f:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
-                    BH.ReminderText(f, def)
+                    f:SetPoint("CENTER", holder, "CENTER", 0, 0)
+                    local text = BH.ReminderText(f, def)
                     holder:Hide()
-                    host.items[key] = { def = def, holder = holder, frame = f }
+                    host.items[key] = { def = def, holder = holder, frame = f, text = text }
                 end
             end
         end
@@ -430,7 +438,7 @@ drawers.textreminders = {
         for _, key in ipairs(keys) do
             local item = host.items[key]
             if item then
-                widest = math.max(widest, item.def.size[1] * (s[key .. "ReminderScale"] or 1))
+                widest = math.max(widest, ReminderWidth(item) * (s[key .. "ReminderScale"] or 1))
             end
         end
         local fit = (widest > room) and (room / widest) or 1
@@ -444,9 +452,9 @@ drawers.textreminders = {
                 local enabledKey = def.enabledKey or (key .. "ReminderEnabled")
                 item.frame:SetScale(math.max(0.01, scale))
                 item.frame:SetAlpha(s[enabledKey] == false and 0.3 or 1)
-                item.holder:SetSize(def.size[1] * scale, def.size[2] * scale)
+                item.holder:SetSize(ReminderWidth(item) * scale, def.size[2] * scale)
                 item.holder:ClearAllPoints()
-                item.holder:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
+                item.holder:SetPoint("TOP", host, "TOP", 0, -y)
                 item.holder:Show()
                 y = y + def.size[2] * scale + 6
             end
