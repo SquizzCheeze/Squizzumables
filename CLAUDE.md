@@ -259,7 +259,7 @@ shell, setup and polish), each gated.
   NOT decide which restriction blocks which call (undocumented; ChallengeMode never stopped the
   secure reminder buttons between pulls), so callers pick the test. Buff sounds and the reminder
   buttons use it; migrate every other combat check onto it as features are touched.
-- **CDM Alerts** (user request + decisions 2026-10-15), DONE, UNTESTED in game. ⚠ The user wants
+- **CDM Alerts** (user request + decisions 2026-10-15), DONE and CONFIRMED by the user ("exactly what i wanted"). ⚠ The user wants
   buffs and cooldowns in ONE tab, ONE grid, ONE editor layout -- a first cut that moved CDM Sounds to
   its own "Cooldown Alerts" sub-tab, with images behind a click on an alert row, was rejected ("no no
   no"). Now: the Buff Alerts sub-tab is **CDM Alerts** (key still `buffsounds`); `RebuildBuffSoundGrid`
