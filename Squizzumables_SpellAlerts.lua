@@ -768,6 +768,32 @@ local function RunRegistration()
     Gate.Defer(GATE_KEY, DoRegistration)
 end
 
+-- /sq buffsounds try: register now, ignoring an addon restriction, and say
+-- what the game made of it. Exists because which restrictions actually refuse
+-- AddAuraSound is not documented: the 12.1.5 labyrinth refused it, but a Map
+-- restriction elsewhere may not (user report 2026-10-15). Never in combat,
+-- which certainly refuses. A refusal here raises ADDON_ACTION_BLOCKED once
+-- per sound -- the price of finding out, and the player asked for it.
+function BH:TryAuraSoundRegistrationNow()
+    if not AuraSoundsAvailable() then return end
+    if InCombatLockdown() then
+        print("|cFFFF5555Squizzumables:|r not in combat -- try again once it ends.")
+        return
+    end
+    print("Squizzumables: registering buff sounds now (" .. Gate.Describe() .. ")")
+    lastTrigger = "/sq buffsounds try"
+    retryCount = RETRY_LIMIT   -- one honest attempt, no automatic retries
+    local wanted, got = ApplyAuraSoundRegistrations(BH)
+    if not wanted or wanted == 0 then
+        print("  nothing to register.")
+    elseif got == wanted then
+        print(("|cFF55FF55  accepted: %d of %d.|r The game allows them here; tell Claude which map this is."):format(got, wanted))
+    else
+        print(("|cFFFF5555  refused: %d of %d accepted.|r This map really does block them; they will come back when you leave it."):format(got or 0, wanted))
+    end
+    if BH.kelBuffEditor and BH.RebuildBuffSoundEditor then BH:RebuildBuffSoundEditor() end
+end
+
 -- 2.0: buff events leave Cooldown Alerts (user decision 2026-10-15).
 --
 -- The old CDM Sounds page could also play a sound when a buff was applied or

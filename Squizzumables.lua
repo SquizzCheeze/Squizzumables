@@ -8454,6 +8454,8 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         if BH.Nameplates then BH.Nameplates:TestRowOff() end
     elseif msg:match("^nameplates test %S+$") then
         if BH.Nameplates then BH.Nameplates:TestRow(msg:match("^nameplates test (%S+)$")) end
+    elseif msg == "buffsounds try" then
+        if BH.TryAuraSoundRegistrationNow then BH:TryAuraSoundRegistrationNow() end
     elseif msg == "buffsounds" then
         if BH.PrintBuffSoundDiagnostics then
             BH:PrintBuffSoundDiagnostics()
