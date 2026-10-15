@@ -32,6 +32,10 @@ Reminders\Items.lua
 Reminders\Helpers.lua
 Reminders\Buttons.lua
 Reminders\Gates.lua
+Reminders\RemindersTab.lua
+Reminders\ClassBuffsTab.lua
+Options\SettingsTab.lua
+Options\SoundsTab.lua
 Core\ProfileIO.lua
 Core\EncounterTimeline.lua
 Core\Minimap.lua
