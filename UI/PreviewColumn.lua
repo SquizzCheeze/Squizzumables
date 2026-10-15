@@ -154,6 +154,43 @@ drawers.buttons = {
 }
 
 -- ----------------------------------------------------------------------------
+-- Mouse cursor
+-- ----------------------------------------------------------------------------
+
+-- The real cursor is the preview: drawing a second set of rings would mean
+-- either a copy of Core/Cursor.lua or rebuilding it around instances. While
+-- the page is open the cursor is lifted over the options window (and shown out
+-- of combat with Only In Combat on), so every setting shows on it directly.
+drawers.cursor = {
+    build = function(col, host)
+        local text = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        text:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        text:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+        text:SetJustifyH("LEFT")
+        text:SetSpacing(3)
+        host.text = text
+        host:SetHeight(120)
+    end,
+
+    refresh = function(col, host)
+        local on = BH.CursorPreviewState and BH:CursorPreviewState()
+        if on then
+            host.text:SetText("Your cursor is the preview: move the mouse over this window and every "
+                .. "change shows on it as you make it.\n\nThe global cooldown and cast rings fill when you "
+                .. "use an ability or cast.")
+            host.text:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
+        else
+            host.text:SetText("Turn on Enable Mouse Cursor and your cursor becomes the preview: every "
+                .. "change on this page shows on it as you make it.")
+            host.text:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        end
+    end,
+
+    show = function() if BH.SetCursorPreview then BH:SetCursorPreview(true) end end,
+    hide = function() if BH.SetCursorPreview then BH:SetCursorPreview(false) end end,
+}
+
+-- ----------------------------------------------------------------------------
 -- The column
 -- ----------------------------------------------------------------------------
 
@@ -192,8 +229,16 @@ function PreviewColumn.Create(parent, kind)
     col.host = host
     drawer.build(col, host)
 
+    -- `show`/`hide`, for a drawer that changes something live while its page
+    -- is open. OnHide also fires when the whole window closes.
     local elapsed = REFRESH_EVERY
-    col:SetScript("OnShow", function() elapsed = REFRESH_EVERY end)
+    col:SetScript("OnShow", function()
+        elapsed = REFRESH_EVERY
+        if drawer.show then drawer.show(col, host) end
+    end)
+    col:SetScript("OnHide", function()
+        if drawer.hide then drawer.hide(col, host) end
+    end)
     col:SetScript("OnUpdate", function(_, e)
         elapsed = elapsed + e
         if elapsed < REFRESH_EVERY then return end

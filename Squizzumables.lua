@@ -1758,7 +1758,7 @@ function BH:CreateOptionsPanel()
             { key = "callouts",   label = "Callouts",         field = "calloutsTab",      build = "BuildCalloutsTab" },
         } },
         { group = "Fun", pages = {
-            { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab" },
+            { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab", preview = "cursor" },
         } },
         { group = "General", pages = {
             { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab", preview = "buttons" },

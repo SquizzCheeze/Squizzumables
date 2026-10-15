@@ -112,6 +112,10 @@ local casting = false
 local inCombat = false
 local shakeX, shakeDir, shakeCount, shakeLast, strokeLen, shakeReady = nil, 0, 0, 0, 0, 0
 local locT                       -- seconds into the locator, nil when idle
+-- True while the options window's Cursor page is open (BH:SetCursorPreview):
+-- the real cursor IS that page's preview, so it is lifted over the window and
+-- shown even out of combat with Only In Combat on.
+local previewing = false
 
 -- ============================================================================
 -- Shark bite (V1.98, user request 2026-10-11)
@@ -382,7 +386,7 @@ local function StartBite(x, y, onTop)
     local S = Shark.SIZE * (s.cursorSharkSize or 100) / 100
     Shark.size = S
     local f = Shark.frame
-    f:SetFrameStrata(onTop and "TOOLTIP" or (s.cursorStrata or "HIGH"))
+    f:SetFrameStrata((onTop or previewing) and "TOOLTIP" or (s.cursorStrata or "HIGH"))
     f:ClearAllPoints()
     f:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x, y)
     f:SetAlpha((s.cursorOpacity or 100) / 100)
@@ -462,6 +466,21 @@ local function ClickedWorld()
     local foci = GetMouseFoci and GetMouseFoci()
     local first = foci and foci[1]
     return first == nil or first == WorldFrame
+end
+
+--- The Cursor page's preview column turns this on while the page is open and
+--- off when it closes (UI/PreviewColumn.lua): the real rings and trail draw
+--- above the options window, and show out of combat even with Only In Combat.
+function BH:SetCursorPreview(on)
+    on = on and true or false
+    if previewing == on then return end
+    previewing = on
+    if self.ApplyCursor then self:ApplyCursor() end
+end
+
+--- Is the cursor on, so the page's preview has anything to show?
+function BH:CursorPreviewState()
+    return self.settings and self.settings.cursorEnabled and true or false
 end
 
 --- The options page's Test button: a bite where the mouse is now.
@@ -747,7 +766,7 @@ end
 
 local function ShouldShowRings()
     local s = BH.settings
-    if s.cursorCombatOnly and not InCombatLockdown() then return false end
+    if s.cursorCombatOnly and not InCombatLockdown() and not previewing then return false end
     -- The real cursor is hidden while you turn the camera with a mouse button
     -- held, and frozen where it was. The rings stay there by default (user
     -- request: they should not vanish on right-click); hiding them is opt-in.
@@ -816,7 +835,9 @@ function BH:ApplyCursor()
     cast:SetSize(CAST_SIZE * k, CAST_SIZE * k)
     castTrack:SetSize(CAST_SIZE * k, CAST_SIZE * k)
 
-    local strata = s.cursorStrata or "HIGH"
+    -- Previewing: above the options window (DIALOG), which the player's own
+    -- strata -- HIGH by default -- sits under.
+    local strata = previewing and "TOOLTIP" or (s.cursorStrata or "HIGH")
     root:SetFrameStrata(strata)
     trailFrame:SetFrameStrata(strata)
     trailFrame:SetFrameLevel(math.max(0, root:GetFrameLevel() - 1))

@@ -41,6 +41,10 @@ V2.0
   and Y offsets now move it from there in every layout - in a vertical
   layout they used to do nothing. Your labels stay exactly where they
   are.
+- Cursor page: your own cursor is the preview. While the page is open the
+  rings and trail draw above the options window (and show out of combat
+  even with Only In Combat on), so every change shows on the cursor as
+  you make it. Closing the page puts them back as you set them.
 - The button preview fits vertical layouts and side labels instead of
   pushing the names off the column.
 - Cursor > Trail: the Test Shark button's bite now shows above the
