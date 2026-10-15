@@ -43,6 +43,17 @@
 --   scale = 100
 --       a slider showing value * scale while storing value (a scale of 1.0
 --       shown as 100%).
+--   show = function(stored) return shown end, store = function(shown) ... end
+--       a slider whose number means something else on screen (Pulse depth:
+--       stored as the alpha the glow fades TO, shown as how far it fades).
+--   invert = true
+--       a check that stores the opposite of what it shows (Show minimap
+--       button = not minimapButtonHidden).
+--
+-- A page that is part described and part hand-built (Settings: the theme
+-- picker and the profile manager are not settings) gives `sections` instead of
+-- `pages` -- { name = { rows } } -- and draws each where it belongs with
+-- Settings.AddRows(desc, name, content, y), which returns the new y.
 
 local addonName, ns = ...
 local BH = ns.BH
@@ -62,8 +73,11 @@ end
 
 -- Register a page's defaults. Call at load, from the feature's own file.
 function Settings.Describe(desc)
-    for _, page in ipairs(desc.pages) do
+    for _, page in ipairs(desc.pages or {}) do
         for _, row in ipairs(page.rows) do Register(row) end
+    end
+    for _, rows in pairs(desc.sections or {}) do
+        for _, row in ipairs(rows) do Register(row) end
     end
     return desc
 end
@@ -100,13 +114,20 @@ local function Spec(desc, row)
         disabled = Disabled(desc, row),
     }
     if t == "check" then
-        spec.get = function() return BH.settings[key] and true or false end
-        spec.set = Set
+        if row.invert then
+            spec.get = function() return not BH.settings[key] end
+            spec.set = function(v) Set(not v) end
+        else
+            spec.get = function() return BH.settings[key] and true or false end
+            spec.set = Set
+        end
     elseif t == "slider" then
         spec.min, spec.max, spec.step = row.min, row.max, row.step
         local scale = row.scale or 1
-        spec.get = function() return (BH.settings[key] or row.default) * scale end
-        spec.set = function(v, userInput) Set(v / scale, userInput) end
+        local show = row.show or function(v) return v * scale end
+        local store = row.store or function(v) return v / scale end
+        spec.get = function() return show(BH.settings[key] or row.default) end
+        spec.set = function(v, userInput) Set(store(v), userInput) end
     elseif t == "dropdown" then
         spec.items = row.items
         spec.get = function() return BH.settings[key] or row.default end
@@ -156,6 +177,19 @@ local function AddPalette(content, y, desc, row)
 end
 
 -- Build the page's sub-tabs and rows into `parent`. Returns the sub-tab pages.
+-- Draw `rows` into `content` from `y` down; returns the new y.
+local function AddRowList(desc, rows, content, y)
+    local Rows = ns.Rows
+    for _, row in ipairs(rows) do
+        if row.type == "palette" then
+            y = AddPalette(content, y, desc, row)
+        else
+            y = y - Rows.Add(content, y, Spec(desc, row))
+        end
+    end
+    return y
+end
+
 function Settings.Build(desc, parent)
     local Rows = ns.Rows
     local tabs = {}
@@ -165,15 +199,14 @@ function Settings.Build(desc, parent)
     for _, page in ipairs(desc.pages) do
         local content = pages[page.key]
         Rows.currentSection = content.section
-        local y = -14
-        for _, row in ipairs(page.rows) do
-            if row.type == "palette" then
-                y = AddPalette(content, y, desc, row)
-            else
-                y = y - Rows.Add(content, y, Spec(desc, row))
-            end
-        end
+        local y = AddRowList(desc, page.rows, content, -14)
         content:SetHeight(math.abs(y) + 20)
     end
     return pages
+end
+
+--- One `sections` entry of a part-described page, drawn into `content` from
+--- `y` down. Returns the new y.
+function Settings.AddRows(desc, name, content, y)
+    return AddRowList(desc, desc.sections[name], content, y)
 end

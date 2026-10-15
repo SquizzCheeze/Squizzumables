@@ -208,6 +208,177 @@ function BH:ShowProfileStringDialog(mode, text)
     f:Show()
 end
 
+-- The page's settings, described once (UI/Settings.lua; 2.0 phase 3). Each
+-- row is the setting's default, its control and its search entry -- the
+-- defaults used to live in Squizzumables.lua's defaultSettings and again as
+-- fallbacks here (and had drifted: the font sizes fell back to 11/12/11 while
+-- the real defaults are 10). The theme picker, the profile manager, Reset to
+-- Defaults and the Show In ticks (a nested table) stay hand-built in
+-- BuildSettingsTab, which draws each section below where it belongs.
+local function Buttons() BH:UpdateButtons() end
+local function LabelsOn(s) return s.showLabelText end
+local function GlowOn(s) return s.glowReminderButtons ~= false end
+local function RingOn(s) return GlowOn(s) and s.buttonGlowStyle == "ring" end
+local function PulseOn(s) return RingOn(s) and s.glowPulse ~= false end
+
+local SETTINGS = ns.Settings.Describe({
+    sections = {
+        appearance = {
+            { key = "buttonSize", type = "slider", default = 36, min = 20, max = 64, step = 2,
+              label = "Button Size", tip = "Width and height of each reminder button, in pixels.",
+              apply = Buttons },
+            { key = "buttonSpacing", type = "slider", default = 5, min = 5, max = 20, step = 1,
+              label = "Button Spacing", tip = "Gap between reminder buttons, in pixels.",
+              apply = Buttons },
+            { key = "buttonIconShape", type = "dropdown", default = "none", width = 160,
+              items = ns.Shapes.DropdownItems,
+              label = "Icon Shape",
+              tip = "Cuts each reminder icon to a shape, and the glow follows it. The same shapes as the "
+                .. "Cooldown Manager, so the two can match.",
+              apply = Buttons },
+            { key = "showLabelText", type = "check", default = true,
+              label = "Show Label Text",
+              tip = "Show the name under each reminder button. Turn off for a more compact row of icons.",
+              apply = Buttons },
+        },
+
+        layout = {
+            { key = "layoutDirection", type = "dropdown", default = "HORIZONTAL", width = 160,
+              items = {
+                  { text = "Horizontal", value = "HORIZONTAL" },
+                  { text = "Vertical",   value = "VERTICAL" },
+              },
+              label = "Layout Direction", tip = "Whether the reminder buttons lay out in a row or a column.",
+              -- Not every grow direction is valid in every layout, so the
+              -- validator corrects it; the grow row's choices follow on the
+              -- refresh.
+              apply = function()
+                  BH:ValidateGrowDirection()
+                  BH:UpdateButtons()
+                  BH:UpdateFrameAnchor()
+              end },
+            { key = "growDirection", type = "dropdown", default = "RIGHT", width = 160,
+              items = function()
+                  return BH:GetGrowItemsForLayout(BH.settings.layoutDirection or "HORIZONTAL")
+              end,
+              label = "Grow Direction",
+              tip = "Which way new buttons are added as the number of reminders changes. The opposite "
+                .. "edge stays put: growing down keeps the top button where you placed it, growing "
+                .. "outward keeps the middle.",
+              apply = function()
+                  BH:UpdateButtons()
+                  BH:UpdateFrameAnchor()
+              end },
+            -- No Anchor Point control since 2.0: the grow direction decides
+            -- which edge stays put (BH:GrowAnchor).
+            { key = "frameLocked", type = "check", default = false,
+              label = "Lock Frame Position",
+              tip = "Stops the reminder buttons being dragged. Unlock Frames overrides this while you are "
+                .. "positioning things.",
+              apply = function() BH:UpdateFrameLock() end },
+            -- UI/EditMode.lua follows Blizzard's Edit Mode while this is on.
+            { key = "followBlizzardEditMode", type = "check", default = true,
+              label = "Unlock With Blizzard's Edit Mode",
+              tip = "Opening the game's Edit Mode (Esc > Edit Mode) unlocks every Squizzumables frame too, "
+                .. "and closing it locks them again, so everything moves from one place. Unlock Frames "
+                .. "works either way." },
+        },
+
+        buttonText = {
+            { type = "divider" },
+            { type = "header", label = "BUTTON TEXT" },
+            -- Where the label sits; the X/Y offsets below count from here
+            -- (BH.PlaceButtonLabel in Reminders/Helpers.lua). "auto" is below
+            -- the icon, or right of it in a vertical layout; the 2px gap below
+            -- the icon used to be the Y offset's -2 (migration 8).
+            { key = "buttonLabelAnchor", type = "dropdown", default = "auto", width = 200,
+              items = {
+                  { text = "Auto",              value = "auto" },
+                  { text = "Below the icon",    value = "BOTTOM" },
+                  { text = "Above the icon",    value = "TOP" },
+                  { text = "Right of the icon", value = "RIGHT" },
+                  { text = "Left of the icon",  value = "LEFT" },
+                  { text = "On the icon",       value = "CENTER" },
+              },
+              label = "Label Position",
+              tip = "Where the name goes on each button. Auto puts it below the icon, or to the right of "
+                .. "it in a vertical layout. The X and Y offsets below move it from there. "
+                .. "Beside the icon (left or right) in a horizontal row, raise Button Spacing so the "
+                .. "names have room.",
+              when = LabelsOn, apply = Buttons },
+            { key = "buttonLabelFontSize", type = "slider", default = 10, min = 6, max = 24, step = 1,
+              label = "Label Font Size", tip = "Size of the name text under each button.",
+              when = LabelsOn, apply = Buttons },
+            { key = "buttonTimerFontSize", type = "slider", default = 10, min = 6, max = 24, step = 1,
+              label = "Timer Font Size", tip = "Size of the remaining-time countdown drawn on each button.",
+              apply = Buttons },
+            { key = "buttonCountFontSize", type = "slider", default = 10, min = 6, max = 24, step = 1,
+              label = "Count Font Size", tip = "Size of the bag-quantity number in the corner of each button.",
+              apply = Buttons },
+            { key = "buttonHeaderFontSize", type = "slider", default = 10, min = 6, max = 24, step = 1,
+              label = "Header Font Size (MH/OH)",
+              tip = "Size of the small header above a button, such as the MH and OH markers on weapon oils.",
+              apply = Buttons },
+            { key = "buttonLabelOffsetX", type = "slider", default = 0, min = -20, max = 20, step = 1,
+              label = "Label X Offset", tip = "Move the label left or right from its Label Position.",
+              when = LabelsOn, apply = Buttons },
+            { key = "buttonLabelOffsetY", type = "slider", default = 0, min = -20, max = 20, step = 1,
+              label = "Label Y Offset", tip = "Move the label up or down from its Label Position.",
+              when = LabelsOn, apply = Buttons },
+        },
+
+        misc = {
+            -- Glow every reminder button, so they are noticeable without being
+            -- looked at directly.
+            { key = "glowReminderButtons", type = "check", default = true,
+              label = "Glow reminder buttons",
+              tip = "Glows each reminder button while it is showing, so they catch the eye without you having "
+                .. "to look at them.",
+              apply = Buttons },
+            -- "animated" is the game's proc glow (shaped art for a shaped
+            -- icon); "ring" is the self-drawn pulse the glowPulse* settings tune.
+            { key = "buttonGlowStyle", type = "dropdown", default = "animated", width = 160,
+              items = {
+                  { text = "Animated",     value = "animated" },
+                  { text = "Pulsing ring", value = "ring" },
+              },
+              label = "Glow style",
+              tip = "Animated plays the game's proc glow, the same one the Cooldown Manager uses, in the icon's "
+                .. "shape. Pulsing ring is a simple fading ring you can tune with the pulse settings below.",
+              when = GlowOn, apply = Buttons },
+            { key = "glowColor", type = "color", default = { r = 1.0, g = 0.82, b = 0.0 },
+              label = "Glow colour",
+              tip = "Colour of the glow around reminder buttons. The square animated glow keeps the game's own "
+                .. "gold; shaped icons and the pulsing ring take this colour.",
+              when = GlowOn, apply = Buttons },
+            { key = "glowPulse", type = "check", default = true,
+              label = "Pulse the glow",
+              tip = "Fade the pulsing ring in and out. Turn this off for a steady ring instead.",
+              when = RingOn, apply = Buttons },
+            { key = "glowPulseSpeed", type = "slider", default = 0.6, min = 0.2, max = 2.0, step = 0.1,
+              label = "Pulse speed (seconds)", tip = "How long one fade takes. Lower is faster and more urgent.",
+              when = PulseOn, apply = Buttons },
+            -- Stored as the alpha it dims TO, shown as how far it fades --
+            -- "more depth" reading as a bigger number is the way round a
+            -- player expects.
+            { key = "glowMinAlpha", type = "slider", default = 0.35, min = 0, max = 90, step = 5,
+              show = function(v) return math.floor((1 - v) * 100) end,
+              store = function(v) return 1 - (v / 100) end,
+              label = "Pulse depth",
+              tip = "How far the glow fades at its dimmest. 0 barely dims; higher fades further out.",
+              when = PulseOn, apply = Buttons },
+            { key = "minimapButtonHidden", type = "check", default = false, invert = true,
+              label = "Show minimap button",
+              tip = "A button on the minimap: left-click for settings, right-click to unlock frames, drag to "
+                .. "move it round the edge. The addon is also in Blizzard's addon compartment either way.",
+              apply = function() BH:UpdateMinimapButton() end },
+            { key = "guildInviteContextEnabled", type = "check", default = true,
+              label = "Guild Invite on Right-Click",
+              tip = "Adds a Guild Invite entry to the right-click menu on player names and unit frames." },
+        },
+    },
+})
+
 function BH:BuildSettingsTab(parent)
     local scrollFrame = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
     ns.TuneScrollStep(scrollFrame)
@@ -431,58 +602,7 @@ function BH:BuildSettingsTab(parent)
     ns.ApplyAccent(sectionLabel, "text")
     yOffset = yOffset - 22
 
-    -- Button Size
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Button Size",
-        width = 300, min = 20, max = 64, step = 2,
-        tooltip = "Width and height of each reminder button, in pixels.",
-        get = function() return BH.settings.buttonSize or 36 end,
-        set = function(value)
-            BH.settings.buttonSize = value
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Button Spacing",
-        width = 300, min = 5, max = 20, step = 1,
-        tooltip = "Gap between reminder buttons, in pixels.",
-        get = function() return BH.settings.buttonSpacing or 5 end,
-        set = function(value)
-            BH.settings.buttonSpacing = value
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Icon Shape",
-        width = 160,
-        items = ns.Shapes.DropdownItems,
-        tooltip = "Cuts each reminder icon to a shape, and the glow follows it. The same shapes as the Cooldown Manager, so the two can match.",
-        get = function() return BH.settings.buttonIconShape or "none" end,
-        set = function(v)
-            BH.settings.buttonIconShape = v
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show Label Text",
-        tooltip = "Show the name under each reminder button. Turn off for a more compact row of icons.",
-        get = function() return BH.settings.showLabelText and true or false end,
-        set = function(v)
-            BH.settings.showLabelText = v
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-    })
+    yOffset = ns.Settings.AddRows(SETTINGS, "appearance", content, yOffset)
 
     CreateSQDivider(content, yOffset)
     yOffset = yOffset - 14
@@ -494,138 +614,9 @@ function BH:BuildSettingsTab(parent)
     ns.ApplyAccent(layoutSection, "text")
     yOffset = yOffset - 22
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Layout Direction",
-        width = 160,
-        tooltip = "Whether the reminder buttons lay out in a row or a column.",
-        items = {
-            { text = "Horizontal", value = "HORIZONTAL" },
-            { text = "Vertical",   value = "VERTICAL" },
-        },
-        get = function() return BH.settings.layoutDirection or "HORIZONTAL" end,
-        set = function(value)
-            BH.settings.layoutDirection = value
-            -- Not every grow direction is valid in every layout, so let the
-            -- existing validator correct it; the grow row below rebuilds its
-            -- own options from this on the refresh that follows.
-            BH:ValidateGrowDirection()
-            BH:SaveSettings()
-            BH:UpdateButtons()
-            BH:UpdateFrameAnchor()
-        end,
-    })
+    yOffset = ns.Settings.AddRows(SETTINGS, "layout", content, yOffset)
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Grow Direction",
-        width = 160,
-        tooltip = "Which way new buttons are added as the number of reminders changes. The opposite "
-               .. "edge stays put: growing down keeps the top button where you placed it, growing "
-               .. "outward keeps the middle.",
-        -- A function, so the options follow the layout above rather than the
-        -- layout handler reaching across to rewrite them.
-        items = function()
-            return BH:GetGrowItemsForLayout(BH.settings.layoutDirection or "HORIZONTAL")
-        end,
-        get = function() return BH.settings.growDirection end,
-        set = function(value)
-            BH.settings.growDirection = value
-            BH:SaveSettings()
-            BH:UpdateButtons()
-            BH:UpdateFrameAnchor()
-        end,
-    })
-    -- No Anchor Point control since 2.0: the grow direction decides which
-    -- edge stays put (BH:GrowAnchor).
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Lock Frame Position",
-        tooltip = "Stops the reminder buttons being dragged. Unlock Frames overrides this while you are positioning things.",
-        get = function() return BH.settings.frameLocked and true or false end,
-        set = function(v)
-            BH.settings.frameLocked = v
-            BH:SaveSettings()
-            BH:UpdateFrameLock()
-        end,
-    })
-
-    -- UI/EditMode.lua follows Blizzard's Edit Mode while this is on.
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Unlock With Blizzard's Edit Mode",
-        tooltip = "Opening the game's Edit Mode (Esc > Edit Mode) unlocks every Squizzumables frame too, "
-               .. "and closing it locks them again, so everything moves from one place. Unlock Frames "
-               .. "works either way.",
-        get = function() return BH.settings.followBlizzardEditMode ~= false end,
-        set = function(v)
-            BH.settings.followBlizzardEditMode = v
-            BH:SaveSettings()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "BUTTON TEXT" })
-
-    -- Where the label sits; the X/Y offsets below count from here
-    -- (BH.PlaceButtonLabel in Reminders/Helpers.lua).
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown", label = "Label Position", width = 200,
-        items = {
-            { text = "Auto",            value = "auto" },
-            { text = "Below the icon",  value = "BOTTOM" },
-            { text = "Above the icon",  value = "TOP" },
-            { text = "Right of the icon", value = "RIGHT" },
-            { text = "Left of the icon",  value = "LEFT" },
-            { text = "On the icon",     value = "CENTER" },
-        },
-        tooltip = "Where the name goes on each button. Auto puts it below the icon, or to the right of "
-               .. "it in a vertical layout. The X and Y offsets below move it from there. "
-               .. "Beside the icon (left or right) in a horizontal row, raise Button Spacing so the "
-               .. "names have room.",
-        get = function() return BH.settings.buttonLabelAnchor or "auto" end,
-        set = function(v)
-            BH.settings.buttonLabelAnchor = v
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-        disabled = function() return not BH.settings.showLabelText end,
-    })
-
-    -- Six sliders that differ only in label, range and which setting they
-    -- write, so they are a table rather than six near-identical blocks.
-    for _, s in ipairs({
-        { key = "buttonLabelFontSize",  label = "Label Font Size",          min = 6,   max = 24, default = 11,
-          tip = "Size of the name text under each button." },
-        { key = "buttonTimerFontSize",  label = "Timer Font Size",          min = 6,   max = 24, default = 12,
-          tip = "Size of the remaining-time countdown drawn on each button." },
-        { key = "buttonCountFontSize",  label = "Count Font Size",          min = 6,   max = 24, default = 11,
-          tip = "Size of the bag-quantity number in the corner of each button." },
-        { key = "buttonHeaderFontSize", label = "Header Font Size (MH/OH)", min = 6,   max = 24, default = 10,
-          tip = "Size of the small header above a button, such as the MH and OH markers on weapon oils." },
-        { key = "buttonLabelOffsetX",   label = "Label X Offset",           min = -20, max = 20, default = 0,
-          tip = "Move the label left or right from its Label Position." },
-        { key = "buttonLabelOffsetY",   label = "Label Y Offset",           min = -20, max = 20, default = 0,
-          tip = "Move the label up or down from its Label Position." },
-    }) do
-        yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-            type = "slider",
-            label = s.label,
-            width = 300, min = s.min, max = s.max, step = 1,
-            tooltip = s.tip,
-            get = function() return BH.settings[s.key] or s.default end,
-            set = function(value)
-                BH.settings[s.key] = value
-                BH:SaveSettings()
-                BH:UpdateButtons()
-            end,
-            -- The label offsets and font size only matter when labels are on.
-            disabled = (s.key:find("Label") ~= nil)
-                and function() return not BH.settings.showLabelText end
-                or nil,
-        })
-    end
+    yOffset = ns.Settings.AddRows(SETTINGS, "buttonText", content, yOffset)
 
 
     CreateSQDivider(content, yOffset)
@@ -688,129 +679,7 @@ function BH:BuildSettingsTab(parent)
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "MISC" })
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Glow reminder buttons",
-        tooltip = "Glows each reminder button while it is showing, so they catch the eye without you having to look at them.",
-        get = function() return BH.settings.glowReminderButtons ~= false end,
-        set = function(v)
-            BH.settings.glowReminderButtons = v
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Glow style",
-        width = 160,
-        items = {
-            { text = "Animated",     value = "animated" },
-            { text = "Pulsing ring", value = "ring" },
-        },
-        tooltip = "Animated plays the game's proc glow, the same one the Cooldown Manager uses, in the icon's shape. Pulsing ring is a simple fading ring you can tune with the pulse settings below.",
-        get = function() return BH.settings.buttonGlowStyle or "animated" end,
-        set = function(v)
-            BH.settings.buttonGlowStyle = v
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-        disabled = function() return BH.settings.glowReminderButtons == false end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "color",
-        label = "Glow colour",
-        tooltip = "Colour of the glow around reminder buttons. The square animated glow keeps the game's own gold; shaped icons and the pulsing ring take this colour.",
-        get = function()
-            local c = BH.settings.glowColor or {}
-            return c.r or 1.0, c.g or 0.82, c.b or 0.0
-        end,
-        set = function(r, g, b)
-            BH.settings.glowColor = { r = r, g = g, b = b }
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-        disabled = function() return BH.settings.glowReminderButtons == false end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Pulse the glow",
-        tooltip = "Fade the pulsing ring in and out. Turn this off for a steady ring instead.",
-        get = function() return BH.settings.glowPulse ~= false end,
-        set = function(v)
-            BH.settings.glowPulse = v
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-        disabled = function()
-            return BH.settings.glowReminderButtons == false
-                or BH.settings.buttonGlowStyle ~= "ring"
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Pulse speed (seconds)",
-        width = 300, min = 0.2, max = 2.0, step = 0.1,
-        tooltip = "How long one fade takes. Lower is faster and more urgent.",
-        get = function() return BH.settings.glowPulseSpeed or 0.6 end,
-        set = function(v)
-            BH.settings.glowPulseSpeed = v
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-        disabled = function()
-            return BH.settings.glowReminderButtons == false
-                or BH.settings.buttonGlowStyle ~= "ring"
-                or BH.settings.glowPulse == false
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Pulse depth",
-        width = 300, min = 0, max = 90, step = 5,
-        tooltip = "How far the glow fades at its dimmest. 0 barely dims; higher fades further out.",
-        get = function() return math.floor((1 - (BH.settings.glowMinAlpha or 0.35)) * 100) end,
-        set = function(v)
-            -- Stored as the alpha it dims *to*, shown as how far it fades --
-            -- "more depth" reading as a bigger number is the way round a player
-            -- expects.
-            BH.settings.glowMinAlpha = 1 - (v / 100)
-            BH:SaveSettings()
-            BH:UpdateButtons()
-        end,
-        disabled = function()
-            return BH.settings.glowReminderButtons == false
-                or BH.settings.buttonGlowStyle ~= "ring"
-                or BH.settings.glowPulse == false
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show minimap button",
-        tooltip = "A button on the minimap: left-click for settings, right-click to unlock frames, drag to move it round the edge. The addon is also in Blizzard's addon compartment either way.",
-        get = function() return not BH.settings.minimapButtonHidden end,
-        set = function(v)
-            BH.settings.minimapButtonHidden = not v
-            BH:SaveSettings()
-            BH:UpdateMinimapButton()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Guild Invite on Right-Click",
-        tooltip = "Adds a Guild Invite entry to the right-click menu on player names and unit frames.",
-        get = function() return BH.settings.guildInviteContextEnabled == true end,
-        set = function(v)
-            BH.settings.guildInviteContextEnabled = v
-            BH:SaveSettings()
-        end,
-    })
+    yOffset = ns.Settings.AddRows(SETTINGS, "misc", content, yOffset)
 
     -- Set scroll child height
     content:SetHeight(math.abs(yOffset) + 20)

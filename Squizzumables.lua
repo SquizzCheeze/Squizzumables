@@ -26,16 +26,9 @@ local CreateSQDivider     = ns.CreateSQDivider
 
 -- Default settings for appearance
 BH.defaultSettings = {
-    buttonSize = 36,
-    buttonSpacing = 5,
-    frameLocked = false,
-    followBlizzardEditMode = true,     -- Blizzard's Edit Mode unlocks our frames too (UI/EditMode.lua)
     -- Unused since 2.0: the grow direction decides the anchor (BH:GrowAnchor).
     -- Kept so profiles exported to an older copy still carry a value.
     anchorPoint = "LEFT",
-    growDirection = "RIGHT",
-    layoutDirection = "HORIZONTAL", -- HORIZONTAL or VERTICAL
-    showLabelText = true,
 
     -- Draw headings, tab highlights, checkboxes, slider fills and button
     -- accents in the player's class colour instead of the default warm gold.
@@ -53,7 +46,6 @@ BH.defaultSettings = {
     earthShieldReminderLocked = false,
     earthShieldReminderScale = 1.0,
     earthShieldReminderEnabled = true,
-    guildInviteContextEnabled = true,
     skyreachSoundEnabled = true,
     repairReminderEnabled = true,
     repairReminderThreshold = 50,
@@ -147,18 +139,6 @@ BH.defaultSettings = {
     -- Minimap button. The angle is where round the minimap it was dragged to;
     -- 200 degrees puts it bottom-left, clear of the default clock and tracking
     -- icons.
-    -- Glow every reminder button, so they are noticeable without being looked
-    -- at directly.
-    glowReminderButtons = true,
-    glowColor = { r = 1.0, g = 0.82, b = 0.0 },
-    -- "animated" is the game's proc glow (shaped art for a shaped icon);
-    -- "ring" is the self-drawn pulse that the glowPulse* settings tune.
-    buttonGlowStyle = "animated",
-    buttonIconShape = "none",       -- a key of ns.Shapes.FILE, or "none"
-    glowPulse = true,
-    glowPulseSpeed = 0.6,
-    glowMinAlpha = 0.35,
-    minimapButtonHidden = false,
     minimapButtonAngle = 200,
 
     -- Feast announce
@@ -193,17 +173,6 @@ BH.defaultSettings = {
     -- Files should be placed in Interface\AddOns\Squizzumables\Media\Sounds\
     customSounds = {},
 
-    -- Button text appearance
-    buttonLabelFontSize = 10,
-    buttonTimerFontSize = 10,
-    buttonCountFontSize = 10,
-    buttonHeaderFontSize = 10,
-    -- Label Position: "auto" (below, or right in a vertical layout), "BOTTOM",
-    -- "TOP", "RIGHT", "LEFT", "CENTER". The offsets count from that position;
-    -- the 2px gap below the icon used to be this Y offset's -2 (migration 8).
-    buttonLabelAnchor = "auto",
-    buttonLabelOffsetX = 0,
-    buttonLabelOffsetY = 0,
 
     -- Kelerts: spell alert frame. No lock key: the alert image is click-through
     -- unconditionally, and Unlock Frames is what makes it draggable.

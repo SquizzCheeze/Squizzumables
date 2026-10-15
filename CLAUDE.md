@@ -408,7 +408,13 @@ shell, setup and polish), each gated.
   (21 keys, defaults checked identical by script), untested. Format additions for it: per-row
   `apply(value, userInput)` (runs after the write, before the save), slider `scale` (shows value * scale,
   stores value), header / text / divider rows, items as a function (lists from files that load later).
-  Gate's key check: also collect `key = "X", type =` from descriptions. `UI/Settings.lua`
+  Gate's key check: also collect `key = "X", type =` from descriptions.
+  Settings page described 2026-10-16 (23 keys, checked identical), untested: a PART-described page --
+  `sections = { name = rows }` drawn with Settings.AddRows(desc, name, content, y) between the
+  hand-built bits (theme picker, profile manager, Reset to Defaults, Show In's nested contentTypes).
+  Format additions: check `invert`, slider `show`/`store`. Not describable as settings (they edit
+  data, not settings keys): Callouts, Consumables, the Kelerts alert editor, the CDM group pages
+  (per-group spec data). Class Buffs has only its three pet rows. `UI/Settings.lua`
   (`ns.Settings.Describe` / `.Build`): each row = key, type, default, label, tip, `when(s)`; Describe
   registers the defaults into `BH.defaultSettings` AT LOAD (asserts a key is never described twice), Build
   makes the sub-tabs + Rows specs, and Rows indexes each row for search. A page's `master` key greys out
