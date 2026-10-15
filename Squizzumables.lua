@@ -1797,7 +1797,6 @@ function BH:CreateOptionsPanel()
     local soundsTabBtn = CreateTab("Sounds")
     local calloutsTabBtn = CreateTab("Callouts")
     local kelTabBtn = CreateTab("Kelerts")
-    local cdmSoundsTabBtn = CreateTab("CDM Sounds")
     local cursorTabBtn = CreateTab("Cursor")
     -- No Nameplates tab: the purge-glow module is disabled and unloaded, so it
     -- has no page to build. See the Nameplate purge glow note in CLAUDE.md for
@@ -1861,12 +1860,6 @@ function BH:CreateOptionsPanel()
     kelTab:Hide()
     self.kelTab = kelTab
 
-    -- CDM Sounds tab content
-    local cdmSoundsTab = CreateFrame("Frame", nil, contentArea)
-    cdmSoundsTab:SetAllPoints()
-    cdmSoundsTab:Hide()
-    self.cdmSoundsTab = cdmSoundsTab
-
     -- Mouse cursor tab content (Core/Cursor.lua builds it)
     local cursorTab = CreateFrame("Frame", nil, contentArea)
     cursorTab:SetAllPoints()
@@ -1891,7 +1884,6 @@ function BH:CreateOptionsPanel()
         calloutsTabBtn:SetActive(active == "callouts")
         kelTabBtn:SetActive(active == "kel")
         cdmCustomTabBtn:SetActive(active == "cdmcustom")
-        cdmSoundsTabBtn:SetActive(active == "cdmsounds")
         cursorTabBtn:SetActive(active == "cursor")
         if active == "settings" then settingsTab:Show() else settingsTab:Hide() end
         if active == "items" then itemsTab:Show() else itemsTab:Hide() end
@@ -1903,7 +1895,6 @@ function BH:CreateOptionsPanel()
         if active == "classbuffs" then classBuffsTab:Show() else classBuffsTab:Hide() end
         if active == "callouts" then calloutsTab:Show() else calloutsTab:Hide() end
         if active == "kel" then kelTab:Show() else kelTab:Hide() end
-        if active == "cdmsounds" then cdmSoundsTab:Show() else cdmSoundsTab:Hide() end
         if active == "cursor" then cursorTab:Show() else cursorTab:Hide() end
     end
     settingsTabBtn:SetScript("OnClick", function() SwitchTab("settings") end)
@@ -1916,7 +1907,6 @@ function BH:CreateOptionsPanel()
     classBuffsTabBtn:SetScript("OnClick", function() SwitchTab("classbuffs") end)
     calloutsTabBtn:SetScript("OnClick", function() SwitchTab("callouts") end)
     kelTabBtn:SetScript("OnClick", function() SwitchTab("kel") end)
-    cdmSoundsTabBtn:SetScript("OnClick", function() SwitchTab("cdmsounds") end)
     cursorTabBtn:SetScript("OnClick", function() SwitchTab("cursor") end)
     self.switchTab = SwitchTab
     SwitchTab("settings")
@@ -1934,7 +1924,6 @@ function BH:CreateOptionsPanel()
         { key = "classbuffs", label = "Class Buffs", frame = classBuffsTab,    build = "BuildClassBuffsTab" },
         { key = "callouts",   label = "Callouts",    frame = calloutsTab,      build = "BuildCalloutsTab" },
         { key = "kel",        label = "Kelerts",     frame = kelTab,           build = "BuildJustForKelTab" },
-        { key = "cdmsounds",  label = "CDM Sounds",  frame = cdmSoundsTab,     build = "BuildCDMSoundsTab" },
         { key = "cursor",     label = "Cursor",      frame = cursorTab,        build = "BuildCursorTab" },
     }
     for _, page in ipairs(pages) do
@@ -11684,12 +11673,14 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
     end
 end
 
--- /squizz shortcut to open config directly; /squizz CDMS opens hidden CDM Sounds tab
+-- /squizz shortcut to open config directly; /squizz CDMS opens Cooldown Alerts
+-- (Kelerts > Cooldown Alerts since 2.0, which replaced the CDM Sounds tab)
 SLASH_SQUIZZUMABLESCONFIG1 = '/squizz'
 SlashCmdList['SQUIZZUMABLESCONFIG'] = function(msg)
     BH:CreateOptionsPanel()
     if msg and msg:upper() == "CDMS" then
-        if BH.switchTab then BH.switchTab("cdmsounds") end
+        if BH.switchTab then BH.switchTab("kel") end
+        if BH.kelPages and BH.kelPages.Select then BH.kelPages.Select("cooldowns") end
     end
 end
 

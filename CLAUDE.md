@@ -259,6 +259,21 @@ shell, setup and polish), each gated.
   NOT decide which restriction blocks which call (undocumented; ChallengeMode never stopped the
   secure reminder buttons between pulls), so callers pick the test. Buff sounds and the reminder
   buttons use it; migrate every other combat check onto it as features are touched.
+- **Cooldown Alerts** (user request + decisions 2026-10-15), DONE, UNTESTED in game. The CDM Sounds
+  sidebar page is now Kelerts > Cooldown Alerts (`BuildJustForKelTab` mounts `BuildCDMSoundsTab` on a
+  frame following the sub-tab's scroller, since that builder makes its own scroll panels; `BH.kelPages`;
+  `/squizz cdms` selects it). Each alert can carry an IMAGE, same fields as a buff entry, shown by
+  `BH:ShowCooldownImage` when `PlayAlertsFor` fires -- no aura engine needed: the CDM tells us the
+  moment the event happens, and showing our own plain frame is legal in combat. `imageShowFor` =
+  seconds (default 2) or `"next"` (until the spell's next event of another kind,
+  `BH:CooldownImageEvent`). The Blizzard hook AND both polls now all go through `PlayAlertsFor`, so a
+  sound and an image on one event cannot be split by `ClaimAlert`'s spell+event dedupe. The image
+  editor is ONE shared builder, `BH.BuildImageControls(editor, y, opts)` in SpellAlerts, used by both
+  Buff Alerts and Cooldown Alerts; Test / Move are generic too (`BH:PreviewImage(entry)`,
+  `BH:MoveImage(key, entryFn, done)`, `BH.StopMovingImage`). Buff events left Cooldown Alerts: the list
+  is Essential + Utility only, "When" offers Available / On Cooldown only, and
+  `MigrateBuffEventAlerts` moved Active/Applied/Removed entries into `BuffSounds()` once per spec
+  (`sd.buffEventsMoved`; waits if `soundAlertsBySpell` is not yet set; never overwrites).
 - Settings descriptions (one description builds default, control and search entry): not started.
 - Theme values: not started.
 

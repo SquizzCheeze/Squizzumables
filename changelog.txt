@@ -3,6 +3,19 @@ Squizzumables Changelog
 
 V2.0
 
+- Cooldown Alerts: the CDM Sounds page has moved to Kelerts, beside Buff
+  Alerts, and cooldown alerts can now show an image as well as play a
+  sound - the same images as Buff Alerts (screen edge glow, flames, the
+  ( ) arcs and the rest, or your own). Pick how long it stays: a few
+  seconds, or until the spell's next event (a Ready image stays up until
+  you use the spell). It works in combat. Click an alert in the list to
+  set its image; an alert can be image-only.
+- Buffs are set up in Buff Alerts only now. Cooldown Alerts lists your
+  Essential and Utility cooldowns, with Available and On Cooldown. Any
+  buff sounds you had on the old CDM Sounds page (Active, On Aura Applied,
+  On Aura Removed) are moved to Buff Alerts automatically, without
+  replacing a sound you had already set there.
+- /squizz cdms now opens Cooldown Alerts.
 - Fixed: every reminder button could appear at once, out of combat, when
   the game had stopped letting addons see your buffs (seen in the 12.1.5
   labyrinth after a /reload; only logging out cleared it). The buttons now

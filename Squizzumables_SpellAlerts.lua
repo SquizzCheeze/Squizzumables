@@ -768,8 +768,60 @@ local function RunRegistration()
     Gate.Defer(GATE_KEY, DoRegistration)
 end
 
+-- 2.0: buff events leave Cooldown Alerts (user decision 2026-10-15).
+--
+-- The old CDM Sounds page could also play a sound when a buff was applied or
+-- removed ("Active", "On Aura Applied", "On Aura Removed"), which is exactly
+-- what Buff Alerts does -- for any of your buffs, not only those in the
+-- Cooldown Manager. Each such entry becomes the buff's Applied / Removed
+-- sound here, once per spec's alert list (flag `buffEventsMoved`), and never
+-- over a sound already set in Buff Alerts. An entry that cannot be placed
+-- (no spell ID, no sound) stays where it was, and still fires.
+--
+-- CDM alerts are per spec, buff sounds per profile, so a moved sound now
+-- plays on every spec of the profile; spell IDs are class-specific anyway.
+local function MigrateBuffEventAlerts()
+    if not (SquizzumablesDB and type(SquizzumablesDB.cdmData) == "table" and BH.settings) then return end
+    local store = BuffSounds()
+    local FIELD = { active = "added", applied = "added", removed = "removed" }
+    local moved = 0
+    for _, sd in pairs(SquizzumablesDB.cdmData) do
+        local pending = type(sd) == "table" and type(sd.soundAlerts) == "table" and not sd.buffEventsMoved
+        -- Keys onto spell IDs first (older stores used cooldownIDs). If that
+        -- could not finish -- the keys may still be cooldownIDs -- leave this
+        -- spec for a later login rather than guess.
+        if pending and BH.cdm and BH.cdm.MigrateSoundAlerts then BH.cdm.MigrateSoundAlerts(sd) end
+        if pending and sd.soundAlertsBySpell then
+            for key, list in pairs(sd.soundAlerts) do
+                local id = tonumber(key)
+                if type(list) == "table" and id then
+                    for i = #list, 1, -1 do
+                        local a = list[i]
+                        local field = type(a) == "table" and FIELD[a.when]
+                        if field and a.sound and a.sound ~= "None" then
+                            local e = store[id] or { channel = "Master" }
+                            store[id] = e
+                            if not e[field] then e[field] = a.sound end
+                            table.remove(list, i)
+                            moved = moved + 1
+                        end
+                    end
+                    if #list == 0 then sd.soundAlerts[key] = nil end
+                end
+            end
+            sd.buffEventsMoved = true
+        end
+    end
+    if moved > 0 then
+        BH:SaveSettings()
+        print(("|cFF00FF00Squizzumables:|r moved %d buff sound%s from Cooldown Alerts to Buff Alerts.")
+            :format(moved, moved == 1 and "" or "s"))
+    end
+end
+
 ---@param trigger string? label for /sq buffsounds, naming what asked for this
 function BH:RefreshAuraSoundRegistrations(trigger)
+    MigrateBuffEventAlerts()
     -- The buff images live on the same entries and must follow every place
     -- this is called from (login, profile load, every Kelerts edit). Ahead of
     -- the availability check: images do not need AddAuraSound.
@@ -1560,6 +1612,95 @@ local function RefitMoveHandle()
 end
 
 -- ============================================================================
+-- Cooldown Alerts images (2.0)
+--
+-- A cooldown's alert can carry an image as well as a sound, shown when its
+-- event fires (PlayAlertsFor in Squizzumables_CDM.lua). Unlike a buff image
+-- this needs no aura engine: Blizzard's Cooldown Manager tells us the moment
+-- the event happens, in combat too, and showing a plain frame of our own is
+-- always allowed. So the image is painted on the spot, with the same
+-- PaintImage / PlaceImageFrame as everything else, and nothing is built ahead.
+--
+-- alert.imageShowFor: seconds (default 2), or "next" = until this spell's next
+-- event of another kind, so a "Ready" image stays up until the spell is used.
+-- Any new event for the spell ends its other images, timed or not.
+-- ============================================================================
+local CD_IMAGE_FADE = 0.3
+local cdImageFrames = {}   -- [spellID .. ":" .. when] = frame, reused
+
+local function StopCooldownImage(f)
+    f.fade:Stop()
+    f:Hide()
+    if f.tex._sqAnim then f.tex._sqAnim:Stop() end
+end
+
+local function CooldownImageFrame(key)
+    local f = cdImageFrames[key]
+    if f then return f end
+    f = CreateFrame("Frame", nil, UIParent)
+    f:EnableMouse(false)
+    f.tex = f:CreateTexture(nil, "ARTWORK")
+    f.tex:SetAllPoints()
+    f.fade = f:CreateAnimationGroup()
+    local a = f.fade:CreateAnimation("Alpha")
+    a:SetFromAlpha(1)
+    a:SetToAlpha(0)
+    a:SetDuration(CD_IMAGE_FADE)
+    f.fade:SetScript("OnFinished", function() StopCooldownImage(f) end)
+    f:Hide()
+    cdImageFrames[key] = f
+    return f
+end
+
+local function EndCooldownImage(f)
+    if f.timer then f.timer:Cancel(); f.timer = nil end
+    if f:IsShown() and not f.fade:IsPlaying() then f.fade:Play() end
+end
+
+function BH:ShowCooldownImage(spellID, alert)
+    if not (alert and alert.image) then return end
+    local f = CooldownImageFrame(spellID .. ":" .. tostring(alert.when))
+    f.spellID, f.when = spellID, alert.when
+    if f.timer then f.timer:Cancel(); f.timer = nil end
+    f.fade:Stop()
+    f:SetAlpha(1)
+    PlaceImageFrame(f, alert)
+    PaintImage(f.tex, alert)
+    f:Show()
+    if alert.imageShowFor ~= "next" then
+        f.timer = C_Timer.NewTimer(tonumber(alert.imageShowFor) or 2, function()
+            f.timer = nil
+            EndCooldownImage(f)
+        end)
+    end
+end
+
+function BH:CooldownImageEvent(spellID, when)
+    for _, f in pairs(cdImageFrames) do
+        if f.spellID == spellID and f.when ~= when and f:IsShown() then EndCooldownImage(f) end
+    end
+end
+
+--- Put every cooldown image away at once (loading screens, spec changes,
+--- where an "until the next event" image could otherwise be left behind).
+function BH:HideCooldownImages()
+    for _, f in pairs(cdImageFrames) do
+        if f.timer then f.timer:Cancel(); f.timer = nil end
+        StopCooldownImage(f)
+    end
+end
+
+do
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_ENTERING_WORLD")
+    f:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    f:SetScript("OnEvent", function(_, event, unit)
+        if event == "PLAYER_SPECIALIZATION_CHANGED" and unit and unit ~= "player" then return end
+        BH:HideCooldownImages()
+    end)
+end
+
+-- ============================================================================
 -- The player's own buffs, from the spellbook
 --
 -- Built from the spellbook rather than from Blizzard's Cooldown Manager
@@ -2183,6 +2324,7 @@ local function BuildImageControls(editor, y, o)
     end
     return y
 end
+BH.BuildImageControls = BuildImageControls
 
 function BH:RebuildBuffSoundEditor()
     local editor = self.kelBuffEditor
@@ -2471,8 +2613,29 @@ function BH:BuildJustForKelTab(parent)
     local pages = ns.SubTabs.Create(parent, {
         { key = "alerts",     label = "Lust Alert" },
         { key = "buffsounds", label = "Buff Alerts" },
+        { key = "cooldowns",  label = "Cooldown Alerts" },
         { key = "deaths",     label = "Death Tally" },
     })
+    self.kelPages = pages
+
+    -- Cooldown Alerts: the old CDM Sounds sidebar page, moved here in 2.0 and
+    -- given images (user decision 2026-10-15). Its builder makes its own two
+    -- scrolling panels, so it cannot live inside the sub-tab's scroll child;
+    -- it fills the same area on a frame of its own that follows the sub-tab's
+    -- scroller in and out of view.
+    do
+        local page = pages.cooldowns
+        local host = CreateFrame("Frame", nil, parent)
+        host:SetPoint("TOPLEFT", page.scroller, "TOPLEFT", 0, 0)
+        host:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
+        -- Over the sub-tab's own (empty) scroller and its scroll bar.
+        host:SetFrameLevel(page.scroller:GetFrameLevel() + 10)
+        host:SetShown(page.scroller:IsShown())
+        page.scroller:HookScript("OnShow", function() host:Show() end)
+        page.scroller:HookScript("OnHide", function() host:Hide() end)
+        ns.Rows.currentSection = page.section
+        if BH.BuildCDMSoundsTab then BH:BuildCDMSoundsTab(host) end
+    end
 
     local content = pages.alerts
     ns.Rows.currentSection = content.section

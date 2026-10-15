@@ -793,22 +793,33 @@ local function ClaimAlert(spellID, when)
 end
 cdmModule.ClaimAlert = ClaimAlert
 
+-- Everything a cooldown transition sets off: its sound and, since 2.0, its
+-- image (Cooldown Alerts). The Blizzard hook and both polls all come through
+-- here, so a sound and an image on the same event can never be split by the
+-- dedupe, which is keyed on spell + event.
 local function PlayAlertsFor(cdID, when)
-    local matched = nil
+    local spellID = SpellIDForCooldown(cdID) or cdID
+    -- Any event ends this spell's "until the next event" images first.
+    if BH.CooldownImageEvent then BH:CooldownImageEvent(spellID, when) end
+    local sound, image
     for _, alert in ipairs(CollectAlertsFor(cdID)) do
-        -- Only ever one sound per event, even if the same spell ended up with
-        -- alerts filed under two cooldownIDs.
-        if not matched and alert.when == when and alert.type == "Sound"
-           and alert.sound and alert.sound ~= "None" then
-            matched = alert
+        -- Only ever one sound and one image per event, even if the same spell
+        -- ended up with alerts filed under two cooldownIDs.
+        if alert.when == when then
+            if not sound and alert.type == "Sound" and alert.sound and alert.sound ~= "None" then
+                sound = alert
+            end
+            if not image and alert.image then image = alert end
         end
     end
-    if not matched or not BH.PlaySound then return end
+    if not (sound or image) then return end
     -- Claim only once something would actually be played, so a cooldown with no
     -- alert configured never occupies the dedupe slot.
-    if not ClaimAlert(SpellIDForCooldown(cdID) or cdID, when) then return end
-    BH:PlaySound(matched.sound)
+    if not ClaimAlert(spellID, when) then return end
+    if sound and BH.PlaySound then BH:PlaySound(sound.sound) end
+    if image and BH.ShowCooldownImage then BH:ShowCooldownImage(spellID, image) end
 end
+cdmModule.PlayAlertsFor = PlayAlertsFor
 
 -- Hook TriggerAlertEvent on every cooldown item in every viewer.
 --
@@ -3833,23 +3844,17 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
         -- Not skipped when the Blizzard alert hook also covers this cooldown:
         -- both paths run and ClaimAlert drops whichever is second, so a
         -- cooldown the hook failed to attach to is still caught here.
-        if justBecameReady or justBecameActive or justStartedCD or justAuraRemoved then
-            local alerts = CollectAlertsFor(proxy.cooldownID)
-            if alerts then
-                for _, alert in ipairs(alerts) do
-                    local fire = (alert.when == "available" and justBecameReady)
-                              or (alert.when == "active"    and justBecameActive)
-                              or (alert.when == "start"     and justStartedCD)
-                              or (alert.when == "applied"   and justBecameActive)
-                              or (alert.when == "removed"   and justAuraRemoved)
-                    if fire and alert.type == "Sound" and alert.sound
-                       and alert.sound ~= "None" and BH.PlaySound
-                       and not BH.suppressBuffSounds
-                       and ClaimAlert(proxy.spellID or proxy.cooldownID, alert.when) then
-                        BH:PlaySound(alert.sound)
-                    end
-                end
+        -- Through PlayAlertsFor (sound and image together), once per event.
+        if (justBecameReady or justBecameActive or justStartedCD or justAuraRemoved)
+           and proxy.cooldownID and not BH.suppressBuffSounds then
+            local id = proxy.cooldownID
+            if justBecameReady  then PlayAlertsFor(id, "available") end
+            if justStartedCD    then PlayAlertsFor(id, "start") end
+            if justBecameActive then
+                PlayAlertsFor(id, "active")
+                PlayAlertsFor(id, "applied")
             end
+            if justAuraRemoved  then PlayAlertsFor(id, "removed") end
         end
 
         proxy._wasOnCD    = isActive
@@ -3983,20 +3988,16 @@ local function FireCDSounds()
                                      and not isActive and tracker._wasOnCD
             local justAuraRemoved  = auraReadable                                   -- absence
                                      and not hasAura and tracker._wasHasAura
-            if (justBecameReady or justBecameActive or justStartedCD or justAuraRemoved) and BH.PlaySound then
-                for _, alert in ipairs(alerts) do
-                    local fire = (alert.when == "available" and justBecameReady)
-                              or (alert.when == "active"    and justBecameActive)
-                              or (alert.when == "start"     and justStartedCD)
-                              or (alert.when == "applied"   and justBecameActive)
-                              or (alert.when == "removed"   and justAuraRemoved)
-                    if fire and alert.type == "Sound" and alert.sound
-                       and alert.sound ~= "None"
-                       and not BH.suppressBuffSounds
-                       and ClaimAlert(tracker.spellID or cdID, alert.when) then
-                        BH:PlaySound(alert.sound)
-                    end
+            -- Through PlayAlertsFor (sound and image together), once per event.
+            if (justBecameReady or justBecameActive or justStartedCD or justAuraRemoved)
+               and not BH.suppressBuffSounds then
+                if justBecameReady  then PlayAlertsFor(cdID, "available") end
+                if justStartedCD    then PlayAlertsFor(cdID, "start") end
+                if justBecameActive then
+                    PlayAlertsFor(cdID, "active")
+                    PlayAlertsFor(cdID, "applied")
                 end
+                if justAuraRemoved  then PlayAlertsFor(cdID, "removed") end
             end
             -- Only record state that was actually read. Writing back an
             -- unreadable pass overwrites the real state, and the next readable
@@ -8815,13 +8816,14 @@ function BH:PopulateCDMSoundsLeft()
     local yOffset      = -4
 
     local cooldowns     = BH.cdm:GetAvailableCooldowns()
-    local buffCooldowns = BH.cdm:GetAvailableBuffCooldowns()
 
-    -- Split into Essential / Utility / Buff buckets
+    -- Essential and Utility only. Buffs moved to Buff Alerts in 2.0 (user
+    -- decision 2026-10-15): it fires on any of your buffs, not only those in
+    -- the Cooldown Manager, and two pages setting up the same buff was the
+    -- duplication this merge removed.
     local categories = {
         { key = "cooldown", label = "ESSENTIAL" },
         { key = "utility",  label = "UTILITY"   },
-        { key = "buff",     label = "BUFFS"     },
     }
     -- One entry per spell, not per cooldownID.
     --
@@ -8833,7 +8835,7 @@ function BH:PopulateCDMSoundsLeft()
     -- So list each spell once, placed under its cooldown-type entry where it
     -- has one, and keep the alternate cooldownIDs as `siblings` so the trigger
     -- list can be the union of what all of them support.
-    local byCat = { cooldown = {}, utility = {}, buff = {} }
+    local byCat = { cooldown = {}, utility = {} }
     local bySpell = {}
 
     local function AddEntry(cdInfo, cat)
@@ -8852,9 +8854,6 @@ function BH:PopulateCDMSoundsLeft()
     for _, cdInfo in pairs(cooldowns) do
         local cat = cdInfo.viewerType or "cooldown"
         if byCat[cat] then AddEntry(cdInfo, cat) end
-    end
-    for _, buffInfo in pairs(buffCooldowns) do
-        AddEntry(buffInfo, "buff")
     end
     for _, list in pairs(byCat) do
         table.sort(list, function(a, b) return (a.name or "") < (b.name or "") end)
@@ -8947,6 +8946,10 @@ function BH:PopulateCDMSoundsLeft()
                         if b.selIndicator then b.selIndicator:Hide() end
                     end
                     self.selIndicator:Show()
+                    if cdmSoundsState.selectedCooldownID ~= self.cdID then
+                        cdmSoundsState.selectedAlertIdx = nil
+                        if BH.StopMovingImage then BH.StopMovingImage() end
+                    end
                     cdmSoundsState.selectedCooldownID = self.cdID
                     cdmSoundsState.selectedCDInfo     = self.cdInfo
                     BH:RebuildCDMSoundsRight()
@@ -8992,7 +8995,7 @@ function BH:RebuildCDMSoundsRight()
         local hint = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         hint:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
         hint:SetWidth(220)
-        hint:SetText("← Select a spell to configure sound alerts")
+        hint:SetText("← Select a spell to set up its alerts")
         hint:SetTextColor(DIM_R, DIM_G, DIM_B)
         content:SetHeight(40)
         return
@@ -9094,19 +9097,15 @@ function BH:RebuildCDMSoundsRight()
         end
     end
 
-    if anyAnswer then
-        -- "Active" is our own name for "the buff is up", which Blizzard
-        -- expresses as OnAuraApplied, so offer it wherever that is valid.
-        if allowed.applied then allowed.active = true end
-    else
-        -- No answer from the API: fall back to the previous behaviour rather
+    if not anyAnswer and not isBuff then
+        -- No answer from the API: fall back to the cooldown events rather
         -- than offering nothing at all.
-        if isBuff then
-            allowed.applied, allowed.removed = true, true
-        else
-            allowed.available, allowed.start, allowed.active = true, true, true
-        end
+        allowed.available, allowed.start = true, true
     end
+    -- Cooldown events only (2.0). Active / Applied / Removed are a buff's
+    -- events and are set up in Buff Alerts now; existing ones were moved
+    -- there (MigrateBuffEventAlerts) and any left over still fire.
+    allowed.active, allowed.applied, allowed.removed = nil, nil, nil
 
     local whenItems = {}
     for _, when in ipairs(WHEN_ORDER) do
@@ -9125,7 +9124,7 @@ function BH:RebuildCDMSoundsRight()
         cdmSoundsState.newAlertWhen = val
     end)
     whenDD:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff - 4)
-    ns.Rows.AddTooltip(whenDD, "Alert when", "Which transition fires the sound -- the ability becoming ready, going on cooldown, or its buff being applied or removed.")
+    ns.Rows.AddTooltip(whenDD, "Alert when", "Which moment sets the alert off: the ability becoming ready, or going on cooldown. For a buff, use Buff Alerts.")
     whenDD:SetSelectedValue(defaultWhen)
     cdmSoundsState.newAlertWhen = defaultWhen
     yOff = yOff - 34
@@ -9173,8 +9172,9 @@ function BH:RebuildCDMSoundsRight()
     addBtn:SetScript("OnClick", function()
         local alertType  = cdmSoundsState.newAlertType  or "Sound"
         local alertWhen  = cdmSoundsState.newAlertWhen  or "available"
+        -- A sound of None is allowed since 2.0: the alert can be image-only,
+        -- and its image is picked in the editor that opens under the list.
         local alertSound = cdmSoundsState.newAlertSound or "None"
-        if not alertSound or alertSound == "None" then return end
 
         local soundAlerts = GetCDMSoundAlerts()
         -- Keyed by spell, not cooldownID: cooldownIDs drift between builds and
@@ -9186,6 +9186,7 @@ function BH:RebuildCDMSoundsRight()
             when  = alertWhen,
             sound = alertSound,
         })
+        cdmSoundsState.selectedAlertIdx = #soundAlerts[akey]
         -- Repopulate the left panel too: the configured badge on this
         -- spell just changed.
         BH:PopulateCDMSoundsLeft()
@@ -9212,7 +9213,13 @@ function BH:RebuildCDMSoundsRight()
         noAlertsTxt:SetTextColor(DIM_R, DIM_G, DIM_B)
         yOff = yOff - 20
     else
+        -- A selection that no longer exists (removed, or another spell) is
+        -- dropped rather than pointing at whatever slid into its place.
+        if not alerts[cdmSoundsState.selectedAlertIdx or 0] then
+            cdmSoundsState.selectedAlertIdx = (#alerts == 1) and 1 or nil
+        end
         for idx, alert in ipairs(alerts) do
+            local selected = cdmSoundsState.selectedAlertIdx == idx
             local rowBG = CreateFrame("Frame", nil, content, "BackdropTemplate")
             rowBG:SetHeight(28)
             -- Anchored to both edges so the row follows the panel width instead
@@ -9225,7 +9232,20 @@ function BH:RebuildCDMSoundsRight()
                 edgeSize = 1,
             })
             rowBG:SetBackdropColor(0.14, 0.14, 0.17, 1)
-            rowBG:SetBackdropBorderColor(0.25, 0.25, 0.30, 1)
+            if selected then
+                local ar, ag, ab = ns.GetAccentColor()
+                rowBG:SetBackdropBorderColor(ar, ag, ab, 1)
+            else
+                rowBG:SetBackdropBorderColor(0.25, 0.25, 0.30, 1)
+            end
+            -- Click a row to open its image settings under the list.
+            rowBG:EnableMouse(true)
+            local rowIdx = idx
+            rowBG:SetScript("OnMouseDown", function()
+                cdmSoundsState.selectedAlertIdx = rowIdx
+                BH:RebuildCDMSoundsRight()
+            end)
+            ns.Rows.AddTooltip(rowBG, "Alert", "Click to set this alert's image below.")
 
             -- Speaker icon (Sound type)
             local typeIco = rowBG:CreateTexture(nil, "ARTWORK")
@@ -9246,8 +9266,15 @@ function BH:RebuildCDMSoundsRight()
             sndTxt:SetPoint("LEFT", whenTxt, "RIGHT", 2, 0)
             sndTxt:SetWidth(78)
             sndTxt:SetJustifyH("LEFT")
-            sndTxt:SetText(alert.sound or "?")
+            sndTxt:SetText((alert.sound and alert.sound ~= "None") and alert.sound or "no sound")
             sndTxt:SetTextColor(DIM_R, DIM_G, DIM_B)
+
+            if alert.image then
+                local imgTxt = rowBG:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                imgTxt:SetPoint("LEFT", sndTxt, "RIGHT", 4, 0)
+                imgTxt:SetText("+ image")
+                imgTxt:SetTextColor(ns.GetAccentColor())
+            end
 
             -- Remove button
             local remBtn = CreateSQButton(rowBG, "x", 22, 20, { 0.55, 0.15, 0.15, 1 })
@@ -9260,6 +9287,8 @@ function BH:RebuildCDMSoundsRight()
                     table.remove(sa[akey], capturedIdx)
                     if #sa[akey] == 0 then sa[akey] = nil end
                 end
+                if BH.StopMovingImage then BH.StopMovingImage() end
+                cdmSoundsState.selectedAlertIdx = nil
                 -- Repopulate the left panel too: the configured badge on this
                 -- spell just changed.
                 BH:PopulateCDMSoundsLeft()
@@ -9267,6 +9296,70 @@ function BH:RebuildCDMSoundsRight()
             end)
 
             yOff = yOff - 32
+        end
+
+        -- ── Image for the selected alert (2.0) ────────────────────────────
+        -- The same controls as Buff Alerts (BH.BuildImageControls), on the
+        -- alert's own table. Shown when the event fires, by
+        -- BH:ShowCooldownImage, for as long as "Show for" says.
+        local sel = cdmSoundsState.selectedAlertIdx
+        local selAlert = sel and alerts[sel]
+        if selAlert and BH.BuildImageControls then
+            yOff = yOff - 6
+            local hdr = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            hdr:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
+            hdr:SetText("Image for the " .. (CDM_SOUND_WHEN_LABELS[selAlert.when] or selAlert.when) .. " alert")
+            hdr:SetTextColor(ns.GetAccentColor())
+            yOff = yOff - 20
+
+            local host = CreateFrame("Frame", nil, content)
+            host:SetPoint("TOPLEFT", content, "TOPLEFT", lp, yOff)
+            host:SetPoint("TOPRIGHT", content, "TOPRIGHT", -lp, yOff)
+            host:SetHeight(1)
+            local moveKey = "cd:" .. tostring(cdmModule.AlertKey(cdID)) .. ":" .. sel
+            local function Get() return alerts[sel] end
+            local hostY = BH.BuildImageControls(host, 0, {
+                entry   = Get,
+                edit    = Get,
+                -- The alert lives in SquizzumablesDB.cdmData, saved with the
+                -- addon; nothing is built ahead, so there is nothing to rebuild
+                -- but the editor.
+                changed = function(rebuildEditor) if rebuildEditor then BH:RebuildCDMSoundsRight() end end,
+                soon    = function() end,
+                rebuild = function() BH:RebuildCDMSoundsRight() end,
+                test    = function() BH:PreviewImage(Get()) end,
+                moving  = function() return BH.MovingImage(moveKey) end,
+                move    = function() BH:MoveImage(moveKey, Get) end,
+                afterImage = function(editor, y)
+                    local lbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    lbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+                    lbl:SetText("Show for:")
+                    lbl:SetTextColor(DIM_R, DIM_G, DIM_B)
+                    local dd = CreateSQDropdown(editor, "", 200, {
+                        { text = "1 second",              value = 1 },
+                        { text = "2 seconds",             value = 2 },
+                        { text = "3 seconds",             value = 3 },
+                        { text = "5 seconds",             value = 5 },
+                        { text = "10 seconds",            value = 10 },
+                        { text = "Until the next event",  value = "next" },
+                    }, function(val)
+                        Get().imageShowFor = val
+                    end)
+                    dd:SetPoint("TOPLEFT", editor, "TOPLEFT", 64, y)
+                    dd:SetSelectedValue(selAlert.imageShowFor or 2)
+                    ns.Rows.AddTooltip(dd, "Show for",
+                        "How long the image stays up. Until the next event keeps it until this spell does "
+                        .. "something else: a Ready image stays until you use the spell, an On Cooldown image "
+                        .. "until it is ready again. It fades out either way.")
+                    return y - 30
+                end,
+                imageTip = "An image on screen when this alert fires, in combat too: the Cooldown Manager "
+                    .. "tells Squizzumables the moment it happens. Screen edge glow is a coloured vignette "
+                    .. "round the edge of the screen; the Flames are animated fire along the edges you pick. "
+                    .. "The ( ) arcs and the shapes below them are placed rather than full screen: size and "
+                    .. "move them to frame your character. Those marked (still) do not animate.",
+            })
+            yOff = yOff + hostY
         end
     end
 
