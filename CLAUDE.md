@@ -312,7 +312,11 @@ shell, setup and polish), each gated.
   nothing else uses it, otherwise leave the block where it is.
   `Reminders/Buttons.lua` (the button engine: Collect*, LayoutButtons, UpdateButtons, the blind-loss
   poll and its ticker; its own state -- classBuffWasNeeded, the mid-click deferral -- moved with it).
-  Squizzumables.lua 11,873 -> 7,677 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
+  `Reminders/Items.lua` (Items tab + quality tables) and `Reminders/Helpers.lua` (CreateButton + pool,
+  buff checks, runes/enchants, consumable cache); Helpers now PUBLISHES the reminder helpers (the core
+  publish block shrank to constants the core still owns -- Coach Whistle and Symbiotic stay in core
+  because the reminder registry reads them at load). Load order Items -> Helpers -> Buttons -> Gates.
+  Squizzumables.lua 11,873 -> 5,893 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
   Has*Buff, SQ_BUTTON_POOL...), used across the file -- split that range by function, not by header;
   the Death Tally section also holds the Beacon / Earth Shield constants the reminder gates use; the
