@@ -337,7 +337,14 @@ shell, setup and polish), each gated.
   block can NOT move: its OnEvent writes the file-level `isInCombat`, which GroupAlpha reads (mutable
   scalar crossing the boundary). `Cooldowns/Discovery.lua` (BlizzardFilteredIDs, DiscoverCooldowns;
   forwarders via `cdmModule.discovery`; the DISCOVER_CATEGORIES table stays in CDM, which reads it too).
-  Squizzumables_CDM.lua 8,779 -> 4,024. The alert
+  `Cooldowns/TextAndShapes.lua` (text positions, bar background, icon shapes incl. borrowed frames;
+  ApplyBarBackground / ApplyShapeToBorrowedChild were forward-declared locals ASSIGNED in the moved block,
+  so the forward declarations themselves became forwarders into `cdmModule.textAndShapes` and the new
+  file re-declares them locally; three ns aliases there are unused, left for byte-identity).
+  Squizzumables_CDM.lua 8,779 -> 3,751. User decision 2026-10-16: the CDM split STOPS here -- the rest
+  (alert block, events, proc glow, proxy creation) is the tightly linked engine core and more forwarders
+  would cost clarity. Next: Squizzumables_SpellAlerts.lua into Alerts/ in ONE move, then the
+  descriptions pilot, then phase 3. The alert
   block (512-2045: alert hook, spell-ID resolution, PlayAlertsFor, buff borrowing/mirroring) has ~15
   links EACH WAY with the engine -- leave it until the engine around it has moved. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
