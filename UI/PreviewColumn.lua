@@ -199,18 +199,41 @@ drawers.cursor = {
 -- they sit matters as much as how they look. The preview is the screen scaled
 -- down to the column, with the alert drawn and placed in it by the real code
 -- (Alerts/Kelerts.lua's BuildAlertParts / PaintAlert, Alerts/CDMAlerts.lua's
--- PaintImage / ImageRect). It follows the page's sub-tab.
-local function ScreenScale(box)
-    local w = UIParent:GetWidth()
-    return (w > 0) and (box:GetWidth() / w) or 0
-end
+-- PaintImage / ImageRect), with a close up above it to make the image out.
+-- It follows the page's sub-tab.
+
+-- The close up's largest side, in the column's units.
+local CLOSE_UP = 150
 
 drawers.kelerts = {
     build = function(col, host)
+        local function Caption(text)
+            local fs = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            fs:SetJustifyH("LEFT")
+            fs:SetText(text)
+            fs:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
+            return fs
+        end
+
+        -- Close up: the image itself, big enough to make out. On the
+        -- miniature screen a 200px alert is a dozen pixels across (user
+        -- screenshot 2026-10-16), which places it but shows nothing of it.
+        host.closeCaption = Caption("Close up")
+        -- The alert frame is scaled to fit, and a scaled frame's anchor
+        -- offsets scale with it, so it sits at 0,0 in an unscaled holder and
+        -- the holder is what gets placed.
+        local holder = CreateFrame("Frame", nil, host)
+        host.closeHolder = holder
+        host.closeAlert = BH.NewAlertPreview and BH.NewAlertPreview(holder)
+        if host.closeAlert then host.closeAlert:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0) end
+        local closeImg = CreateFrame("Frame", nil, host)
+        closeImg.tex = closeImg:CreateTexture(nil, "ARTWORK")
+        closeImg.tex:SetAllPoints()
+        host.closeImg = closeImg
+
+        -- Where it shows: the screen, scaled down to the column.
+        host.screenCaption = Caption("On your screen")
         local box = CreateFrame("Frame", nil, host, "BackdropTemplate")
-        box:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
-        box:SetPoint("RIGHT", host, "RIGHT", 0, 0)
-        box:SetHeight(1)
         box:SetClipsChildren(true)
         box:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8", edgeFile = "Interface\\BUTTONS\\WHITE8X8",
             edgeSize = 1 })
@@ -232,7 +255,6 @@ drawers.kelerts = {
         host.img = img
 
         local note = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        note:SetPoint("RIGHT", host, "RIGHT", 0, 0)
         note:SetJustifyH("LEFT")
         note:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
         host.note = note
@@ -240,16 +262,39 @@ drawers.kelerts = {
 
     refresh = function(col, host)
         local box, alert, img = host.box, host.alert, host.img
-        local w = UIParent:GetWidth()
-        local h = UIParent:GetHeight()
-        local boxW = host:GetWidth()
-        if not (w > 0 and h > 0 and boxW > 0) then return end
-        box:SetHeight(boxW * h / w)
-        local k = ScreenScale(box)
+        local closeAlert, closeImg = host.closeAlert, host.closeImg
+        local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+        local room = host:GetWidth()
+        if not (w > 0 and h > 0 and room > 0 and alert and closeAlert) then return end
+        local boxH = room * h / w
+        box:SetSize(room, boxH)
+        local k = room / w
+        local closeMax = math.min(room, CLOSE_UP)
         local sel = BH.kelPages and BH.kelPages.GetSelected and BH.kelPages.GetSelected() or "alerts"
 
-        local showBox, text = true, ""
-        if sel == "alerts" and alert and BH.CurrentAlert then
+        -- Laid out top to bottom each pass: what shows depends on the sub-tab.
+        local y = 0
+        local function Place(region, height, gap)
+            region:ClearAllPoints()
+            region:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
+            y = y + height + (gap or 0)
+        end
+        local function Caption(fs)
+            fs:Show()
+            Place(fs, fs:GetStringHeight(), 4)
+        end
+
+        alert:Hide()
+        img:Hide()
+        host.closeHolder:Hide()
+        closeAlert:Hide()
+        closeImg:Hide()
+        host.closeCaption:Hide()
+        host.screenCaption:Hide()
+        box:Hide()
+
+        local text
+        if sel == "alerts" and BH.CurrentAlert then
             local a = BH.CurrentAlert()
             -- Repainted only when the look changes: a repaint restarts a
             -- frame sequence from its first frame.
@@ -258,25 +303,49 @@ drawers.kelerts = {
             if alert.sig ~= sig then
                 alert.sig = sig
                 BH.PaintAlertPreview(alert, a)
+                BH.PaintAlertPreview(closeAlert, a)
             end
-            local point, relPoint, x, y = BH.KelAlertAnchor()
+
+            Caption(host.closeCaption)
+            closeAlert:SetScale(closeMax / 200)   -- the alert frame is 200 x 200
+            host.closeHolder:SetSize(closeMax, closeMax)
+            Place(host.closeHolder, closeMax, 12)
+            host.closeHolder:Show()
+            closeAlert:Show()
+
+            Caption(host.screenCaption)
+            Place(box, boxH, 10)
+            box:Show()
+            local point, relPoint, x, y2 = BH.KelAlertAnchor()
             alert:SetScale(math.max(0.01, ((BH.settings and BH.settings.kelAlertScale) or 1) * k))
             alert:ClearAllPoints()
-            alert:SetPoint(point, box, relPoint, x, y)
+            alert:SetPoint(point, box, relPoint, x, y2)
             alert:Show()
-            img:Hide()
-            text = "Where and how this alert shows, on a small copy of your screen. Test plays it for real; "
-                .. "Unlock Frames moves it."
+            text = "Test plays it for real; Unlock Frames moves it."
         elseif sel == "buffsounds" and BH.SelectedAlertImage then
-            if alert then alert:Hide() end
             local entry = BH.SelectedAlertImage()
             if entry then
                 local sig = BH.AlertImageSignature(entry)
                 if img.sig ~= sig then
                     img.sig = sig
                     BH.PaintAlertImage(img.tex, entry)
+                    BH.PaintAlertImage(closeImg.tex, entry)
                 end
-                local fill, iw, ih, x, y = BH.AlertImageRect(entry)
+                local fill, iw, ih, x, y2 = BH.AlertImageRect(entry)
+
+                -- A placed image gets a close up too; a full-screen one is
+                -- already big enough on the screen below.
+                if not fill and iw > 0 and ih > 0 then
+                    Caption(host.closeCaption)
+                    local fit = math.min(closeMax / iw, closeMax / ih)
+                    closeImg:SetSize(iw * fit, ih * fit)
+                    Place(closeImg, ih * fit, 12)
+                    closeImg:Show()
+                end
+
+                Caption(host.screenCaption)
+                Place(box, boxH, 10)
+                box:Show()
                 img:SetScale(math.max(0.01, k))
                 img:ClearAllPoints()
                 if fill then
@@ -284,28 +353,22 @@ drawers.kelerts = {
                     img:SetPoint("CENTER", box, "CENTER", 0, 0)
                 else
                     img:SetSize(iw, ih)
-                    img:SetPoint("CENTER", box, "CENTER", x, y)
+                    img:SetPoint("CENTER", box, "CENTER", x, y2)
                 end
                 img:Show()
-                text = "The selected alert's image, where it shows on your screen."
+                text = "The selected buff's or cooldown's image."
             else
-                img:Hide()
                 img.sig = nil
                 text = "Select a buff or cooldown with an image to see it here."
             end
         else
-            if alert then alert:Hide() end
-            img:Hide()
-            showBox = false
             text = "The Death Tally shows where it sits, and can be moved, with Unlock Frames."
         end
 
-        box:SetShown(showBox)
-        host.note:ClearAllPoints()
-        host.note:SetPoint("TOPLEFT", host, "TOPLEFT", 0, showBox and -(box:GetHeight() + 10) or 0)
-        host.note:SetPoint("RIGHT", host, "RIGHT", 0, 0)
         host.note:SetText(text)
-        host:SetHeight((showBox and box:GetHeight() or 0) + 60)
+        host.note:SetWidth(room)
+        Place(host.note, host.note:GetStringHeight())
+        host:SetHeight(y + 10)
     end,
 }
 
