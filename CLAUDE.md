@@ -319,7 +319,9 @@ shell, setup and polish), each gated.
   Options pages: `Options/SettingsTab.lua` (+ profile popups, grow helpers), `Options/SoundsTab.lua` (+ the
   custom sounds list; the sound LIBRARY stays in core, its names published), `Reminders/RemindersTab.lua`,
   `Reminders/ClassBuffsTab.lua` (publishes BH.CLASS_NAMES as before).
-  Squizzumables.lua 11,873 -> 4,135 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
+  Squizzumables.lua 11,873 -> 4,135 lines.
+  CDM file: `Cooldowns/OptionsTab.lua` (BuildCDMTab + per-group settings sections; names via the
+  existing `cdmModule.shared`, extended). Squizzumables_CDM.lua 8,779 -> 7,213 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
   Has*Buff, SQ_BUTTON_POOL...), used across the file -- split that range by function, not by header;
   the Death Tally section also holds the Beacon / Earth Shield constants the reminder gates use; the
