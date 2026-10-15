@@ -1466,16 +1466,18 @@ function BH:CreateOptionsPanel()
     local panel = CreateFrame("Frame", "SQUIZZUMABLESOptions", UIParent, "BackdropTemplate")
     -- Wider than the old 460x600: ten categories no longer have to be crammed
     -- into a tab strip that wrapped onto two rows, and the extra width gives
-    -- the option rows somewhere to breathe.
-    panel:SetSize(820, 620)
+    -- the option rows somewhere to breathe. 900 since 2.0's preview column
+    -- (230px on the right of a page): the pages are laid out at up to 400px
+    -- plus a scrollbar, so the minimum keeps them clear of it.
+    panel:SetSize(900, 620)
     panel:SetPoint("CENTER")
     panel:SetFrameStrata("DIALOG")
     panel:SetMovable(true)
     panel:SetResizable(true)
     if panel.SetResizeBounds then
-        panel:SetResizeBounds(700, 520)
+        panel:SetResizeBounds(840, 520)
     elseif panel.SetMinResize then
-        panel:SetMinResize(700, 520)
+        panel:SetMinResize(840, 520)
     end
     panel:EnableMouse(true)
     ApplySQBackdrop(panel, SQ_COLORS.bg, SQ_COLORS.border)
@@ -1720,8 +1722,8 @@ function BH:CreateOptionsPanel()
     -- CLAUDE.md for what to restore when the feature comes back.
     local NAV = {
         { group = "Reminders", pages = {
-            { key = "items",      label = "Consumables",      field = "itemsTab" },
-            { key = "classbuffs", label = "Class Buffs",      field = "classBuffsTab",    build = "BuildClassBuffsTab" },
+            { key = "items",      label = "Consumables",      field = "itemsTab",         preview = "buttons" },
+            { key = "classbuffs", label = "Class Buffs",      field = "classBuffsTab",    build = "BuildClassBuffsTab", preview = "buttons" },
             { key = "reminders",  label = "Text Reminders",   field = "textRemindersTab", build = "BuildTextRemindersTab" },
         } },
         { group = "Cooldowns", pages = {
@@ -1740,7 +1742,7 @@ function BH:CreateOptionsPanel()
             { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab" },
         } },
         { group = "General", pages = {
-            { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab" },
+            { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab", preview = "buttons" },
         } },
     }
     -- The order the pages were always BUILT in, kept as it was: a builder may
@@ -1820,13 +1822,22 @@ function BH:CreateOptionsPanel()
     contentArea:SetPoint("TOPLEFT", navBar, "TOPRIGHT", 1, 0)
     contentArea:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 40)
 
-    -- One sidebar entry and one content frame per page.
-    local navButtons, tabFrames, pageByKey = {}, {}, {}
+    -- One sidebar entry and one content frame per page. A page with a
+    -- `preview` kind gets a preview column on its right (UI/PreviewColumn.lua)
+    -- and is narrowed to make room for it.
+    local navButtons, tabFrames, pageByKey, previews = {}, {}, {}, {}
     for _, group in ipairs(NAV) do
         CreateGroupHeading(group.group)
         for _, page in ipairs(group.pages) do
             local frame = CreateFrame("Frame", nil, contentArea)
-            frame:SetAllPoints()
+            local preview = page.preview and ns.PreviewColumn.Create(contentArea, page.preview)
+            if preview then
+                frame:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, 0)
+                frame:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -ns.PreviewColumn.WIDTH, 0)
+                previews[page.key] = preview
+            else
+                frame:SetAllPoints()
+            end
             frame:Hide()
             self[page.field] = frame
             tabFrames[page.key] = frame
@@ -1842,6 +1853,7 @@ function BH:CreateOptionsPanel()
         for key, btn in pairs(navButtons) do
             btn:SetActive(key == active)
             tabFrames[key]:SetShown(key == active)
+            if previews[key] then previews[key]:SetShown(key == active) end
         end
     end
     self.switchTab = SwitchTab

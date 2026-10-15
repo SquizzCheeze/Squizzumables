@@ -98,10 +98,63 @@ local function PaintButtonTimer(btn)
     end
 end
 
--- Annotated because the language server infers unannotated parameter types from call
--- sites and had guessed `headerText` was a table, which then made every string call
--- site read as a type mismatch. The types below are what the body actually requires.
----@param id number
+-- The parts every reminder button has, made once per frame; DressButton
+-- reconfigures them on every use. Split out of CreateButton in 2.0 phase 3, so
+-- the options preview builds its sample buttons with the real code on a plain,
+-- non-secure frame (BH.DressPreviewButton) rather than a copy that drifts.
+local function BuildButtonParts(btn)
+    -- Everything written over the icon lives on this frame, not the button.
+    -- The glow is a child frame (glowHost, and Blizzard's alert under it),
+    -- and a child frame always draws above its parent's own regions -- so
+    -- text on the button itself sat underneath the glow. Levelled well
+    -- above the button in the sizing block below. No mouse, so clicks
+    -- still land on the secure button.
+    btn.textLayer = CreateFrame("Frame", nil, btn)
+    btn.textLayer:SetAllPoints(btn)
+
+    -- Header font string (always created; hidden when not needed)
+    btn.header = btn.textLayer:CreateFontString(nil, "OVERLAY")
+    btn.header:SetJustifyH("CENTER")
+    btn.header:SetTextColor(ns.Theme.RGBA("btnHeader"))  -- Light blue
+
+    -- Icon texture
+    btn.icon = btn:CreateTexture(nil, "BACKGROUND")
+
+    -- The glow's own frame, sized over the icon. Blizzard's proc animation
+    -- sizes itself to the frame it is given, and the button is icon +
+    -- label + header, so glowing the button would box the text. It also
+    -- keeps the alert frame Blizzard builds off the secure button.
+    btn.glowHost = CreateFrame("Frame", nil, btn)
+    btn.glowHost:SetPoint("CENTER", btn.icon, "CENTER", 0, 0)
+
+    -- Quality pip overlay
+    btn.qualityPip = btn.textLayer:CreateTexture(nil, "OVERLAY")
+    btn.qualityPip:SetSize(30, 30)
+
+    -- Timer font string
+    btn.timer = btn.textLayer:CreateFontString(nil, "OVERLAY")
+    btn.timer:SetTextColor(ns.Theme.RGBA("btnTimer"))  -- Yellow
+
+    -- Bag count font string
+    btn.countText = btn.textLayer:CreateFontString(nil, "OVERLAY")
+    btn.countText:SetTextColor(ns.Theme.RGBA("btnText"))
+
+    -- Label font string
+    btn.label = btn.textLayer:CreateFontString(nil, "OVERLAY")
+    btn.label:SetJustifyH("CENTER")
+    btn.label:SetWordWrap(true)
+    btn.label:SetMaxLines(3)
+    btn.label:SetTextColor(ns.Theme.RGBA("btnText"))
+
+    -- Hearty food badge (top-right corner of icon)
+    btn.heartyBadge = btn.textLayer:CreateFontString(nil, "OVERLAY")
+    btn.heartyBadge:SetTextColor(ns.Theme.RGBA("btnBadge"))  -- Warm gold
+end
+
+-- How a reminder button looks -- size, fonts, header, icon and shape, quality
+-- pip, hearty badge, the timer and its countdown, bag count, label -- from the
+-- current settings and theme. Everything a click does is CreateButton's.
+---@param btn table
 ---@param texture number|string
 ---@param tooltip string
 ---@param actionType string  "spell", "item", "macro" or "oil"
@@ -112,68 +165,9 @@ end
 ---@param itemLink string?
 ---@param craftingQuality number?
 ---@param bagCount number?
-local function CreateButton(id, texture, tooltip, actionType, actionValue, labelText, headerText, expirationTime, itemLink, craftingQuality, bagCount)
-    -- Try to reuse a pooled button; only allocate a new frame when the pool is empty
-    local btn = table.remove(SQ_BUTTON_POOL)
+local function DressButton(btn, texture, tooltip, actionType, actionValue, labelText, headerText, expirationTime, itemLink, craftingQuality, bagCount)
     local size = (BH.settings and BH.settings.buttonSize) or 36
     local headerHeight = headerText and 12 or 0
-
-    if not btn then
-        -- First use: create an anonymous (un-named) frame so it can be GC'd eventually,
-        -- and create all child objects once.  They are reconfigured on every reuse.
-        btn = CreateFrame("Button", nil, BH.frame, "SecureActionButtonTemplate")
-
-        -- Everything written over the icon lives on this frame, not the button.
-        -- The glow is a child frame (glowHost, and Blizzard's alert under it),
-        -- and a child frame always draws above its parent's own regions -- so
-        -- text on the button itself sat underneath the glow. Levelled well
-        -- above the button in the sizing block below. No mouse, so clicks
-        -- still land on the secure button.
-        btn.textLayer = CreateFrame("Frame", nil, btn)
-        btn.textLayer:SetAllPoints(btn)
-
-        -- Header font string (always created; hidden when not needed)
-        btn.header = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.header:SetJustifyH("CENTER")
-        btn.header:SetTextColor(ns.Theme.RGBA("btnHeader"))  -- Light blue
-
-        -- Icon texture
-        btn.icon = btn:CreateTexture(nil, "BACKGROUND")
-
-        -- The glow's own frame, sized over the icon. Blizzard's proc animation
-        -- sizes itself to the frame it is given, and the button is icon +
-        -- label + header, so glowing the button would box the text. It also
-        -- keeps the alert frame Blizzard builds off the secure button.
-        btn.glowHost = CreateFrame("Frame", nil, btn)
-        btn.glowHost:SetPoint("CENTER", btn.icon, "CENTER", 0, 0)
-
-        -- Quality pip overlay
-        btn.qualityPip = btn.textLayer:CreateTexture(nil, "OVERLAY")
-        btn.qualityPip:SetSize(30, 30)
-
-        -- Timer font string
-        btn.timer = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.timer:SetTextColor(ns.Theme.RGBA("btnTimer"))  -- Yellow
-
-        -- Bag count font string
-        btn.countText = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.countText:SetTextColor(ns.Theme.RGBA("btnText"))
-
-        -- Label font string
-        btn.label = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.label:SetJustifyH("CENTER")
-        btn.label:SetWordWrap(true)
-        btn.label:SetMaxLines(3)
-        btn.label:SetTextColor(ns.Theme.RGBA("btnText"))
-
-        -- Hearty food badge (top-right corner of icon)
-        btn.heartyBadge = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.heartyBadge:SetTextColor(ns.Theme.RGBA("btnBadge"))  -- Warm gold
-    else
-        -- Returning from pool: re-parent and make visible
-        btn:SetParent(BH.frame)
-        btn:Show()
-    end
 
     -- Font sizes (re-apply every use so settings changes take effect)
     local headerFontSize = (BH.settings and BH.settings.buttonHeaderFontSize) or 10
@@ -351,6 +345,45 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         btn.label:SetText("")
         btn.label:Hide()
     end
+end
+
+-- The button's glow, from the settings (see the notes where CreateButton calls
+-- it). Shared with the options preview.
+local function GlowButton(btn)
+    btn.glowHost.sqGlowSelfOnly = (BH.settings and BH.settings.buttonGlowStyle) == "ring"
+    ns.Glow.Set(btn.glowHost, BH.settings and BH.settings.glowReminderButtons ~= false, nil, true)
+end
+
+-- Annotated because the language server infers unannotated parameter types from call
+-- sites and had guessed `headerText` was a table, which then made every string call
+-- site read as a type mismatch. The types below are what the body actually requires.
+---@param id number
+---@param texture number|string
+---@param tooltip string
+---@param actionType string  "spell", "item", "macro" or "oil"
+---@param actionValue number|string|table  a table only for "oil": { itemID, slot }
+---@param labelText string?
+---@param headerText string?
+---@param expirationTime number?
+---@param itemLink string?
+---@param craftingQuality number?
+---@param bagCount number?
+local function CreateButton(id, texture, tooltip, actionType, actionValue, labelText, headerText, expirationTime, itemLink, craftingQuality, bagCount)
+    -- Try to reuse a pooled button; only allocate a new frame when the pool is empty
+    local btn = table.remove(SQ_BUTTON_POOL)
+
+    if not btn then
+        -- First use: create an anonymous (un-named) frame so it can be GC'd eventually,
+        -- and create all child objects once.  They are reconfigured on every reuse.
+        btn = CreateFrame("Button", nil, BH.frame, "SecureActionButtonTemplate")
+        BuildButtonParts(btn)
+    else
+        -- Returning from pool: re-parent and make visible
+        btn:SetParent(BH.frame)
+        btn:Show()
+    end
+
+    DressButton(btn, texture, tooltip, actionType, actionValue, labelText, headerText, expirationTime, itemLink, craftingQuality, bagCount)
 
     if actionType == "item" then
         btn:SetAttribute("type", "item")
@@ -416,8 +449,7 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     -- Always skipBirth: the start burst is a large bright flash meant for a
     -- one-off proc, and UpdateButtons rebuilds every button every few seconds,
     -- so each rebuild replayed it and the icons strobed. Straight to the loop.
-    btn.glowHost.sqGlowSelfOnly = (BH.settings and BH.settings.buttonGlowStyle) == "ring"
-    ns.Glow.Set(btn.glowHost, BH.settings and BH.settings.glowReminderButtons ~= false, nil, true)
+    GlowButton(btn)
 
     return btn
 end
@@ -946,6 +978,17 @@ end
 -- reassigned after load, so the copies they take stay correct.
 BH.CountClassInGroup          = CountClassInGroup
 BH.CreateButton               = CreateButton
+-- For the options preview (UI/PreviewColumn.lua): sample buttons built,
+-- dressed and glowed by the real code on a plain frame -- never secure, never
+-- pooled, never clickable.
+BH.NewPreviewButton = function(parent)
+    local btn = CreateFrame("Button", nil, parent)
+    BuildButtonParts(btn)
+    btn:EnableMouse(false)
+    return btn
+end
+BH.DressPreviewButton         = DressButton
+BH.GlowPreviewButton          = GlowButton
 BH.FindUnbuffedHealer         = FindUnbuffedHealer
 BH.FindUnbuffedTank           = FindUnbuffedTank
 BH.GetMainHandEnchantInfo     = GetMainHandEnchantInfo

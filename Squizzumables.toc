@@ -21,6 +21,7 @@ UI\Widgets.lua
 UI\SubTabs.lua
 UI\Rows.lua
 UI\Settings.lua
+UI\PreviewColumn.lua
 UI\Glow.lua
 UI\Shapes.lua
 Squizzumables.lua

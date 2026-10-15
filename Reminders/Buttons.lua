@@ -710,7 +710,11 @@ end
 -- ~110 lines of pure geometry that touches nothing but self.buttons and the
 -- layout settings, so it had no business sitting inline among the code that
 -- decides which buttons should exist.
-function BH:LayoutButtons(numButtons)
+function BH:LayoutButtons(numButtons, buttons, frame)
+    -- The options preview lays out its sample buttons with this too, passing
+    -- its own list and host frame; everything else uses the real ones.
+    buttons = buttons or self.buttons
+    frame = frame or self.frame
     local size = (self.settings and self.settings.buttonSize) or 36
     local spacing = (self.settings and self.settings.buttonSpacing) or 5
     local labelHeight = 26
@@ -722,7 +726,7 @@ function BH:LayoutButtons(numButtons)
     -- Check if any button has a header (for consistent alignment)
     local anyHasHeader = false
     for i=1,numButtons do
-        if self.buttons[i].header then
+        if buttons[i].header then
             anyHasHeader = true
             break
         end
@@ -737,7 +741,7 @@ function BH:LayoutButtons(numButtons)
     local totalVertHeight = numButtons * vertBtnHeight + (numButtons - 1) * spacing
     
     for i=1,numButtons do
-        local btn = self.buttons[i]
+        local btn = buttons[i]
         local hasHeader = btn.header ~= nil
         
         if layout == "VERTICAL" then
@@ -788,22 +792,22 @@ function BH:LayoutButtons(numButtons)
         if layout == "VERTICAL" then
             local yStep = vertBtnHeight + spacing
             if grow == "UP" then
-                btn:SetPoint("BOTTOMLEFT", self.frame, "BOTTOMLEFT", 0, idx * yStep)
+                btn:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, idx * yStep)
             elseif grow == "OUTWARD" then
                 local yOfs = totalVertHeight / 2 - idx * yStep - vertBtnHeight / 2
-                btn:SetPoint("LEFT", self.frame, "LEFT", 0, yOfs)
+                btn:SetPoint("LEFT", frame, "LEFT", 0, yOfs)
             else -- DOWN (default)
-                btn:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 0, -(idx * yStep))
+                btn:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -(idx * yStep))
             end
         else
             local xStep = size + spacing
             if grow == "LEFT" then
-                btn:SetPoint("TOPRIGHT", self.frame, "TOPRIGHT", -(idx * xStep), 0)
+                btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -(idx * xStep), 0)
             elseif grow == "OUTWARD" then
                 local xOfs = -totalWidth / 2 + idx * xStep + size / 2
-                btn:SetPoint("TOP", self.frame, "TOP", xOfs, 0)
+                btn:SetPoint("TOP", frame, "TOP", xOfs, 0)
             else -- RIGHT (default)
-                btn:SetPoint("TOPLEFT", self.frame, "TOPLEFT", idx * xStep, 0)
+                btn:SetPoint("TOPLEFT", frame, "TOPLEFT", idx * xStep, 0)
             end
         end
         btn:Show()
@@ -812,12 +816,12 @@ function BH:LayoutButtons(numButtons)
     -- Resize the frame to encompass all buttons so the drag handle stays clear
     if numButtons > 0 then
         if layout == "VERTICAL" then
-            self.frame:SetSize(size, totalVertHeight)
+            frame:SetSize(size, totalVertHeight)
         else
-            self.frame:SetSize(totalWidth, totalBtnHeight)
+            frame:SetSize(totalWidth, totalBtnHeight)
         end
     else
-        self.frame:SetSize(1, 1)
+        frame:SetSize(1, 1)
     end
 end
 

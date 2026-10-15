@@ -369,6 +369,16 @@ shell, setup and polish), each gated.
   when its frame is made -- so `Theme.NeedsReload(from, to)` (different `colors` table) shows the
   SQUIZZUMABLES_THEME_RELOAD popup. Making every colour live would mean registering every region,
   like ApplyAccent does; not done. Profile switches now call `ns.Theme.Apply()` (they never did).
+  Step 2 CONFIRMED in game 2026-10-16. Step 3 (preview column) STARTED, untested: `UI/PreviewColumn.lua`
+  (`ns.PreviewColumn.Create(contentArea, kind)`, `drawers[kind] = {build, refresh}`, 0.25s redraw while
+  shown, 1:1 unless it would overflow). A NAV page with `preview = "<kind>"` is narrowed by
+  `PreviewColumn.WIDTH` (230); the window went 820 -> 900 wide, min 700 -> 840, because pages are laid
+  out at up to 400px. First kind `buttons` (Consumables, Class Buffs, Settings): to draw them with the
+  REAL code, Reminders/Helpers.lua's CreateButton was split into BuildButtonParts (child regions, once)
+  / DressButton (the look, every use) / GlowButton, published as BH.NewPreviewButton /
+  DressPreviewButton / GlowPreviewButton; BH:LayoutButtons takes optional (buttons, frame). A preview
+  must never let DressButton start its item-name ticker each redraw -- pass a label until the item is
+  cached.
 - The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
   and says nothing on Windows -- use `git add -u` or the real name.
 - Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. `UI/Settings.lua`

@@ -29,6 +29,12 @@ V2.0
   at once; Dark Glass and Minimal offer a reload for the panels and
   borders. Your old choice carries over: class colour on stays Class
   Colour. Switching profile now brings that profile's theme with it.
+- Preview column: Consumables, Class Buffs and Settings show your reminder
+  buttons on the right of the page - a missing flask, food running low
+  and your class buff - and they change as you edit: size, spacing, grow
+  direction, labels, fonts, icon shape, glow and theme. They are drawn by
+  the same code as the real buttons. The options window is a little wider
+  (900) to make room.
 - Cursor > Trail: the Test Shark button's bite now shows above the
   settings window instead of underneath it. Real bites still follow your
   Frame Strata setting.
