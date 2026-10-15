@@ -326,8 +326,11 @@ shell, setup and polish), each gated.
   + the public Squizzumables_RegisterAnchorTarget, LayoutGroup, free icons; GroupAlpha and
   ApplyBarBackground are FORWARD-DECLARED locals assigned at load above the shared table, so the
   alias is valid -- check that for any forward declaration), `Cooldowns/Reconcile.lua` (Reconcile +
-  ScheduleReconcile; UpdateAllProxyCooldowns is forward-declared too, same check). Squizzumables_CDM.lua
-  8,779 -> 5,736. The alert
+  ScheduleReconcile; UpdateAllProxyCooldowns is forward-declared too, same check),
+  `Cooldowns/BlizzardViewers.lua` (public group-frame API, hiding/parking Blizzard's viewers + Edit Mode
+  hooks, buff/taint diagnostics, ReleaseAll, OnProfileChanged; it hands HookEditMode BACK as
+  shared.HookEditMode, which Initialize calls at login -- the pattern for a moved block with one export).
+  Squizzumables_CDM.lua 8,779 -> 5,134. The alert
   block (512-2045: alert hook, spell-ID resolution, PlayAlertsFor, buff borrowing/mirroring) has ~15
   links EACH WAY with the engine -- leave it until the engine around it has moved. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,

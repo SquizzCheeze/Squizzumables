@@ -46,6 +46,7 @@ Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
 Cooldowns\Reconcile.lua
+Cooldowns\BlizzardViewers.lua
 Cooldowns\Layout.lua
 Cooldowns\API.lua
 Cooldowns\OptionsTab.lua
