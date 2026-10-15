@@ -559,14 +559,15 @@ function BH:BuildSettingsTab(parent)
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
         type = "dropdown", label = "Label Position", width = 200,
         items = {
-            { text = "Auto (below, or right when vertical)", value = "auto" },
+            { text = "Auto",            value = "auto" },
             { text = "Below the icon",  value = "BOTTOM" },
             { text = "Above the icon",  value = "TOP" },
             { text = "Right of the icon", value = "RIGHT" },
             { text = "Left of the icon",  value = "LEFT" },
             { text = "On the icon",     value = "CENTER" },
         },
-        tooltip = "Where the name goes on each button. The X and Y offsets below move it from there. "
+        tooltip = "Where the name goes on each button. Auto puts it below the icon, or to the right of "
+               .. "it in a vertical layout. The X and Y offsets below move it from there. "
                .. "Beside the icon (left or right) in a horizontal row, raise Button Spacing so the "
                .. "names have room.",
         get = function() return BH.settings.buttonLabelAnchor or "auto" end,
