@@ -489,6 +489,51 @@ drawers.textreminders = {
 }
 
 -- ----------------------------------------------------------------------------
+-- Live frames (Raid Tools, Callouts)
+-- ----------------------------------------------------------------------------
+
+-- Everything these pages set up is already a frame on the screen -- the
+-- marker panel's secure buttons, pull / ready, the battle res counter, the
+-- distance readout, the callout buttons -- and Unlock Frames already shows
+-- every one of them where it sits, with sample content. A second drawing of
+-- them here would be a copy of a 430-line secure builder, and phase 3's one
+-- Edit Mode replaces that unlock view anyway; so the column says so and puts
+-- the switch next to the settings.
+local LIVE_TEXT = {
+    raidtools = "The marker panel, pull and ready check, battle res counter and target distance are "
+        .. "live frames on your screen. Show them to see every change here as you make it, and to "
+        .. "move them.",
+    callouts = "The callout buttons are a live frame on your screen. Show it to see every change here "
+        .. "as you make it, and to move it.",
+}
+
+local function NewLiveDrawer(kind)
+    return {
+        build = function(col, host)
+            local text = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            text:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+            text:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+            text:SetJustifyH("LEFT")
+            text:SetSpacing(3)
+            text:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
+            text:SetText(LIVE_TEXT[kind])
+            host.text = text
+
+            local btn = ns.CreateSQButton(host, "Show them on screen", 160, 24)
+            btn:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -12)
+            btn:SetScript("OnClick", function() BH:SetUnlockMode(not BH.unlockMode) end)
+            host.btn = btn
+            host:SetHeight(140)
+        end,
+        refresh = function(col, host)
+            host.btn:SetText(BH.unlockMode and "Done" or "Show them on screen")
+        end,
+    }
+end
+drawers.raidtools = NewLiveDrawer("raidtools")
+drawers.callouts  = NewLiveDrawer("callouts")
+
+-- ----------------------------------------------------------------------------
 -- The column
 -- ----------------------------------------------------------------------------
 

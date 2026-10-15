@@ -378,7 +378,16 @@ shell, setup and polish), each gated.
   / DressButton (the look, every use) / GlowButton, published as BH.NewPreviewButton /
   DressPreviewButton / GlowPreviewButton; BH:LayoutButtons takes optional (buttons, frame). A preview
   must never let DressButton start its item-name ticker each redraw -- pass a label until the item is
-  cached.
+  cached. Step 3 drawers (all built 2026-10-16; buttons, cursor, kelerts, textreminders confirmed in
+  game): `cursor` = the REAL cursor lifted to TOOLTIP while the page is open (BH:SetCursorPreview,
+  drawer show/hide hooks); `kelerts` = close up + miniature screen (Kelerts.lua BuildAlertParts /
+  PaintAlert, CDMAlerts.lua ImageRect, BH.SelectedAlertImage); `textreminders` = BH.ReminderText at
+  each Scale, width measured ONCE on an unscaled copy (measuring the scaled text fed back into the fit
+  and the previews pulsed); `raidtools` / `callouts` = a note + a button toggling SetUnlockMode, since
+  their frames are live and Edit Mode (step 4) replaces that view. Two traps: a scaled frame's anchor
+  offsets scale with it (put it at 0,0 in an unscaled holder and place the holder), and repaint
+  flipbooks / frame sequences only when the look's signature changes, or they restart every redraw.
+  Pages without a column: Cooldown Manager and Custom Icons (their own CDM preview), Sounds.
 - The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
   and says nothing on Windows -- use `git add -u` or the real name.
 - Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. `UI/Settings.lua`

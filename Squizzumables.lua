@@ -1754,8 +1754,8 @@ function BH:CreateOptionsPanel()
             { key = "sounds",     label = "Sounds",           field = "soundsTab",        build = "BuildSoundsTab" },
         } },
         { group = "Group", pages = {
-            { key = "raidtools",  label = "Raid Tools",       field = "raidToolsTab",     build = "BuildRaidToolsTab" },
-            { key = "callouts",   label = "Callouts",         field = "calloutsTab",      build = "BuildCalloutsTab" },
+            { key = "raidtools",  label = "Raid Tools",       field = "raidToolsTab",     build = "BuildRaidToolsTab", preview = "raidtools" },
+            { key = "callouts",   label = "Callouts",         field = "calloutsTab",      build = "BuildCalloutsTab", preview = "callouts" },
         } },
         { group = "Fun", pages = {
             { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab", preview = "cursor" },
