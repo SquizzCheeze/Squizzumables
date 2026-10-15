@@ -26,6 +26,55 @@ local GetOrCreateRandomSoundsTable = A.GetOrCreateRandomSoundsTable
 -- Settings tab: "Just For Kel"
 -- ============================================================================
 
+-- The Death Tally sub-tab's settings, described once (UI/Settings.lua; 2.0
+-- phase 3): each row is the setting's default, its control and its search
+-- entry, and refreshes itself -- they used to be hand-placed widgets that
+-- RefreshJustForKelTab re-synced one by one, with the defaults in
+-- Squizzumables.lua and again as fallbacks there. The rest of this page edits
+-- alert records, not settings, and stays as it is.
+local function DeathTallyRedraw()
+    if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
+end
+
+local KELERTS = ns.Settings.Describe({
+    sections = {
+        -- M+ Death Tally (per-player death counter, resets each key)
+        deaths = {
+            { key = "deathTallyEnabled", type = "check", default = true,
+              label = "Enable M+ Death Tally",
+              tip = "Counts deaths per player for the current Mythic+ key. Starts and resets when a key begins, "
+                  .. "and can be dismissed with its close button.",
+              apply = DeathTallyRedraw },
+            { key = "deathTallyScale", type = "slider", default = 1.0, scale = 100, min = 50, max = 200, step = 5,
+              label = "M+ Death Tally Scale", tip = "Size of the death tally frame, as a percentage.",
+              apply = function(v, userInput)
+                  if userInput and BH.deathTallyFrame then BH.deathTallyFrame:SetScale(v) end
+              end },
+            { key = "deathTallyTitleFontSize", type = "slider", default = 13, min = 8, max = 24, step = 1,
+              label = "Title Font Size", tip = "Size of the death tally heading text.",
+              apply = DeathTallyRedraw },
+            { key = "deathTallyRowFontSize", type = "slider", default = 12, min = 8, max = 20, step = 1,
+              label = "Row Font Size", tip = "Size of the per-player rows in the death tally.",
+              apply = DeathTallyRedraw },
+            { key = "deathTallyClassColorNames", type = "check", default = true,
+              label = "Class color names", tip = "Colour each name in the death tally by that player class.",
+              apply = DeathTallyRedraw },
+            { key = "deathTallyHideRealm", type = "check", default = true,
+              label = "Hide realm names",
+              tip = "Strip the -Realm suffix from names in the death tally, for cross-realm groups.",
+              apply = DeathTallyRedraw },
+            { key = "deathTallyLocked", type = "check", default = false,
+              label = "Lock M+ Death Tally", tip = "Stops the death tally frame being dragged.",
+              apply = function(v)
+                  if BH.deathTallyFrame then
+                      BH.deathTallyFrame:SetMovable(not v)
+                      BH.deathTallyFrame:EnableMouse(not v)
+                  end
+              end },
+        },
+    },
+})
+
 function BH:BuildJustForKelTab(parent)
     -- Three unrelated things shared this page: the lust alert, the buff sound
     -- grid and the death tally. `content` is reassigned at each boundary below.
@@ -461,83 +510,7 @@ function BH:BuildJustForKelTab(parent)
     ns.Rows.currentSection = content.section
     yOffset = -14
 
-    local dtEnableCb = CreateSQCheckbox(content, "Enable M+ Death Tally", function(checked)
-        BH.settings.deathTallyEnabled = checked
-        BH:SaveSettings()
-        if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
-    end)
-    dtEnableCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelDeathTallyEnableCb = dtEnableCb
-    ns.Rows.AddTooltip(dtEnableCb, "Enable M+ Death Tally", "Counts deaths per player for the current Mythic+ key. Starts and resets when a key begins, and can be dismissed with its close button.")
-    yOffset = yOffset - 34
-
-    local dtScaleSlider = CreateSQSlider(content, "M+ Death Tally Scale", 300, 50, 200, 5)
-    dtScaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    dtScaleSlider:SetAfterValueChanged(function(value, userInput)
-        BH.settings.deathTallyScale = value / 100
-        BH:SaveSettings()
-        if userInput and BH.deathTallyFrame then
-            BH.deathTallyFrame:SetScale(value / 100)
-        end
-    end)
-    self.kelDeathTallyScaleSlider = dtScaleSlider
-    ns.Rows.AddTooltip(dtScaleSlider, "M+ Death Tally Scale", "Size of the death tally frame, as a percentage.")
-    yOffset = yOffset - 50
-
-    local dtTitleFontSlider = CreateSQSlider(content, "Title Font Size", 300, 8, 24, 1)
-    dtTitleFontSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    dtTitleFontSlider:SetAfterValueChanged(function(value)
-        BH.settings.deathTallyTitleFontSize = value
-        BH:SaveSettings()
-        if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
-    end)
-    self.kelDeathTallyTitleFontSlider = dtTitleFontSlider
-    ns.Rows.AddTooltip(dtTitleFontSlider, "Title Font Size", "Size of the death tally heading text.")
-    yOffset = yOffset - 50
-
-    local dtRowFontSlider = CreateSQSlider(content, "Row Font Size", 300, 8, 20, 1)
-    dtRowFontSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    dtRowFontSlider:SetAfterValueChanged(function(value)
-        BH.settings.deathTallyRowFontSize = value
-        BH:SaveSettings()
-        if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
-    end)
-    self.kelDeathTallyRowFontSlider = dtRowFontSlider
-    ns.Rows.AddTooltip(dtRowFontSlider, "Row Font Size", "Size of the per-player rows in the death tally.")
-    yOffset = yOffset - 50
-
-    local dtClassColorCb = CreateSQCheckbox(content, "Class color names", function(checked)
-        BH.settings.deathTallyClassColorNames = checked
-        BH:SaveSettings()
-        if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
-    end)
-    dtClassColorCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelDeathTallyClassColorCb = dtClassColorCb
-    ns.Rows.AddTooltip(dtClassColorCb, "Class color names", "Colour each name in the death tally by that player class.")
-    yOffset = yOffset - 26
-
-    local dtHideRealmCb = CreateSQCheckbox(content, "Hide realm names", function(checked)
-        BH.settings.deathTallyHideRealm = checked
-        BH:SaveSettings()
-        if BH.deathTallyFrame then BH:UpdateDeathTallyDisplay() end
-    end)
-    dtHideRealmCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelDeathTallyHideRealmCb = dtHideRealmCb
-    ns.Rows.AddTooltip(dtHideRealmCb, "Hide realm names", "Strip the -Realm suffix from names in the death tally, for cross-realm groups.")
-    yOffset = yOffset - 34
-
-    local dtLockCb = CreateSQCheckbox(content, "Lock M+ Death Tally", function(checked)
-        BH.settings.deathTallyLocked = checked
-        BH:SaveSettings()
-        if BH.deathTallyFrame then
-            BH.deathTallyFrame:SetMovable(not checked)
-            BH.deathTallyFrame:EnableMouse(not checked)
-        end
-    end)
-    dtLockCb:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelLockDeathTallyCheckbox = dtLockCb
-    ns.Rows.AddTooltip(dtLockCb, "Lock M+ Death Tally", "Stops the death tally frame being dragged.")
-    yOffset = yOffset - 28
+    yOffset = ns.Settings.AddRows(KELERTS, "deaths", content, yOffset)
 
     content:SetHeight(math.abs(yOffset) + 20)
     ns.Rows.currentSection = nil
@@ -596,28 +569,8 @@ function BH:RefreshJustForKelTab()
     if self.kelOpacitySlider then
         self.kelOpacitySlider:SetValue(math.floor(((la.opacity) or 1.0) * 100 + 0.5))
     end
-    -- M+ Death Tally controls
-    if self.kelDeathTallyEnableCb then
-        self.kelDeathTallyEnableCb:SetChecked(BH.settings and BH.settings.deathTallyEnabled ~= false)
-    end
-    if self.kelDeathTallyScaleSlider then
-        self.kelDeathTallyScaleSlider:SetValue((BH.settings and BH.settings.deathTallyScale or 1.0) * 100)
-    end
-    if self.kelDeathTallyTitleFontSlider then
-        self.kelDeathTallyTitleFontSlider:SetValue((BH.settings and BH.settings.deathTallyTitleFontSize) or 13)
-    end
-    if self.kelDeathTallyRowFontSlider then
-        self.kelDeathTallyRowFontSlider:SetValue((BH.settings and BH.settings.deathTallyRowFontSize) or 12)
-    end
-    if self.kelDeathTallyClassColorCb then
-        self.kelDeathTallyClassColorCb:SetChecked(BH.settings and BH.settings.deathTallyClassColorNames ~= false)
-    end
-    if self.kelDeathTallyHideRealmCb then
-        self.kelDeathTallyHideRealmCb:SetChecked(BH.settings and BH.settings.deathTallyHideRealm ~= false)
-    end
-    if self.kelLockDeathTallyCheckbox then
-        self.kelLockDeathTallyCheckbox:SetChecked(BH.settings and BH.settings.deathTallyLocked or false)
-    end
+    -- The M+ Death Tally rows are described (KELERTS above) and refresh
+    -- themselves through Rows.
 
 end
 

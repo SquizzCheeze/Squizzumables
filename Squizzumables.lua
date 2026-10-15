@@ -102,15 +102,6 @@ BH.defaultSettings = {
     npPurgeGlowStyle = "halo",      -- "halo" (ours) or "game" (Blizzard's)
     npPurgeGlowColor = { r = 1, g = 0.82, b = 0 },
 
-    -- M+ Death Tally (per-player death counter, resets each key)
-    deathTallyEnabled = true,
-    deathTallyLocked = false,
-    deathTallyScale = 1.0,
-    deathTallyClassColorNames = true,
-    deathTallyHideRealm = true,
-    deathTallyTitleFontSize = 13,
-    deathTallyRowFontSize = 12,
-
     -- Where the addon shows itself. Filled from CONTENT_TYPES on load, so a
     -- content type added later reaches existing players through ApplyDefaults
     -- rather than needing a migration.
