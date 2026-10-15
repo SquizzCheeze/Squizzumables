@@ -414,6 +414,9 @@ shell, setup and polish), each gated.
   copies position / scale / lock from the played class's reminder in every profile. Settings: Text
   Reminders > Class (shared scale + lock, four ticks; No Pet's moved from Class Buffs), Repair on its
   own sub-tab. NEVER re-anchor one of the four to UIParent (Reset Positions did; it now resets the frame).
+- Coach's Whistle settings stay where they are (hand-built, bottom of Consumables, shown only while
+  the trinket is equipped). User decision 2026-10-16: the trinket is gone in season 2 but may return,
+  so leave it alone -- do not move it onto Rows / a Text Reminders sub-tab unless asked.
 - The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
   and says nothing on Windows -- use `git add -u` or the real name.
 - Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. Raid Tools described 2026-10-16
