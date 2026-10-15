@@ -844,9 +844,14 @@ do
         f:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
     end
     f:SetScript("OnEvent", function(_, _, _, state)
-        if state ~= 0 or not registrationQueued then return end   -- 0 = Inactive
+        if state ~= 0 then return end   -- 0 = Inactive
         C_Timer.After(0, function()
-            if registrationQueued and not ActiveRestriction() then RunRegistration() end
+            if ActiveRestriction() then return end
+            if registrationQueued then RunRegistration() end
+            -- The reminder buttons hold their state under a restriction too
+            -- (BH:UpdateButtons); rebuild them now rather than on the next
+            -- aura change.
+            if BH.ScheduleUpdateButtons then BH:ScheduleUpdateButtons() end
         end)
     end)
 end
