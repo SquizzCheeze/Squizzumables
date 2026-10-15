@@ -11673,14 +11673,14 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
     end
 end
 
--- /squizz shortcut to open config directly; /squizz CDMS opens Cooldown Alerts
--- (Kelerts > Cooldown Alerts since 2.0, which replaced the CDM Sounds tab)
+-- /squizz shortcut to open config directly; /squizz CDMS opens CDM Alerts
+-- (Kelerts > CDM Alerts since 2.0, which replaced the CDM Sounds tab)
 SLASH_SQUIZZUMABLESCONFIG1 = '/squizz'
 SlashCmdList['SQUIZZUMABLESCONFIG'] = function(msg)
     BH:CreateOptionsPanel()
     if msg and msg:upper() == "CDMS" then
         if BH.switchTab then BH.switchTab("kel") end
-        if BH.kelPages and BH.kelPages.Select then BH.kelPages.Select("cooldowns") end
+        if BH.kelPages and BH.kelPages.Select then BH.kelPages.Select("buffsounds") end
     end
 end
 

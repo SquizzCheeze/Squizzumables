@@ -22,8 +22,8 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
     ["2.0"] = {
-        "Cooldown Alerts (Kelerts, beside Buff Alerts) replace the CDM Sounds page, and can now show an image too - glows, flames, arcs or your own - for a few seconds or until you use the spell. Works in combat.",
-        "Buff sounds you had on CDM Sounds were moved to Buff Alerts for you.",
+        "CDM Alerts (Kelerts): your buffs and cooldowns in one grid, one editor. Cooldowns can now show an image too - glows, flames, arcs or your own - when ready or on cooldown. Works in combat. Replaces the CDM Sounds page.",
+        "Buff sounds you had on CDM Sounds were moved to that buff in CDM Alerts for you.",
         "Fixed: every reminder button could pop up at once when the game stopped letting addons see your buffs (seen in the new labyrinth). They now keep showing what they last knew, the same as in combat.",
     },
     ["1.99"] = {

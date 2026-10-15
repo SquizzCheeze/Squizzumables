@@ -814,7 +814,7 @@ local function MigrateBuffEventAlerts()
     end
     if moved > 0 then
         BH:SaveSettings()
-        print(("|cFF00FF00Squizzumables:|r moved %d buff sound%s from Cooldown Alerts to Buff Alerts.")
+        print(("|cFF00FF00Squizzumables:|r moved %d buff sound%s to their buff in CDM Alerts.")
             :format(moved, moved == 1 and "" or "s"))
     end
 end
@@ -1839,12 +1839,55 @@ end
 
 -- Which icon the editor below the grid is editing.
 local selectedBuffSpellID
+-- ...or, since 2.0, which cooldown (CDM Alerts lists both in one grid). Held
+-- as the spell ID (or cooldownID) and resolved against the live grid on every
+-- rebuild, since the grid's entry tables are rebuilt each time.
+local selectedCDKey
+local selectedCD
+
+local function CooldownMoveKey(cd) return "cd:" .. tostring(cd.spellID or cd.cooldownID) end
 
 function BH.SelectBuffSpell(spellID)
     -- A Move handle belongs to the buff it was opened for; picking another
     -- buff puts it away rather than leaving it to move the wrong image.
     if moving and moving.key ~= BuffMoveKey(spellID) then BH.StopMovingImage() end
     selectedBuffSpellID = tonumber(spellID)
+    selectedCDKey, selectedCD = nil, nil
+end
+
+function BH.SelectCooldown(cd)
+    if moving and moving.key ~= CooldownMoveKey(cd) then BH.StopMovingImage() end
+    selectedCDKey, selectedCD = cd.spellID or cd.cooldownID, cd
+    selectedBuffSpellID = nil
+end
+
+-- This spec's Essential and Utility cooldowns, one entry per spell (a spell
+-- can sit in two viewers; its other cooldownIDs ride along as `siblings`, so
+-- the events offered can be the union of what each supports).
+local function CooldownGridEntries()
+    local out = { cooldown = {}, utility = {} }
+    local cdm = BH.cdm
+    if not (cdm and cdm.GetAvailableCooldowns) then return out end
+    local bySpell = {}
+    for _, info in pairs(cdm:GetAvailableCooldowns() or {}) do
+        local list = out[info.viewerType or "cooldown"]
+        if list then
+            local sid = info.spellID
+            local e = sid and bySpell[sid]
+            if e then
+                e.siblings = e.siblings or {}
+                e.siblings[#e.siblings + 1] = info.cooldownID
+            else
+                e = { cooldownID = info.cooldownID, spellID = sid, name = info.name, icon = info.icon }
+                if sid then bySpell[sid] = e end
+                list[#list + 1] = e
+            end
+        end
+    end
+    for _, list in pairs(out) do
+        table.sort(list, function(a, b) return (a.name or "") < (b.name or "") end)
+    end
+    return out
 end
 
 -- Every spell the grid should show: this spec's own buffs, plus anything
@@ -1890,6 +1933,48 @@ local BUFF_ICON_SIZE = 30
 local BUFF_ICON_GAP  = 4
 local BUFF_PER_ROW   = 10
 
+-- One icon in the grid. Three states worth telling apart at a glance:
+-- selected, set up (has a sound or an image), and neither. A configured icon
+-- keeps an accent border once the selection moves on, or there is no way to
+-- see what is already set up without clicking every icon in turn.
+local function GridIcon(grid, x, y, info, selected, configured, onClick, tipLines)
+    local btn = CreateFrame("Button", nil, grid, "BackdropTemplate")
+    btn:SetSize(BUFF_ICON_SIZE, BUFF_ICON_SIZE)
+    btn:SetPoint("TOPLEFT", grid, "TOPLEFT", x, y)
+
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints()
+    icon:SetTexture(info.icon)
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+
+    ns.ApplySQBackdrop(btn, { 0, 0, 0, 0 }, SQ_COLORS.border)
+    if selected then
+        local r, g, b = ns.GetAccentColor()
+        btn:SetBackdropBorderColor(r, g, b, 1)
+    elseif configured then
+        local r, g, b = ns.GetAccentColor("dim")
+        btn:SetBackdropBorderColor(r, g, b, 0.8)
+    else
+        btn:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 1)
+        icon:SetDesaturated(true)
+        icon:SetAlpha(0.7)
+    end
+
+    btn:SetScript("OnClick", onClick)
+    btn:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+        GameTooltip:SetText(BH.Secrets.SafeString(info.name, nil) or ("Spell " .. tostring(info.spellID)))
+        GameTooltip:AddLine("Spell ID " .. tostring(info.spellID), 0.7, 0.7, 0.7, false)
+        for _, line in ipairs(tipLines) do GameTooltip:AddLine(line, 0.7, 0.7, 0.7, true) end
+        if configured then GameTooltip:AddLine("Has a sound or an image.", 0.7, 0.7, 0.7, true) end
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+-- The CDM Alerts grid (2.0): your buffs, then this spec's Essential and
+-- Utility cooldowns, in one grid with one selection, so a buff and a cooldown
+-- open the same editor (user decision 2026-10-15).
 function BH:RebuildBuffSoundGrid()
     local grid = self.kelBuffGrid
     if not grid then return end
@@ -1904,82 +1989,83 @@ function BH:RebuildBuffSoundGrid()
     end
 
     local entries = BuffGridEntries()
-    if #entries == 0 then
-        local none = grid:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        none:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, 0)
-        none:SetText("No self-buffs found for this spec.")
-        none:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-        grid:SetHeight(20)
-        return
+    local cds = CooldownGridEntries()
+
+    -- Resolve the cooldown selection against this build; drop any selection
+    -- this spec no longer offers, so the editor below never describes a spell
+    -- missing from the grid above it.
+    selectedCD = nil
+    if selectedCDKey then
+        for _, list in pairs(cds) do
+            for _, cd in ipairs(list) do
+                if (cd.spellID or cd.cooldownID) == selectedCDKey then selectedCD = cd end
+            end
+        end
+        if not selectedCD then selectedCDKey = nil end
+    end
+    if not selectedCD then
+        local stillPresent = false
+        for _, e in ipairs(entries) do
+            if e.spellID == selectedBuffSpellID then stillPresent = true break end
+        end
+        if not stillPresent then
+            selectedBuffSpellID = entries[1] and entries[1].spellID or nil
+            if not selectedBuffSpellID then
+                local first = cds.cooldown[1] or cds.utility[1]
+                if first then selectedCDKey, selectedCD = first.spellID or first.cooldownID, first end
+            end
+        end
     end
 
-    -- Drop a selection this spec no longer offers, so the editor below never
-    -- describes a spell missing from the grid above it.
-    local stillPresent = false
-    for _, e in ipairs(entries) do
-        if e.spellID == selectedBuffSpellID then stillPresent = true break end
+    local y = 0
+    local function Section(label, list, draw)
+        if #list == 0 then return end
+        local hdr = grid:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        hdr:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, y)
+        hdr:SetText(label)
+        ns.ApplyAccent(hdr, "text")
+        y = y - 16
+        local rows = 0
+        for i, item in ipairs(list) do
+            local col = (i - 1) % BUFF_PER_ROW
+            local row = math.floor((i - 1) / BUFF_PER_ROW)
+            rows = row + 1
+            draw(item, col * (BUFF_ICON_SIZE + BUFF_ICON_GAP), y - row * (BUFF_ICON_SIZE + BUFF_ICON_GAP))
+        end
+        y = y - rows * (BUFF_ICON_SIZE + BUFF_ICON_GAP) - 6
     end
-    if not stillPresent then selectedBuffSpellID = entries[1].spellID end
 
     local store = BH.BuffSounds()
-    local rows = 0
-    for i, entry in ipairs(entries) do
-        local col = (i - 1) % BUFF_PER_ROW
-        local row = math.floor((i - 1) / BUFF_PER_ROW)
-        rows = row + 1
+    Section("BUFFS", entries, function(entry, x, iy)
+        GridIcon(grid, x, iy, entry, entry.spellID == selectedBuffSpellID, store[entry.spellID] ~= nil,
+            function()
+                BH.SelectBuffSpell(entry.spellID)
+                BH:RebuildBuffSoundGrid()
+                BH:RebuildBuffSoundEditor()
+            end,
+            entry.manual and { "Added by spell ID." } or {})
+    end)
 
-        local btn = CreateFrame("Button", nil, grid, "BackdropTemplate")
-        btn:SetSize(BUFF_ICON_SIZE, BUFF_ICON_SIZE)
-        btn:SetPoint("TOPLEFT", grid, "TOPLEFT",
-            col * (BUFF_ICON_SIZE + BUFF_ICON_GAP),
-            -row * (BUFF_ICON_SIZE + BUFF_ICON_GAP))
-
-        local icon = btn:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints()
-        icon:SetTexture(entry.icon)
-        icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-
-        ns.ApplySQBackdrop(btn, { 0, 0, 0, 0 }, SQ_COLORS.border)
-
-        -- Three states worth telling apart at a glance: selected, has a sound,
-        -- and neither. A configured spell keeps an accent border once the
-        -- selection moves on, or there is no way to see what is already set up
-        -- without clicking every icon in turn.
-        local configured = store[entry.spellID] ~= nil
-        if entry.spellID == selectedBuffSpellID then
-            local r, g, b = ns.GetAccentColor()
-            btn:SetBackdropBorderColor(r, g, b, 1)
-        elseif configured then
-            local r, g, b = ns.GetAccentColor("dim")
-            btn:SetBackdropBorderColor(r, g, b, 0.8)
-        else
-            btn:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2],
-                                       SQ_COLORS.border[3], 1)
-            icon:SetDesaturated(true)
-            icon:SetAlpha(0.7)
-        end
-
-        btn:SetScript("OnClick", function()
-            BH.SelectBuffSpell(entry.spellID)
-            BH:RebuildBuffSoundGrid()
-            BH:RebuildBuffSoundEditor()
-        end)
-        btn:SetScript("OnEnter", function(s)
-            GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
-            GameTooltip:SetText(entry.name or ("Spell " .. entry.spellID))
-            GameTooltip:AddLine("Spell ID " .. entry.spellID, 0.7, 0.7, 0.7, false)
-            if entry.manual then
-                GameTooltip:AddLine("Added by spell ID.", 0.7, 0.7, 0.7, true)
-            end
-            if configured then
-                GameTooltip:AddLine("Has a sound or an image.", 0.7, 0.7, 0.7, true)
-            end
-            GameTooltip:Show()
-        end)
-        btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    local function DrawCooldown(cd, x, iy)
+        local list = BH.cdm and BH.cdm.AlertListFor and BH.cdm.AlertListFor(cd.cooldownID, false)
+        GridIcon(grid, x, iy, cd, selectedCD == cd, list ~= nil and #list > 0,
+            function()
+                BH.SelectCooldown(cd)
+                BH:RebuildBuffSoundGrid()
+                BH:RebuildBuffSoundEditor()
+            end, {})
     end
+    Section("ESSENTIAL", cds.cooldown, DrawCooldown)
+    Section("UTILITY", cds.utility, DrawCooldown)
 
-    grid:SetHeight(rows * (BUFF_ICON_SIZE + BUFF_ICON_GAP))
+    if y == 0 then
+        local none = grid:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        none:SetPoint("TOPLEFT", grid, "TOPLEFT", 0, 0)
+        none:SetText("No buffs or cooldowns found for this spec.")
+        none:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        y = -20
+    end
+    grid:SetHeight(math.abs(y))
 end
 
 -- The image controls, shared by every alert that can show an image: Buff
@@ -2326,6 +2412,238 @@ local function BuildImageControls(editor, y, o)
 end
 BH.BuildImageControls = BuildImageControls
 
+-- ============================================================================
+-- The cooldown half of CDM Alerts (2.0)
+--
+-- Laid out like the buff editor on purpose (user decision 2026-10-15: one tab,
+-- click a buff or a cooldown, same options): a sound row per event, then the
+-- same image controls. A cooldown's events are Ready and On cooldown (what
+-- Blizzard's GetValidAlertTypes offers for it). The data stays where cooldown
+-- alerts always lived -- a per-spec list of { type, when, sound } entries,
+-- BH.cdm.AlertListFor -- and the image rides on the entry of the event it is
+-- shown on ("Show on"), so PlayAlertsFor fires sound and image together.
+-- ============================================================================
+local CD_WHENS = { "available", "start" }
+local CD_WHEN_LABEL = { available = "Ready:", start = "On cooldown:" }
+local CD_WHEN_NAME  = { available = "Ready", start = "On cooldown" }
+
+-- The events this cooldown can raise, in display order.
+local function CooldownWhens(cd)
+    local allowed, any = {}, false
+    local ids = { cd.cooldownID }
+    for _, s in ipairs(cd.siblings or {}) do ids[#ids + 1] = s end
+    local map = (BH.cdm and BH.cdm.AlertEventToWhen) or {}
+    for _, id in ipairs(ids) do
+        local types = C_CooldownViewer and C_CooldownViewer.GetValidAlertTypes
+            and C_CooldownViewer.GetValidAlertTypes(id)
+        if types and #types > 0 then
+            any = true
+            for _, ev in ipairs(types) do
+                local w = map[ev]
+                if w then allowed[w] = true end
+            end
+        end
+    end
+    if not any then allowed.available, allowed.start = true, true end
+    local out = {}
+    for _, w in ipairs(CD_WHENS) do if allowed[w] then out[#out + 1] = w end end
+    return out
+end
+
+local function CooldownAlert(cd, when, create)
+    local list = BH.cdm.AlertListFor(cd.cooldownID, create)
+    if not list then return nil end
+    for _, a in ipairs(list) do
+        if a.when == when then return a end
+    end
+    if create then
+        local a = { type = "Sound", when = when, sound = "None" }
+        list[#list + 1] = a
+        return a
+    end
+end
+
+-- The entry carrying this cooldown's image, if any.
+local function CooldownImageAlert(cd)
+    local list = BH.cdm.AlertListFor(cd.cooldownID, false)
+    for _, a in ipairs(list or {}) do
+        if a.image then return a end
+    end
+end
+
+-- Drop entries left with neither a sound nor an image, and an emptied list.
+local function PruneCooldownAlerts(cd)
+    local list, store, key = BH.cdm.AlertListFor(cd.cooldownID, false)
+    if not list then return end
+    for i = #list, 1, -1 do
+        local a = list[i]
+        if (not a.sound or a.sound == "None") and not a.image then table.remove(list, i) end
+    end
+    if #list == 0 then store[key] = nil end
+end
+
+-- Move every image field from one entry to another ("Show on" changed).
+local function MoveImageFields(from, to)
+    for k, v in pairs(from) do
+        if type(k) == "string" and k:sub(1, 5) == "image" then
+            to[k] = v
+            from[k] = nil
+        end
+    end
+end
+
+local function BuildCooldownEditor(editor, cd)
+    local y = 0
+    local name = BH.Secrets.SafeString(cd.name, nil) or ("Spell " .. tostring(cd.spellID))
+
+    local title = editor:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y)
+    title:SetText(name .. "  (" .. tostring(cd.spellID or cd.cooldownID) .. ")")
+    ns.ApplyAccent(title, "text")
+    y = y - 22
+
+    local whens = CooldownWhens(cd)
+    local function Refresh()
+        PruneCooldownAlerts(cd)
+        BH:RebuildBuffSoundGrid()
+        BH:RebuildBuffSoundEditor()
+    end
+
+    -- One sound row per event, like the buff's Applied / Removed rows.
+    for _, when in ipairs(whens) do
+        local lbl = editor:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        lbl:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, y - 4)
+        lbl:SetWidth(76)
+        lbl:SetJustifyH("LEFT")
+        lbl:SetText(CD_WHEN_LABEL[when])
+        lbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+
+        local drop = CreateSQDropdown(editor, "", 184, BH:BuildSoundDropdownItems(), function(val)
+            CooldownAlert(cd, when, true).sound = val
+            Refresh()
+        end)
+        drop:SetPoint("TOPLEFT", editor, "TOPLEFT", 80, y)
+        local a = CooldownAlert(cd, when, false)
+        drop:SetSelectedValue((a and a.sound) or "None")
+        ns.Rows.AddTooltip(drop, CD_WHEN_NAME[when],
+            when == "available"
+                and "Played when this ability comes off cooldown and is ready to use."
+                or "Played when this ability goes on cooldown.")
+
+        local test = CreateSQButton(editor, "Test", 46, 22)
+        test:SetPoint("LEFT", drop.btn, "RIGHT", 6, 0)
+        test:SetScript("OnClick", function()
+            local cur = CooldownAlert(cd, when, false)
+            if cur and cur.sound and cur.sound ~= "None" then BH:PlaySound(cur.sound) end
+        end)
+        y = y - 28
+    end
+
+    local list = BH.cdm.AlertListFor(cd.cooldownID, false)
+    if list and #list > 0 then
+        local rm = CreateSQButton(editor, "Remove", 68, 22, SQ_COLORS.danger)
+        rm:SetPoint("TOPLEFT", editor, "TOPLEFT", 80, y)
+        rm:SetScript("OnClick", function()
+            local _, store, key = BH.cdm.AlertListFor(cd.cooldownID, false)
+            if store then store[key] = nil end
+            BH.StopMovingImage()
+            BH:RebuildBuffSoundGrid()
+            BH:RebuildBuffSoundEditor()
+        end)
+        ns.Rows.AddTooltip(rm, "Remove", "Clear this cooldown's sounds and image.")
+        y = y - 30
+    else
+        y = y - 2
+    end
+
+    -- ── IMAGE ─────────────────────────────────────────────────────────────
+    local moveKey = CooldownMoveKey(cd)
+    local held = CooldownImageAlert(cd)
+    local showOn = (held and held.when) or whens[1] or "available"
+    local function Get() return CooldownImageAlert(cd) end
+    local function Edit() return CooldownImageAlert(cd) or CooldownAlert(cd, showOn, true) end
+
+    y = BuildImageControls(editor, y, {
+        entry   = Get,
+        edit    = Edit,
+        -- Cooldown alerts live in SquizzumablesDB.cdmData and are drawn on the
+        -- spot when they fire, so there is nothing to rebuild but the page.
+        changed = function(rebuildEditor)
+            PruneCooldownAlerts(cd)
+            BH:RebuildBuffSoundGrid()
+            if rebuildEditor then BH:RebuildBuffSoundEditor() end
+        end,
+        soon    = function() end,
+        rebuild = function() BH:RebuildBuffSoundEditor() end,
+        test    = function() BH:PreviewImage(Get()) end,
+        moving  = function() return BH.MovingImage(moveKey) end,
+        move    = function() BH:MoveImage(moveKey, Get) end,
+        afterImage = function(ed, iy)
+            if #whens > 1 then
+                local onLbl = ed:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                onLbl:SetPoint("TOPLEFT", ed, "TOPLEFT", 0, iy - 4)
+                onLbl:SetText("Show on:")
+                onLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+                local items = {}
+                for _, w in ipairs(whens) do items[#items + 1] = { text = CD_WHEN_NAME[w], value = w } end
+                local onDrop = CreateSQDropdown(ed, "", 200, items, function(val)
+                    local from = CooldownImageAlert(cd)
+                    if from and from.when ~= val then
+                        MoveImageFields(from, CooldownAlert(cd, val, true))
+                        PruneCooldownAlerts(cd)
+                        BH:RebuildBuffSoundEditor()
+                    end
+                end)
+                onDrop:SetPoint("TOPLEFT", ed, "TOPLEFT", 64, iy)
+                onDrop:SetSelectedValue(showOn)
+                ns.Rows.AddTooltip(onDrop, "Show on",
+                    "Which moment brings the image up: the ability becoming ready, or going on cooldown.")
+                iy = iy - 30
+            end
+
+            local forLbl = ed:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            forLbl:SetPoint("TOPLEFT", ed, "TOPLEFT", 0, iy - 4)
+            forLbl:SetText("Show for:")
+            forLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+            local forDrop = CreateSQDropdown(ed, "", 200, {
+                { text = "1 second",             value = 1 },
+                { text = "2 seconds",            value = 2 },
+                { text = "3 seconds",            value = 3 },
+                { text = "5 seconds",            value = 5 },
+                { text = "10 seconds",           value = 10 },
+                { text = "Until the next event", value = "next" },
+            }, function(val)
+                local e = Get()
+                if e then e.imageShowFor = val end
+            end)
+            forDrop:SetPoint("TOPLEFT", ed, "TOPLEFT", 64, iy)
+            forDrop:SetSelectedValue((held and held.imageShowFor) or 2)
+            ns.Rows.AddTooltip(forDrop, "Show for",
+                "How long the image stays up. Until the next event keeps it until this spell does something "
+                .. "else: a Ready image stays until you use the spell, an On cooldown image until it is ready "
+                .. "again. It fades out either way.")
+            return iy - 30
+        end,
+        imageTip = "An image on screen when this ability becomes ready or goes on cooldown, in combat too: "
+            .. "the Cooldown Manager tells Squizzumables the moment it happens. Screen edge glow is a coloured "
+            .. "vignette round the edge of the screen; the Flames are animated fire along the edges you pick. "
+            .. "The ( ) arcs and the shapes below them are placed rather than full screen: size and move them "
+            .. "to frame your character. Those marked (still) do not animate.",
+    })
+    return y
+end
+
+-- Size the editor and the page around it. The grid above can grow (more
+-- cooldowns, another spec), so the page height is measured from the grid's
+-- real bottom rather than fixed when the tab was built.
+local function FinishEditor(self, editor, y)
+    editor:SetHeight(math.abs(y) + 4)
+    if self.kelBuffPage and self.kelBuffGridTop and self.kelBuffGrid then
+        self.kelBuffPage:SetHeight(self.kelBuffGridTop + self.kelBuffGrid:GetHeight() + 40
+            + editor:GetHeight() + 32)
+    end
+end
+
 function BH:RebuildBuffSoundEditor()
     local editor = self.kelBuffEditor
     if not editor then return end
@@ -2337,6 +2655,12 @@ function BH:RebuildBuffSoundEditor()
     for _, region in ipairs({ editor:GetRegions() }) do
         region:Hide()
         region:SetParent(nil)
+    end
+
+    -- A cooldown picked in the grid: the same layout, its own events.
+    if selectedCD and BH.cdm and BH.cdm.AlertListFor then
+        FinishEditor(self, editor, BuildCooldownEditor(editor, selectedCD))
+        return
     end
 
     local spellID = selectedBuffSpellID
@@ -2535,10 +2859,7 @@ function BH:RebuildBuffSoundEditor()
             .. "full screen: size and move them to frame your character. Those marked (still) do not animate.",
     })
 
-    editor:SetHeight(math.abs(y) + 4)
-    if self.kelBuffPage and self.kelBuffEditorTop then
-        self.kelBuffPage:SetHeight(self.kelBuffEditorTop + editor:GetHeight() + 32)
-    end
+    FinishEditor(self, editor, y)
 end
 
 -- Previous trigger state, per alert id, for edge detection.
@@ -2612,30 +2933,10 @@ function BH:BuildJustForKelTab(parent)
     -- setting up one alert across two tabs.
     local pages = ns.SubTabs.Create(parent, {
         { key = "alerts",     label = "Lust Alert" },
-        { key = "buffsounds", label = "Buff Alerts" },
-        { key = "cooldowns",  label = "Cooldown Alerts" },
+        { key = "buffsounds", label = "CDM Alerts" },
         { key = "deaths",     label = "Death Tally" },
     })
     self.kelPages = pages
-
-    -- Cooldown Alerts: the old CDM Sounds sidebar page, moved here in 2.0 and
-    -- given images (user decision 2026-10-15). Its builder makes its own two
-    -- scrolling panels, so it cannot live inside the sub-tab's scroll child;
-    -- it fills the same area on a frame of its own that follows the sub-tab's
-    -- scroller in and out of view.
-    do
-        local page = pages.cooldowns
-        local host = CreateFrame("Frame", nil, parent)
-        host:SetPoint("TOPLEFT", page.scroller, "TOPLEFT", 0, 0)
-        host:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 0)
-        -- Over the sub-tab's own (empty) scroller and its scroll bar.
-        host:SetFrameLevel(page.scroller:GetFrameLevel() + 10)
-        host:SetShown(page.scroller:IsShown())
-        page.scroller:HookScript("OnShow", function() host:Show() end)
-        page.scroller:HookScript("OnHide", function() host:Hide() end)
-        ns.Rows.currentSection = page.section
-        if BH.BuildCDMSoundsTab then BH:BuildCDMSoundsTab(host) end
-    end
 
     local content = pages.alerts
     ns.Rows.currentSection = content.section
@@ -2965,7 +3266,7 @@ function BH:BuildJustForKelTab(parent)
         bsNote:SetWidth(372)
         bsNote:SetJustifyH("LEFT")
         bsNote:SetWordWrap(true)
-        bsNote:SetText("Your spec's buffs. Click one to give it a sound when it lands or drops, and an image that shows for as long as it is up. Both are handled by the game itself, so they work in combat too.")
+        bsNote:SetText("Your spec's buffs and cooldowns. Click one to give it a sound and an image: a buff when it lands or drops (the image shows while it is up), a cooldown when it is ready or goes on cooldown. All of it works in combat.")
         bsNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
         yOffset = yOffset - 44
 
@@ -3000,6 +3301,10 @@ function BH:BuildJustForKelTab(parent)
             grid:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
             grid:SetSize(372, 40)
             self.kelBuffGrid = grid
+            -- Everything below hangs off the grid's bottom, so it follows the
+            -- grid when it grows (cooldowns joined it in 2.0, and a spec
+            -- change redraws it); FinishEditor sizes the page the same way.
+            self.kelBuffGridTop = math.abs(yOffset)
             self:RebuildBuffSoundGrid()
             yOffset = yOffset - (grid:GetHeight() + 10)
 
@@ -3009,7 +3314,7 @@ function BH:BuildJustForKelTab(parent)
             -- casts as 61107 and applies 92824), so there has to be a way to
             -- name the aura directly rather than discovering it does not work.
             local manLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            manLbl:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+            manLbl:SetPoint("TOPLEFT", grid, "BOTTOMLEFT", 0, -10)
             manLbl:SetText("Add by spell ID:")
             manLbl:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
 
@@ -3036,14 +3341,13 @@ function BH:BuildJustForKelTab(parent)
 
             -- Editor for whichever icon is selected.
             local editor = CreateFrame("Frame", nil, content)
-            editor:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+            editor:SetPoint("TOPLEFT", grid, "BOTTOMLEFT", 0, -40)
             editor:SetSize(372, 40)
             self.kelBuffEditor = editor
             -- The editor's height follows what the selected buff has turned
             -- on (the image options add rows), so it resizes this page itself
             -- after every rebuild -- sized once here, the new rows were cut off.
             self.kelBuffPage = content
-            self.kelBuffEditorTop = math.abs(yOffset)
             self:RebuildBuffSoundEditor()
             yOffset = yOffset - (editor:GetHeight() + 12)
         end
