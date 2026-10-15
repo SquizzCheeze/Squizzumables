@@ -38,6 +38,29 @@ end
 
 local KELERTS = ns.Settings.Describe({
     sections = {
+        -- Lust Alert > Alert Frame. No lock key: the alert image is
+        -- click-through unconditionally, and Unlock Frames is what makes it
+        -- draggable. (Its opacity, beside it, is part of the alert record, not
+        -- a setting, so it stays hand-built.)
+        alertFrame = {
+            { key = "kelAlertScale", type = "slider", default = 1.0, scale = 100, min = 50, max = 300, step = 1,
+              width = 220,
+              label = "Alert Image Scale %", tip = "Size of the alert image, as a percentage.",
+              apply = function(v)
+                  if BH.kelAlertFrame then BH.kelAlertFrame:SetScale(v) end
+              end },
+        },
+        -- CDM Alerts: hide ALL of Blizzard's spell alert art (the proc
+        -- overlays round the screen centre), not just the buffs given an
+        -- image. Off by default.
+        buffsoundsTop = {
+            { key = "kelHideBlizzardAlerts", type = "check", default = false,
+              label = "Hide all of Blizzard's spell alerts",
+              tip = "Hides the art Blizzard draws round the middle of the screen when a proc or buff is up, for "
+                  .. "every spell. Without this, only the buffs you give an image here have theirs hidden. The "
+                  .. "game's alert sound still plays; the game's own Spell Alert setting turns that off.",
+              apply = function() BH:RefreshBuffImages() end },
+        },
         -- M+ Death Tally (per-player death counter, resets each key)
         deaths = {
             { key = "deathTallyEnabled", type = "check", default = true,
@@ -372,17 +395,7 @@ function BH:BuildJustForKelTab(parent)
     ns.ApplyAccent(afHdr, "text")
     yOffset = yOffset - 20
 
-    local scaleSlider = CreateSQSlider(content, "Alert Image Scale %", 220, 50, 300, 1)
-    scaleSlider:SetAfterValueChanged(function(val)
-        BH.settings.kelAlertScale = val / 100
-        BH:SaveSettings()
-        if BH.kelAlertFrame then BH.kelAlertFrame:SetScale(val / 100) end
-    end)
-    scaleSlider:SetValue((BH.settings and BH.settings.kelAlertScale or 1.0) * 100)
-    scaleSlider:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    self.kelScaleSlider = scaleSlider
-    ns.Rows.AddTooltip(scaleSlider, "Alert Image Scale %", "Size of the alert image, as a percentage.")
-    yOffset = yOffset - 50
+    yOffset = ns.Settings.AddRows(KELERTS, "alertFrame", content, yOffset)
 
     local opacitySlider = CreateSQSlider(content, "Alert Opacity %", 220, 0, 100, 1)
     opacitySlider:SetAfterValueChanged(function(val)
@@ -421,18 +434,7 @@ function BH:BuildJustForKelTab(parent)
         bsNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
         yOffset = yOffset - 44
 
-        local hideBlizz = CreateSQCheckbox(content, "Hide all of Blizzard's spell alerts", function(val)
-            BH.settings.kelHideBlizzardAlerts = val and true or false
-            BH:SaveSettings()
-            BH:RefreshBuffImages()
-        end)
-        hideBlizz:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-        hideBlizz:SetChecked(BH.settings.kelHideBlizzardAlerts == true)
-        ns.Rows.AddTooltip(hideBlizz, "Hide all of Blizzard's spell alerts",
-            "Hides the art Blizzard draws round the middle of the screen when a proc or buff is up, for every "
-            .. "spell. Without this, only the buffs you give an image here have theirs hidden. The game's alert "
-            .. "sound still plays; the game's own Spell Alert setting turns that off.")
-        yOffset = yOffset - 30
+        yOffset = ns.Settings.AddRows(KELERTS, "buffsoundsTop", content, yOffset)
 
         if not BH.AuraSoundsAvailable() then
             local nope = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -563,9 +565,8 @@ function BH:RefreshJustForKelTab()
     end
 
     -- Alert frame controls
-    if self.kelScaleSlider then
-        self.kelScaleSlider:SetValue(math.max(50, math.min(300, (BH.settings and BH.settings.kelAlertScale or 1.0) * 100)))
-    end
+    -- The alert image's scale is described (KELERTS above) and refreshes
+    -- itself; its opacity is part of the alert record, so it is synced here.
     if self.kelOpacitySlider then
         self.kelOpacitySlider:SetValue(math.floor(((la.opacity) or 1.0) * 100 + 0.5))
     end

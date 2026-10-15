@@ -132,10 +132,6 @@ BH.defaultSettings = {
     customSounds = {},
 
 
-    -- Kelerts: spell alert frame. No lock key: the alert image is click-through
-    -- unconditionally, and Unlock Frames is what makes it draggable.
-    kelAlertScale    = 1.0,
-
     -- Buff sounds: a sound when one of the player's own auras is applied or
     -- removed, keyed by aura spell ID.
     --
@@ -149,9 +145,6 @@ BH.defaultSettings = {
     -- and reports nothing back, so there is no moment at which we could draw
     -- anything. See Alerts/BuffSounds.lua.
     buffSounds = {},
-    -- Hide ALL of Blizzard's spell alert art (the proc overlays round the
-    -- screen centre), not just the buffs given an image. Off by default.
-    kelHideBlizzardAlerts = false,
 
     -- Kelerts: the lust alert.
     --
