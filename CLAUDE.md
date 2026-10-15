@@ -294,6 +294,18 @@ shell, setup and polish), each gated.
   which rebuilds those pages; the green move boxes for the Edit Mode step. One visible change: the CDM
   pages' headings used a private gold (0.87, 0.73, 0.37) ignoring the class accent; now
   `ns.GetAccentColor()`.
+- **Phase 2 (split) progress.** Feature code moves out of `Squizzumables.lua` UNCHANGED into feature
+  folders that load straight after it. Method: `perl .claude/deps.pl <file> <from> <to>` first (file-level locals a block
+  imports / exports; only BH, ns and the `ns.CreateSQ*` aliases may cross, anything else gets a
+  `BH.` accessor in the core), then the gate: wowlua_ls warning list identical line-for-line (moved
+  warnings move with their code), the set of `settings.x` keys used across the addon identical, and
+  no top-level (load-time) call into the moved code. Done: `Group/RaidTools.lua` (Raid Tools module +
+  tab; `BH.BresTrackingActive()`), `Group/RoleCCAlert.lua` (`BH:PlaySound` for its sound).
+  Squizzumables.lua 11,873 -> 10,514 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
+  header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
+  Has*Buff, SQ_BUTTON_POOL...), used across the file -- split that range by function, not by header;
+  the Death Tally section also holds the Beacon / Earth Shield constants the reminder gates use; the
+  unlock / grid code sits between Role CC pieces and stays in core until the Edit Mode step.
 - **Phase order (user agreed 2026-10-15):** theme -> split the code (phase 2) -> settings descriptions
   as a pilot on one page (Cursor), then page by page as each moves into the phase-3 shell.
 - Settings descriptions: not started.
