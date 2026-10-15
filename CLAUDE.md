@@ -321,7 +321,10 @@ shell, setup and polish), each gated.
   `Reminders/ClassBuffsTab.lua` (publishes BH.CLASS_NAMES as before).
   Squizzumables.lua 11,873 -> 4,135 lines.
   CDM file: `Cooldowns/OptionsTab.lua` (BuildCDMTab + per-group settings sections; names via the
-  existing `cdmModule.shared`, extended). Squizzumables_CDM.lua 8,779 -> 7,213 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
+  existing `cdmModule.shared`, extended), `Cooldowns/API.lua` (group management API, available-cooldown
+  lists, preview / lock / reset integration). Squizzumables_CDM.lua 8,779 -> 6,610 lines. The alert
+  block (512-2045: alert hook, spell-ID resolution, PlayAlertsFor, buff borrowing/mirroring) has ~15
+  links EACH WAY with the engine -- leave it until the engine around it has moved. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
   Has*Buff, SQ_BUTTON_POOL...), used across the file -- split that range by function, not by header;
   the Death Tally section also holds the Beacon / Earth Shield constants the reminder gates use; the
