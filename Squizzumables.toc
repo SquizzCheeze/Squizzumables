@@ -25,6 +25,8 @@ UI\Shapes.lua
 Squizzumables.lua
 Group\RaidTools.lua
 Group\RoleCCAlert.lua
+Group\DeathTally.lua
+Group\FeastAnnounce.lua
 Core\ProfileIO.lua
 Core\EncounterTimeline.lua
 Core\Minimap.lua

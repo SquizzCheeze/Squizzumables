@@ -300,8 +300,10 @@ shell, setup and polish), each gated.
   `BH.` accessor in the core), then the gate: wowlua_ls warning list identical line-for-line (moved
   warnings move with their code), the set of `settings.x` keys used across the addon identical, and
   no top-level (load-time) call into the moved code. Done: `Group/RaidTools.lua` (Raid Tools module +
-  tab; `BH.BresTrackingActive()`), `Group/RoleCCAlert.lua` (`BH:PlaySound` for its sound).
-  Squizzumables.lua 11,873 -> 10,514 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
+  tab; `BH.BresTrackingActive()`), `Group/RoleCCAlert.lua` (`BH:PlaySound` for its sound),
+  `Group/DeathTally.lua` (`BH.GetGroupUnits` stays in core; `BH.DeathTallyActive()`),
+  `Group/FeastAnnounce.lua` (`BH.FEAST_ITEM_IDS`, `BH.feastSpellLookup`, `BH.BuildFeastSpellLookup`).
+  Squizzumables.lua 11,873 -> 10,046 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
   Has*Buff, SQ_BUTTON_POOL...), used across the file -- split that range by function, not by header;
   the Death Tally section also holds the Beacon / Earth Shield constants the reminder gates use; the
