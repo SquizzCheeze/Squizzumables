@@ -303,8 +303,12 @@ shell, setup and polish), each gated.
   tab; `BH.BresTrackingActive()`), `Group/RoleCCAlert.lua` (`BH:PlaySound` for its sound),
   `Group/DeathTally.lua` (`BH.GetGroupUnits` stays in core; `BH.DeathTallyActive()`),
   `Group/FeastAnnounce.lua` (`BH.FEAST_ITEM_IDS`, `BH.feastSpellLookup`, `BH.BuildFeastSpellLookup`),
-  `Group/Callouts.lua` (button frame + tab; `BH:PlaySound`, `BH:BuildSoundDropdownItems`).
-  Squizzumables.lua 11,873 -> 9,501 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
+  `Group/Callouts.lua` (button frame + tab; `BH:PlaySound`, `BH:BuildSoundDropdownItems`),
+  `Reminders/Gates.lua` (REMINDER_GATES + every text reminder's Update*). NEW TECHNIQUE from here: the
+  core publishes the private names a moved block needs as `BH.X = X` in one block where the code
+  used to sit, and the new file re-declares `local X = BH.X` in its header, so the moved code is
+  byte-identical. Only valid for names never reassigned after load -- grep `^s*Xs*=` first.
+  Squizzumables.lua 11,873 -> 8,895 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
   Has*Buff, SQ_BUTTON_POOL...), used across the file -- split that range by function, not by header;
   the Death Tally section also holds the Beacon / Earth Shield constants the reminder gates use; the
