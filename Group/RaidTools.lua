@@ -725,30 +725,23 @@ local function ResetPositions()
     if SquizzumablesDB then
         SquizzumablesDB.markersPosition = nil
         SquizzumablesDB.pullReadyPosition = nil
-        SquizzumablesDB.beaconReminderPosition = nil
-        SquizzumablesDB.earthShieldReminderPosition = nil
+        SquizzumablesDB.classReminderPosition = nil
         SquizzumablesDB.repairReminderPosition = nil
-        SquizzumablesDB.symbioticReminderPosition = nil
         SquizzumablesDB.bresCounterPosition = nil
         SquizzumablesDB.deathTallyPosition = nil
         SquizzumablesDB.coachWhistleReminderPosition = nil
         SquizzumablesDB.bagsReminderPosition = nil
     end
-    if BH.beaconReminderFrame then
-        BH.beaconReminderFrame:ClearAllPoints()
-        BH.beaconReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
-    end
-    if BH.earthShieldReminderFrame then
-        BH.earthShieldReminderFrame:ClearAllPoints()
-        BH.earthShieldReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
+    -- Beacon, Earth Shield, Symbiotic and No Pet sit in the one Class
+    -- Reminder frame (2.0); it is what moves, so it is what resets. Their own
+    -- frames stay anchored inside it.
+    if BH.classReminderFrame then
+        BH.classReminderFrame:ClearAllPoints()
+        BH.classReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
     end
     if BH.repairReminderFrame then
         BH.repairReminderFrame:ClearAllPoints()
         BH.repairReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
-    end
-    if BH.symbioticReminderFrame then
-        BH.symbioticReminderFrame:ClearAllPoints()
-        BH.symbioticReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
     end
     if BH.coachWhistleReminderFrame then
         BH.coachWhistleReminderFrame:ClearAllPoints()

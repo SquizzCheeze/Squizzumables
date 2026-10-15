@@ -10,7 +10,6 @@ local addonName, ns = ...
 local BH = ns.BH
 
 local SQ_COLORS        = ns.SQ_COLORS
-local CreateSQDivider  = ns.CreateSQDivider
 
 -- ============================================================================
 -- Class Buffs Tab
@@ -134,103 +133,6 @@ function BH:RefreshClassBuffList()
     end
 
     sc:SetHeight(math.abs(yOffset) + 20)
-
-    -- Hunter: add No Pet reminder toggle below the class buff rows
-    if playerClass == "HUNTER" then
-      yOffset = yOffset - 8
-
-      -- Built once, then re-anchored and re-synced. The divider in particular
-      -- used to be created fresh on every refresh and never tracked or hidden,
-      -- so it leaked a frame per refresh on top of the row itself.
-      local petDivider = self:AcquireWidget("classBuffRowCache", "petDivider", function()
-          return CreateSQDivider(sc, yOffset)
-      end)
-      petDivider:Show()
-      petDivider:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
-      yOffset = yOffset - 18
-
-      local petHdr = self:AcquireWidget("classBuffRowCache", "petHeader", function()
-          local fs = sc:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-          fs:SetText("NO PET REMINDER")
-          ns.ApplyAccent(fs, "text")
-          return fs
-      end)
-      petHdr:Show()
-      petHdr:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
-      yOffset = yOffset - 22
-
-      local petRow, petRowIsNew = self:AcquireWidget("classBuffRowCache", "petRow", function()
-          local f = CreateFrame("Frame", nil, sc)
-          -- Sized generously; the rows inside anchor from the top so extra
-          -- height is harmless, and too little would clip the last row.
-          f:SetSize(380, 130)
-          return f
-      end)
-      petRow:Show()
-      petRow:SetPoint("TOPLEFT", sc, "TOPLEFT", 0, yOffset)
-      self.petReminderRow = petRow
-
-      -- Height of the three rows below, shared by the cached path and the
-      -- build path so they cannot drift apart.
-      local petRowHeight = ns.Rows.HEIGHTS.check * 2 + ns.Rows.HEIGHTS.slider + 8
-
-      if not petRowIsNew then
-          -- Rows sync themselves; nothing to re-apply by hand.
-          ns.Rows.RefreshAll()
-          yOffset = yOffset - petRowHeight
-          sc:SetHeight(math.abs(yOffset) + 20)
-          return
-      end
-
-        -- Positioned inside petRow rather than the tab body, so this tracks its
-        -- own offset. Rows.Add takes whatever parent it is given.
-        local py = 0
-        py = py - ns.Rows.Add(petRow, py, {
-            type = "check",
-            indent = 0,
-            label = "Show \"NO PET\" text when pet is missing",
-            tooltip = "Shows a large NO PET reminder when your pet is dismissed or dead.",
-            get = function() return BH.settings.petReminderEnabled ~= false end,
-            set = function(v)
-                BH.settings.petReminderEnabled = v
-                BH:SaveSettings()
-                BH:UpdatePetReminder()
-            end,
-        })
-
-        py = py - ns.Rows.Add(petRow, py, {
-            type = "slider",
-            indent = 0,
-            label = "Scale",
-            width = 200, min = 50, max = 300, step = 5,
-            tooltip = "Size of the NO PET reminder, as a percentage.",
-            get = function() return (BH.settings.petReminderScale or 1.0) * 100 end,
-            set = function(value, userInput)
-                if not userInput then return end
-                BH.settings.petReminderScale = value / 100
-                if BH.petReminderFrame then BH.petReminderFrame:SetScale(value / 100) end
-                BH:SaveSettings()
-            end,
-            disabled = function() return BH.settings.petReminderEnabled == false end,
-        })
-
-        py = py - ns.Rows.Add(petRow, py, {
-            type = "check",
-            indent = 0,
-            label = "Lock position",
-            tooltip = "Stops the NO PET reminder being dragged.",
-            get = function() return BH.settings.petReminderLocked and true or false end,
-            set = function(v)
-                BH.settings.petReminderLocked = v
-                if BH.petReminderFrame then
-                    BH.petReminderFrame:EnableMouse(BH:ReminderMouseEnabled(v))
-                end
-                BH:SaveSettings()
-            end,
-            disabled = function() return BH.settings.petReminderEnabled == false end,
-        })
-
-        yOffset = yOffset - petRowHeight
-        sc:SetHeight(math.abs(yOffset) + 20)
-    end
+    -- The Hunter's No Pet reminder used to be set up here; since 2.0 it is one
+    -- of the class reminders on Text Reminders > Class.
 end

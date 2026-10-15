@@ -40,6 +40,11 @@ BH.defaultSettings = {
     -- Mirror our own timers onto Blizzard's encounter timeline. See
     -- Core/EncounterTimeline.lua for why only the write side of the API is used.
     timelineTimers = true,
+    -- The one Class Reminder frame (Beacon, Earth Shield, Symbiotic, No Pet)
+    -- since 2.0. Its lock also writes the four <key>ReminderLocked, which the
+    -- reminders' own code still reads.
+    classReminderScale = 1.0,
+    classReminderLocked = false,
     beaconReminderLocked = false,
     beaconReminderScale = 1.0,
     beaconReminderEnabled = true,
@@ -429,12 +434,11 @@ BH.NewCustomItemsTable = NewCustomItemsTable
 local POSITION_PAIRS = {
     { "markersFrame",             "markersPosition" },
     { "pullReadyFrame",           "pullReadyPosition" },
-    { "beaconReminderFrame",      "beaconReminderPosition" },
-    { "earthShieldReminderFrame", "earthShieldReminderPosition" },
+    -- Beacon, Earth Shield, Symbiotic and No Pet sit in this one frame since
+    -- 2.0 (migration 9 carried their positions over).
+    { "classReminderFrame",       "classReminderPosition" },
     { "repairReminderFrame",      "repairReminderPosition" },
-    { "symbioticReminderFrame",   "symbioticReminderPosition" },
     { "coachWhistleReminderFrame","coachWhistleReminderPosition" },
-    { "petReminderFrame",         "petReminderPosition" },
     { "bresCounterFrame",         "bresCounterPosition" },
     { "healthstoneReminderFrame", "healthstoneReminderPosition" },
     { "bagsReminderFrame",        "bagsReminderPosition" },
@@ -846,7 +850,7 @@ BH.ApplyDefaults = ApplyDefaults
 -- Each receives (db, settings). They only ever repair existing data: a fresh
 -- install is stamped at DB_VERSION and skips all of them, so it cannot be
 -- retroactively "fixed" into defaults that no longer apply.
-local DB_VERSION = 8
+local DB_VERSION = 9
 
 local MIGRATIONS = {
     -- v1: the lust alert shipped with enabled = false by mistake.
@@ -1003,6 +1007,48 @@ local MIGRATIONS = {
         Rezero(s)
         for _, profile in pairs(db.profiles or {}) do
             Rezero(profile.settings)
+        end
+    end,
+
+    -- v9 (2.0): Beacon, Earth Shield, Symbiotic and No Pet became one Class
+    -- Reminder frame (user request 2026-10-16). It takes the position, scale
+    -- and lock of the reminder for the class being played, so it stays where
+    -- the player put it; a profile with no saved position for that one takes
+    -- the first of the others that has one. The four old locks are set to
+    -- the shared one, since the reminders' own code still reads them. The old
+    -- position keys are left in place, unused.
+    [9] = function(db, s)
+        local _, class = UnitClass("player")
+        local order = {}
+        for _, key in ipairs(BH.CLASS_REMINDER_KEYS) do
+            if BH.REMINDERS_BY_KEY[key].class == class then
+                table.insert(order, 1, key)
+            else
+                order[#order + 1] = key
+            end
+        end
+
+        local function Carry(settings, positions)
+            local src = order[1]
+            if positions and not positions[src .. "ReminderPosition"] then
+                for _, key in ipairs(order) do
+                    if positions[key .. "ReminderPosition"] then src = key break end
+                end
+            end
+            if type(settings) == "table" then
+                settings.classReminderScale  = settings[src .. "ReminderScale"] or 1.0
+                settings.classReminderLocked = settings[src .. "ReminderLocked"] and true or false
+                for _, key in ipairs(order) do
+                    settings[key .. "ReminderLocked"] = settings.classReminderLocked
+                end
+            end
+            local pos = positions and positions[src .. "ReminderPosition"]
+            if pos then positions.classReminderPosition = CopyTable(pos) end
+        end
+
+        Carry(s, db)
+        for _, profile in pairs(db.profiles or {}) do
+            Carry(profile.settings, profile.positions)
         end
     end,
 }
@@ -1179,6 +1225,13 @@ end
 -- was missing a different subset (coach whistle, pet, flask, oil, healer CC,
 -- Kel alert and callouts were never re-anchored on a profile switch).
 function BH:LoadAllFramePositions()
+    -- The Class Reminder frame takes the size of this character's reminder
+    -- before it is placed: a position saved by a corner then lands exactly
+    -- where that reminder was (migration 9 copied it from there).
+    if self.classReminderFrame and self.ClassReminderKey then
+        local def = BH.REMINDERS_BY_KEY[self:ClassReminderKey()]
+        if def then self.classReminderFrame:SetSize(def.size[1], def.size[2]) end
+    end
     self:LoadFramePosition()        -- main button frame
     self:UpdateFrameAnchor()        -- ...onto its grow edge, in place (2.0)
     self:LoadMarkersPosition()      -- has its own legacy raidToolsPosition migration
@@ -1194,12 +1247,10 @@ end
 -- Apply each frame's saved scale setting. Frames whose scale is configurable use
 -- the settings key "<key>Scale"; the value is stored as a 0-2 multiplier.
 local SCALED_FRAMES = {
-    { "beaconReminderFrame",      "beaconReminderScale" },
-    { "earthShieldReminderFrame", "earthShieldReminderScale" },
+    -- One scale for the four class reminders, on the frame they sit in.
+    { "classReminderFrame",       "classReminderScale" },
     { "repairReminderFrame",      "repairReminderScale" },
-    { "symbioticReminderFrame",   "symbioticReminderScale" },
     { "coachWhistleReminderFrame","coachWhistleReminderScale" },
-    { "petReminderFrame",         "petReminderScale" },
     { "bresCounterFrame",         "bresCounterScale" },
     { "healthstoneReminderFrame", "healthstoneReminderScale" },
     { "bagsReminderFrame",        "bagsReminderScale" },
@@ -2400,7 +2451,7 @@ BH.REMINDERS = {
     {
         key = "beacon", globalName = "SQUIZZUMABLESBeaconReminder",
         gates = { "enabled", "class", "spec", "visible" },
-        class = "PALADIN", spec = 65,
+        class = "PALADIN", spec = 65, classFrame = true,
         label = "Beacon Reminder (Holy Paladin)",
         sectionHeader = "BEACON REMINDER (HOLY PALADIN)",
         enableLabel = "Enable Beacon Reminder",
@@ -2418,7 +2469,7 @@ BH.REMINDERS = {
         -- in it. A solo shaman with Elemental Orbit got told to place a second
         -- Earth Shield on Brann.
         gates = { "enabled", "class", "knows", "buffEnabled", "visible", "realGroup" },
-        class = "SHAMAN", knowsSpell = 974, buffEnabledSpell = 974,
+        class = "SHAMAN", knowsSpell = 974, buffEnabledSpell = 974, classFrame = true,
         label = "Earth Shield Reminder (Shaman)",
         sectionHeader = "EARTH SHIELD REMINDER (SHAMAN)",
         enableLabel = "Enable Earth Shield Reminder",
@@ -2464,7 +2515,7 @@ BH.REMINDERS = {
     {
         key = "symbiotic", globalName = "SQUIZZUMABLESSymbioticReminder",
         gates = { "enabled", "class", "knows", "visible", "group" },
-        class = "DRUID", knowsSpell = SYMBIOTIC_CAST_SPELL_ID,
+        class = "DRUID", knowsSpell = SYMBIOTIC_CAST_SPELL_ID, classFrame = true,
         label = "Symbiotic Relationship Reminder (Druid)",
         sectionHeader = "SYMBIOTIC RELATIONSHIP REMINDER (DRUID)",
         enableLabel = "Enable Symbiotic Relationship Reminder",
@@ -2488,8 +2539,12 @@ BH.REMINDERS = {
         key = "pet", globalName = "SQUIZZUMABLESPetReminder",
         -- Survival (255) has no pet.
         gates = { "enabled", "class", "notSpec", "visible" },
-        class = "HUNTER", notSpec = 255,
+        class = "HUNTER", notSpec = 255, classFrame = true,
         label = "No Pet Reminder (Hunter)",
+        -- Its tick moved from Class Buffs to Text Reminders > Class in 2.0.
+        enableLabel = "Enable No Pet Reminder",
+        tooltip = "Shows a large NO PET reminder when your pet is dismissed or dead. Hunters only; not "
+               .. "Survival, which has no pet.",
         text = "NO PET", color = { 0.00, 0.78, 1.0 },
         size = { 240, 50 }, defaultY = 0,
         combatSafe = true,
@@ -2560,15 +2615,69 @@ function BH.ReminderText(frame, def)
     return text
 end
 
+-- The one Class Reminder frame (2.0, user request 2026-10-16). Beacon, Earth
+-- Shield, Symbiotic and No Pet each belong to one class, so a player only
+-- ever sees one of them -- yet each was its own frame with its own position,
+-- scale and lock, four boxes in Edit Mode for what is one reminder. They now
+-- sit at the centre of this frame (`classFrame = true` in BH.REMINDERS): it
+-- is what moves, scales (classReminderScale) and locks (classReminderLocked),
+-- while each keeps its own on/off and its own show/hide logic. Shown always
+-- and empty; it takes the mouse only while frames are unlocked.
+local CLASS_REMINDER_KEYS = { "beacon", "earthShield", "symbiotic", "pet" }
+BH.CLASS_REMINDER_KEYS = CLASS_REMINDER_KEYS
+
+local classReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESClassReminder", UIParent)
+classReminderFrame:SetSize(340, 50)
+classReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
+classReminderFrame:SetFrameStrata("HIGH")
+classReminderFrame:SetMovable(true)
+classReminderFrame:SetClampedToScreen(true)
+classReminderFrame:EnableMouse(false)
+classReminderFrame:RegisterForDrag("LeftButton")
+classReminderFrame:SetScript("OnDragStart", function(self)
+    if not (BH.settings and BH.settings.classReminderLocked) or BH.unlockMode then
+        BH:GridStartMoving(self)
+        self:SetUserPlaced(false)
+    end
+end)
+classReminderFrame:SetScript("OnDragStop", function(self)
+    BH:GridStopMoving(self)
+    BH:SaveClassReminderPosition()
+end)
+BH.classReminderFrame = classReminderFrame
+
+--- Which class reminder this character has ("beacon" for a class with none,
+--- as the sample Edit Mode and the preview show).
+function BH:ClassReminderKey()
+    local _, class = UnitClass("player")
+    for _, key in ipairs(CLASS_REMINDER_KEYS) do
+        if BH.REMINDERS_BY_KEY[key].class == class then return key end
+    end
+    return "beacon"
+end
+
 -- Build one reminder frame from its definition. Replaces ten copies of this.
 local function CreateReminderFrame(def)
     local key       = def.key
     local lockedKey = key .. "ReminderLocked"
     local saveFn    = "Save" .. ReminderBaseName(key) .. "ReminderPosition"
 
-    local frame = CreateFrame("Frame", def.globalName, UIParent)
+    -- A class reminder lives in the Class Reminder frame, and dragging it
+    -- moves that frame.
+    local parent = def.classFrame and classReminderFrame or UIParent
+    local mover  = def.classFrame and classReminderFrame or nil
+    if def.classFrame then
+        lockedKey = "classReminderLocked"
+        saveFn    = "SaveClassReminderPosition"
+    end
+
+    local frame = CreateFrame("Frame", def.globalName, parent)
     frame:SetSize(def.size[1], def.size[2])
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, def.defaultY)
+    if def.classFrame then
+        frame:SetPoint("CENTER", classReminderFrame, "CENTER", 0, 0)
+    else
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, def.defaultY)
+    end
     if def.strata ~= false then frame:SetFrameStrata("HIGH") end
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
@@ -2576,12 +2685,13 @@ local function CreateReminderFrame(def)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", function(self)
         if not (BH.settings and BH.settings[lockedKey]) or BH.unlockMode then
-            BH:GridStartMoving(self)
-            self:SetUserPlaced(false)
+            local moving = mover or self
+            BH:GridStartMoving(moving)
+            moving:SetUserPlaced(false)
         end
     end)
     frame:SetScript("OnDragStop", function(self)
-        BH:GridStopMoving(self)
+        BH:GridStopMoving(mover or self)
         if BH[saveFn] then BH[saveFn](BH) end
     end)
     frame:Hide()
@@ -2636,14 +2746,21 @@ local MOVABLE_FRAMES = {
     { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled", find = "Show Target Distance" },
 }
 
--- Every text reminder, from the registry rather than by hand.
+-- Every text reminder, from the registry rather than by hand -- except the
+-- four class reminders, which move as one Class Reminder frame.
+MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+    field = "classReminderFrame", label = "Class Reminder", find = "Class Reminder Scale",
+    classReminder = true,
+}
 for _, def in ipairs(BH.REMINDERS) do
-    MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
-        field   = def.key .. "ReminderFrame",
-        enabled = def.key .. "ReminderEnabled",
-        label   = def.label or def.key,
-        find    = def.enableLabel,
-    }
+    if not def.classFrame then
+        MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+            field   = def.key .. "ReminderFrame",
+            enabled = def.key .. "ReminderEnabled",
+            label   = def.label or def.key,
+            find    = def.enableLabel,
+        }
+    end
 end
 
 -- The rest of the position keys, from POSITION_PAIRS.
@@ -2758,6 +2875,24 @@ function BH:SetAllFramesPreview(on)
     -- consumable buttons.
     if self.frame and canTouchMouse then
         self.frame:EnableMouse(on and true or false)
+    end
+
+    -- The Class Reminder frame is empty: in preview it shows this
+    -- character's class reminder (Beacon, as a sample, for a class without
+    -- one), click-through so the drag and the Edit Mode select reach the
+    -- frame itself. Leaving, the frame stops taking the mouse -- it is an
+    -- invisible box otherwise -- and the reminders' own updaters decide again.
+    local classFrame = self.classReminderFrame
+    if classFrame then
+        local sampleKey = on and self:ClassReminderKey()
+        for _, key in ipairs(BH.CLASS_REMINDER_KEYS) do
+            local f = self[key .. "ReminderFrame"]
+            if f and on then
+                f:SetShown(key == sampleKey)
+                if canTouchMouse then f:EnableMouse(false) end
+            end
+        end
+        if not on and canTouchMouse then classFrame:EnableMouse(false) end
     end
 end
 

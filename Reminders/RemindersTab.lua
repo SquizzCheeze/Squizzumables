@@ -90,6 +90,7 @@ function BH:BuildTextRemindersTab(parent)
     -- section twice.
     local pages = ns.SubTabs.Create(parent, {
         { key = "class",  label = "Class" },
+        { key = "repair", label = "Repair" },
         { key = "sounds", label = "Instance Sounds" },
         { key = "bags",   label = "Bags" },
         { key = "feast",  label = "Feast" },
@@ -104,14 +105,65 @@ function BH:BuildTextRemindersTab(parent)
     local yOffset = -14
     local leftPad = 14
 
-    -- The per-reminder sections are generated from BH.REMINDERS. Each was ~45
-    -- lines of hand-positioned widgets plus a matching branch in
-    -- BH:RefreshTextRemindersTab; the rows now carry their own get/set and
-    -- refresh themselves, so both disappear.
-    local classReminders = { "beacon", "earthShield", "symbiotic", "repair" }
-    for i, key in ipairs(classReminders) do
-        yOffset = yOffset - self:AddReminderSection(content, yOffset, key, i == #classReminders)
+    -- The one Class Reminder (2.0, user request 2026-10-16): Beacon, Earth
+    -- Shield, Symbiotic and No Pet each belong to one class, so they share one
+    -- frame -- one position, scale and lock -- and each keeps its own on/off.
+    -- No Pet's settings came over from Class Buffs. The lock also writes the
+    -- four old <key>ReminderLocked, which the reminders' own code still reads.
+    yOffset = yOffset - ns.Rows.AddAll(content, yOffset, {
+        { type = "header", label = "CLASS REMINDER" },
+        { type = "text",
+          label = "Beacon, Earth Shield, Symbiotic Relationship and No Pet each belong to one class, so "
+              .. "they share one frame: one place on screen, one size and one lock. Turn each on or off "
+              .. "below." },
+        { type = "slider", label = "Class Reminder Scale", width = 300, min = 50, max = 300, step = 5,
+          tooltip = "Size of the class reminder, as a percentage.",
+          get = function() return (BH.settings.classReminderScale or 1.0) * 100 end,
+          set = function(v, userInput)
+              BH.settings.classReminderScale = v / 100
+              BH:SaveSettings()
+              if userInput and BH.classReminderFrame then BH.classReminderFrame:SetScale(v / 100) end
+          end },
+        { type = "check", label = "Lock Class Reminder",
+          tooltip = "Stops the class reminder being dragged. Unlock Frames overrides this while you are "
+                 .. "positioning things.",
+          get = function() return BH.settings.classReminderLocked and true or false end,
+          set = function(v)
+              BH.settings.classReminderLocked = v
+              for _, key in ipairs(BH.CLASS_REMINDER_KEYS) do
+                  BH.settings[key .. "ReminderLocked"] = v
+                  local f = BH[key .. "ReminderFrame"]
+                  if f then f:EnableMouse(BH:ReminderMouseEnabled(v)) end
+              end
+              BH:SaveSettings()
+          end },
+        { type = "divider" },
+    })
+
+    -- Each class's own on/off (and any rows of its own, between).
+    for _, key in ipairs(BH.CLASS_REMINDER_KEYS) do
+        local def = BH.REMINDERS_BY_KEY[key]
+        local enabledKey = def.enabledKey or (key .. "ReminderEnabled")
+        local updateFn = "Update" .. BH.ReminderBaseName(key) .. "Reminder"
+        local rows = {
+            { type = "check", label = def.enableLabel, tooltip = def.tooltip,
+              get = function() return BH.settings and BH.settings[enabledKey] ~= false end,
+              set = function(v) BH.settings[enabledKey] = v; BH:SaveSettings() end,
+              after = function() if BH[updateFn] then BH[updateFn](BH) end end },
+        }
+        for _, extra in ipairs(def.extraRows or {}) do rows[#rows + 1] = extra end
+        yOffset = yOffset - ns.Rows.AddAll(content, yOffset, rows)
     end
+
+    -- Sub-tab boundary.
+    content:SetHeight(math.abs(yOffset) + 20)
+    content = pages.repair
+    ns.Rows.currentSection = content.section
+    yOffset = -14
+
+    -- Not a class reminder: anyone's gear wears out. Its own sub-tab, frame,
+    -- position, scale and lock.
+    yOffset = yOffset - self:AddReminderSection(content, yOffset, "repair", true)
 
     -- Sub-tab boundary.
     content:SetHeight(math.abs(yOffset) + 20)

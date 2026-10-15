@@ -60,6 +60,12 @@ V2.0
   the mouse; click one to select it, then the arrow keys nudge it 1px
   (10px with Shift), and if the options window is open it jumps to that
   frame's settings.
+- One Class Reminder: Remember Your Beacon, Remember Earth Shield,
+  Symbiotic Relationship and No Pet each belong to one class, so they now
+  share one frame - one place, one size, one lock, one box in Edit Mode.
+  Each still has its own on/off on Text Reminders > Class, where No Pet's
+  setting moved from Class Buffs. It keeps the position and size you had
+  for your class's reminder. The Repair reminder has its own sub-tab.
 - Opening the game's Edit Mode (Esc > Edit Mode) unlocks Squizzumables'
   frames too, and closing it locks them again, so everything moves from
   one place. Settings > Unlock With Blizzard's Edit Mode turns it off.

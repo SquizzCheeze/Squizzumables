@@ -402,6 +402,18 @@ shell, setup and polish), each gated.
   SetUnlockMode(on, false, quiet=true); exit only re-locks what enter unlocked; setting
   `followBlizzardEditMode` (default true, Settings > Unlock With Blizzard's Edit Mode). NB SquizzFrames
   does NOT follow Blizzard's Edit Mode -- its "EditModeChanged" is an internal message.
+- ONE CLASS REMINDER FRAME (user request 2026-10-16, untested): Beacon / Earth Shield / Symbiotic /
+  No Pet (`classFrame = true` in BH.REMINDERS, BH.CLASS_REMINDER_KEYS) are created as children of
+  `BH.classReminderFrame` (SQUIZZUMABLESClassReminder), anchored at its centre; dragging any of them
+  moves it. It is what POSITION_PAIRS (classReminderPosition), SCALED_FRAMES (classReminderScale) and
+  MOVABLE_FRAMES ("Class Reminder") list; their own show/hide logic is untouched. The shared lock
+  (classReminderLocked) also WRITES the four <key>ReminderLocked, which the updaters still read. In
+  unlock mode SetAllFramesPreview shows only this character's one (BH:ClassReminderKey; Beacon as a
+  sample) and makes them click-through so the frame takes the drag. LoadAllFramePositions sizes the
+  frame to this character's reminder first, so a corner-saved position lands exactly. Migration 9
+  copies position / scale / lock from the played class's reminder in every profile. Settings: Text
+  Reminders > Class (shared scale + lock, four ticks; No Pet's moved from Class Buffs), Repair on its
+  own sub-tab. NEVER re-anchor one of the four to UIParent (Reset Positions did; it now resets the frame).
 - The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
   and says nothing on Windows -- use `git add -u` or the real name.
 - Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. Raid Tools described 2026-10-16

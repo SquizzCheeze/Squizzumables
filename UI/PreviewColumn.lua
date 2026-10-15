@@ -380,11 +380,19 @@ drawers.kelerts = {
 -- (BH.ReminderText, which CreateReminderFrame uses) at their Scale setting
 -- relative to each other, shrunk together if the widest would overflow. One
 -- turned off is shown faded. Sub-tabs with nothing on screen get a note.
+-- Class: the four share one Class Reminder frame (2.0), so the preview shows
+-- the one this character gets (BH:ClassReminderKey), at the shared scale.
 local REMINDERS_ON_TAB = {
-    class = { "beacon", "earthShield", "symbiotic", "repair" },
-    bags  = { "bags" },
-    cc    = { "healerCC" },
+    class  = { "beacon", "earthShield", "symbiotic", "pet" },
+    repair = { "repair" },
+    bags   = { "bags" },
+    cc     = { "healerCC" },
 }
+
+local function ReminderScale(s, key, def)
+    if def.classFrame then return s.classReminderScale or 1 end
+    return s[key .. "ReminderScale"] or 1
+end
 -- How wide a reminder really draws, unscaled. Its words are usually wider
 -- than its frame -- "REMEMBER EARTH SHIELD" at 24pt is well over 320 -- and
 -- simply spill past it, on screen as here, so fitting to the frame size let
@@ -447,6 +455,7 @@ drawers.textreminders = {
         local sel = BH.textReminderPages and BH.textReminderPages.GetSelected
             and BH.textReminderPages.GetSelected() or "class"
         local keys = REMINDERS_ON_TAB[sel] or {}
+        if sel == "class" and BH.ClassReminderKey then keys = { BH:ClassReminderKey() } end
 
         for _, item in pairs(host.items) do item.holder:Hide() end
 
@@ -455,7 +464,7 @@ drawers.textreminders = {
         for _, key in ipairs(keys) do
             local item = host.items[key]
             if item then
-                widest = math.max(widest, ReminderWidth(item) * (s[key .. "ReminderScale"] or 1))
+                widest = math.max(widest, ReminderWidth(item) * ReminderScale(s, key, item.def))
             end
         end
         local fit = (widest > room) and (room / widest) or 1
@@ -465,7 +474,7 @@ drawers.textreminders = {
             local item = host.items[key]
             if item then
                 local def = item.def
-                local scale = (s[key .. "ReminderScale"] or 1) * fit
+                local scale = ReminderScale(s, key, def) * fit
                 local enabledKey = def.enabledKey or (key .. "ReminderEnabled")
                 item.frame:SetScale(math.max(0.01, scale))
                 item.frame:SetAlpha(s[enabledKey] == false and 0.3 or 1)
