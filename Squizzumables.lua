@@ -222,8 +222,12 @@ BH.defaultSettings = {
     buttonTimerFontSize = 10,
     buttonCountFontSize = 10,
     buttonHeaderFontSize = 10,
+    -- Label Position: "auto" (below, or right in a vertical layout), "BOTTOM",
+    -- "TOP", "RIGHT", "LEFT", "CENTER". The offsets count from that position;
+    -- the 2px gap below the icon used to be this Y offset's -2 (migration 8).
+    buttonLabelAnchor = "auto",
     buttonLabelOffsetX = 0,
-    buttonLabelOffsetY = -2,
+    buttonLabelOffsetY = 0,
 
     -- Kelerts: spell alert frame. No lock key: the alert image is click-through
     -- unconditionally, and Unlock Frames is what makes it draggable.
@@ -897,7 +901,7 @@ BH.ApplyDefaults = ApplyDefaults
 -- Each receives (db, settings). They only ever repair existing data: a fresh
 -- install is stamped at DB_VERSION and skips all of them, so it cannot be
 -- retroactively "fixed" into defaults that no longer apply.
-local DB_VERSION = 7
+local DB_VERSION = 8
 
 local MIGRATIONS = {
     -- v1: the lust alert shipped with enabled = false by mistake.
@@ -1039,6 +1043,21 @@ local MIGRATIONS = {
         Rechannel(s)
         for _, profile in pairs(db.profiles or {}) do
             Rechannel(profile.settings)
+        end
+    end,
+
+    -- v8 (2.0): the 2px gap between an icon and the label below it moved from
+    -- the Label Y Offset's default (-2) into the Below position itself, so 0
+    -- now means "just under the icon" like every other position. Only the
+    -- exact old default is rewritten, so a label the player moved stays put
+    -- and one that was never touched draws exactly where it did.
+    [8] = function(db, s)
+        local function Rezero(t)
+            if type(t) == "table" and t.buttonLabelOffsetY == -2 then t.buttonLabelOffsetY = 0 end
+        end
+        Rezero(s)
+        for _, profile in pairs(db.profiles or {}) do
+            Rezero(profile.settings)
         end
     end,
 }

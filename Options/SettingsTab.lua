@@ -554,6 +554,30 @@ function BH:BuildSettingsTab(parent)
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "BUTTON TEXT" })
 
+    -- Where the label sits; the X/Y offsets below count from here
+    -- (BH.PlaceButtonLabel in Reminders/Helpers.lua).
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown", label = "Label Position", width = 200,
+        items = {
+            { text = "Auto (below, or right when vertical)", value = "auto" },
+            { text = "Below the icon",  value = "BOTTOM" },
+            { text = "Above the icon",  value = "TOP" },
+            { text = "Right of the icon", value = "RIGHT" },
+            { text = "Left of the icon",  value = "LEFT" },
+            { text = "On the icon",     value = "CENTER" },
+        },
+        tooltip = "Where the name goes on each button. The X and Y offsets below move it from there. "
+               .. "Beside the icon (left or right) in a horizontal row, raise Button Spacing so the "
+               .. "names have room.",
+        get = function() return BH.settings.buttonLabelAnchor or "auto" end,
+        set = function(v)
+            BH.settings.buttonLabelAnchor = v
+            BH:SaveSettings()
+            BH:UpdateButtons()
+        end,
+        disabled = function() return not BH.settings.showLabelText end,
+    })
+
     -- Six sliders that differ only in label, range and which setting they
     -- write, so they are a table rather than six near-identical blocks.
     for _, s in ipairs({
@@ -566,9 +590,9 @@ function BH:BuildSettingsTab(parent)
         { key = "buttonHeaderFontSize", label = "Header Font Size (MH/OH)", min = 6,   max = 24, default = 10,
           tip = "Size of the small header above a button, such as the MH and OH markers on weapon oils." },
         { key = "buttonLabelOffsetX",   label = "Label X Offset",           min = -20, max = 20, default = 0,
-          tip = "Nudge the label text horizontally relative to its button." },
-        { key = "buttonLabelOffsetY",   label = "Label Y Offset",           min = -20, max = 10, default = 0,
-          tip = "Nudge the label text vertically relative to its button." },
+          tip = "Move the label left or right from its Label Position." },
+        { key = "buttonLabelOffsetY",   label = "Label Y Offset",           min = -20, max = 20, default = 0,
+          tip = "Move the label up or down from its Label Position." },
     }) do
         yOffset = yOffset - ns.Rows.Add(content, yOffset, {
             type = "slider",

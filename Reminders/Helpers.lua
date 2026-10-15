@@ -98,6 +98,36 @@ local function PaintButtonTimer(btn)
     end
 end
 
+-- Where a button's label goes: the Label Position setting (buttonLabelAnchor)
+-- picks a side of the icon, and the X/Y offsets are measured from there, 0,0
+-- meaning "just off that edge". "auto" (and anything unknown) is below the icon,
+-- or beside it on the right in a vertical layout -- the two placements there
+-- were before the setting existed. Side labels get a fixed width and justify
+-- away from the icon; the others are the icon's width, centred.
+--
+-- Used by DressButton and BH:LayoutButtons alike. Before this the vertical
+-- layout hard-coded its label 4px right of the icon and never read the
+-- offsets, so the offset sliders did nothing there (user report 2026-10-16).
+local LABEL_PLACES = {
+    --          label point  icon point   gap x  gap y  justify   beside
+    BOTTOM = { "TOP",       "BOTTOM",    0,     -2,    "CENTER", false },
+    TOP    = { "BOTTOM",    "TOP",       0,      2,    "CENTER", false },
+    RIGHT  = { "LEFT",      "RIGHT",     4,      0,    "LEFT",   true  },
+    LEFT   = { "RIGHT",     "LEFT",     -4,      0,    "RIGHT",  true  },
+    CENTER = { "CENTER",    "CENTER",    0,      0,    "CENTER", false },
+}
+local SIDE_LABEL_WIDTH = 80
+
+function BH.PlaceButtonLabel(btn, size, vertical)
+    local s = BH.settings or {}
+    local place = LABEL_PLACES[s.buttonLabelAnchor] or LABEL_PLACES[vertical and "RIGHT" or "BOTTOM"]
+    btn.label:ClearAllPoints()
+    btn.label:SetPoint(place[1], btn.icon, place[2],
+        place[3] + (s.buttonLabelOffsetX or 0), place[4] + (s.buttonLabelOffsetY or 0))
+    btn.label:SetWidth(place[6] and SIDE_LABEL_WIDTH or size)
+    btn.label:SetJustifyH(place[5])
+end
+
 -- The parts every reminder button has, made once per frame; DressButton
 -- reconfigures them on every use. Split out of CreateButton in 2.0 phase 3, so
 -- the options preview builds its sample buttons with the real code on a plain,
@@ -300,12 +330,8 @@ local function DressButton(btn, texture, tooltip, actionType, actionValue, label
         btn.countText:Hide()
     end
 
-    -- Label text below icon (conditionally shown)
-    local labelOffX = (BH.settings and BH.settings.buttonLabelOffsetX) or 0
-    local labelOffY = (BH.settings and BH.settings.buttonLabelOffsetY) or -2
-    btn.label:ClearAllPoints()
-    btn.label:SetPoint("TOP", btn.icon, "BOTTOM", labelOffX, labelOffY)
-    btn.label:SetWidth(size)
+    -- Label text (conditionally shown), placed by the Label Position setting.
+    BH.PlaceButtonLabel(btn, size, (BH.settings and BH.settings.layoutDirection) == "VERTICAL")
     if BH.settings and BH.settings.showLabelText ~= false then
         if labelText then
             btn.label:SetText(labelText)

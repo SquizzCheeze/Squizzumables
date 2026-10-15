@@ -62,7 +62,7 @@ end
 drawers.buttons = {
     build = function(col, host)
         local frame = CreateFrame("Frame", nil, host)
-        frame:SetPoint("TOP", host, "TOP", 0, 0)
+        frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)   -- re-placed each redraw
         host.frame = frame
         host.samples = {
             { item = FirstItem("flask"), fallback = "Flask" },
@@ -77,8 +77,7 @@ drawers.buttons = {
         host.started = GetTime()
 
         local note = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        note:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, -10)
-        note:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+        note:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)   -- re-placed each redraw
         note:SetJustifyH("LEFT")
         note:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
         note:SetText("A flask missing, food running low and your class buff missing.")
@@ -114,14 +113,43 @@ drawers.buttons = {
 
         BH:LayoutButtons(#host.buttons, host.buttons, host.frame)
 
-        -- 1:1 with the screen, unless that would overflow the column.
+        -- What is actually drawn, labels and headers included. The layout
+        -- sizes its frame to the icons alone, and a label can sit beside them
+        -- (vertical, or Label Position Left/Right) or above them -- trusting
+        -- the frame size centred a vertical stack and pushed the names off the
+        -- column (user screenshot 2026-10-16).
         local frame = host.frame
-        local scale = UIParent:GetEffectiveScale() / host:GetEffectiveScale()
+        local fl, ft = frame:GetLeft(), frame:GetTop()
         local w, h = frame:GetSize()
+        local minX, maxX, minY, maxY = 0, w, -h, 0
+        if fl and ft then
+            local function Grow(region)
+                if not (region and region:IsShown()) then return end
+                local l, r, t, b = region:GetLeft(), region:GetRight(), region:GetTop(), region:GetBottom()
+                if not (l and r and t and b) then return end
+                minX, maxX = math.min(minX, l - fl), math.max(maxX, r - fl)
+                minY, maxY = math.min(minY, b - ft), math.max(maxY, t - ft)
+            end
+            for _, btn in ipairs(host.buttons) do
+                Grow(btn)
+                Grow(btn.label)
+                Grow(btn.header)
+            end
+        end
+        local drawnW, drawnH = maxX - minX, maxY - minY
+
+        -- 1:1 with the screen, unless that would overflow the column.
+        local scale = UIParent:GetEffectiveScale() / host:GetEffectiveScale()
         local room = host:GetWidth()
-        if w > 0 and room > 0 and w * scale > room then scale = room / w end
+        if drawnW > 0 and room > 0 and drawnW * scale > room then scale = room / drawnW end
         frame:SetScale(scale)
-        host:SetHeight(h * scale + 40)
+        -- Offsets are in the frame's own (scaled) units, the measurements too.
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", host, "TOPLEFT", -minX, -maxY)
+        host.note:ClearAllPoints()
+        host.note:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(drawnH * scale) - 10)
+        host.note:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+        host:SetHeight(drawnH * scale + 40)
     end,
 }
 

@@ -745,7 +745,7 @@ function BH:LayoutButtons(numButtons, buttons, frame)
         local hasHeader = btn.header ~= nil
         
         if layout == "VERTICAL" then
-            -- Vertical: icon is the button, label text floats to the right
+            -- Vertical: icon is the button; the label goes where Label Position says
             btn:SetSize(size, size + (anyHasHeader and headerHeight or 0))
             btn.icon:SetSize(size, size)
             local iconOffset = anyHasHeader and -headerHeight or 0
@@ -756,12 +756,9 @@ function BH:LayoutButtons(numButtons, buttons, frame)
                 btn.header:SetPoint("BOTTOM", btn.icon, "TOP", 0, 1)
                 btn.header:SetWidth(0)  -- unconstrained
             end
-            btn.label:ClearAllPoints()
-            btn.label:SetPoint("LEFT", btn.icon, "RIGHT", 4, 0)
-            btn.label:SetWidth(80)
-            btn.label:SetJustifyH("LEFT")
+            BH.PlaceButtonLabel(btn, size, true)
         else
-            -- Horizontal: icon on top, label below (original behavior)
+            -- Horizontal: icon on top; the label goes where Label Position says
             btn:SetSize(size, totalBtnHeight)
             btn.icon:SetSize(size, size)
             local iconOffset = anyHasHeader and -headerHeight or 0
@@ -772,10 +769,7 @@ function BH:LayoutButtons(numButtons, buttons, frame)
                 btn.header:SetPoint("TOP", btn, "TOP", 0, 0)
                 btn.header:SetWidth(0)  -- unconstrained
             end
-            btn.label:ClearAllPoints()
-            btn.label:SetPoint("TOP", btn.icon, "BOTTOM", (self.settings and self.settings.buttonLabelOffsetX) or 0, (self.settings and self.settings.buttonLabelOffsetY) or -2)
-            btn.label:SetWidth(size)
-            btn.label:SetJustifyH("CENTER")
+            BH.PlaceButtonLabel(btn, size, false)
         end
         
         -- Show/hide label based on setting

@@ -35,6 +35,14 @@ V2.0
   direction, labels, fonts, icon shape, glow and theme. They are drawn by
   the same code as the real buttons. The options window is a little wider
   (900) to make room.
+- Reminder buttons: a new Label Position (Settings > Button Text) puts the
+  name below, above, left or right of the icon, or on it; Auto keeps
+  today's placement (below, or right in a vertical layout). The Label X
+  and Y offsets now move it from there in every layout - in a vertical
+  layout they used to do nothing. Your labels stay exactly where they
+  are.
+- The button preview fits vertical layouts and side labels instead of
+  pushing the names off the column.
 - Cursor > Trail: the Test Shark button's bite now shows above the
   settings window instead of underneath it. Real bites still follow your
   Frame Strata setting.
