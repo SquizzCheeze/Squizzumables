@@ -2304,26 +2304,15 @@ function BH:UpdateKelAlertUnlockState()
         -- Showing the frame is not enough to see it. Its texture is only set
         -- when an alert actually fires, so until then it is a 200x200 frame
         -- drawing nothing -- visible to the mouse but invisible to the eye.
-        -- Give it a labelled placeholder so there is something to aim at.
-        if not f.unlockPlaceholder then
-            local ph = CreateFrame("Frame", nil, f, "BackdropTemplate")
-            ph:SetAllPoints()
-            ph:SetBackdrop({
-                bgFile   = "Interface\\BUTTONS\\WHITE8X8",
-                edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-                edgeSize = 1,
-            })
-            ph:SetBackdropColor(0, 0, 0, 0.55)
-            local r, g, b = ns.GetAccentColor()
-            ph:SetBackdropBorderColor(r, g, b, 0.9)
-            local phText = ph:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            phText:SetPoint("CENTER")
-            phText:SetText("Just For Kel\nalert image")
-            phText:SetJustifyH("CENTER")
-            ns.ApplyAccent(phText, "text")
-            f.unlockPlaceholder = ph
-        end
-        f.unlockPlaceholder:Show()
+        -- Give it the shared Edit Mode box (UI/EditMode.lua), so there is
+        -- something to aim at, named like every other frame.
+        ns.EditMode.Show(f, "Lust Alert", {
+            find  = "Enable this alert",
+            nudge = function(dx, dy)
+                f:AdjustPointsOffset(dx, dy)
+                BH:SaveKelAlertPosition()
+            end,
+        })
         -- SetMovable as well as EnableMouse, because "Lock all frames" clears
         -- it (SetAllFramesLocked) and nothing put it back: this frame is not in
         -- MOVABLE_FRAMES, so it misses the SetMovable(true) that
@@ -2334,7 +2323,7 @@ function BH:UpdateKelAlertUnlockState()
         f:EnableMouse(true)
         f:Show()
     else
-        if f.unlockPlaceholder then f.unlockPlaceholder:Hide() end
+        ns.EditMode.Hide(f)
         -- Always click-through outside Unlock Frames. See EnsureAlertFrame for
         -- why the old per-frame lock setting is not consulted any more.
         f:EnableMouse(false)
@@ -2681,15 +2670,21 @@ end
 
 -- `label` names the frame on its preview overlay, so the green boxes in unlock
 -- mode can be told apart.
+-- `find` is the settings row Edit Mode shows when the frame is selected (any
+-- text the settings search finds it by); `posKey` is where its position is
+-- saved, for the arrow-key nudge.
 local MOVABLE_FRAMES = {
     -- field                enabled setting            extra gate
-    { field = "frame", label = "Consumables" },  -- main buttons frame; always previewable
-    { field = "markersFrame",        label = "Raid Markers",   enabled = "raidToolsShowMarkers",   gate = "raidToolsEnabled", muteChildren = true },
-    { field = "pullReadyFrame",      label = "Pull / Ready",   enabled = "raidToolsShowPullReady", gate = "raidToolsEnabled", muteChildren = true },
-    { field = "bresCounterFrame",    label = "Battle Res",     enabled = "bresCounterEnabled" },
-    { field = "deathTallyFrame",     label = "Death Tally",    enabled = "deathTallyEnabled" },
-    { field = "calloutsButtonFrame", label = "Callouts",       enabled = "dungeonCallouts", muteChildren = true },
-    { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled" },
+    { field = "frame", label = "Consumables", find = "Button Size", posKey = "framePosition" },  -- main buttons frame; always previewable
+    { field = "markersFrame",        label = "Raid Markers",   enabled = "raidToolsShowMarkers",   gate = "raidToolsEnabled", muteChildren = true,
+      find = "Show Markers Frame" },
+    { field = "pullReadyFrame",      label = "Pull / Ready",   enabled = "raidToolsShowPullReady", gate = "raidToolsEnabled", muteChildren = true,
+      find = "Show Pull/Ready Frame" },
+    { field = "bresCounterFrame",    label = "Battle Res",     enabled = "bresCounterEnabled", find = "Enable Battle Res Counter" },
+    { field = "deathTallyFrame",     label = "Death Tally",    enabled = "deathTallyEnabled", find = "Death Tally" },
+    { field = "calloutsButtonFrame", label = "Callouts",       enabled = "dungeonCallouts", muteChildren = true,
+      find = "Callouts", posKey = "calloutsFramePosition" },
+    { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled", find = "Show Target Distance" },
 }
 
 -- Every text reminder, from the registry rather than by hand.
@@ -2698,51 +2693,44 @@ for _, def in ipairs(BH.REMINDERS) do
         field   = def.key .. "ReminderFrame",
         enabled = def.key .. "ReminderEnabled",
         label   = def.label or def.key,
+        find    = def.enableLabel,
     }
+end
+
+-- The rest of the position keys, from POSITION_PAIRS.
+do
+    local posKeyOf = {}
+    for _, pair in ipairs(POSITION_PAIRS) do posKeyOf[pair[1]] = pair[2] end
+    for _, def in ipairs(MOVABLE_FRAMES) do
+        def.posKey = def.posKey or posKeyOf[def.field]
+    end
 end
 BH.MOVABLE_FRAMES = MOVABLE_FRAMES
 
--- The green tint. Kept on the frame itself rather than in a dozen BH fields.
--- Every previewable frame gets the same green box, and there are well over a
+-- The unlock overlay. Kept on the frame itself rather than in a dozen BH fields.
+-- Every previewable frame gets the same box, and there are well over a
 -- dozen of them once the reminders and the Cooldown Manager groups are counted.
 -- Unlabelled they are indistinguishable, so a box sitting near some other
 -- frame's contents reads as that frame's drag region being misaligned -- there
 -- is no way to tell from looking, or from a screenshot, which frame a given
 -- rectangle belongs to. So each one says what it is.
-local function SetPreviewOverlay(frame, on, label)
+--
+-- 2.0: the green box is gone; every frame gets the shared Edit Mode mover
+-- (UI/EditMode.lua) -- theme accent box, its name, hover and select, the
+-- arrow-key nudge, and its settings shown when selected.
+local function SetPreviewOverlay(frame, on, def)
     if not frame then return end
     if on then
-        if not frame.sqPreviewOverlay then
-            local ov = frame:CreateTexture(nil, "OVERLAY")
-            ov:SetAllPoints()
-            ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-            frame.sqPreviewOverlay = ov
-        end
-        frame.sqPreviewOverlay:Show()
-
-        if label then
-            if not frame.sqPreviewLabel then
-                -- Own frame at TOOLTIP strata rather than a FontString on the
-                -- frame itself: these overlap each other freely, and a label at
-                -- the frame's own strata disappears under whatever is stacked
-                -- on top of it.
-                local holder = CreateFrame("Frame", nil, frame)
-                holder:SetFrameStrata("TOOLTIP")
-                holder:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
-                holder:SetSize(240, 14)
-                local fs = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                fs:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, 0)
-                fs:SetJustifyH("LEFT")
-                fs:SetTextColor(0.3, 1, 0.3)
-                frame.sqPreviewLabelHolder = holder
-                frame.sqPreviewLabel = fs
-            end
-            frame.sqPreviewLabel:SetText(label)
-            frame.sqPreviewLabelHolder:Show()
-        end
+        local posKey, field = def and def.posKey, def and def.field
+        ns.EditMode.Show(frame, def and def.label, {
+            find  = def and def.find,
+            nudge = posKey and function(dx, dy)
+                frame:AdjustPointsOffset(dx, dy)
+                BH:SaveFramePos(field, posKey)
+            end,
+        })
     else
-        if frame.sqPreviewOverlay then frame.sqPreviewOverlay:Hide() end
-        if frame.sqPreviewLabelHolder then frame.sqPreviewLabelHolder:Hide() end
+        ns.EditMode.Hide(frame)
     end
 end
 
@@ -2802,7 +2790,7 @@ function BH:SetAllFramesPreview(on)
                 frame:SetMovable(true)
                 if canTouchMouse then frame:EnableMouse(true) end
                 frame:SetClampedToScreen(true)
-                SetPreviewOverlay(frame, true, def.label)
+                SetPreviewOverlay(frame, true, def)
                 if def.muteChildren then MuteFrameChildren(frame, true) end
                 frame:Show()
             else

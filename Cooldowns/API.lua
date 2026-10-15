@@ -524,42 +524,24 @@ function cdmModule:ShowPreview()
         if group.container then
             group.container:Show()
             group.container:EnableMouse(true)
-            if not group.previewOverlay then
-                local ov = group.container:CreateTexture(nil, "OVERLAY")
-                ov:SetAllPoints()
-                ov:SetColorTexture(0.1, 0.8, 0.1, 0.15)
-                group.previewOverlay = ov
-            end
-            group.previewOverlay:Show()
 
-            -- Name the drag region.
-            --
-            -- Three built-in groups plus any custom ones means several green
-            -- boxes on screen at once, and an unlabelled one is impossible to
-            -- attribute -- is that Utility's region, or Essential's misplaced?
-            -- Working that out from a screenshot is genuinely ambiguous, so the
-            -- box says which group it is.
-            if not group.previewLabel then
-                -- On its own TOOLTIP-strata frame, not straight onto the
-                -- container: groups overlap each other and the reminder frames,
-                -- and a label drawn at the container's own strata gets covered
-                -- by whatever sits on top -- which is exactly what happened to
-                -- the Essential label, hidden under the Buffs group's box.
-                local holder = CreateFrame("Frame", nil, group.container)
-                holder:SetFrameStrata("TOOLTIP")
-                holder:SetPoint("BOTTOMLEFT", group.container, "TOPLEFT", 0, 2)
-                holder:SetSize(200, 14)
-                local fs = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                fs:SetPoint("BOTTOMLEFT", holder, "BOTTOMLEFT", 0, 0)
-                fs:SetJustifyH("LEFT")
-                fs:SetTextColor(0.3, 1, 0.3)
-                group.previewLabelHolder = holder
-                group.previewLabel = fs
-            end
-            group.previewLabelHolder:Show()
-            group.previewLabel:SetText(PreviewLabelText(groupName,
-                specData and specData.groups[groupName]))
-            group.previewLabel:Show()
+            -- The shared Edit Mode mover (UI/EditMode.lua), the same box every
+            -- other frame gets: named, since several groups on screen at once
+            -- are impossible to tell apart otherwise. The arrow keys move the
+            -- group's saved centre offset -- the same number its drag saves --
+            -- and leave an anchored group alone, as the drag does.
+            local name = groupName
+            ns.EditMode.Show(group.container,
+                PreviewLabelText(groupName, specData and specData.groups[groupName]), {
+                nudge = function(dx, dy)
+                    local sd = GetSpecData()
+                    local gd = sd and sd.groups[name]
+                    if not gd or (gd.anchorTo and gd.anchorTo ~= "") then return end
+                    local p = gd.position or {}
+                    gd.position = { x = (p.x or 0) + dx, y = (p.y or 0) + dy }
+                    self:PositionGroup(name)
+                end,
+            })
         end
     end
 end
@@ -569,12 +551,7 @@ function cdmModule:HidePreview()
     -- cleared an empty group stays on screen as a stray box.
     self.previewMode = false
     for groupName, group in pairs(self.groups) do
-        if group.previewOverlay then
-            group.previewOverlay:Hide()
-        end
-        if group.previewLabelHolder then
-            group.previewLabelHolder:Hide()
-        end
+        ns.EditMode.Hide(group.container)
         -- Restore click-through state based on lock
         if group.container then
             local specData = GetSpecData()

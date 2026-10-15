@@ -53,6 +53,13 @@ V2.0
   sub-tab sets up - Beacon, Earth Shield, Symbiotic and Repair on Class,
   No Food In Bags on Bags, Healer In CC on Role CC - at their Scale, faded
   when turned off.
+- Unlock Frames: the green boxes are gone. Every frame - reminder buttons,
+  text reminders, raid tools, battle res, death tally, callouts, target
+  distance, the Lust Alert and the Cooldown Manager groups - gets the same
+  box in your theme's accent with its name above it. It lights up under
+  the mouse; click one to select it, then the arrow keys nudge it 1px
+  (10px with Shift), and if the options window is open it jumps to that
+  frame's settings.
 - Raid Tools and Callouts: their frames are live on your screen, so the
   preview column has a Show Them On Screen button beside the settings
   (the same view as Unlock Frames) to watch every change as you make it.

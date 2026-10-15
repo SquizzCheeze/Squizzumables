@@ -388,6 +388,16 @@ shell, setup and polish), each gated.
   offsets scale with it (put it at 0,0 in an unscaled holder and place the holder), and repaint
   flipbooks / frame sequences only when the look's signature changes, or they restart every redraw.
   Pages without a column: Cooldown Manager and Custom Icons (their own CDM preview), Sounds.
+  The Raid Tools / Callouts button calls SetUnlockMode(on, keepPanel=true) so the window stays open.
+- Step 4 (one Edit Mode), user decisions 2026-10-16: FOLLOW Blizzard's Edit Mode (opening it unlocks
+  our frames, like SquizzFrames) and boxes in the THEME ACCENT. 4a BUILT, untested: `UI/EditMode.lua`
+  (`ns.EditMode.Show(frame, label, {find, nudge})` / `Hide` / `Select`): a mouse-transparent accent
+  box + TOOLTIP-strata name, hover / select via HookScript on the frame (drag handling untouched),
+  arrow-key nudge (1px, Shift 10) through a keyboard catcher that propagates every other key, and
+  selecting jumps the options window to the frame's settings row via Rows.Search(find) + JumpTo.
+  Users: SetPreviewOverlay (MOVABLE_FRAMES now carry `find` and `posKey`), the CDM groups'
+  ShowPreview/HidePreview (nudge moves gd.position and re-runs PositionGroup; anchored groups do not
+  move), and the Lust Alert's unlock placeholder. 4b (following Blizzard's Edit Mode) is next.
 - The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
   and says nothing on Windows -- use `git add -u` or the real name.
 - Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. `UI/Settings.lua`
