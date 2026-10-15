@@ -720,6 +720,18 @@ local lastTrigger = "startup"
 local Gate = BH.Gate
 local GATE_KEY = "buffsounds"
 
+-- When registration has to wait: combat, or any addon restriction except
+-- Map. A delve carries the Map restriction out of combat, and there the game
+-- ACCEPTED every registration (`/sq buffsounds try`, user, 2026-10-15), so
+-- waiting it out only left the player with no buff sounds after a /reload
+-- until they left the delve. The labyrinth refusals that started all this
+-- were the stuck state a relog cleared, not the map.
+local function SoundsBlocked()
+    if InCombatLockdown() then return "Combat" end
+    local r = Gate.Restriction()
+    if r ~= "Map" then return r end
+end
+
 local function DoRegistration()
     local wanted, got = ApplyAuraSoundRegistrations(BH)
 
@@ -736,7 +748,7 @@ local function DoRegistration()
             retryScheduled = true
             C_Timer.After(RETRY_DELAY, function()
                 retryScheduled = false
-                Gate.Defer(GATE_KEY, DoRegistration)
+                Gate.Defer(GATE_KEY, DoRegistration, SoundsBlocked)
             end)
         end
     else
@@ -764,8 +776,10 @@ end
 -- the 12.1.5 labyrinth on 1.99). Not even with nothing registered: every
 -- /reload inside the labyrinth was refused once per sound, so trying only
 -- produced the error.
+--
+-- Not Map: see SoundsBlocked above.
 local function RunRegistration()
-    Gate.Defer(GATE_KEY, DoRegistration)
+    Gate.Defer(GATE_KEY, DoRegistration, SoundsBlocked)
 end
 
 -- /sq buffsounds try: register now, ignoring an addon restriction, and say

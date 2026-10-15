@@ -888,7 +888,13 @@ tainted depends on what else has run first. Three things learned the hard way:
   `/reload` and cleared on relog, and in the same moment GSE lost its keybind and every reminder
   button showed (auras reading secret out of combat). Best guess: an Encounter restriction left
   active by the labyrinth's known boss-kill-not-registering bug. Unconfirmed — `/sq buffsounds`
-  prints the active restriction. Do NOT gate the reminder buttons on the restrictions:
+  prints the active restriction.
+  **MEASURED 2026-10-15: the Map restriction does NOT refuse AddAuraSound.** In a delve (Map active,
+  out of combat) `/sq buffsounds try` got every registration accepted. Waiting Map out had left the
+  player with no buff sounds after a /reload until they left the delve, so buff sounds wait on
+  combat + Encounter / ChallengeMode / PvPMatch only (`SoundsBlocked` in SpellAlerts). Encounter and
+  ChallengeMode are still unmeasured; measure with `/sq buffsounds try` before trusting either way.
+  Do NOT gate the reminder buttons on the restrictions:
   ChallengeMode lasts a whole key; `BH:UpdateButtons` gates on `AurasAreSecret()` only.
 
   Generalise this: for anything protected that runs on a tear-down-then-rebuild shape, assume the

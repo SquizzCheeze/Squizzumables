@@ -21,6 +21,9 @@ V2.0
   headings and accents"; they now match the rest of the window.
 - New installs and new profiles start with the warm gold accent; class
   colour stays one tick away. Existing profiles keep what they had.
+- Fixed: after a /reload inside a delve, buff sounds stayed silent until
+  you left it. They were waiting out the delve's addon restriction, which
+  turns out not to block them; they now set themselves up straight away.
 - Fixed: every reminder button could appear at once, out of combat, when
   the game had stopped letting addons see your buffs (seen in the 12.1.5
   labyrinth after a /reload; only logging out cleared it). The buttons now
