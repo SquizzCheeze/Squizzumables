@@ -239,7 +239,7 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.99 (2026-10-15)**. Next change: archive V1.99 first (step 1 below).
+Last shipped: **v1.99 (2026-10-15)**. V1.100 is open (V1.99 archived). Versions go 1.99 -> 1.100 (user decision 2026-10-15; 2.0 is reserved for a future full refactor + redesign). Safe: Welcome compares version STRINGS for equality, never numerically.
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.

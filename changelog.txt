@@ -1,13 +1,10 @@
 Squizzumables Changelog
 =======================
 
-V1.99
+V1.100
 
-- Fixed: "Squizzumables tried to call the protected function" errors
-  after a /reload in the new labyrinth, in a Mythic+ key, during a boss or
-  in a PvP match, and buff sounds that could all stop until you logged out
-  when they were rebuilt there. The game doesn't let addons set up buff
-  sounds in those places even out of combat, and only combat was being
-  waited out. Squizzumables now waits until you leave or the key, boss or
-  match ends; sounds you already had keep playing meanwhile. After a
-  /reload inside one, buff sounds come back as soon as it ends.
+- Fixed: every reminder button could appear at once, out of combat, when
+  the game had stopped letting addons see your buffs (seen in the 12.1.5
+  labyrinth after a /reload; only logging out cleared it). The buttons now
+  keep showing what they last knew until your buffs can be read again,
+  the same as they already did in combat.

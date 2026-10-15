@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["1.100"] = {
+        "Fixed: every reminder button could pop up at once when the game stopped letting addons see your buffs (seen in the new labyrinth). They now keep showing what they last knew, the same as in combat.",
+    },
     ["1.99"] = {
         "Fixed: protected-function errors after a /reload in the new labyrinth, a Mythic+ key, a boss or a PvP match, and buff sounds that could all stop there. They now wait until you leave or it ends, and the ones you had keep playing.",
     },
