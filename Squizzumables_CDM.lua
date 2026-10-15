@@ -1259,7 +1259,7 @@ local function BuildPlaceholderBar(ph, icon)
 
     local bg = sb:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(sb)
-    bg:SetColorTexture(0, 0, 0, 0.5)
+    bg:SetColorTexture(ns.Theme.RGBA("barBg"))
 
     local timer = sb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     timer:SetPoint("RIGHT", sb, "RIGHT", -4, 0)
@@ -7100,13 +7100,11 @@ end
 -- Settings Tab â€” BuildCDMTab (called from Squizzumables.lua)
 -- ============================================================================
 
--- Fallback accent, used only where a region is built and thrown away often
--- enough that registering it for live recolouring would grow the registry
--- without bound. Anything long-lived should use ns.ApplyAccent instead so it
--- follows the class-colour toggle.
-local ACCENT_R, ACCENT_G, ACCENT_B = 0.87, 0.73, 0.37
-local TEXT_R, TEXT_G, TEXT_B = 0.90, 0.90, 0.90
-local DIM_R, DIM_G, DIM_B = 0.55, 0.55, 0.58
+-- Colours come from the theme (UI/Theme.lua, 2.0). These pages are rebuilt
+-- often, so headings take ns.GetAccentColor() as they are drawn rather than
+-- registering with ns.ApplyAccent, which would grow its registry on every
+-- rebuild. Until 2.0 they used a private gold (0.87, 0.73, 0.37) that ignored
+-- the class-colour accent; they now match the rest of the window.
 
 
 -- Reference to the currently displayed group editor (for refresh)
@@ -7232,7 +7230,7 @@ function BH:RebuildCDMPage(state, mode)
     -- ===== HEADER =====
     local header = content:CreateFontString(nil, "OVERLAY")
     header:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    header:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    header:SetTextColor(ns.GetAccentColor())
     header:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     header:SetText(mode == "custom" and "CUSTOM COOLDOWN ICONS" or "COOLDOWN MANAGER")
     yOffset = yOffset - 16
@@ -7245,7 +7243,7 @@ function BH:RebuildCDMPage(state, mode)
     local _, specName = GetSpecializationInfo(GetSpecialization() or 1)
     local _, className = UnitClass("player")
     specNote:SetText("Spec profile: " .. (className or "?") .. " - " .. (specName or "?") .. " (shared across all characters)")
-    specNote:SetTextColor(DIM_R, DIM_G, DIM_B)
+    specNote:SetTextColor(ns.Theme.RGBA("textDim"))
     yOffset = yOffset - 20
 
     -- ===== ENABLE CHECKBOX =====
@@ -7318,7 +7316,7 @@ function BH:RebuildCDMPage(state, mode)
     desc:SetText(mode == "custom"
         and "Make your own groups and choose which spells go in them. Anything you do not assign stays in one of the three standard groups on the Cooldowns tab."
         or "Essential, Utility, Buffs and Buff Bars mirror Blizzard's own Cooldown Manager categories and fill themselves. Style each one on its own tab above. Requires the Cooldown Manager to be enabled in Edit Mode.")
-    desc:SetTextColor(DIM_R, DIM_G, DIM_B)
+    desc:SetTextColor(ns.Theme.RGBA("textDim"))
     yOffset = yOffset - 42
 
     if not (BH.settings and BH.settings.cdmEnabled) then
@@ -7333,7 +7331,7 @@ function BH:RebuildCDMPage(state, mode)
                     note:SetWidth(380)
                     note:SetJustifyH("LEFT")
                     note:SetText("Turn on the Cooldown Manager on the General tab to style this group.")
-                    note:SetTextColor(DIM_R, DIM_G, DIM_B)
+                    note:SetTextColor(ns.Theme.RGBA("textDim"))
                     page:SetHeight(60)
                 end
             end
@@ -7352,7 +7350,7 @@ function BH:RebuildCDMPage(state, mode)
     if mode == "custom" then
     local groupHeader = content:CreateFontString(nil, "OVERLAY")
     groupHeader:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    groupHeader:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    groupHeader:SetTextColor(ns.GetAccentColor())
     groupHeader:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     groupHeader:SetText("GROUPS")
     yOffset = yOffset - 22
@@ -7372,7 +7370,10 @@ function BH:RebuildCDMPage(state, mode)
     local placeholder = inputBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     placeholder:SetPoint("LEFT", inputBox, "LEFT", 6, 0)
     placeholder:SetText("Group name...")
-    placeholder:SetTextColor(DIM_R, DIM_G, DIM_B, 0.6)
+    do
+        local r, g, b = ns.Theme.RGBA("textDim")
+        placeholder:SetTextColor(r, g, b, 0.6)
+    end
 
     inputBox:SetScript("OnTextChanged", function(self)
         if self:GetText() ~= "" then
@@ -7459,7 +7460,7 @@ function BH:RebuildCDMPage(state, mode)
             none:SetWidth(380)
             none:SetJustifyH("LEFT")
             none:SetText("No custom groups yet. Create one above, then assign spells to it below.")
-            none:SetTextColor(DIM_R, DIM_G, DIM_B)
+            none:SetTextColor(ns.Theme.RGBA("textDim"))
             yOffset = yOffset - 24
         end
 
@@ -7528,7 +7529,7 @@ function BH:RebuildCDMPage(state, mode)
     if mode == "custom" then
     local unassignedHeader = content:CreateFontString(nil, "OVERLAY")
     unassignedHeader:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    unassignedHeader:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    unassignedHeader:SetTextColor(ns.GetAccentColor())
     unassignedHeader:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     unassignedHeader:SetText("AVAILABLE COOLDOWNS")
     yOffset = yOffset - 22
@@ -7538,7 +7539,7 @@ function BH:RebuildCDMPage(state, mode)
     availDesc:SetWidth(380)
     availDesc:SetJustifyH("LEFT")
     availDesc:SetText("Assign cooldowns to a group or set as Free to position independently. Also in shows a spell in a second group as well.")
-    availDesc:SetTextColor(DIM_R, DIM_G, DIM_B)
+    availDesc:SetTextColor(ns.Theme.RGBA("textDim"))
     yOffset = yOffset - 34 -- two lines
 
     local cooldowns = BH.cdm:GetAvailableCooldowns()
@@ -7577,7 +7578,7 @@ function BH:RebuildCDMPage(state, mode)
             local catLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             catLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
             catLabel:SetText(cat.label)
-            catLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+            catLabel:SetTextColor(ns.GetAccentColor())
             yOffset = yOffset - 18
 
             for _, cdInfo in ipairs(list) do
@@ -7612,7 +7613,7 @@ function BH:RebuildCDMPage(state, mode)
                 nameText:SetWidth(160)
                 nameText:SetJustifyH("LEFT")
                 nameText:SetText(cdInfo.name)
-                nameText:SetTextColor(TEXT_R, TEXT_G, TEXT_B)
+                nameText:SetTextColor(ns.Theme.RGBA("text"))
 
                 if currentAssignment == "FREE" then
                     dd:SetSelectedValue("__FREE__")
@@ -7636,7 +7637,7 @@ function BH:RebuildCDMPage(state, mode)
                 local alsoLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 alsoLabel:SetPoint("TOPLEFT", row, "TOPLEFT", 28, -40)
                 alsoLabel:SetText("Also in:")
-                alsoLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
+                alsoLabel:SetTextColor(ns.Theme.RGBA("textDim"))
                 local copyDD = CreateSQDropdown(row, "", 150, copyItems, function(val)
                     BH.cdm:SetCopy(cdInfo.cooldownID, val ~= "__NONE__" and val or nil)
                 end)
@@ -7658,7 +7659,7 @@ function BH:RebuildCDMPage(state, mode)
         noneText:SetWidth(380)
         noneText:SetJustifyH("LEFT")
         noneText:SetText("No cooldowns found. Enable the Cooldown Manager in Edit Mode and ensure you have known abilities.")
-        noneText:SetTextColor(DIM_R, DIM_G, DIM_B)
+        noneText:SetTextColor(ns.Theme.RGBA("textDim"))
         yOffset = yOffset - 22
     end
     end -- mode == "custom"
@@ -7709,7 +7710,7 @@ end
 local function SectionHeading(content, indent, yOffset, text)
     local fs = content:CreateFontString(nil, "OVERLAY")
     fs:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    fs:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    fs:SetTextColor(ns.GetAccentColor())
     fs:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     fs:SetText(text:upper())
     return yOffset - 18
@@ -7955,7 +7956,7 @@ local function BuildGroupLayoutSection(content, indent, yOffset, groupName, grou
     nameBox:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset - 16)
     local nameStatus = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameStatus:SetPoint("LEFT", nameBox, "RIGHT", 8, 0)
-    nameStatus:SetTextColor(DIM_R, DIM_G, DIM_B, 1)
+    nameStatus:SetTextColor(ns.Theme.RGBA("textDim"))
     nameBox:SetScript("OnEnterPressed", function(self)
         local name = strtrim(self:GetText() or "")
         self:ClearFocus()
@@ -8546,7 +8547,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     local gLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     gLabel:SetPoint("LEFT", 4, 0)
     gLabel:SetText(groupName)
-    gLabel:SetTextColor(TEXT_R, TEXT_G, TEXT_B)
+    gLabel:SetTextColor(ns.Theme.RGBA("text"))
 
     -- Assigned count
     local countLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -8580,7 +8581,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
         local assignedCount = groupData.cooldownIDs and #groupData.cooldownIDs or 0
         countLabel:SetText("(" .. assignedCount .. " assigned)")
     end
-    countLabel:SetTextColor(DIM_R, DIM_G, DIM_B)
+    countLabel:SetTextColor(ns.Theme.RGBA("textDim"))
 
     -- The frame name other addons anchor to.
     --
@@ -8593,7 +8594,7 @@ function BH:BuildGroupSection(content, leftPad, yOffset, groupName, groupData, s
     local anchorLabel = groupRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     anchorLabel:SetPoint("LEFT", countLabel, "RIGHT", 8, 0)
     anchorLabel:SetText("SQZ_CDMGroup_" .. groupName)
-    anchorLabel:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    anchorLabel:SetTextColor(ns.GetAccentColor())
     ns.Rows.AddTooltip(anchorLabel, "Anchor name",
         "The frame name to give another addon that anchors to this group.\n\n"
      .. "Do not use Blizzard's EssentialCooldownViewer or similar: those are separate frames, "

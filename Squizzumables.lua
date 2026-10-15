@@ -36,7 +36,11 @@ BH.defaultSettings = {
 
     -- Draw headings, tab highlights, checkboxes, slider fills and button
     -- accents in the player's class colour instead of the default warm gold.
-    useClassColorAccent = true,
+    -- 2.0: superseded by theme.preset (UI/Theme.lua); still read for a profile
+    -- that has never picked a preset, and kept in step by Theme.SetPreset.
+    -- Default false since 2.0: gold is the default accent for new installs and
+    -- new profiles (user decision 2026-10-15). Saved values are untouched.
+    useClassColorAccent = false,
     -- Mirror our own timers onto Blizzard's encounter timeline. See
     -- Core/EncounterTimeline.lua for why only the write side of the API is used.
     timelineTimers = true,
@@ -1157,6 +1161,8 @@ function BH:LoadSettings()
 
     -- Then backfill anything still missing, at any depth.
     ApplyDefaults(self.settings, BH.defaultSettings)
+    -- The theme follows whichever settings just loaded (2.0).
+    ns.Theme.Apply()
 
     -- Enforce minimum button spacing
     if self.settings.buttonSpacing < 5 then
@@ -2392,12 +2398,13 @@ function BH:BuildSettingsTab(parent)
         tooltip = "Draws section headings, the selected sidebar entry, checkbox ticks, "
                .. "slider fills and button accents in your class colour. "
                .. "Turn this off for the default warm gold.",
-        get = function() return BH.settings and BH.settings.useClassColorAccent ~= false end,
+        -- Until the theme picker (2.0 phase 3) this checkbox IS the choice
+        -- between the Squizz Gold and Class Colour presets.
+        get = function() return ns.Theme.PresetKey() == "class_colour" end,
         set = function(v)
-            BH.settings.useClassColorAccent = v
+            ns.Theme.SetPreset(v and "class_colour" or "squizz_gold")
             BH:SaveSettings()
         end,
-        after = function() ns.RefreshAccentColors() end,
     })
 
     CreateSQDivider(content, yOffset)
@@ -4890,7 +4897,7 @@ function BH:BuildCalloutsButtonFrame()
     titleBar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
     titleBar:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, 0)
     titleBar:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8", edgeSize = 0 })
-    titleBar:SetBackdropColor(0.10, 0.10, 0.13, 1)
+    titleBar:SetBackdropColor(ns.Theme.RGBA("titleBar"))
     titleBar:EnableMouse(true)
     titleBar:RegisterForDrag("LeftButton")
     titleBar:SetScript("OnDragStart", function() BH:GridStartMoving(f) end)
@@ -6419,7 +6426,7 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         -- Header font string (always created; hidden when not needed)
         btn.header = btn.textLayer:CreateFontString(nil, "OVERLAY")
         btn.header:SetJustifyH("CENTER")
-        btn.header:SetTextColor(0.2, 0.8, 1)  -- Light blue
+        btn.header:SetTextColor(ns.Theme.RGBA("btnHeader"))  -- Light blue
 
         -- Icon texture
         btn.icon = btn:CreateTexture(nil, "BACKGROUND")
@@ -6437,22 +6444,22 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
 
         -- Timer font string
         btn.timer = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.timer:SetTextColor(1, 1, 0)  -- Yellow
+        btn.timer:SetTextColor(ns.Theme.RGBA("btnTimer"))  -- Yellow
 
         -- Bag count font string
         btn.countText = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.countText:SetTextColor(1, 1, 1)
+        btn.countText:SetTextColor(ns.Theme.RGBA("btnText"))
 
         -- Label font string
         btn.label = btn.textLayer:CreateFontString(nil, "OVERLAY")
         btn.label:SetJustifyH("CENTER")
         btn.label:SetWordWrap(true)
         btn.label:SetMaxLines(3)
-        btn.label:SetTextColor(1, 1, 1)
+        btn.label:SetTextColor(ns.Theme.RGBA("btnText"))
 
         -- Hearty food badge (top-right corner of icon)
         btn.heartyBadge = btn.textLayer:CreateFontString(nil, "OVERLAY")
-        btn.heartyBadge:SetTextColor(1, 0.82, 0.2)  -- Warm gold
+        btn.heartyBadge:SetTextColor(ns.Theme.RGBA("btnBadge"))  -- Warm gold
     else
         -- Returning from pool: re-parent and make visible
         btn:SetParent(BH.frame)
@@ -7662,7 +7669,7 @@ BH.bresCounterText = BH.bresCounterFrame:CreateFontString(nil, "OVERLAY")
 BH.bresCounterText:SetFont("Fonts\\FRIZQT__.TTF", 20, "OUTLINE")
 BH.bresCounterText:SetPoint("CENTER", BH.bresCounterFrame, "CENTER", 0, 0)
 BH.bresCounterText:SetText("BREZ: 0")
-BH.bresCounterText:SetTextColor(1.0, 0.82, 0.0, 1)
+BH.bresCounterText:SetTextColor(ns.Theme.RGBA("highlight"))
 
 -- AnimationGroup-based timer (BigWigs pattern: more efficient than OnUpdate)
 do
@@ -7711,11 +7718,11 @@ do
 
             -- Color-code: red (0), orange (1), green (2+)
             if charges == 0 then
-                BH.bresCounterText:SetTextColor(0.9, 0.2, 0.2, 1)
+                BH.bresCounterText:SetTextColor(ns.Theme.RGBA("critical"))
             elseif charges == 1 then
-                BH.bresCounterText:SetTextColor(1.0, 0.5, 0.0, 1)
+                BH.bresCounterText:SetTextColor(ns.Theme.RGBA("warning"))
             else
-                BH.bresCounterText:SetTextColor(0.2, 0.9, 0.2, 1)
+                BH.bresCounterText:SetTextColor(ns.Theme.RGBA("good"))
             end
 
             BH.bresCounterFrame:Show()
@@ -7751,7 +7758,7 @@ function BH:UpdateBresCounter()
     if not self.bresCounterFrame then return end
     if self.unlockMode then
         self.bresCounterText:SetText("BREZ: 3 (2:45)")
-        self.bresCounterText:SetTextColor(0.2, 0.9, 0.2, 1)
+        self.bresCounterText:SetTextColor(ns.Theme.RGBA("good"))
         self.bresCounterFrame:Show()
         self.bresCounterFrame:EnableMouse(true)
         return
@@ -7841,7 +7848,7 @@ BH.deathTallyTitle = BH.deathTallyFrame:CreateFontString(nil, "OVERLAY")
 BH.deathTallyTitle:SetFont("Fonts\\FRIZQT__.TTF", 13, "OUTLINE")
 BH.deathTallyTitle:SetPoint("TOP", BH.deathTallyFrame, "TOP", 0, 0)
 BH.deathTallyTitle:SetText("M+ Death Tally")
-BH.deathTallyTitle:SetTextColor(1.0, 0.82, 0.0, 1)
+BH.deathTallyTitle:SetTextColor(ns.Theme.RGBA("highlight"))
 
 -- Pool of row FontStrings, lazily created/reused as group size changes.
 -- Font and position are (re)applied every display update since font size is
@@ -10430,7 +10437,7 @@ function BH:CreateRaidToolsFrame()
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    mf:SetBackdropColor(0.05, 0.05, 0.05, 0.85)
+    mf:SetBackdropColor(ns.Theme.RGBA("panel"))
     mf:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.6)
     mf:EnableMouse(true)
     mf:RegisterForDrag("LeftButton")
@@ -10456,8 +10463,8 @@ function BH:CreateRaidToolsFrame()
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    mfDrag:SetBackdropColor(0.7, 0.7, 0.7, 0.4)
-    mfDrag:SetBackdropBorderColor(0.8, 0.8, 0.8, 1.0)
+    mfDrag:SetBackdropColor(ns.Theme.RGBA("handle"))
+    mfDrag:SetBackdropBorderColor(ns.Theme.RGBA("handleBorder"))
     mfDrag:EnableMouse(true)
     mfDrag:RegisterForDrag("LeftButton")
     mfDrag:SetScript("OnDragStart", function()
@@ -10516,15 +10523,15 @@ function BH:CreateRaidToolsFrame()
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    clearWM:SetBackdropColor(0.1, 0.1, 0.1, 0.7)
+    clearWM:SetBackdropColor(ns.Theme.RGBA("panelButton"))
     clearWM:SetBackdropBorderColor(0, 0, 0, 0)
     local clearWMTex = clearWM:CreateTexture(nil, "ARTWORK")
     clearWMTex:SetSize(markerSize - 4, markerSize - 4)
     clearWMTex:SetPoint("CENTER")
     clearWMTex:SetTexture("Interface\\RAIDFRAME\\ReadyCheck-NotReady")
-    clearWMTex:SetVertexColor(1, 0.3, 0.3)
-    clearWM:SetScript("OnEnter", function(self) self:SetBackdropColor(0.4, 0.1, 0.1, 0.7) end)
-    clearWM:SetScript("OnLeave", function(self) self:SetBackdropColor(0.1, 0.1, 0.1, 0.7) end)
+    clearWMTex:SetVertexColor(ns.Theme.RGBA("panelBadIcon"))
+    clearWM:SetScript("OnEnter", function(self) self:SetBackdropColor(ns.Theme.RGBA("panelButtonBad")) end)
+    clearWM:SetScript("OnLeave", function(self) self:SetBackdropColor(ns.Theme.RGBA("panelButton")) end)
     clearWM:SetPoint("TOPLEFT", mf, "TOPLEFT", pad + 8 * (markerSize + markerSpacing), -pad)
     self.rtWorldClearBtn = clearWM
 
@@ -10542,14 +10549,14 @@ function BH:CreateRaidToolsFrame()
             edgeFile = "Interface\\BUTTONS\\WHITE8X8",
             edgeSize = 1,
         })
-        btn:SetBackdropColor(0.1, 0.1, 0.1, 0.7)
+        btn:SetBackdropColor(ns.Theme.RGBA("panelButton"))
         btn:SetBackdropBorderColor(0, 0, 0, 0)
         local icon = btn:CreateTexture(nil, "ARTWORK")
         icon:SetSize(markerSize - 4, markerSize - 4)
         icon:SetPoint("CENTER")
         icon:SetTexture(TARGET_MARKER_TEXTURES[i])
-        btn:SetScript("OnEnter", function(self) self:SetBackdropColor(0.3, 0.3, 0.3, 0.7) end)
-        btn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.1, 0.1, 0.1, 0.7) end)
+        btn:SetScript("OnEnter", function(self) self:SetBackdropColor(ns.Theme.RGBA("panelButtonHi")) end)
+        btn:SetScript("OnLeave", function(self) self:SetBackdropColor(ns.Theme.RGBA("panelButton")) end)
         btn:SetPoint("TOPLEFT", mf, "TOPLEFT", pad + (i - 1) * (markerSize + markerSpacing), -(pad + markerSize + markerSpacing))
         self.rtTargetMarkerBtns[i] = btn
     end
@@ -10565,15 +10572,15 @@ function BH:CreateRaidToolsFrame()
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    clearTM:SetBackdropColor(0.1, 0.1, 0.1, 0.7)
+    clearTM:SetBackdropColor(ns.Theme.RGBA("panelButton"))
     clearTM:SetBackdropBorderColor(0, 0, 0, 0)
     local clearTMTex = clearTM:CreateTexture(nil, "ARTWORK")
     clearTMTex:SetSize(markerSize - 4, markerSize - 4)
     clearTMTex:SetPoint("CENTER")
     clearTMTex:SetTexture("Interface\\RAIDFRAME\\ReadyCheck-NotReady")
-    clearTMTex:SetVertexColor(1, 0.3, 0.3)
-    clearTM:SetScript("OnEnter", function(self) self:SetBackdropColor(0.4, 0.1, 0.1, 0.7) end)
-    clearTM:SetScript("OnLeave", function(self) self:SetBackdropColor(0.1, 0.1, 0.1, 0.7) end)
+    clearTMTex:SetVertexColor(ns.Theme.RGBA("panelBadIcon"))
+    clearTM:SetScript("OnEnter", function(self) self:SetBackdropColor(ns.Theme.RGBA("panelButtonBad")) end)
+    clearTM:SetScript("OnLeave", function(self) self:SetBackdropColor(ns.Theme.RGBA("panelButton")) end)
     clearTM:SetPoint("TOPLEFT", mf, "TOPLEFT", pad + 8 * (markerSize + markerSpacing), -(pad + markerSize + markerSpacing))
     self.rtTargetClearBtn = clearTM
 
@@ -10603,7 +10610,7 @@ function BH:CreateRaidToolsFrame()
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    prf:SetBackdropColor(0.05, 0.05, 0.05, 0.85)
+    prf:SetBackdropColor(ns.Theme.RGBA("panel"))
     prf:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.6)
     prf:EnableMouse(true)
     prf:RegisterForDrag("LeftButton")
@@ -10629,8 +10636,8 @@ function BH:CreateRaidToolsFrame()
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    prfDrag:SetBackdropColor(0.7, 0.7, 0.7, 0.4)
-    prfDrag:SetBackdropBorderColor(0.8, 0.8, 0.8, 1.0)
+    prfDrag:SetBackdropColor(ns.Theme.RGBA("handle"))
+    prfDrag:SetBackdropBorderColor(ns.Theme.RGBA("handleBorder"))
     prfDrag:EnableMouse(true)
     prfDrag:RegisterForDrag("LeftButton")
     prfDrag:SetScript("OnDragStart", function()
@@ -10749,7 +10756,7 @@ function BH:CreateRaidToolsFrame()
         edgeFile = "Interface\\BUTTONS\\WHITE8X8",
         edgeSize = 1,
     })
-    pcf:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+    pcf:SetBackdropColor(ns.Theme.RGBA("panelSolid"))
     pcf:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)
     pcf:EnableMouse(true)
     pcf:SetMovable(true)
@@ -10764,7 +10771,7 @@ function BH:CreateRaidToolsFrame()
     local pcfTitle = pcf:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     pcfTitle:SetPoint("TOP", pcf, "TOP", 0, -6)
     pcfTitle:SetText("Frames Unlocked")
-    pcfTitle:SetTextColor(0.1, 0.8, 0.1)
+    pcfTitle:SetTextColor(ns.Theme.RGBA("panelTitle"))
 
     local lockBtn = CreateSQButton(pcf, "Lock All", 68, 22)
     lockBtn:SetPoint("BOTTOMLEFT", pcf, "BOTTOMLEFT", 6, 6)

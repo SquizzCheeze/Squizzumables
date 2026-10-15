@@ -26,30 +26,17 @@ local function SQ_GetClickEdge(whichButton)
     return prefix .. "Up"
 end
 
--- Color palette
-local SQ_COLORS = {
-    bg          = { 0.06, 0.06, 0.08, 0.96 },
-    titleBar    = { 0.10, 0.10, 0.13, 1 },
-    border      = { 0.25, 0.25, 0.30, 1 },
-    accent      = { 0.78, 0.65, 0.30, 1 },     -- warm gold
-    accentDim   = { 0.55, 0.45, 0.20, 0.6 },
-    text        = { 0.90, 0.90, 0.90, 1 },
-    textDim     = { 0.55, 0.55, 0.58, 1 },
-    textBright  = { 1, 1, 1, 1 },
-    control     = { 0.14, 0.14, 0.17, 1 },
-    controlHi   = { 0.20, 0.20, 0.24, 1 },
-    danger      = { 0.75, 0.25, 0.25, 1 },
-    dangerDim   = { 0.55, 0.20, 0.20, 0.6 },
-    section     = { 0.18, 0.18, 0.22, 0.5 },
-    tabActive   = { 0.14, 0.14, 0.17, 1 },
-    tabInactive = { 0.08, 0.08, 0.10, 1 },
-}
+-- Color palette: the theme's live table (UI/Theme.lua, loaded just before
+-- this file). Same object for the whole session, so SQ_COLORS.x reads here
+-- and in every file that aliases it follow a preset change.
+local SQ_COLORS = ns.Theme.colors
 -- ============================================================================
 -- Accent colour
 --
--- The accent is the warm gold above by default, or the player's class colour
--- when useClassColorAccent is on. Every heading, checkbox tick, slider thumb
--- and selection marker in the addon is drawn with it.
+-- The accent is the theme's (warm gold for Squizz Gold), or the player's class
+-- colour under the Class Colour preset -- Theme.AccentMode(). Every heading,
+-- checkbox tick, slider thumb and selection marker in the addon is drawn with
+-- it.
 --
 -- Two ways to use it, and picking the wrong one matters:
 --
@@ -64,14 +51,13 @@ local SQ_COLORS = {
 --       Registering those would grow the region list without bound.
 -- ============================================================================
 
-local DEFAULT_ACCENT = { SQ_COLORS.accent[1], SQ_COLORS.accent[2], SQ_COLORS.accent[3] }
-
 -- r, g, b of the current accent. Pass "dim" for the muted variant used for
 -- secondary marks, which tracks the accent rather than being a fixed colour.
+-- The theme decides which accent: its preset's own, or the class colour.
 function ns.GetAccentColor(variant)
-    local r, g, b = DEFAULT_ACCENT[1], DEFAULT_ACCENT[2], DEFAULT_ACCENT[3]
-    local BH = ns.BH
-    if BH and BH.settings and BH.settings.useClassColorAccent then
+    local accent = SQ_COLORS.accent
+    local r, g, b = accent[1], accent[2], accent[3]
+    if ns.Theme.AccentMode() == "class" then
         local _, class = UnitClass("player")
         local c = class and C_ClassColor and C_ClassColor.GetClassColor
                   and C_ClassColor.GetClassColor(class)

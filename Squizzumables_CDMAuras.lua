@@ -452,7 +452,7 @@ local function BuildBarPieces(button)
     d.bar:SetStatusBarTexture(BAR_TEXTURE)
     d.barBg = d.bar:CreateTexture(nil, "BACKGROUND")
     d.barBg:SetAllPoints(d.bar)
-    d.barBg:SetColorTexture(0, 0, 0, 0.5)
+    d.barBg:SetColorTexture(ns.Theme.RGBA("barBg"))
 
     d.border = NewEdgeBorder(button)
     d.border:SetFrameLevel(d.bar:GetFrameLevel() + 1)

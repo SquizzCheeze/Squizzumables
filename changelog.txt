@@ -15,6 +15,12 @@ V2.0
   On Aura Removed) are moved to that buff in CDM Alerts automatically,
   without replacing a sound you had already set there.
 - /squizz cdms now opens CDM Alerts.
+- Colours now come from one theme, the groundwork for the 2.0 look. The
+  only change you can see: the headings on the Cooldown Manager pages used
+  their own slightly different gold and ignored "Use class colour for
+  headings and accents"; they now match the rest of the window.
+- New installs and new profiles start with the warm gold accent; class
+  colour stays one tick away. Existing profiles keep what they had.
 - Fixed: every reminder button could appear at once, out of combat, when
   the game had stopped letting addons see your buffs (seen in the 12.1.5
   labyrinth after a /reload; only logging out cleared it). The buttons now

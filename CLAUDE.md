@@ -279,8 +279,23 @@ shell, setup and polish), each gated.
   the grid now changes height. `MigrateBuffEventAlerts` moved old Active/Applied/Removed cooldown
   entries into `BuffSounds()` once per spec (`sd.buffEventsMoved`; waits if `soundAlertsBySpell` is not
   yet set; never overwrites).
-- Settings descriptions (one description builds default, control and search entry): not started.
-- Theme values: not started.
+- **Theme** -- `UI/Theme.lua`, `ns.Theme`, DONE 2026-10-15, untested in game. Loads before Widgets.
+  `Theme.colors` is the ONE live palette (Widgets aliases it as `SQ_COLORS`; refilled in place by
+  `Theme.Apply`, never replaced). BASE = Squizz Gold = today's values exactly, including in-game keys
+  (`panel*`, `handle*`, `btn*`, `good`/`warning`/`critical`/`highlight`, `barBg`). Use
+  `Frame:SetXColor(ns.Theme.RGBA("key"))` for anything that is part of the LOOK; colours the player
+  sets elsewhere (glow tint, alert image colour) are not theme values. Accent is a MODE
+  (`Theme.AccentMode()`: "fixed" | "class"), read by `ns.GetAccentColor`. Presets defined so far:
+  `squizz_gold`, `class_colour`; `settings.theme.preset`, else the legacy `useClassColorAccent`
+  (default now FALSE, so new installs/profiles get gold; saved values untouched). The class-colour
+  checkbox calls `Theme.SetPreset` until the phase-3 picker. Dark Glass / Rainbow / Minimal need their
+  palettes + the picker. Options-window grey literals (~60 in Squizzumables.lua) are left for phase 3,
+  which rebuilds those pages; the green move boxes for the Edit Mode step. One visible change: the CDM
+  pages' headings used a private gold (0.87, 0.73, 0.37) ignoring the class accent; now
+  `ns.GetAccentColor()`.
+- **Phase order (user agreed 2026-10-15):** theme -> split the code (phase 2) -> settings descriptions
+  as a pilot on one page (Cursor), then page by page as each moves into the phase-3 shell.
+- Settings descriptions: not started.
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.
