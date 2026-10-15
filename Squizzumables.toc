@@ -4,7 +4,7 @@
 ## Author: Squizz
 ## X-License: MIT
 ## X-Curse-Project-ID: 1483099
-## Version: 1.100
+## Version: 2.0
 ## SavedVariables: SquizzumablesDB
 ## IconTexture: Interface\Icons\INV_Misc_Food_15
 ## AddonCompartmentFunc: Squizzumables_OnAddonCompartmentClick
@@ -15,6 +15,7 @@ Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
 Libs\LibSquizzGrid-1.0\LibSquizzGrid-1.0.lua
 Squizzumables_Config.lua
 Squizzumables_Secrets.lua
+Core\Gate.lua
 UI\Widgets.lua
 UI\SubTabs.lua
 UI\Rows.lua

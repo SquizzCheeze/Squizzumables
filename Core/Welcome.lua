@@ -21,7 +21,7 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
-    ["1.100"] = {
+    ["2.0"] = {
         "Fixed: every reminder button could pop up at once when the game stopped letting addons see your buffs (seen in the new labyrinth). They now keep showing what they last knew, the same as in combat.",
     },
     ["1.99"] = {

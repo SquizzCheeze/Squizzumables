@@ -689,7 +689,6 @@ end
 -- while the panel is being built, and there is no point doing the work more
 -- than once per frame.
 local registrationPending = false
-local registrationQueued  = false
 
 -- A refusal is recoverable, and until 1.67 nothing recovered it.
 --
@@ -718,61 +717,10 @@ BH.auraSoundRefusal = nil
 -- is long gone, which is exactly what made the 1.67 report hard to place.
 local lastTrigger = "startup"
 
--- Combat is only one of the client's addon restrictions (V1.99).
---
--- 12.1 enforces six (Enum.AddOnRestrictionType): Combat, Encounter,
--- ChallengeMode (the whole of an active Mythic+ key), PvPMatch, Map and Chat.
--- Only combat was ever waited out here, which fits every refusal on record:
--- "mostly in M+", and the 1.67 one in LFR *out of combat* -- a boss encounter
--- still running while the player was not. Chat is left out: it restricts addon
--- messages, not this.
-local RESTRICTIONS = { "Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map" }
+local Gate = BH.Gate
+local GATE_KEY = "buffsounds"
 
--- Name of the first restriction in force, or nil. Nil too on a client without
--- C_RestrictedActions, where the combat check alone is all there is.
-local function ActiveRestriction()
-    if InCombatLockdown() then return "Combat" end
-    local RA, types = C_RestrictedActions, Enum and Enum.AddOnRestrictionType
-    if not (RA and RA.IsAddOnRestrictionActive and types) then return nil end
-    for _, name in ipairs(RESTRICTIONS) do
-        local t = types[name]
-        if t ~= nil and RA.IsAddOnRestrictionActive(t) then return name end
-    end
-end
-BH.AuraSoundRestriction = ActiveRestriction
-
-local function RunRegistration()
-    -- Never under an addon restriction: it tears down registrations that are
-    -- working, and the re-add is refused.
-    --
-    -- Not even with nothing registered. V1.99 first tried anyway after a /reload
-    -- on the grounds that there was nothing to lose, and the user disproved it
-    -- straight away: every /reload inside the 12.1.5 labyrinth raised
-    -- ADDON_ACTION_BLOCKED, once per sound, and never before a reload, because
-    -- registrations made outside survive until then. The attempt never
-    -- succeeds there, so it only produces the error.
-    local restriction = ActiveRestriction()
-    if restriction and restriction ~= "Combat" then
-        registrationQueued = true
-        return
-    end
-    -- Never in combat.
-    --
-    -- AddAuraSound is protected, and protected calls are refused in combat the
-    -- same way SetAttribute on a secure frame is -- registration succeeds at
-    -- login and is blocked mid-fight. The C_Timer.After below does not help
-    -- with this: the timer still fires in combat, which is why deferring alone
-    -- left ADDON_ACTION_BLOCKED tracebacks coming out of the timer callback.
-    --
-    -- Queued and flushed on PLAYER_REGEN_ENABLED, the same pattern the CDM
-    -- module uses for its container mutations. Nothing is lost by waiting:
-    -- these registrations only change when settings change, and settings do
-    -- not change mid-pull.
-    if InCombatLockdown() then
-        registrationQueued = true
-        return
-    end
-    registrationQueued = false
+local function DoRegistration()
     local wanted, got = ApplyAuraSoundRegistrations(BH)
 
     if wanted and got and got < wanted then
@@ -782,18 +730,13 @@ local function RunRegistration()
             attempt  = retryCount + 1,
             trigger  = lastTrigger,
             when     = GetTime(),
-            restriction = restriction,
         }
-        if restriction then
-            -- Retrying inside a key or an encounter only burns the budget;
-            -- the restriction lifting is what flushes this.
-            registrationQueued = true
-        elseif retryCount < RETRY_LIMIT and not retryScheduled then
+        if retryCount < RETRY_LIMIT and not retryScheduled then
             retryCount = retryCount + 1
             retryScheduled = true
             C_Timer.After(RETRY_DELAY, function()
                 retryScheduled = false
-                RunRegistration()
+                Gate.Defer(GATE_KEY, DoRegistration)
             end)
         end
     else
@@ -808,6 +751,21 @@ local function RunRegistration()
     if BH.kelBuffEditor and BH.RebuildBuffSoundEditor then
         BH:RebuildBuffSoundEditor()
     end
+end
+
+-- Never in combat or under an addon restriction (2.0: through the Gate, which
+-- holds the request and runs it once the way is clear).
+--
+-- Combat: AddAuraSound is protected and refused mid-fight, and the
+-- C_Timer.After deferral below does not help -- timers still fire in combat
+-- (1.66). Restrictions: Encounter / ChallengeMode / PvPMatch / Map refuse it
+-- out of combat too, and the rebuild tears working registrations down before
+-- re-adding, so a refused rebuild left no buff sounds until relog (1.67, then
+-- the 12.1.5 labyrinth on 1.99). Not even with nothing registered: every
+-- /reload inside the labyrinth was refused once per sound, so trying only
+-- produced the error.
+local function RunRegistration()
+    Gate.Defer(GATE_KEY, DoRegistration)
 end
 
 ---@param trigger string? label for /sq buffsounds, naming what asked for this
@@ -830,31 +788,12 @@ function BH:RefreshAuraSoundRegistrations(trigger)
     end)
 end
 
--- Flush a registration that combat postponed. Called from PLAYER_REGEN_ENABLED.
-function BH:FlushQueuedAuraSoundRegistrations()
-    if registrationQueued then RunRegistration() end
-end
 
--- ...and on any other restriction lifting. Deferred a frame: the client reports
--- every restriction as inactive WHILE this event is being dispatched, so a
--- check made inside the handler would always pass.
-do
-    local f = CreateFrame("Frame")
-    if C_RestrictedActions and C_RestrictedActions.IsAddOnRestrictionActive then
-        f:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
-    end
-    f:SetScript("OnEvent", function(_, _, _, state)
-        if state ~= 0 then return end   -- 0 = Inactive
-        C_Timer.After(0, function()
-            if ActiveRestriction() then return end
-            if registrationQueued then RunRegistration() end
-            -- The reminder buttons hold their state under a restriction too
-            -- (BH:UpdateButtons); rebuild them now rather than on the next
-            -- aura change.
-            if BH.ScheduleUpdateButtons then BH:ScheduleUpdateButtons() end
-        end)
-    end)
-end
+-- Reminder buttons hold their state while blocked too (BH:UpdateButtons);
+-- rebuild them as soon as the way is clear rather than on the next aura change.
+Gate.OnChange(function()
+    if not Gate.Blocked() and BH.ScheduleUpdateButtons then BH:ScheduleUpdateButtons() end
+end)
 
 -- Did the client accept this spell's registration? Read by the tab, so a
 -- refusal is visible rather than silently doing nothing.
@@ -879,9 +818,10 @@ function BH:PrintBuffSoundDiagnostics()
     end
     print("|cFF00FF00Squizzumables buff sounds|r")
     print(("  last rebuild asked for by: %s"):format(lastTrigger))
-    print(("  in combat now: %s"):format(tostring(InCombatLockdown())))
-    print(("  addon restriction now: %s%s"):format(ActiveRestriction() or "none",
-        registrationQueued and " (a rebuild is waiting for it to lift)" or ""))
+    print("  now: " .. Gate.Describe())
+    if Gate.IsDeferred(GATE_KEY) then
+        print("  a rebuild is waiting for combat or the restriction to end")
+    end
 
     local n = 0
     for key, soundID in pairs(registeredAuraSounds) do
@@ -899,8 +839,8 @@ function BH:PrintBuffSoundDiagnostics()
 
     local r = BH.auraSoundRefusal
     if r then
-        print(("|cFFFF5555  REFUSED: %d of %d registered on attempt %d (trigger: %s, restriction: %s, %.0fs ago)|r")
-            :format(r.got, r.wanted, r.attempt, tostring(r.trigger), r.restriction or "none",
+        print(("|cFFFF5555  REFUSED: %d of %d registered on attempt %d (trigger: %s, %.0fs ago)|r")
+            :format(r.got, r.wanted, r.attempt, tostring(r.trigger),
                 GetTime() - (r.when or GetTime())))
         print("|cFFFF5555  Retrying automatically. If this persists, another addon is likely")
         print("  tainting the protected path -- check a BugGrabber traceback for the addon named.|r")

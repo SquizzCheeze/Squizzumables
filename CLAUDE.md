@@ -239,7 +239,28 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.99 (2026-10-15)**. V1.100 is open (V1.99 archived). Versions go 1.99 -> 1.100 (user decision 2026-10-15; 2.0 is reserved for a future full refactor + redesign). Safe: Welcome compares version STRINGS for equality, never numerically.
+Last shipped: **v1.99 (2026-10-15)**. **1.x is FROZEN** (user decision 2026-10-15): no more 1.x
+releases; everything rolls into **2.0**, which is the open version (`.toc` 2.0, `changelog.txt`
+V2.0, `RELEASE_NOTES["2.0"]`). The unreleased 1.100 fix was folded into it. Tag 2.0 only when the
+user says. Welcome compares version STRINGS for equality, never numerically.
+
+**2.0 design doc:** https://claude.ai/artifact/Kpmgq9gaowXvnR7e2pgkcg (Squizzumables 2.0 Design).
+Read it before 2.0 work. Settled there: gold stays the default accent; presets Squizz Gold, Dark
+Glass, Class Colour, Rainbow, Minimal; updating players are offered (not forced) the setup; ONE
+Edit Mode for every frame, styled like the CDM groups' (no more green move boxes); **Kelerts keeps
+its name** (an homage to the user's friend Kel); four phases (foundations, split the code, new
+shell, setup and polish), each gated.
+
+**2.0 progress.** Phase 1 (foundations):
+- `Core/Gate.lua` -- `BH.Gate`, DONE 2026-10-15. The one place to ask "can I act right now?":
+  `Gate.Blocked()` (combat or a non-combat addon restriction), `Gate.Restriction()`,
+  `Gate.AurasHidden()`, `Gate.Defer(key, fn, test?)` (run now or hold until a state change finds
+  `test` clear; one entry per key), `Gate.OnChange(fn)`, `Gate.Describe()`. It deliberately does
+  NOT decide which restriction blocks which call (undocumented; ChallengeMode never stopped the
+  secure reminder buttons between pulls), so callers pick the test. Buff sounds and the reminder
+  buttons use it; migrate every other combat check onto it as features are touched.
+- Settings descriptions (one description builds default, control and search entry): not started.
+- Theme values: not started.
 
 **The tag must be annotated (`-a`).** `git describe` ignores lightweight tags, so the packager
 falls back to the commit hash and ships an "alpha" build named after it instead of a version.

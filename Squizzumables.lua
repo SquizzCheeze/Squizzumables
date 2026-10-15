@@ -9095,7 +9095,7 @@ function BH:UpdateButtons()
     -- Deliberately NOT gated on the addon restrictions as well: ChallengeMode
     -- is active for a whole Mythic+ key, so that would freeze the buttons
     -- between pulls, where they have always worked.
-    if BH.Secrets.AurasAreSecret() then
+    if BH.Gate.AurasHidden() then
         self:UpdateAllReminders()
         return
     end
@@ -11103,11 +11103,8 @@ BH.frame:SetScript("OnEvent", function(self, event, arg1, ...)
         if BH.pendingSpecChange then
             BH:OnSpecChanged()
         end
-        -- AddAuraSound is protected and refused in combat, so a registration
-        -- that arrived mid-fight was postponed rather than attempted.
-        if BH.FlushQueuedAuraSoundRegistrations then
-            BH:FlushQueuedAuraSoundRegistrations()
-        end
+        -- (Buff-sound registrations postponed by combat are flushed by
+        -- BH.Gate itself since 2.0.)
         -- Use the debounced scheduler (0.2s delay) rather than immediate UpdateButtons:
         -- aura data (e.g. Lightning Shield, Water Shield) may not be fully settled the
         -- moment PLAYER_REGEN_ENABLED fires, causing false "buff missing" detections.
