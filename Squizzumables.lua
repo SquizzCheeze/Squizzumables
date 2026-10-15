@@ -47,17 +47,6 @@ BH.defaultSettings = {
     -- Mirror our own timers onto Blizzard's encounter timeline. See
     -- Core/EncounterTimeline.lua for why only the write side of the API is used.
     timelineTimers = true,
-    timelinePullTimer = true,
-    raidToolsEnabled = true,
-    raidToolsPullTimer = 10,
-    raidToolsShowMarkers = true,
-    raidToolsShowPullReady = true,
-    raidToolsMarkersLocked = false,
-    raidToolsPullReadyLocked = false,
-    raidToolsMarkersScale = 1.0,
-    raidToolsPullReadyScale = 1.0,
-    raidToolsMarkersLayout = "HORIZONTAL",
-    raidToolsMarkersGrow = "LEFT",
     beaconReminderLocked = false,
     beaconReminderScale = 1.0,
     beaconReminderEnabled = true,
@@ -84,9 +73,6 @@ BH.defaultSettings = {
     petReminderEnabled = true,
     petReminderLocked = false,
     petReminderScale = 1.0,
-    bresCounterEnabled = true,
-    bresCounterLocked = false,
-    bresCounterScale = 1.0,
     cdmEnabled = false,
     cdmHideBlizzard = false,
     cdmViewersFollowGroups = true,
@@ -132,17 +118,6 @@ BH.defaultSettings = {
     npPurgeGlowColor = { r = 1, g = 0.82, b = 0 },
 
     -- M+ Death Tally (per-player death counter, resets each key)
-    -- Target distance readout (Core/TargetDistance.lua). Off by default: it is
-    -- a persistent on-screen number rather than a reminder, so it should be
-    -- asked for rather than appear unbidden.
-    targetDistanceEnabled = false,
-    targetDistanceFormat = "band",      -- "band" | "max" | "min"
-    targetDistanceAlign = "CENTER",
-    targetDistanceTextSize = 18,
-    targetDistanceStrata = "HIGH",
-    targetDistanceFriendly = false,     -- probes are harmful, so hostile only
-    targetDistanceColor = { r = 1, g = 1, b = 1 },
-
     deathTallyEnabled = true,
     deathTallyLocked = false,
     deathTallyScale = 1.0,

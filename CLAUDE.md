@@ -404,7 +404,11 @@ shell, setup and polish), each gated.
   does NOT follow Blizzard's Edit Mode -- its "EditModeChanged" is an internal message.
 - The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
   and says nothing on Windows -- use `git add -u` or the real name.
-- Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. `UI/Settings.lua`
+- Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. Raid Tools described 2026-10-16
+  (21 keys, defaults checked identical by script), untested. Format additions for it: per-row
+  `apply(value, userInput)` (runs after the write, before the save), slider `scale` (shows value * scale,
+  stores value), header / text / divider rows, items as a function (lists from files that load later).
+  Gate's key check: also collect `key = "X", type =` from descriptions. `UI/Settings.lua`
   (`ns.Settings.Describe` / `.Build`): each row = key, type, default, label, tip, `when(s)`; Describe
   registers the defaults into `BH.defaultSettings` AT LOAD (asserts a key is never described twice), Build
   makes the sub-tabs + Rows specs, and Rows indexes each row for search. A page's `master` key greys out

@@ -711,497 +711,279 @@ end
 -- Raid Tools Settings Tab
 -- ============================================================================
 
-function BH:BuildRaidToolsTab(parent)
-    -- Six unrelated sections in one scroll had become the problem this page
-    -- was, so each is now its own sub-tab. `content` is reassigned at every
-    -- boundary below; the row calls themselves are unchanged.
-    local pages = ns.SubTabs.Create(parent, {
-        { key = "general",  label = "General" },
-        { key = "pull",     label = "Pull Timer" },
-        { key = "scale",    label = "Scale" },
-        { key = "bres",     label = "Battle Res" },
-        { key = "distance", label = "Target Distance" },
-        { key = "position", label = "Position" },
-    })
+-- Reset Positions (Position sub-tab): the raid tools, the text reminders, the
+-- battle res counter, the death tally and the Cooldown Manager groups.
+local function ResetPositions()
+    if BH.markersFrame then
+        BH.markersFrame:ClearAllPoints()
+        BH.markersFrame:SetPoint("BOTTOMRIGHT", UIParent, "CENTER", 0, 0)
+    end
+    if BH.pullReadyFrame then
+        BH.pullReadyFrame:ClearAllPoints()
+        BH.pullReadyFrame:SetPoint("RIGHT", BH.markersFrame, "LEFT", -2, 0)
+    end
+    if SquizzumablesDB then
+        SquizzumablesDB.markersPosition = nil
+        SquizzumablesDB.pullReadyPosition = nil
+        SquizzumablesDB.beaconReminderPosition = nil
+        SquizzumablesDB.earthShieldReminderPosition = nil
+        SquizzumablesDB.repairReminderPosition = nil
+        SquizzumablesDB.symbioticReminderPosition = nil
+        SquizzumablesDB.bresCounterPosition = nil
+        SquizzumablesDB.deathTallyPosition = nil
+        SquizzumablesDB.coachWhistleReminderPosition = nil
+        SquizzumablesDB.bagsReminderPosition = nil
+    end
+    if BH.beaconReminderFrame then
+        BH.beaconReminderFrame:ClearAllPoints()
+        BH.beaconReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
+    end
+    if BH.earthShieldReminderFrame then
+        BH.earthShieldReminderFrame:ClearAllPoints()
+        BH.earthShieldReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
+    end
+    if BH.repairReminderFrame then
+        BH.repairReminderFrame:ClearAllPoints()
+        BH.repairReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+    end
+    if BH.symbioticReminderFrame then
+        BH.symbioticReminderFrame:ClearAllPoints()
+        BH.symbioticReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+    end
+    if BH.coachWhistleReminderFrame then
+        BH.coachWhistleReminderFrame:ClearAllPoints()
+        BH.coachWhistleReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+    end
+    if BH.bresCounterFrame then
+        BH.bresCounterFrame:ClearAllPoints()
+        BH.bresCounterFrame:SetPoint("TOP", UIParent, "TOP", 0, -100)
+    end
+    if BH.deathTallyFrame then
+        BH.deathTallyFrame:ClearAllPoints()
+        BH.deathTallyFrame:SetPoint("TOP", UIParent, "TOP", 220, -100)
+    end
+    if BH.bagsReminderFrame then
+        BH.bagsReminderFrame:ClearAllPoints()
+        BH.bagsReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 240)
+    end
+    if BH.healerCCReminderFrame then
+        BH.healerCCReminderFrame:ClearAllPoints()
+        BH.healerCCReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 360)
+    end
+    -- Reset CDM group positions
+    if BH.cdm and BH.cdm.ResetPositions then
+        BH.cdm:ResetPositions()
+    end
+end
 
-    local content = pages.general
-    ns.Rows.currentSection = content.section
+-- The page, described once (UI/Settings.lua; 2.0 phase 3, after the Cursor
+-- pilot): each row below is the setting's default, its control and its search
+-- entry. The defaults used to live in Squizzumables.lua's defaultSettings and
+-- again as fallbacks in the page's getters. `when` says when a row applies (it
+-- greys out otherwise); `apply` is what changes once it is written.
+local function RaidToolsOn(s) return s.raidToolsEnabled ~= false end
+local function BresOn(s)      return s.bresCounterEnabled end
+local function DistanceOn(s)  return s.targetDistanceEnabled end
+local function Visibility()   BH:UpdateRaidToolsVisibility() end
+local function MarkersLayout() BH:UpdateMarkersLayout() end
+local function DistanceStyle() BH:ApplyTargetDistanceStyle() end
 
-    local yOffset = -14
-    local leftPad = 14
-
-    -- === Module Toggle ===
-    local sectionLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sectionLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    sectionLabel:SetText("MODULE")
-    ns.ApplyAccent(sectionLabel, "text")
-    yOffset = yOffset - 22
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Enable Raid Tools",
-        tooltip = "Master switch for the raid marker and pull timer frames. Turning this off hides both regardless of their own settings.",
-        get = function() return BH.settings.raidToolsEnabled ~= false end,
-        set = function(v)
-            BH.settings.raidToolsEnabled = v
-            BH:SaveSettings()
-            BH:UpdateRaidToolsVisibility()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "text",
-        label = "Two movable frames: a compact markers frame (world + target markers) and a pull/ready frame (ready check + pull timer). Only visible when you are the group leader or assistant.",
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "FRAMES" })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show Markers Frame",
-        tooltip = "Shows the world marker and target marker buttons. Only usable while you are group leader or an assistant.",
-        get = function() return BH.settings.raidToolsShowMarkers ~= false end,
-        set = function(v)
-            BH.settings.raidToolsShowMarkers = v
-            BH:SaveSettings()
-            BH:UpdateRaidToolsVisibility()
-        end,
-        -- Every frame here is gated on the master switch above, so grey them
-        -- out rather than letting the player set something with no effect.
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show Pull/Ready Frame",
-        tooltip = "Shows the pull timer and ready check buttons. Only usable while you are group leader or an assistant.",
-        get = function() return BH.settings.raidToolsShowPullReady ~= false end,
-        set = function(v)
-            BH.settings.raidToolsShowPullReady = v
-            BH:SaveSettings()
-            BH:UpdateRaidToolsVisibility()
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
-
-
-    -- === Markers Layout ===
-    local layoutLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    layoutLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    layoutLabel:SetText("MARKERS LAYOUT")
-    ns.ApplyAccent(layoutLabel, "text")
-    yOffset = yOffset - 22
-
-    local function GetMarkersGrowItems()
-        if BH.settings.raidToolsMarkersLayout == "VERTICAL" then
-            return {
-                { text = "Down", value = "DOWN" },
-                { text = "Up",   value = "UP" },
-            }
-        end
+-- The grow choices follow the layout: a column grows up or down, a row left or
+-- right. A function, so Rows asks again on every refresh.
+local function MarkersGrowItems()
+    if BH.settings.raidToolsMarkersLayout == "VERTICAL" then
         return {
-            { text = "Left",  value = "LEFT" },
-            { text = "Right", value = "RIGHT" },
+            { text = "Down", value = "DOWN" },
+            { text = "Up",   value = "UP" },
         }
     end
+    return {
+        { text = "Left",  value = "LEFT" },
+        { text = "Right", value = "RIGHT" },
+    }
+end
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Layout Direction",
-        width = 200,
-        tooltip = "Whether the marker buttons lay out in a row or a column.",
-        items = {
-            { text = "Horizontal", value = "HORIZONTAL" },
-            { text = "Vertical",   value = "VERTICAL" },
-        },
-        get = function() return BH.settings.raidToolsMarkersLayout or "HORIZONTAL" end,
-        set = function(v)
-            BH.settings.raidToolsMarkersLayout = v
-            -- The old grow direction may not exist in the new layout, so reset
-            -- it. The grow dropdown below rebuilds its own options from this
-            -- value on the refresh that follows.
-            BH.settings.raidToolsMarkersGrow = (v == "VERTICAL") and "DOWN" or "LEFT"
-            BH:SaveSettings()
-            BH:UpdateMarkersLayout()
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
+local RAID_TOOLS = ns.Settings.Describe({
+    pages = {
+        { key = "general", label = "General", rows = {
+            { type = "header", label = "MODULE" },
+            { key = "raidToolsEnabled", type = "check", default = true,
+              label = "Enable Raid Tools",
+              tip = "Master switch for the raid marker and pull timer frames. Turning this off hides both "
+                .. "regardless of their own settings.",
+              apply = Visibility },
+            { type = "text",
+              label = "Two movable frames: a compact markers frame (world + target markers) and a pull/ready "
+                .. "frame (ready check + pull timer). Only visible when you are the group leader or assistant." },
+            { type = "divider" },
+            { type = "header", label = "FRAMES" },
+            { key = "raidToolsShowMarkers", type = "check", default = true,
+              label = "Show Markers Frame",
+              tip = "Shows the world marker and target marker buttons. Only usable while you are group leader "
+                .. "or an assistant.",
+              when = RaidToolsOn, apply = Visibility },
+            { key = "raidToolsShowPullReady", type = "check", default = true,
+              label = "Show Pull/Ready Frame",
+              tip = "Shows the pull timer and ready check buttons. Only usable while you are group leader or "
+                .. "an assistant.",
+              when = RaidToolsOn, apply = Visibility },
+            { type = "divider" },
+            { type = "header", label = "MARKERS LAYOUT" },
+            { key = "raidToolsMarkersLayout", type = "dropdown", default = "HORIZONTAL",
+              items = {
+                  { text = "Horizontal", value = "HORIZONTAL" },
+                  { text = "Vertical",   value = "VERTICAL" },
+              },
+              label = "Layout Direction", tip = "Whether the marker buttons lay out in a row or a column.",
+              when = RaidToolsOn,
+              -- The old grow direction may not exist in the new layout, so it
+              -- is reset; the grow dropdown's choices follow on the refresh.
+              apply = function(v)
+                  BH.settings.raidToolsMarkersGrow = (v == "VERTICAL") and "DOWN" or "LEFT"
+                  MarkersLayout()
+              end },
+            { key = "raidToolsMarkersGrow", type = "dropdown", default = "LEFT", items = MarkersGrowItems,
+              label = "Grow Direction", tip = "Which way the marker buttons extend from their anchor.",
+              when = RaidToolsOn, apply = MarkersLayout },
+        } },
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Grow Direction",
-        width = 200,
-        tooltip = "Which way the marker buttons extend from their anchor.",
-        -- A function, so the options follow the layout above automatically
-        -- instead of the layout dropdown having to reach over and rewrite them.
-        items = GetMarkersGrowItems,
-        get = function() return BH.settings.raidToolsMarkersGrow or "LEFT" end,
-        set = function(v)
-            BH.settings.raidToolsMarkersGrow = v
-            BH:SaveSettings()
-            BH:UpdateMarkersLayout()
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
+        { key = "pull", label = "Pull Timer", rows = {
+            { key = "raidToolsPullTimer", type = "slider", default = 10, min = 3, max = 30, step = 1,
+              label = "Countdown Duration (seconds)",
+              tip = "How long the pull timer counts down for when you start one.",
+              when = RaidToolsOn,
+              apply = function(v)
+                  if BH.rtPullBtn and not BH.rtPullActive then
+                      BH.rtPullBtn.label:SetText("Pull " .. v .. "s")
+                  end
+              end },
+            { key = "timelinePullTimer", type = "check", default = true,
+              label = "Show on encounter timeline",
+              tip = "Adds the pull countdown to Blizzard's encounter timeline, alongside boss abilities. "
+                .. "Works for a pull started by anyone in the group, not just your own button. "
+                .. "Needs the encounter timeline itself to be turned on in Blizzard's settings.",
+              apply = function(v)
+                  if not v and BH.Timeline then BH.Timeline.Stop("pull") end
+              end },
+            { type = "text", indent = 18, width = 370,
+              label = "The timeline may only draw during an encounter, in which case a pre-pull countdown "
+                .. "will not appear." },
+        } },
 
-    -- Sub-tab boundary: size the page just finished, then move to the next.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.pull
-    ns.Rows.currentSection = content.section
-    yOffset = -14
+        { key = "scale", label = "Scale", rows = {
+            { key = "raidToolsMarkersScale", type = "slider", default = 1.0, scale = 100,
+              min = 50, max = 200, step = 5,
+              label = "Markers Frame Scale", tip = "Size of the marker button frame, as a percentage.",
+              when = RaidToolsOn,
+              apply = function(v, userInput)
+                  if userInput and BH.markersFrame then BH.markersFrame:SetScale(v) end
+              end },
+            { key = "raidToolsPullReadyScale", type = "slider", default = 1.0, scale = 100,
+              min = 50, max = 200, step = 5,
+              label = "Pull/Ready Frame Scale",
+              tip = "Size of the pull timer and ready check frame, as a percentage.",
+              when = RaidToolsOn,
+              apply = function(v, userInput)
+                  if userInput and BH.pullReadyFrame then BH.pullReadyFrame:SetScale(v) end
+              end },
+        } },
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Countdown Duration (seconds)",
-        width = 300, min = 3, max = 30, step = 1,
-        tooltip = "How long the pull timer counts down for when you start one.",
-        get = function() return BH.settings.raidToolsPullTimer or 10 end,
-        set = function(value)
-            BH.settings.raidToolsPullTimer = value
-            BH:SaveSettings()
-            if BH.rtPullBtn and not BH.rtPullActive then
-                BH.rtPullBtn.label:SetText("Pull " .. value .. "s")
-            end
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
+        { key = "bres", label = "Battle Res", rows = {
+            { key = "bresCounterEnabled", type = "check", default = true,
+              label = "Enable Battle Res Counter",
+              tip = "Shows how many battle resurrection charges the group has left. Only appears in content "
+                .. "that grants charges.",
+              apply = function(v)
+                  if not v and BH.bresCounterFrame then BH.bresCounterFrame:Hide() end
+              end },
+            { key = "bresCounterScale", type = "slider", default = 1.0, scale = 100,
+              min = 50, max = 200, step = 5,
+              label = "Battle Res Counter Scale", tip = "Size of the battle res counter, as a percentage.",
+              when = BresOn,
+              apply = function(v, userInput)
+                  if userInput and BH.bresCounterFrame then BH.bresCounterFrame:SetScale(v) end
+              end },
+            { key = "bresCounterLocked", type = "check", default = false,
+              label = "Lock Battle Res Counter", tip = "Stops the battle res counter being dragged.",
+              when = BresOn,
+              apply = function(v)
+                  if BH.bresCounterFrame then
+                      BH.bresCounterFrame:SetMovable(not v)
+                      BH.bresCounterFrame:EnableMouse(not v)
+                  end
+              end },
+        } },
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show on encounter timeline",
-        tooltip = "Adds the pull countdown to Blizzard's encounter timeline, alongside boss abilities. "
-               .. "Works for a pull started by anyone in the group, not just your own button. "
-               .. "Needs the encounter timeline itself to be turned on in Blizzard's settings.",
-        get = function() return BH.settings.timelinePullTimer ~= false end,
-        set = function(v)
-            BH.settings.timelinePullTimer = v
-            BH:SaveSettings()
-            if not v and BH.Timeline then BH.Timeline.Stop("pull") end
-        end,
-    })
+        -- Off by default: a persistent on-screen number rather than a
+        -- reminder, so it should be asked for rather than appear unbidden.
+        -- (Core/TargetDistance.lua; its lists load after this file, so they
+        -- are read when the page is built.)
+        { key = "distance", label = "Target Distance", rows = {
+            { key = "targetDistanceEnabled", type = "check", default = false,
+              label = "Show Target Distance",
+              tip = "Shows roughly how far away your target is, as movable text. "
+                .. "It reads as a band (\"30-35\") rather than a single number because the game gives "
+                .. "addons no way to measure distance -- only to ask whether a spell or item would "
+                .. "reach. Position it with Unlock Frames.",
+              apply = function() BH:ApplyTargetDistance() end },
+            { key = "targetDistanceFormat", type = "dropdown", default = "band", width = 160,
+              items = function() return BH.TARGET_DISTANCE_FORMATS end,
+              label = "Distance Format",
+              tip = "How the estimate reads. The band is the honest one; the other two pick an end of it.",
+              when = DistanceOn, apply = function() BH:UpdateTargetDistance() end },
+            { key = "targetDistanceAlign", type = "dropdown", default = "CENTER", width = 160,
+              items = function() return BH.TARGET_DISTANCE_ALIGNMENTS end,
+              label = "Text Align", tip = "Alignment of the distance text within its frame.",
+              when = DistanceOn, apply = DistanceStyle },
+            { key = "targetDistanceTextSize", type = "slider", default = 18, min = 8, max = 48, step = 1,
+              label = "Distance Text Size", tip = "Font size of the distance text.",
+              when = DistanceOn, apply = DistanceStyle },
+            { key = "targetDistanceStrata", type = "dropdown", default = "HIGH", width = 160,
+              items = function() return BH.TARGET_DISTANCE_STRATAS end,
+              label = "Frame Strata",
+              tip = "How far in front of other frames the distance text sits. Raise it if something covers it.",
+              when = DistanceOn, apply = DistanceStyle },
+            { key = "targetDistanceColor", type = "color", default = { r = 1, g = 1, b = 1 },
+              label = "Distance Text Colour", tip = "Colour of the distance text.",
+              when = DistanceOn, apply = DistanceStyle },
+            -- Probes are harmful spells and items, so hostile only by default.
+            { key = "targetDistanceFriendly", type = "check", default = false,
+              label = "Also Show For Friendly Targets",
+              tip = "Off by default, and it will often read \"?\" when on. The estimate is built from "
+                .. "harmful spells and items, and those refuse to answer about a friendly unit -- so "
+                .. "there is frequently nothing to go on.",
+              when = DistanceOn, apply = function() BH:UpdateTargetDistance() end },
+        } },
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "text",
-        indent = 18,
-        width = 370,
-        label = "The timeline may only draw during an encounter, in which case a pre-pull countdown will not appear.",
-    })
+        { key = "position", label = "Position", rows = {
+            { key = "raidToolsMarkersLocked", type = "check", default = false,
+              label = "Lock Markers Frame", tip = "Stops the marker frame being dragged.",
+              when = RaidToolsOn,
+              apply = function(v)
+                  if BH.markersFrame then BH.markersFrame:SetMovable(not v) end
+                  if BH.markersDragHandle then
+                      if v then BH.markersDragHandle:Hide() else BH.markersDragHandle:Show() end
+                  end
+              end },
+            { key = "raidToolsPullReadyLocked", type = "check", default = false,
+              label = "Lock Pull/Ready Frame", tip = "Stops the pull timer frame being dragged.",
+              when = RaidToolsOn,
+              apply = function(v)
+                  if BH.pullReadyFrame then BH.pullReadyFrame:SetMovable(not v) end
+                  if BH.pullReadyDragHandle then
+                      if v then BH.pullReadyDragHandle:Hide() else BH.pullReadyDragHandle:Show() end
+                  end
+              end },
+            { type = "button", label = "Reset Positions", width = 140, height = 26,
+              tip = "Puts the raid tools, the text reminders, the battle res counter, the death tally and the "
+                .. "Cooldown Manager groups back where they started.",
+              onClick = ResetPositions },
+        } },
+    },
+})
 
-    -- Sub-tab boundary: size the page just finished, then move to the next.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.scale
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Markers Frame Scale",
-        width = 300, min = 50, max = 200, step = 5,
-        tooltip = "Size of the marker button frame, as a percentage.",
-        get = function() return (BH.settings.raidToolsMarkersScale or 1.0) * 100 end,
-        set = function(value, userInput)
-            BH.settings.raidToolsMarkersScale = value / 100
-            BH:SaveSettings()
-            if userInput and BH.markersFrame then
-                BH.markersFrame:SetScale(value / 100)
-            end
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Pull/Ready Frame Scale",
-        width = 300, min = 50, max = 200, step = 5,
-        tooltip = "Size of the pull timer and ready check frame, as a percentage.",
-        get = function() return (BH.settings.raidToolsPullReadyScale or 1.0) * 100 end,
-        set = function(value, userInput)
-            BH.settings.raidToolsPullReadyScale = value / 100
-            BH:SaveSettings()
-            if userInput and BH.pullReadyFrame then
-                BH.pullReadyFrame:SetScale(value / 100)
-            end
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
-
-    -- Sub-tab boundary: size the page just finished, then move to the next.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.bres
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Enable Battle Res Counter",
-        tooltip = "Shows how many battle resurrection charges the group has left. Only appears in content that grants charges.",
-        get = function() return BH.settings.bresCounterEnabled and true or false end,
-        set = function(v)
-            BH.settings.bresCounterEnabled = v
-            BH:SaveSettings()
-            if not v and BH.bresCounterFrame then
-                BH.bresCounterFrame:Hide()
-            end
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Battle Res Counter Scale",
-        width = 300, min = 50, max = 200, step = 5,
-        tooltip = "Size of the battle res counter, as a percentage.",
-        get = function() return (BH.settings.bresCounterScale or 1.0) * 100 end,
-        set = function(value, userInput)
-            BH.settings.bresCounterScale = value / 100
-            BH:SaveSettings()
-            if userInput and BH.bresCounterFrame then
-                BH.bresCounterFrame:SetScale(value / 100)
-            end
-        end,
-        disabled = function() return not BH.settings.bresCounterEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Lock Battle Res Counter",
-        tooltip = "Stops the battle res counter being dragged.",
-        get = function() return BH.settings.bresCounterLocked and true or false end,
-        set = function(v)
-            BH.settings.bresCounterLocked = v
-            BH:SaveSettings()
-            if BH.bresCounterFrame then
-                BH.bresCounterFrame:SetMovable(not v)
-                BH.bresCounterFrame:EnableMouse(not v)
-            end
-        end,
-        disabled = function() return not BH.settings.bresCounterEnabled end,
-    })
-
-    -- Sub-tab boundary: size the page just finished, then move to the next.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.distance
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Show Target Distance",
-        tooltip = "Shows roughly how far away your target is, as movable text. "
-            .. "It reads as a band (\"30-35\") rather than a single number because the game gives "
-            .. "addons no way to measure distance -- only to ask whether a spell or item would "
-            .. "reach. Position it with Unlock Frames.",
-        get = function() return BH.settings.targetDistanceEnabled and true or false end,
-        set = function(v)
-            BH.settings.targetDistanceEnabled = v
-            BH:SaveSettings()
-            BH:ApplyTargetDistance()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Distance Format",
-        width = 160,
-        tooltip = "How the estimate reads. The band is the honest one; the other two pick an end of it.",
-        items = BH.TARGET_DISTANCE_FORMATS,
-        get = function() return BH.settings.targetDistanceFormat or "band" end,
-        set = function(value)
-            BH.settings.targetDistanceFormat = value
-            BH:SaveSettings()
-            BH:UpdateTargetDistance()
-        end,
-        disabled = function() return not BH.settings.targetDistanceEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Text Align",
-        width = 160,
-        tooltip = "Alignment of the distance text within its frame.",
-        items = BH.TARGET_DISTANCE_ALIGNMENTS,
-        get = function() return BH.settings.targetDistanceAlign or "CENTER" end,
-        set = function(value)
-            BH.settings.targetDistanceAlign = value
-            BH:SaveSettings()
-            BH:ApplyTargetDistanceStyle()
-        end,
-        disabled = function() return not BH.settings.targetDistanceEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Distance Text Size",
-        width = 300, min = 8, max = 48, step = 1,
-        tooltip = "Font size of the distance text.",
-        get = function() return BH.settings.targetDistanceTextSize or 18 end,
-        set = function(value)
-            BH.settings.targetDistanceTextSize = value
-            BH:SaveSettings()
-            BH:ApplyTargetDistanceStyle()
-        end,
-        disabled = function() return not BH.settings.targetDistanceEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown",
-        label = "Frame Strata",
-        width = 160,
-        tooltip = "How far in front of other frames the distance text sits. Raise it if something covers it.",
-        items = BH.TARGET_DISTANCE_STRATAS,
-        get = function() return BH.settings.targetDistanceStrata or "HIGH" end,
-        set = function(value)
-            BH.settings.targetDistanceStrata = value
-            BH:SaveSettings()
-            BH:ApplyTargetDistanceStyle()
-        end,
-        disabled = function() return not BH.settings.targetDistanceEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "color",
-        label = "Distance Text Colour",
-        tooltip = "Colour of the distance text.",
-        get = function()
-            local c = BH.settings.targetDistanceColor or {}
-            return c.r or 1, c.g or 1, c.b or 1
-        end,
-        set = function(r, g, b)
-            BH.settings.targetDistanceColor = { r = r, g = g, b = b }
-            BH:SaveSettings()
-            BH:ApplyTargetDistanceStyle()
-        end,
-        disabled = function() return not BH.settings.targetDistanceEnabled end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Also Show For Friendly Targets",
-        tooltip = "Off by default, and it will often read \"?\" when on. The estimate is built from "
-            .. "harmful spells and items, and those refuse to answer about a friendly unit -- so "
-            .. "there is frequently nothing to go on.",
-        get = function() return BH.settings.targetDistanceFriendly and true or false end,
-        set = function(v)
-            BH.settings.targetDistanceFriendly = v
-            BH:SaveSettings()
-            BH:UpdateTargetDistance()
-        end,
-        disabled = function() return not BH.settings.targetDistanceEnabled end,
-    })
-
-    -- Sub-tab boundary: size the page just finished, then move to the next.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.position
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Lock Markers Frame",
-        tooltip = "Stops the marker frame being dragged.",
-        get = function() return BH.settings.raidToolsMarkersLocked and true or false end,
-        set = function(v)
-            BH.settings.raidToolsMarkersLocked = v
-            BH:SaveSettings()
-            if BH.markersFrame then
-                BH.markersFrame:SetMovable(not v)
-            end
-            if BH.markersDragHandle then
-                if v then BH.markersDragHandle:Hide() else BH.markersDragHandle:Show() end
-            end
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Lock Pull/Ready Frame",
-        tooltip = "Stops the pull timer frame being dragged.",
-        get = function() return BH.settings.raidToolsPullReadyLocked and true or false end,
-        set = function(v)
-            BH.settings.raidToolsPullReadyLocked = v
-            BH:SaveSettings()
-            if BH.pullReadyFrame then
-                BH.pullReadyFrame:SetMovable(not v)
-            end
-            if BH.pullReadyDragHandle then
-                if v then BH.pullReadyDragHandle:Hide() else BH.pullReadyDragHandle:Show() end
-            end
-        end,
-        disabled = function() return BH.settings.raidToolsEnabled == false end,
-    })
-
-
-    local resetBtn = CreateSQButton(content, "Reset Positions", 140, 26)
-    resetBtn:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    resetBtn:SetScript("OnClick", function()
-        if BH.markersFrame then
-            BH.markersFrame:ClearAllPoints()
-            BH.markersFrame:SetPoint("BOTTOMRIGHT", UIParent, "CENTER", 0, 0)
-        end
-        if BH.pullReadyFrame then
-            BH.pullReadyFrame:ClearAllPoints()
-            BH.pullReadyFrame:SetPoint("RIGHT", BH.markersFrame, "LEFT", -2, 0)
-        end
-        if SquizzumablesDB then
-            SquizzumablesDB.markersPosition = nil
-            SquizzumablesDB.pullReadyPosition = nil
-            SquizzumablesDB.beaconReminderPosition = nil
-            SquizzumablesDB.earthShieldReminderPosition = nil
-            SquizzumablesDB.repairReminderPosition = nil
-            SquizzumablesDB.symbioticReminderPosition = nil
-            SquizzumablesDB.bresCounterPosition = nil
-            SquizzumablesDB.deathTallyPosition = nil
-            SquizzumablesDB.coachWhistleReminderPosition = nil
-            SquizzumablesDB.bagsReminderPosition = nil
-        end
-        if BH.beaconReminderFrame then
-            BH.beaconReminderFrame:ClearAllPoints()
-            BH.beaconReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
-        end
-        if BH.earthShieldReminderFrame then
-            BH.earthShieldReminderFrame:ClearAllPoints()
-            BH.earthShieldReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
-        end
-        if BH.repairReminderFrame then
-            BH.repairReminderFrame:ClearAllPoints()
-            BH.repairReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
-        end
-        if BH.symbioticReminderFrame then
-            BH.symbioticReminderFrame:ClearAllPoints()
-            BH.symbioticReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
-        end
-        if BH.coachWhistleReminderFrame then
-            BH.coachWhistleReminderFrame:ClearAllPoints()
-            BH.coachWhistleReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
-        end
-        if BH.bresCounterFrame then
-            BH.bresCounterFrame:ClearAllPoints()
-            BH.bresCounterFrame:SetPoint("TOP", UIParent, "TOP", 0, -100)
-        end
-        if BH.deathTallyFrame then
-            BH.deathTallyFrame:ClearAllPoints()
-            BH.deathTallyFrame:SetPoint("TOP", UIParent, "TOP", 220, -100)
-        end
-        if BH.bagsReminderFrame then
-            BH.bagsReminderFrame:ClearAllPoints()
-            BH.bagsReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 240)
-        end
-        if BH.healerCCReminderFrame then
-            BH.healerCCReminderFrame:ClearAllPoints()
-            BH.healerCCReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 360)
-        end
-        -- Reset CDM group positions
-        if BH.cdm and BH.cdm.ResetPositions then
-            BH.cdm:ResetPositions()
-        end
-    end)
-    yOffset = yOffset - 40
-
-    content:SetHeight(math.abs(yOffset) + 20)
-    ns.Rows.currentSection = nil
+function BH:BuildRaidToolsTab(parent)
+    ns.Settings.Build(RAID_TOOLS, parent)
 end
 
 -- Kept as a thin shim: the Raid Tools rows are declarative now, so each one

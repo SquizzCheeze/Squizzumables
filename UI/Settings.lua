@@ -28,11 +28,21 @@
 --       },
 --   })
 --
--- Row types: check, slider, dropdown (items), color ({r,g,b}), editbox
--- (trimmed), palette (one table of colours, `size` rows, the first
--- s[countKey] of them in use), button (onClick; not a setting). `when`
--- receives BH.settings and says when the row APPLIES; the row greys out
+-- Row types: check, slider, dropdown (items, a list or a function), color
+-- ({r,g,b}), editbox (trimmed), palette (one table of colours, `size` rows,
+-- the first s[countKey] of them in use), button (onClick; not a setting), and
+-- header / text / divider, which pass straight to Rows (label, indent, width).
+-- `when` receives BH.settings and says when the row APPLIES; the row greys out
 -- otherwise.
+--
+-- Per row, optionally:
+--   apply = function(value, userInput) ... end
+--       what changes once it is written -- runs before the save and the
+--       page's own `apply`. For a row whose effect differs from the page's
+--       (Raid Tools: visibility here, the marker layout there).
+--   scale = 100
+--       a slider showing value * scale while storing value (a scale of 1.0
+--       shown as 100%).
 
 local addonName, ns = ...
 local BH = ns.BH
@@ -68,27 +78,35 @@ local function Disabled(desc, row)
     end
 end
 
+-- Rows that are not settings: passed to Rows as they are.
+local LAYOUT_ROWS = { header = true, text = true, divider = true }
+
 -- The Rows spec for one description row.
 local function Spec(desc, row)
     local key = row.key
-    local function Set(v)
+    local t = row.type
+    if LAYOUT_ROWS[t] then
+        return { type = t, label = row.label, tooltip = row.tip, indent = row.indent, width = row.width }
+    end
+    local function Set(v, userInput)
         BH.settings[key] = v
+        if row.apply then row.apply(v, userInput) end
         BH:SaveSettings()
         if desc.apply then desc.apply() end
     end
     local spec = {
-        type = row.type, label = row.label, tooltip = row.tip,
-        width = row.width or WIDTH[row.type],
+        type = t, label = row.label, tooltip = row.tip,
+        width = row.width or WIDTH[t],
         disabled = Disabled(desc, row),
     }
-    local t = row.type
     if t == "check" then
         spec.get = function() return BH.settings[key] and true or false end
         spec.set = Set
     elseif t == "slider" then
         spec.min, spec.max, spec.step = row.min, row.max, row.step
-        spec.get = function() return BH.settings[key] or row.default end
-        spec.set = Set
+        local scale = row.scale or 1
+        spec.get = function() return (BH.settings[key] or row.default) * scale end
+        spec.set = function(v, userInput) Set(v / scale, userInput) end
     elseif t == "dropdown" then
         spec.items = row.items
         spec.get = function() return BH.settings[key] or row.default end
