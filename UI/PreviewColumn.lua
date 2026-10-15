@@ -389,8 +389,19 @@ local REMINDERS_ON_TAB = {
 -- than its frame -- "REMEMBER EARTH SHIELD" at 24pt is well over 320 -- and
 -- simply spill past it, on screen as here, so fitting to the frame size let
 -- them run off the column (user screenshot 2026-10-16).
+--
+-- Measured ONCE, on an unscaled copy of the text (item.measure), and kept. The
+-- drawn text sits in a frame that is scaled to fit, and a font's measured
+-- width shifts with the scale it renders at, so measuring the drawn one fed
+-- each redraw's fit into the next measurement: the reminders pulsed small to
+-- big and back (user report 2026-10-16).
 local function ReminderWidth(item)
-    return math.max(item.def.size[1], (item.text:GetStringWidth() or 0) + 8)
+    if not item.textW then
+        local w = item.measure:GetStringWidth() or 0
+        if w <= 0 then return item.def.size[1] end   -- font not ready yet; try next redraw
+        item.textW = w
+    end
+    return math.max(item.def.size[1], item.textW + 8)
 end
 
 local NOTHING_ON_SCREEN = {
@@ -411,9 +422,15 @@ drawers.textreminders = {
                     local f = CreateFrame("Frame", nil, holder)
                     f:SetSize(def.size[1], def.size[2])
                     f:SetPoint("CENTER", holder, "CENTER", 0, 0)
-                    local text = BH.ReminderText(f, def)
+                    BH.ReminderText(f, def)
+                    -- The same text on a frame that is never scaled, only for
+                    -- measuring (see ReminderWidth).
+                    local measureHost = CreateFrame("Frame", nil, host)
+                    measureHost:SetSize(1, 1)
+                    measureHost:SetAlpha(0)
+                    local measure = BH.ReminderText(measureHost, def)
                     holder:Hide()
-                    host.items[key] = { def = def, holder = holder, frame = f, text = text }
+                    host.items[key] = { def = def, holder = holder, frame = f, measure = measure }
                 end
             end
         end
