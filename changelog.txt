@@ -45,6 +45,10 @@ V2.0
   rings and trail draw above the options window (and show out of combat
   even with Only In Combat on), so every change shows on the cursor as
   you make it. Closing the page puts them back as you set them.
+- Kelerts page: the preview is a small copy of your screen with the alert
+  drawn where it shows - the Lust Alert's image or animation at its size
+  and position, or on CDM Alerts the selected buff's or cooldown's image
+  (full-screen glows, the arcs, placed images). It follows the sub-tab.
 - The button preview fits vertical layouts and side labels instead of
   pushing the names off the column.
 - Cursor > Trail: the Test Shark button's bite now shows above the

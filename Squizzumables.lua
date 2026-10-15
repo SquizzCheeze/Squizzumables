@@ -1750,7 +1750,7 @@ function BH:CreateOptionsPanel()
             { key = "cdmcustom",  label = "Custom Icons",     field = "cdmCustomTab",     build = "BuildCustomCooldownsTab" },
         } },
         { group = "Alerts", pages = {
-            { key = "kel",        label = "Kelerts",          field = "kelTab",           build = "BuildJustForKelTab" },
+            { key = "kel",        label = "Kelerts",          field = "kelTab",           build = "BuildJustForKelTab", preview = "kelerts" },
             { key = "sounds",     label = "Sounds",           field = "soundsTab",        build = "BuildSoundsTab" },
         } },
         { group = "Group", pages = {

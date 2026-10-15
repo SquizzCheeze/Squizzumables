@@ -191,6 +191,125 @@ drawers.cursor = {
 }
 
 -- ----------------------------------------------------------------------------
+-- Kelerts: the alerts on a miniature screen
+-- ----------------------------------------------------------------------------
+
+-- These alerts are placed ON the screen -- full-screen edge glows, the ( )
+-- arcs round the character, the lust image where it was moved to -- so where
+-- they sit matters as much as how they look. The preview is the screen scaled
+-- down to the column, with the alert drawn and placed in it by the real code
+-- (Alerts/Kelerts.lua's BuildAlertParts / PaintAlert, Alerts/CDMAlerts.lua's
+-- PaintImage / ImageRect). It follows the page's sub-tab.
+local function ScreenScale(box)
+    local w = UIParent:GetWidth()
+    return (w > 0) and (box:GetWidth() / w) or 0
+end
+
+drawers.kelerts = {
+    build = function(col, host)
+        local box = CreateFrame("Frame", nil, host, "BackdropTemplate")
+        box:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        box:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+        box:SetHeight(1)
+        box:SetClipsChildren(true)
+        box:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8", edgeFile = "Interface\\BUTTONS\\WHITE8X8",
+            edgeSize = 1 })
+        box:SetBackdropColor(0.02, 0.02, 0.03, 0.9)
+        box:SetBackdropBorderColor(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.8)
+        host.box = box
+
+        -- Where the character stands, so the arcs and edge glows read as
+        -- being around something.
+        local you = box:CreateTexture(nil, "BORDER")
+        you:SetColorTexture(1, 1, 1, 0.12)
+        you:SetSize(6, 16)
+        you:SetPoint("CENTER", box, "CENTER", 0, -6)
+
+        host.alert = BH.NewAlertPreview and BH.NewAlertPreview(box)
+        local img = CreateFrame("Frame", nil, box)
+        img.tex = img:CreateTexture(nil, "ARTWORK")
+        img.tex:SetAllPoints()
+        host.img = img
+
+        local note = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        note:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+        note:SetJustifyH("LEFT")
+        note:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+        host.note = note
+    end,
+
+    refresh = function(col, host)
+        local box, alert, img = host.box, host.alert, host.img
+        local w = UIParent:GetWidth()
+        local h = UIParent:GetHeight()
+        local boxW = host:GetWidth()
+        if not (w > 0 and h > 0 and boxW > 0) then return end
+        box:SetHeight(boxW * h / w)
+        local k = ScreenScale(box)
+        local sel = BH.kelPages and BH.kelPages.GetSelected and BH.kelPages.GetSelected() or "alerts"
+
+        local showBox, text = true, ""
+        if sel == "alerts" and alert and BH.CurrentAlert then
+            local a = BH.CurrentAlert()
+            -- Repainted only when the look changes: a repaint restarts a
+            -- frame sequence from its first frame.
+            local sig = tostring(a.texture) .. "|" .. tostring(a.frameCount) .. "|" .. tostring(a.fps)
+                .. "|" .. tostring(a.loop) .. "|" .. tostring(a.opacity)
+            if alert.sig ~= sig then
+                alert.sig = sig
+                BH.PaintAlertPreview(alert, a)
+            end
+            local point, relPoint, x, y = BH.KelAlertAnchor()
+            alert:SetScale(math.max(0.01, ((BH.settings and BH.settings.kelAlertScale) or 1) * k))
+            alert:ClearAllPoints()
+            alert:SetPoint(point, box, relPoint, x, y)
+            alert:Show()
+            img:Hide()
+            text = "Where and how this alert shows, on a small copy of your screen. Test plays it for real; "
+                .. "Unlock Frames moves it."
+        elseif sel == "buffsounds" and BH.SelectedAlertImage then
+            if alert then alert:Hide() end
+            local entry = BH.SelectedAlertImage()
+            if entry then
+                local sig = BH.AlertImageSignature(entry)
+                if img.sig ~= sig then
+                    img.sig = sig
+                    BH.PaintAlertImage(img.tex, entry)
+                end
+                local fill, iw, ih, x, y = BH.AlertImageRect(entry)
+                img:SetScale(math.max(0.01, k))
+                img:ClearAllPoints()
+                if fill then
+                    img:SetSize(w, h)
+                    img:SetPoint("CENTER", box, "CENTER", 0, 0)
+                else
+                    img:SetSize(iw, ih)
+                    img:SetPoint("CENTER", box, "CENTER", x, y)
+                end
+                img:Show()
+                text = "The selected alert's image, where it shows on your screen."
+            else
+                img:Hide()
+                img.sig = nil
+                text = "Select a buff or cooldown with an image to see it here."
+            end
+        else
+            if alert then alert:Hide() end
+            img:Hide()
+            showBox = false
+            text = "The Death Tally shows where it sits, and can be moved, with Unlock Frames."
+        end
+
+        box:SetShown(showBox)
+        host.note:ClearAllPoints()
+        host.note:SetPoint("TOPLEFT", host, "TOPLEFT", 0, showBox and -(box:GetHeight() + 10) or 0)
+        host.note:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+        host.note:SetText(text)
+        host:SetHeight((showBox and box:GetHeight() or 0) + 60)
+    end,
+}
+
+-- ----------------------------------------------------------------------------
 -- The column
 -- ----------------------------------------------------------------------------
 

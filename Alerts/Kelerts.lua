@@ -23,6 +23,86 @@ local alertFrame
 local alertTimer
 local alertSoundTicker
 
+-- What an alert frame draws with: its texture and the frame-sequence
+-- animation. Split out of EnsureAlertFrame in 2.0 phase 3 so the Kelerts
+-- page's preview draws the alert with the real code (BH.NewAlertPreview).
+local function BuildAlertParts(f)
+    local tex = f:CreateTexture(nil, "ARTWORK")
+    tex:SetAllPoints()
+    f.tex = tex
+
+    -- Animation state (set by PaintAlert when frameCount > 1)
+    f.anim = {
+        active     = false,
+        baseName   = "",
+        frameCount = 0,
+        fps        = 10,
+        loop       = true,
+        current    = 1,
+        elapsed    = 0,
+    }
+
+    f:SetScript("OnUpdate", function(self, dt)
+        local a = self.anim
+        if not a.active then return end
+        a.elapsed = a.elapsed + dt
+        local frameDur = 1 / math.max(1, a.fps)
+        if a.elapsed >= frameDur then
+            a.elapsed = a.elapsed - frameDur
+            a.current = a.current + 1
+            if a.current > a.frameCount then
+                if a.loop then
+                    a.current = 1
+                else
+                    -- played through once — stop on last frame
+                    a.current = a.frameCount
+                    a.active  = false
+                    return
+                end
+            end
+            local path = KEL_MEDIA_PATH .. a.baseName
+                         .. string.format("_%03d", a.current) .. ".png"
+            self.tex:SetTexture(path)
+        end
+    end)
+end
+
+-- How an alert looks: its image or frame sequence (started from frame 1) and
+-- its opacity. No sound, no timer, no scale -- those are ShowAlert's.
+local function PaintAlert(f, alert)
+    -- Stop any running animation
+    f.anim.active = false
+
+    local texBase = alert and alert.texture or ""
+    local frames  = tonumber(alert and alert.frameCount) or 0
+
+    if texBase ~= "" then
+        if frames > 1 then
+            -- Animated: start from frame 1
+            local path = KEL_MEDIA_PATH .. texBase
+                         .. string.format("_%03d", 1) .. ".png"
+            f.tex:SetTexture(path)
+            f.tex:Show()
+            f.anim.baseName   = texBase
+            f.anim.frameCount = frames
+            f.anim.fps        = math.max(1, tonumber(alert.fps) or 10)
+            f.anim.loop       = alert.loop ~= false
+            f.anim.current    = 1
+            f.anim.elapsed    = 0
+            f.anim.active     = true
+        else
+            -- Static: texture field may include extension or not
+            f.tex:SetTexture(KEL_MEDIA_PATH .. texBase)
+            f.tex:Show()
+        end
+    else
+        f.tex:Hide()
+    end
+
+    local opacity = tonumber(alert and alert.opacity)
+    f:SetAlpha(opacity and math.max(0, math.min(1, opacity)) or 1.0)
+end
+
 local function EnsureAlertFrame()
     if alertFrame then return alertFrame end
 
@@ -60,44 +140,7 @@ local function EnsureAlertFrame()
         BH:SaveKelAlertPosition()
     end)
 
-    local tex = f:CreateTexture(nil, "ARTWORK")
-    tex:SetAllPoints()
-    f.tex = tex
-
-    -- Animation state (set by ShowAlert when frameCount > 1)
-    f.anim = {
-        active     = false,
-        baseName   = "",
-        frameCount = 0,
-        fps        = 10,
-        loop       = true,
-        current    = 1,
-        elapsed    = 0,
-    }
-
-    f:SetScript("OnUpdate", function(self, dt)
-        local a = self.anim
-        if not a.active then return end
-        a.elapsed = a.elapsed + dt
-        local frameDur = 1 / math.max(1, a.fps)
-        if a.elapsed >= frameDur then
-            a.elapsed = a.elapsed - frameDur
-            a.current = a.current + 1
-            if a.current > a.frameCount then
-                if a.loop then
-                    a.current = 1
-                else
-                    -- played through once — stop on last frame
-                    a.current = a.frameCount
-                    a.active  = false
-                    return
-                end
-            end
-            local path = KEL_MEDIA_PATH .. a.baseName
-                         .. string.format("_%03d", a.current) .. ".png"
-            self.tex:SetTexture(path)
-        end
-    end)
+    BuildAlertParts(f)
 
     alertFrame = f
     BH.kelAlertFrame = f
@@ -122,39 +165,9 @@ end
 local function ShowAlert(alert)
     local f = EnsureAlertFrame()
 
-    -- Stop any running animation
-    f.anim.active = false
-
-    local texBase = alert and alert.texture or ""
-    local frames  = tonumber(alert and alert.frameCount) or 0
-
-    if texBase ~= "" then
-        if frames > 1 then
-            -- Animated: start from frame 1
-            local path = KEL_MEDIA_PATH .. texBase
-                         .. string.format("_%03d", 1) .. ".png"
-            f.tex:SetTexture(path)
-            f.tex:Show()
-            f.anim.baseName   = texBase
-            f.anim.frameCount = frames
-            f.anim.fps        = math.max(1, tonumber(alert.fps) or 10)
-            f.anim.loop       = alert.loop ~= false
-            f.anim.current    = 1
-            f.anim.elapsed    = 0
-            f.anim.active     = true
-        else
-            -- Static: texture field may include extension or not
-            f.tex:SetTexture(KEL_MEDIA_PATH .. texBase)
-            f.tex:Show()
-        end
-    else
-        f.tex:Hide()
-    end
-
+    PaintAlert(f, alert)
     local scale = (BH.settings and BH.settings.kelAlertScale) or 1.0
     f:SetScale(scale)
-    local opacity = tonumber(alert and alert.opacity)
-    f:SetAlpha(opacity and math.max(0, math.min(1, opacity)) or 1.0)
 
     local snd = PickRandomSound(alert) or (alert and alert.sound) or "None"
     local ch  = (alert and alert.soundChannel) or "Master"
@@ -184,6 +197,22 @@ end
 
 -- Expose so the Test button can call it
 BH.ShowKelAlert = ShowAlert
+
+-- For the Kelerts page's preview (UI/PreviewColumn.lua): a plain frame drawn
+-- by the real code, and where the real alert sits -- its saved anchor, or the
+-- default the frame is created at.
+function BH.NewAlertPreview(parent)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(200, 200)
+    BuildAlertParts(f)
+    return f
+end
+BH.PaintAlertPreview = PaintAlert
+function BH.KelAlertAnchor()
+    local pos = SquizzumablesDB and SquizzumablesDB.kelAlertPosition
+    if pos then return pos.point or "CENTER", pos.relPoint or "CENTER", pos.x or 0, pos.y or 100 end
+    return "CENTER", "CENTER", 0, 100
+end
 
 -- ============================================================================
 -- Position persistence

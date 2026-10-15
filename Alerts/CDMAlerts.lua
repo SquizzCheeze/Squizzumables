@@ -214,16 +214,26 @@ end
 -- spellbook and the world map (user screenshots 2026-10-09); framing the
 -- character never needs to beat a window. (The Move handle raises itself to
 -- DIALOG while it is out, so it can still be grabbed.)
+-- Where an image goes, in UIParent units: true for the whole screen, or
+-- false, width, height and its centre's offset from the screen's centre.
+-- Shared with the Kelerts page's preview, which draws a scaled-down screen.
+local function ImageRect(entry)
+    if entry.imageFill ~= false then return true end
+    local size = entry.imageSize or 200
+    local lv = ImageLevel(entry)
+    return false, size * (lv and lv.sw or 1), size * (entry.imageHeight or 100) / 100 * (lv and lv.sh or 1),
+        entry.imageX or 0, entry.imageY or 0
+end
+
 local function PlaceImageFrame(f, entry)
     f:ClearAllPoints()
     f:SetFrameStrata("BACKGROUND")
-    if entry.imageFill ~= false then
+    local fill, w, h, x, y = ImageRect(entry)
+    if fill then
         f:SetAllPoints(UIParent)
     else
-        local size = entry.imageSize or 200
-        local lv = ImageLevel(entry)
-        f:SetSize(size * (lv and lv.sw or 1), size * (entry.imageHeight or 100) / 100 * (lv and lv.sh or 1))
-        f:SetPoint("CENTER", UIParent, "CENTER", entry.imageX or 0, entry.imageY or 0)
+        f:SetSize(w, h)
+        f:SetPoint("CENTER", UIParent, "CENTER", x, y)
     end
 end
 
@@ -1608,6 +1618,22 @@ local function CooldownImageAlert(cd)
         if a.image then return a end
     end
 end
+
+-- For the Kelerts page's preview (UI/PreviewColumn.lua): the image of
+-- whatever the CDM Alerts editor has selected (nil when it has none), painted
+-- and placed by the real code.
+function BH.SelectedAlertImage()
+    local entry
+    if selectedCD then
+        entry = CooldownImageAlert(selectedCD)
+    elseif selectedBuffSpellID then
+        entry = BuffSounds()[selectedBuffSpellID]
+    end
+    return entry and entry.image and entry or nil
+end
+BH.PaintAlertImage = PaintImage
+BH.AlertImageRect  = ImageRect
+BH.AlertImageSignature = ImageSignature
 
 -- Drop entries left with neither a sound nor an image, and an emptied list.
 local function PruneCooldownAlerts(cd)
