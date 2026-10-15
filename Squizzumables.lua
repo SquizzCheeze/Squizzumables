@@ -293,7 +293,7 @@ BH.defaultSettings = {
     -- by the client, which is the only way to alert on an aura that is secret
     -- in combat -- and the reason there is no image: the client plays the sound
     -- and reports nothing back, so there is no moment at which we could draw
-    -- anything. See Squizzumables_SpellAlerts.lua.
+    -- anything. See Alerts/BuffSounds.lua.
     buffSounds = {},
     -- Hide ALL of Blizzard's spell alert art (the proc overlays round the
     -- screen centre), not just the buffs given an image. Off by default.
@@ -552,7 +552,7 @@ local POSITION_PAIRS = {
 -- hand-written rather than generated:
 --   framePosition         — the main button frame (BH:SaveFramePosition)
 --   calloutsFramePosition — the dungeon callouts button frame
---   kelAlertPosition      — the Just For Kel alert (Squizzumables_SpellAlerts.lua)
+--   kelAlertPosition      — the Just For Kel alert (Alerts/Kelerts.lua)
 -- Deliberately NOT included: raidToolsPosition, a pre-1.x key that
 -- BH:LoadMarkersPosition migrates into markersPosition and then clears.
 local PROFILE_POSITION_KEYS = {
@@ -2158,7 +2158,7 @@ local function PlaySQSound(soundName, channel)
     if soundName == "__builtin_questcomplete" then PlaySound(878,   channel) end
 end
 
--- Public wrapper so other files (e.g. Squizzumables_SpellAlerts.lua) can play sounds.
+-- Public wrapper so other files (e.g. Alerts/Kelerts.lua) can play sounds.
 function BH:PlaySound(name, channel)
     PlaySQSound(name, channel)
 end

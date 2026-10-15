@@ -54,5 +54,8 @@ Cooldowns\Layout.lua
 Cooldowns\API.lua
 Cooldowns\OptionsTab.lua
 #Squizzumables_Nameplates.lua
-Squizzumables_SpellAlerts.lua
+Alerts\Kelerts.lua
+Alerts\BuffSounds.lua
+Alerts\CDMAlerts.lua
+Alerts\KelTab.lua
 Squizzumables_StackDiag.lua

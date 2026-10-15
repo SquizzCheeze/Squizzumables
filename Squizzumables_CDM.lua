@@ -3651,7 +3651,7 @@ end
 
 
 -- ============================================================================
--- Cooldown alert storage, for the CDM Alerts editor (Squizzumables_SpellAlerts)
+-- Cooldown alert storage, for the CDM Alerts editor (Alerts/CDMAlerts.lua)
 --
 -- The CDM Sounds page that used to live here was replaced in 2.0 by one CDM
 -- Alerts page shared with buffs (user decision 2026-10-15): one grid, one

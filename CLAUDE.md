@@ -343,8 +343,12 @@ shell, setup and polish), each gated.
   file re-declares them locally; three ns aliases there are unused, left for byte-identity).
   Squizzumables_CDM.lua 8,779 -> 3,751. User decision 2026-10-16: the CDM split STOPS here -- the rest
   (alert block, events, proc glow, proxy creation) is the tightly linked engine core and more forwarders
-  would cost clarity. Next: Squizzumables_SpellAlerts.lua into Alerts/ in ONE move, then the
-  descriptions pilot, then phase 3. The alert
+  would cost clarity. Squizzumables_SpellAlerts.lua (3,562) went into Alerts/ in ONE move (user
+  request): `Kelerts.lua` (display frame, position, triggers; creates `ns.Alerts`), `BuffSounds.lua`
+  (AddAuraSound registration, aliases, merging), `CDMAlerts.lua` (buff + cooldown images AND the CDM
+  Alerts tab -- one file because `moving`, `previewFrame` and the selection are mutable state both
+  halves write), `KelTab.lua`. Each file publishes on ns.Alerts at its bottom; dependencies only run
+  forward. Next: the descriptions pilot, then phase 3. The alert
   block (512-2045: alert hook, spell-ID resolution, PlayAlertsFor, buff borrowing/mirroring) has ~15
   links EACH WAY with the engine -- leave it until the engine around it has moved. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
@@ -437,8 +441,9 @@ initialized `BH`. `perl .claude/check-toc.pl` verifies every listed path exists 
     `Squizzumables_CDMAuras.lua` loads straight after it — the native buff slots (`BH.cdm.native`),
     fed through `cdmModule.shared`. A separate file partly to keep the CDM main chunk clear of Lua
     5.1's 200-local limit.
-13. `Squizzumables_SpellAlerts.lua` — "Kelerts", the user-defined spell alerts (full-screen image
-    + sound on an aura), and the M+ Death Tally.
+13. `Alerts/` (was `Squizzumables_SpellAlerts.lua`, split in 2.0 phase 2) — "Kelerts", the
+    user-defined spell alerts (full-screen image + sound on an aura), buff sounds and the CDM Alerts
+    tab. Load order Kelerts -> BuffSounds -> CDMAlerts -> KelTab; names cross via `ns.Alerts`.
 
 The `.toc` also carries `UI/SubTabs.lua` (after Widgets, before Rows), `Core/TargetDistance.lua`
 (after Welcome), `Core/Cursor.lua` (after TargetDistance; the mouse cursor rings, V1.93), `UI/CDMPreview.lua` (straight after `Squizzumables_CDMAuras.lua` — see "CDM options
@@ -930,7 +935,7 @@ tainted depends on what else has run first. Three things learned the hard way:
   **MEASURED 2026-10-15: the Map restriction does NOT refuse AddAuraSound.** In a delve (Map active,
   out of combat) `/sq buffsounds try` got every registration accepted. Waiting Map out had left the
   player with no buff sounds after a /reload until they left the delve, so buff sounds wait on
-  combat + Encounter / ChallengeMode / PvPMatch only (`SoundsBlocked` in SpellAlerts). Encounter and
+  combat + Encounter / ChallengeMode / PvPMatch only (`SoundsBlocked` in Alerts/BuffSounds.lua). Encounter and
   ChallengeMode are still unmeasured; measure with `/sq buffsounds try` before trusting either way.
   Do NOT gate the reminder buttons on the restrictions:
   ChallengeMode lasts a whole key; `BH:UpdateButtons` gates on `AurasAreSecret()` only.
@@ -1416,7 +1421,7 @@ showing mid-fight off screen. The ones that stay up (Beacon, Earth Shield, Symbi
 Whistle, pet, Healthstone) are the ones with it set. There is no matching "show" call — leaving
 combat just runs `UpdateAllReminders`, so every frame is re-decided on its merits through the gates.
 
-**Kelerts** (`Squizzumables_SpellAlerts.lua`): `settings.alerts` is a table of alert records
+**Kelerts** (`Alerts/`): `settings.alerts` is a table of alert records
 keyed by an internal id, each with its own `trigger`, image, sound and timing. `alerts.lust` is
 flagged `builtin`: it cannot be renamed or deleted, and it is the only one with no `trigger.spellID`
 because it watches all of `LUST_DEBUFF_IDS` at once. Everything else in the table is user-made.
@@ -1461,7 +1466,7 @@ retail against Tyr's Deliverance — secret, unreadable, sound still played in c
 addon's own `Media\Sounds\` file. `Enum.UnitAuraSoundTrigger` is `Added = 0`,
 `ApplicationsIncreased = 1`, `Removed = 2`; `RemoveAuraSound(auraSoundID)` unregisters.
 
-`BH:RefreshAuraSoundRegistrations` (in `Squizzumables_SpellAlerts.lua`) rebuilds every
+`BH:RefreshAuraSoundRegistrations` (in `Alerts/BuffSounds.lua`) rebuilds every
 registration wholesale from settings, and is called at login (after the LSM registration, which is
 what resolves a media name to a path), from `BH:RefreshJustForKelTab` (every edit routes through
 it), and on profile switch. An alert qualifies only with a single spell ID, one fixed sound, no

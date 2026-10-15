@@ -109,7 +109,7 @@ local nativeCooldowns = {}
 local activeOverlays = {}
 
 -- Kelerts buff images (Native:BuildBuffImage, used by
--- Squizzumables_SpellAlerts.lua), keyed by the caller's key. Same one-slot
+-- Alerts/CDMAlerts.lua), keyed by the caller's key. Same one-slot
 -- shape as the overlays; kept separate for the same reason, and refreshed by
 -- the same ticker.
 local buffImages = {}
