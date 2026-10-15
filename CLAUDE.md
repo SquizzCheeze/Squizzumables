@@ -329,8 +329,13 @@ shell, setup and polish), each gated.
   ScheduleReconcile; UpdateAllProxyCooldowns is forward-declared too, same check),
   `Cooldowns/BlizzardViewers.lua` (public group-frame API, hiding/parking Blizzard's viewers + Edit Mode
   hooks, buff/taint diagnostics, ReleaseAll, OnProfileChanged; it hands HookEditMode BACK as
-  shared.HookEditMode, which Initialize calls at login -- the pattern for a moved block with one export).
-  Squizzumables_CDM.lua 8,779 -> 5,134. The alert
+  shared.HookEditMode, which Initialize calls at login -- the pattern for a moved block with one export),
+  `Cooldowns/ProxyVisuals.lua` (ApplyProxyVisuals, FireCDSounds, /sq cdm sound diagnostics). That one is
+  still CALLED from code left behind (UpdateAllProxyCooldowns), so the CDM file keeps a two-line
+  FORWARDER per function into `cdmModule.proxyVisuals`, which the moved file fills in at its bottom --
+  the technique for a block whose functions the remaining engine calls at runtime. The Event Handling
+  block can NOT move: its OnEvent writes the file-level `isInCombat`, which GroupAlpha reads (mutable
+  scalar crossing the boundary). Squizzumables_CDM.lua 8,779 -> 4,338. The alert
   block (512-2045: alert hook, spell-ID resolution, PlayAlertsFor, buff borrowing/mirroring) has ~15
   links EACH WAY with the engine -- leave it until the engine around it has moved. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
