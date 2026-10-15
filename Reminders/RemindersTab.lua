@@ -1,7 +1,8 @@
 -- Reminders/RemindersTab.lua
--- The Reminders options page: one section per text reminder, built from its
--- BH.REMINDERS entry (AddReminderSection), plus the feast announce and the
--- role CC alert settings.
+-- The Text Reminders options page: the class reminder, repair, instance
+-- sounds, the bag and healthstone reminders, feast announce and the role CC
+-- alert. Its settings are a settings description (TEXT_REMINDERS, below);
+-- BuildTextRemindersTab draws each section between the few hand-built parts.
 --
 -- Moved out of Squizzumables.lua unchanged in 2.0 phase 2 (the split). It
 -- reaches the core only through BH.
@@ -17,71 +18,204 @@ local CreateSQDropdown = ns.CreateSQDropdown
 -- Text Reminders Settings Tab
 -- ============================================================================
 
--- Build one reminder's block of options from its BH.REMINDERS entry: section
--- header, enable toggle, any reminder-specific rows, scale, lock, divider.
--- Returns the vertical space used.
---
--- The scale and lock rows grey out when the reminder is disabled -- something
--- the hand-written version had no mechanism for.
-function BH:AddReminderSection(content, y, key, skipDivider)
-    local def = BH.REMINDERS_BY_KEY[key]
-    if not def then return 0 end
+-- The page's settings, described once (UI/Settings.lua; 2.0 phase 3): each
+-- row is the setting's default, its control and its search entry. The
+-- defaults used to live in Squizzumables.lua's defaultSettings and again as
+-- getter fallbacks here (Repair's threshold fell back to 20 against a real
+-- default of 50). Labels and tooltips come from each reminder's BH.REMINDERS
+-- entry, as AddReminderSection's did. Hand-built in BuildTextRemindersTab:
+-- the page notes, the feast channel grid (a keyed set of dropdowns) and the
+-- feast message box (it has a placeholder).
+local R = BH.REMINDERS_BY_KEY
 
-    local Rows       = ns.Rows
-    local enabledKey = def.enabledKey or (key .. "ReminderEnabled")
-    local scaleKey   = key .. "ReminderScale"
-    local lockedKey  = key .. "ReminderLocked"
-    local frameKey   = key .. "ReminderFrame"
-    local updateFn   = "Update" .. BH.ReminderBaseName(key) .. "Reminder"
+local function On(key) return function(s) return s[key] ~= false end end
+local function Update(name) return function() if BH[name] then BH[name](BH) end end end
 
-    local function isOff() return BH.settings and BH.settings[enabledKey] == false end
-    local function runUpdate() if BH[updateFn] then BH[updateFn](BH) end end
-
-    local rows = {
-        { type = "header", label = def.sectionHeader, tooltip = def.tooltip },
-        { type = "check",  label = def.enableLabel,   tooltip = def.tooltip,
-          get = function() return BH.settings and BH.settings[enabledKey] ~= false end,
-          set = function(v) BH.settings[enabledKey] = v; BH:SaveSettings() end,
-          after = runUpdate },
-    }
-
-    -- Reminder-specific rows sit between the enable toggle and the scale.
-    if def.extraRows then
-        for _, extra in ipairs(def.extraRows) do rows[#rows + 1] = extra end
+-- A reminder's scale and lock rows, as AddReminderSection made them: the
+-- scale only re-scales on a drag of the slider, the lock stops the drag.
+local function ScaleApply(frameKey)
+    return function(v, userInput)
+        local f = BH[frameKey]
+        if userInput and f then f:SetScale(v) end
     end
-
-    rows[#rows + 1] = {
-        type = "slider", label = def.scaleLabel, width = 300, min = 50, max = 200, step = 5,
-        tooltip = "Size of the on-screen reminder, as a percentage.",
-        disabled = isOff,
-        get = function() return (BH.settings and BH.settings[scaleKey] or 1.0) * 100 end,
-        set = function(v, userInput)
-            BH.settings[scaleKey] = v / 100
-            BH:SaveSettings()
-            local f = BH[frameKey]
-            if userInput and f then f:SetScale(v / 100) end
-        end,
-    }
-    rows[#rows + 1] = {
-        type = "check", label = def.lockLabel,
-        tooltip = "Stops the reminder being dragged. Use Preview on the Settings tab to reposition it.",
-        disabled = isOff,
-        get = function() return BH.settings and BH.settings[lockedKey] or false end,
-        set = function(v)
-            BH.settings[lockedKey] = v
-            BH:SaveSettings()
-            local f = BH[frameKey]
-            if f then f:SetMovable(not v); f:EnableMouse(not v) end
-        end,
-    }
-    -- The section that ends a group omits its trailing divider, because the
-    -- next block (Instance Sounds, Feast Announce) opens with its own.
-    if not skipDivider then
-        rows[#rows + 1] = { type = "divider" }
-    end
-
-    return Rows.AddAll(content, y, rows)
 end
+local function LockApply(frameKey)
+    return function(v)
+        local f = BH[frameKey]
+        if f then f:SetMovable(not v); f:EnableMouse(not v) end
+    end
+end
+local SCALE_TIP = "Size of the on-screen reminder, as a percentage."
+local LOCK_TIP  = "Stops the reminder being dragged. Use Preview on the Settings tab to reposition it."
+
+local function RoleWatched(s) return s.healerCCAlertEnabled or s.roleCCAlertTank end
+
+local TEXT_REMINDERS = ns.Settings.Describe({
+    sections = {
+        -- The one Class Reminder (2.0, user request 2026-10-16): Beacon, Earth
+        -- Shield, Symbiotic and No Pet each belong to one class, so they share
+        -- one frame -- one position, scale and lock -- and each keeps its own
+        -- on/off. No Pet's settings came over from Class Buffs. The lock also
+        -- writes the four old <key>ReminderLocked, which the reminders' own
+        -- code still reads.
+        class = {
+            { type = "header", label = "CLASS REMINDER" },
+            { type = "text",
+              label = "Beacon, Earth Shield, Symbiotic Relationship and No Pet each belong to one class, so "
+                  .. "they share one frame: one place on screen, one size and one lock. Turn each on or off "
+                  .. "below." },
+            { key = "classReminderScale", type = "slider", default = 1.0, scale = 100,
+              min = 50, max = 300, step = 5,
+              label = "Class Reminder Scale", tip = "Size of the class reminder, as a percentage.",
+              apply = function(v, userInput)
+                  if userInput and BH.classReminderFrame then BH.classReminderFrame:SetScale(v) end
+              end },
+            { key = "classReminderLocked", type = "check", default = false,
+              label = "Lock Class Reminder",
+              tip = "Stops the class reminder being dragged. Unlock Frames overrides this while you are "
+                  .. "positioning things.",
+              apply = function(v)
+                  for _, key in ipairs(BH.CLASS_REMINDER_KEYS) do
+                      BH.settings[key .. "ReminderLocked"] = v
+                      local f = BH[key .. "ReminderFrame"]
+                      if f then f:EnableMouse(BH:ReminderMouseEnabled(v)) end
+                  end
+              end },
+            { type = "divider" },
+            { key = "beaconReminderEnabled", type = "check", default = true,
+              label = R.beacon.enableLabel, tip = R.beacon.tooltip, apply = Update("UpdateBeaconReminder") },
+            { key = "earthShieldReminderEnabled", type = "check", default = true,
+              label = R.earthShield.enableLabel, tip = R.earthShield.tooltip,
+              apply = Update("UpdateEarthShieldReminder") },
+            { key = "symbioticReminderEnabled", type = "check", default = true,
+              label = R.symbiotic.enableLabel, tip = R.symbiotic.tooltip, apply = Update("UpdateSymbioticReminder") },
+            { key = "petReminderEnabled", type = "check", default = true,
+              label = R.pet.enableLabel, tip = R.pet.tooltip, apply = Update("UpdatePetReminder") },
+        },
+
+        -- Not a class reminder: anyone's gear wears out. Its own sub-tab,
+        -- frame, position, scale and lock.
+        repair = {
+            { type = "header", label = R.repair.sectionHeader, tip = R.repair.tooltip },
+            { key = "repairReminderEnabled", type = "check", default = true,
+              label = R.repair.enableLabel, tip = R.repair.tooltip, apply = Update("UpdateRepairReminder") },
+            { key = "repairReminderThreshold", type = "slider", default = 50, min = 0, max = 100, step = 1,
+              label = "Durability Threshold (%)",
+              tip = "Show the reminder once your most damaged equipped item falls below this percentage.",
+              when = On("repairReminderEnabled"), apply = Update("UpdateRepairReminder") },
+            { key = "repairReminderScale", type = "slider", default = 1.0, scale = 100, min = 50, max = 200, step = 5,
+              label = R.repair.scaleLabel, tip = SCALE_TIP,
+              when = On("repairReminderEnabled"), apply = ScaleApply("repairReminderFrame") },
+            { key = "repairReminderLocked", type = "check", default = false,
+              label = R.repair.lockLabel, tip = LOCK_TIP,
+              when = On("repairReminderEnabled"), apply = LockApply("repairReminderFrame") },
+        },
+
+        sounds = {
+            { key = "skyreachSoundEnabled", type = "check", default = true,
+              label = "Play Sound on Skyreach (Mythic)",
+              tip = "Plays a sound when you enter The Everbloom on Mythic difficulty, as a reminder about the "
+                  .. "Skyreach affix pull." },
+        },
+
+        -- One section for the combined bag frame (enable / scale / lock /
+        -- position), then the per-category watch toggles that decide what it
+        -- can mention -- the four bag categories share one frame, so the old
+        -- per-category *Enabled keys survive as watch toggles -- then the
+        -- healthstone reminder.
+        bags = {
+            { type = "header", label = R.bags.sectionHeader, tip = R.bags.tooltip },
+            { key = "bagsReminderEnabled", type = "check", default = true,
+              label = R.bags.enableLabel, tip = R.bags.tooltip, apply = Update("UpdateBagReminder") },
+            { key = "bagsReminderScale", type = "slider", default = 1.0, scale = 100, min = 50, max = 200, step = 5,
+              label = R.bags.scaleLabel, tip = SCALE_TIP,
+              when = On("bagsReminderEnabled"), apply = ScaleApply("bagsReminderFrame") },
+            { key = "bagsReminderLocked", type = "check", default = false,
+              label = R.bags.lockLabel, tip = LOCK_TIP,
+              when = On("bagsReminderEnabled"), apply = LockApply("bagsReminderFrame") },
+            { key = "foodReminderEnabled", type = "check", default = true, indent = 28,
+              label = "Watch food", tip = "Include this in the bag reminder when you have none of it.",
+              when = On("bagsReminderEnabled"), apply = Update("UpdateBagReminder") },
+            { key = "flaskReminderEnabled", type = "check", default = true, indent = 28,
+              label = "Watch flasks", tip = "Include this in the bag reminder when you have none of it.",
+              when = On("bagsReminderEnabled"), apply = Update("UpdateBagReminder") },
+            { key = "oilReminderEnabled", type = "check", default = true, indent = 28,
+              label = "Watch weapon oils", tip = "Include this in the bag reminder when you have none of it.",
+              when = On("bagsReminderEnabled"), apply = Update("UpdateBagReminder") },
+            { key = "augmentRuneReminderEnabled", type = "check", default = true, indent = 28,
+              label = "Watch augment runes", tip = "Include this in the bag reminder when you have none of it.",
+              when = On("bagsReminderEnabled"), apply = Update("UpdateBagReminder") },
+            { key = "bagsLowThreshold", type = "slider", default = 1, min = 0, max = 10, step = 1, indent = 28,
+              label = "Warn when running low (0 = off)",
+              tip = "Also show the bag reminder when you have this many or fewer of a watched consumable left, "
+                  .. "e.g. \"LOW ON FLASK (1 LEFT)\". Having none is still shown first.",
+              when = On("bagsReminderEnabled"), apply = Update("UpdateBagReminder") },
+            { type = "header", label = R.healthstone.sectionHeader, tip = R.healthstone.tooltip },
+            { key = "healthstoneReminderEnabled", type = "check", default = true,
+              label = R.healthstone.enableLabel, tip = R.healthstone.tooltip,
+              apply = Update("UpdateHealthstoneReminder") },
+            { key = "healthstoneReminderScale", type = "slider", default = 1.0, scale = 100,
+              min = 50, max = 200, step = 5,
+              label = R.healthstone.scaleLabel, tip = SCALE_TIP,
+              when = On("healthstoneReminderEnabled"), apply = ScaleApply("healthstoneReminderFrame") },
+            { key = "healthstoneReminderLocked", type = "check", default = false,
+              label = R.healthstone.lockLabel, tip = LOCK_TIP,
+              when = On("healthstoneReminderEnabled"), apply = LockApply("healthstoneReminderFrame") },
+        },
+
+        feastEnable = {
+            { key = "feastAnnounceEnabled", type = "check", default = true,
+              label = "Enable Feast Announce",
+              tip = "Announces to chat when you drop a feast, and alerts other Squizzumables users in your group "
+                  .. "with a sound." },
+        },
+        feastSound = {
+            { key = "feastAlertSound", type = "sound", default = "None",
+              label = "Alert sound (plays when a feast is placed)",
+              tip = "Sound played to you and to other Squizzumables users in the group when a feast is dropped.",
+              when = On("feastAnnounceEnabled") },
+        },
+
+        -- Role CC alert. healerCCAlertEnabled is the long-standing key for
+        -- healer tracking and is kept as-is so existing profiles are
+        -- unaffected; roleCCAlertTank was added in 1.60 and defaults off, so
+        -- nobody gets a new alert they did not ask for. Everything after the
+        -- two roles only matters once one of them is being watched.
+        cc = {
+            { type = "text",
+              label = "Plays a sound and shows an alert when a watched party or raid member is crowd controlled. "
+                  .. "Pick which roles to watch." },
+            { key = "healerCCAlertEnabled", type = "check", default = false,
+              label = "Alert when healer is CC'd",
+              tip = "Watch group healers and raise the alert when one is crowd controlled.",
+              apply = function() BH:RefreshRoleCCWatchList(); BH:UpdateRoleCCFrame() end },
+            { key = "roleCCAlertTank", type = "check", default = false,
+              label = "Alert when tank is CC'd",
+              tip = "Watch group tanks and raise the alert when one is crowd controlled. Shares the frame and "
+                  .. "sound with the healer alert; the label names whichever role is affected.",
+              apply = function() BH:RefreshRoleCCWatchList(); BH:UpdateRoleCCFrame() end },
+            { key = "healerCCReminderLocked", type = "check", default = false,
+              label = "Lock Position", tip = "Stops the role CC alert being dragged.",
+              when = RoleWatched,
+              apply = function(v)
+                  if BH.healerCCReminderFrame then
+                      BH.healerCCReminderFrame:SetMovable(not v)
+                      BH.healerCCReminderFrame:EnableMouse(BH:ReminderMouseEnabled(v))
+                  end
+              end },
+            { key = "healerCCReminderScale", type = "slider", default = 1.0, scale = 100,
+              min = 50, max = 200, step = 5, width = 200,
+              label = "Scale", tip = "Size of the role CC alert, as a percentage.",
+              when = RoleWatched,
+              apply = function(v)
+                  if BH.healerCCReminderFrame then BH.healerCCReminderFrame:SetScale(v) end
+              end },
+            { key = "healerCCAlertSound", type = "sound", default = "None",
+              label = "Alert sound", tip = "Sound played when a watched healer or tank is crowd controlled.",
+              when = RoleWatched },
+        },
+    },
+})
 
 function BH:BuildTextRemindersTab(parent)
     -- Split by what the reminder is about rather than one long scroll. The
@@ -99,95 +233,27 @@ function BH:BuildTextRemindersTab(parent)
     -- The preview column follows the open sub-tab (UI/PreviewColumn.lua).
     self.textReminderPages = pages
 
-    local content = pages.class
-    ns.Rows.currentSection = content.section
-
-    local yOffset = -14
     local leftPad = 14
+    local content, yOffset
 
-    -- The one Class Reminder (2.0, user request 2026-10-16): Beacon, Earth
-    -- Shield, Symbiotic and No Pet each belong to one class, so they share one
-    -- frame -- one position, scale and lock -- and each keeps its own on/off.
-    -- No Pet's settings came over from Class Buffs. The lock also writes the
-    -- four old <key>ReminderLocked, which the reminders' own code still reads.
-    yOffset = yOffset - ns.Rows.AddAll(content, yOffset, {
-        { type = "header", label = "CLASS REMINDER" },
-        { type = "text",
-          label = "Beacon, Earth Shield, Symbiotic Relationship and No Pet each belong to one class, so "
-              .. "they share one frame: one place on screen, one size and one lock. Turn each on or off "
-              .. "below." },
-        { type = "slider", label = "Class Reminder Scale", width = 300, min = 50, max = 300, step = 5,
-          tooltip = "Size of the class reminder, as a percentage.",
-          get = function() return (BH.settings.classReminderScale or 1.0) * 100 end,
-          set = function(v, userInput)
-              BH.settings.classReminderScale = v / 100
-              BH:SaveSettings()
-              if userInput and BH.classReminderFrame then BH.classReminderFrame:SetScale(v / 100) end
-          end },
-        { type = "check", label = "Lock Class Reminder",
-          tooltip = "Stops the class reminder being dragged. Unlock Frames overrides this while you are "
-                 .. "positioning things.",
-          get = function() return BH.settings.classReminderLocked and true or false end,
-          set = function(v)
-              BH.settings.classReminderLocked = v
-              for _, key in ipairs(BH.CLASS_REMINDER_KEYS) do
-                  BH.settings[key .. "ReminderLocked"] = v
-                  local f = BH[key .. "ReminderFrame"]
-                  if f then f:EnableMouse(BH:ReminderMouseEnabled(v)) end
-              end
-              BH:SaveSettings()
-          end },
-        { type = "divider" },
-    })
-
-    -- Each class's own on/off (and any rows of its own, between).
-    for _, key in ipairs(BH.CLASS_REMINDER_KEYS) do
-        local def = BH.REMINDERS_BY_KEY[key]
-        local enabledKey = def.enabledKey or (key .. "ReminderEnabled")
-        local updateFn = "Update" .. BH.ReminderBaseName(key) .. "Reminder"
-        local rows = {
-            { type = "check", label = def.enableLabel, tooltip = def.tooltip,
-              get = function() return BH.settings and BH.settings[enabledKey] ~= false end,
-              set = function(v) BH.settings[enabledKey] = v; BH:SaveSettings() end,
-              after = function() if BH[updateFn] then BH[updateFn](BH) end end },
-        }
-        for _, extra in ipairs(def.extraRows or {}) do rows[#rows + 1] = extra end
-        yOffset = yOffset - ns.Rows.AddAll(content, yOffset, rows)
+    -- Size the sub-tab just finished and start the next.
+    local function NextPage(key)
+        if content then content:SetHeight(math.abs(yOffset) + 20) end
+        content = pages[key]
+        ns.Rows.currentSection = content.section
+        yOffset = -14
     end
 
-    -- Sub-tab boundary.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.repair
-    ns.Rows.currentSection = content.section
-    yOffset = -14
+    NextPage("class")
+    yOffset = ns.Settings.AddRows(TEXT_REMINDERS, "class", content, yOffset)
 
-    -- Not a class reminder: anyone's gear wears out. Its own sub-tab, frame,
-    -- position, scale and lock.
-    yOffset = yOffset - self:AddReminderSection(content, yOffset, "repair", true)
+    NextPage("repair")
+    yOffset = ns.Settings.AddRows(TEXT_REMINDERS, "repair", content, yOffset)
 
-    -- Sub-tab boundary.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.sounds
-    ns.Rows.currentSection = content.section
-    yOffset = -14
+    NextPage("sounds")
+    yOffset = ns.Settings.AddRows(TEXT_REMINDERS, "sounds", content, yOffset)
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Play Sound on Skyreach (Mythic)",
-        tooltip = "Plays a sound when you enter The Everbloom on Mythic difficulty, as a reminder about the Skyreach affix pull.",
-        get = function() return BH.settings.skyreachSoundEnabled and true or false end,
-        set = function(v)
-            BH.settings.skyreachSoundEnabled = v
-            BH:SaveSettings()
-        end,
-    })
-
-    -- Sub-tab boundary.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.bags
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-
+    NextPage("bags")
     local consumNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     consumNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     consumNote:SetWidth(380)
@@ -196,56 +262,10 @@ function BH:BuildTextRemindersTab(parent)
     consumNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
     yOffset = yOffset - 28
 
-    -- One section for the combined frame (enable / scale / lock / position),
-    -- then the per-category watch toggles that decide what it can mention.
-    yOffset = yOffset - self:AddReminderSection(content, yOffset, "bags", true)
-
-    for _, cat in ipairs({
-        { key = "food",        label = "Watch food" },
-        { key = "flask",       label = "Watch flasks" },
-        { key = "oil",         label = "Watch weapon oils" },
-        { key = "augmentRune", label = "Watch augment runes" },
-    }) do
-        yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-            type = "check",
-            indent = 28,
-            label = cat.label,
-            tooltip = "Include this in the bag reminder when you have none of it.",
-            get = function() return BH.settings[cat.key .. "ReminderEnabled"] ~= false end,
-            set = function(v)
-                BH.settings[cat.key .. "ReminderEnabled"] = v
-                BH:SaveSettings()
-                BH:UpdateBagReminder()
-            end,
-            disabled = function() return BH.settings.bagsReminderEnabled == false end,
-        })
-    end
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        indent = 28,
-        label = "Warn when running low (0 = off)",
-        width = 300, min = 0, max = 10, step = 1,
-        tooltip = "Also show the bag reminder when you have this many or fewer of a watched consumable left, "
-            .. "e.g. \"LOW ON FLASK (1 LEFT)\". Having none is still shown first.",
-        get = function() return BH.settings.bagsLowThreshold or 1 end,
-        set = function(v)
-            BH.settings.bagsLowThreshold = v
-            BH:SaveSettings()
-            BH:UpdateBagReminder()
-        end,
-        disabled = function() return BH.settings.bagsReminderEnabled == false end,
-    })
-
-    yOffset = yOffset - self:AddReminderSection(content, yOffset, "healthstone", true)
+    yOffset = ns.Settings.AddRows(TEXT_REMINDERS, "bags", content, yOffset)
 
     -- === Feast Announce ===
-    -- Sub-tab boundary.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.feast
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-
+    NextPage("feast")
     local feastNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     feastNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
     feastNote:SetWidth(380)
@@ -255,16 +275,7 @@ function BH:BuildTextRemindersTab(parent)
     -- By its wrapped height: a fixed 28 fitted two lines, and it wraps to three.
     yOffset = yOffset - (math.ceil(feastNote:GetStringHeight() or 28) + 10)
 
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Enable Feast Announce",
-        tooltip = "Announces to chat when you drop a feast, and alerts other Squizzumables users in your group with a sound.",
-        get = function() return BH.settings.feastAnnounceEnabled ~= false end,
-        set = function(v)
-            BH.settings.feastAnnounceEnabled = v
-            BH:SaveSettings()
-        end,
-    })
+    yOffset = ns.Settings.AddRows(TEXT_REMINDERS, "feastEnable", content, yOffset)
 
     -- Per-context channel grid (Solo / In Party / In Instance / In Raid)
     local feastChanTitle = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -359,101 +370,11 @@ function BH:BuildTextRemindersTab(parent)
     yOffset = yOffset - (math.ceil(feastTokens:GetStringHeight() or 60) + 12)
 
     -- Sound alert when another Squizzumables user places a feast
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "sound",
-        label = "Alert sound (plays when a feast is placed)",
-        tooltip = "Sound played to you and to other Squizzumables users in the group when a feast is dropped.",
-        get = function() return BH.settings.feastAlertSound or "None" end,
-        set = function(value)
-            BH.settings.feastAlertSound = value
-            BH:SaveSettings()
-        end,
-        disabled = function() return BH.settings.feastAnnounceEnabled == false end,
-    })
+    yOffset = ns.Settings.AddRows(TEXT_REMINDERS, "feastSound", content, yOffset)
 
-    -- === Healer CC Alert ===
-    -- Sub-tab boundary.
-    content:SetHeight(math.abs(yOffset) + 20)
-    content = pages.cc
-    ns.Rows.currentSection = content.section
-    yOffset = -14
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "text",
-        label = "Plays a sound and shows an alert when a watched party or raid member is crowd controlled. Pick which roles to watch.",
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Alert when healer is CC'd",
-        tooltip = "Watch group healers and raise the alert when one is crowd controlled.",
-        get = function() return BH.settings.healerCCAlertEnabled == true end,
-        set = function(v)
-            BH.settings.healerCCAlertEnabled = v
-            BH:SaveSettings()
-            BH:RefreshRoleCCWatchList()
-            BH:UpdateRoleCCFrame()
-        end,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Alert when tank is CC'd",
-        tooltip = "Watch group tanks and raise the alert when one is crowd controlled. Shares the frame and sound with the healer alert; the label names whichever role is affected.",
-        get = function() return BH.settings.roleCCAlertTank == true end,
-        set = function(v)
-            BH.settings.roleCCAlertTank = v
-            BH:SaveSettings()
-            BH:RefreshRoleCCWatchList()
-            BH:UpdateRoleCCFrame()
-        end,
-    })
-
-    -- Everything below only matters once at least one role is being watched.
-    local function noRoleWatched()
-        return not (BH.settings.healerCCAlertEnabled or BH.settings.roleCCAlertTank)
-    end
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Lock Position",
-        tooltip = "Stops the role CC alert being dragged.",
-        get = function() return BH.settings.healerCCReminderLocked == true end,
-        set = function(v)
-            BH.settings.healerCCReminderLocked = v
-            BH:SaveSettings()
-            if BH.healerCCReminderFrame then
-                BH.healerCCReminderFrame:SetMovable(not v)
-                BH.healerCCReminderFrame:EnableMouse(BH:ReminderMouseEnabled(v))
-            end
-        end,
-        disabled = noRoleWatched,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "slider",
-        label = "Scale",
-        width = 200, min = 50, max = 200, step = 5,
-        tooltip = "Size of the role CC alert, as a percentage.",
-        get = function() return (BH.settings.healerCCReminderScale or 1.0) * 100 end,
-        set = function(val)
-            BH.settings.healerCCReminderScale = val / 100
-            BH:SaveSettings()
-            if BH.healerCCReminderFrame then BH.healerCCReminderFrame:SetScale(val / 100) end
-        end,
-        disabled = noRoleWatched,
-    })
-
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "sound",
-        label = "Alert sound",
-        tooltip = "Sound played when a watched healer or tank is crowd controlled.",
-        get = function() return BH.settings.healerCCAlertSound or "None" end,
-        set = function(value)
-            BH.settings.healerCCAlertSound = value
-            BH:SaveSettings()
-        end,
-        disabled = noRoleWatched,
-    })
+    -- === Role CC Alert ===
+    NextPage("cc")
+    yOffset = ns.Settings.AddRows(TEXT_REMINDERS, "cc", content, yOffset)
 
     content:SetHeight(math.abs(yOffset) + 20)
     ns.Rows.currentSection = nil

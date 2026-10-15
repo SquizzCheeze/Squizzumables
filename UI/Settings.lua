@@ -29,7 +29,8 @@
 --   })
 --
 -- Row types: check, slider, dropdown (items, a list or a function), color
--- ({r,g,b}), editbox (trimmed), palette (one table of colours, `size` rows,
+-- ({r,g,b}), editbox (trimmed), sound (a sound's name, Rows' own picker; also
+-- `indent` on any row), palette (one table of colours, `size` rows,
 -- the first s[countKey] of them in use), button (onClick; not a setting), and
 -- header / text / divider, which pass straight to Rows (label, indent, width).
 -- `when` receives BH.settings and says when the row APPLIES; the row greys out
@@ -111,6 +112,7 @@ local function Spec(desc, row)
     local spec = {
         type = t, label = row.label, tooltip = row.tip,
         width = row.width or WIDTH[t],
+        indent = row.indent,
         disabled = Disabled(desc, row),
     }
     if t == "check" then
@@ -141,6 +143,10 @@ local function Spec(desc, row)
     elseif t == "editbox" then
         spec.get = function() return BH.settings[key] or "" end
         spec.set = function(v) Set(strtrim(v or "")) end
+    elseif t == "sound" then
+        -- Rows' own sound picker; the value is a sound's name.
+        spec.get = function() return BH.settings[key] or row.default end
+        spec.set = Set
     elseif t == "button" then
         spec.height = row.height
         spec.onClick = row.onClick

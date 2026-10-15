@@ -40,34 +40,22 @@ BH.defaultSettings = {
     -- Mirror our own timers onto Blizzard's encounter timeline. See
     -- Core/EncounterTimeline.lua for why only the write side of the API is used.
     timelineTimers = true,
-    -- The one Class Reminder frame (Beacon, Earth Shield, Symbiotic, No Pet)
-    -- since 2.0. Its lock also writes the four <key>ReminderLocked, which the
-    -- reminders' own code still reads.
-    classReminderScale = 1.0,
-    classReminderLocked = false,
+    -- The four class reminders' own lock and scale keys. Since 2.0 they share
+    -- the one Class Reminder frame (Reminders/RemindersTab.lua describes its
+    -- settings): its lock writes these four locks, which the reminders' own
+    -- code still reads; the scales are only read once more, by migration 9.
     beaconReminderLocked = false,
     beaconReminderScale = 1.0,
-    beaconReminderEnabled = true,
     earthShieldReminderLocked = false,
     earthShieldReminderScale = 1.0,
-    earthShieldReminderEnabled = true,
-    skyreachSoundEnabled = true,
-    repairReminderEnabled = true,
-    repairReminderThreshold = 50,
-    repairReminderLocked = false,
-
-    repairReminderScale = 1.0,
-
     symbioticReminderLocked = false,
     symbioticReminderScale = 1.0,
-    symbioticReminderEnabled = true,
 
     coachWhistleReminderLocked = false,
     coachWhistleReminderScale = 1.0,
     coachWhistleReminderEnabled = true,
 
     -- Hunter: No Pet reminder
-    petReminderEnabled = true,
     petReminderLocked = false,
     petReminderScale = 1.0,
     cdmEnabled = false,
@@ -123,20 +111,6 @@ BH.defaultSettings = {
     deathTallyTitleFontSize = 13,
     deathTallyRowFontSize = 12,
 
-    -- Food/Flask/Oil "no items in bag" reminders
-    foodReminderEnabled = true,
-    flaskReminderEnabled = true,
-    oilReminderEnabled = true,
-    -- The four bag categories share one frame now, so scale/lock/position are
-    -- shared too. The per-category *Enabled keys survive as watch toggles.
-    augmentRuneReminderEnabled = true,
-    bagsReminderLocked = false,
-    bagsReminderScale = 1.0,
-    bagsReminderEnabled = true,
-    bagsLowThreshold = 1,   -- also warn at this many or fewer of a watched consumable (0 = off)
-    healthstoneReminderLocked = false,
-    healthstoneReminderScale = 1.0,
-    healthstoneReminderEnabled = true,
     -- Where the addon shows itself. Filled from CONTENT_TYPES on load, so a
     -- content type added later reaches existing players through ApplyDefaults
     -- rather than needing a migration.
@@ -147,7 +121,6 @@ BH.defaultSettings = {
     minimapButtonAngle = 200,
 
     -- Feast announce
-    feastAnnounceEnabled = true,
     feastAnnounceText = "",
     -- Per-context channels (mirrors WindTools Announcement system)
     feastAnnounceChannel = {
@@ -156,23 +129,12 @@ BH.defaultSettings = {
         instance = "INSTANCE_CHAT",
         raid     = "RAID",
     },
-    feastAlertSound = "None",
 
     -- Dungeon callouts (array of {instanceID, name, buttons={...}})
     dungeonCallouts = {},
 
     -- Class buff sound alert (per-spellID, indexed by spellID)
     classBuffSounds = {},
-
-    -- Role CC sound alert. healerCCAlertEnabled is the long-standing key for
-    -- healer tracking and is kept as-is so existing profiles are unaffected;
-    -- roleCCAlertTank was added in 1.60 and defaults off, so nobody gets a new
-    -- alert they did not ask for.
-    healerCCAlertEnabled = false,
-    roleCCAlertTank = false,
-    healerCCAlertSound = "None",
-    healerCCReminderLocked = false,
-    healerCCReminderScale = 1.0,
 
     -- User-registered custom sounds (array of {name=string, file=string})
     -- Files should be placed in Interface\AddOns\Squizzumables\Media\Sounds\
@@ -2491,21 +2453,6 @@ BH.REMINDERS = {
         scaleLabel = "Repair Reminder Scale",
         lockLabel = "Lock Repair Reminder",
         tooltip = "Shows a reminder when your most damaged equipped item drops below the durability threshold. Hidden during combat.",
-        -- Sits between the enable toggle and the scale slider, as it did before.
-        extraRows = {
-            {
-                type = "slider", label = "Durability Threshold (%)",
-                width = 300, min = 0, max = 100, step = 1,
-                tooltip = "Show the reminder once your most damaged equipped item falls below this percentage.",
-                disabled = function() return BH.settings and BH.settings.repairReminderEnabled == false end,
-                get = function() return BH.settings and BH.settings.repairReminderThreshold or 20 end,
-                set = function(v)
-                    BH.settings.repairReminderThreshold = v
-                    BH:SaveSettings()
-                    BH:UpdateRepairReminder()
-                end,
-            },
-        },
         text = "REPAIR", color = { 0.9, 0.2, 0.2 },
         size = { 300, 40 }, defaultY = 120,
         -- The only reminder that was never given the HIGH strata. Kept as-is
