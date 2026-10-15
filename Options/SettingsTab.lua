@@ -551,6 +551,20 @@ function BH:BuildSettingsTab(parent)
         end,
     })
 
+    -- UI/EditMode.lua follows Blizzard's Edit Mode while this is on.
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check",
+        label = "Unlock With Blizzard's Edit Mode",
+        tooltip = "Opening the game's Edit Mode (Esc > Edit Mode) unlocks every Squizzumables frame too, "
+               .. "and closing it locks them again, so everything moves from one place. Unlock Frames "
+               .. "works either way.",
+        get = function() return BH.settings.followBlizzardEditMode ~= false end,
+        set = function(v)
+            BH.settings.followBlizzardEditMode = v
+            BH:SaveSettings()
+        end,
+    })
+
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "divider" })
     yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "BUTTON TEXT" })
 

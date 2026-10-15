@@ -184,6 +184,38 @@ function EditMode.Hide(frame)
     if selected == frame then EditMode.Select(nil) end
 end
 
+-- ----------------------------------------------------------------------------
+-- Following Blizzard's Edit Mode
+-- ----------------------------------------------------------------------------
+
+-- User decision 2026-10-16: opening Blizzard's Edit Mode (Esc > Edit Mode)
+-- unlocks our frames too, and closing it locks them -- one place to move
+-- everything. Only what this opened is closed again: frames already unlocked
+-- with Unlock Frames stay unlocked when Blizzard's Edit Mode closes.
+--
+-- EventRegistry's EditMode.Enter / EditMode.Exit are Blizzard's own
+-- notifications; listening calls nothing on EditModeManagerFrame, so nothing of
+-- ours runs inside Edit Mode's code (touching that frame taints it).
+-- Settings > Unlock With Blizzard's Edit Mode (followBlizzardEditMode) turns
+-- it off.
+local unlockedForBlizzard = false
+
+if EventRegistry and EventRegistry.RegisterCallback then
+    EventRegistry:RegisterCallback("EditMode.Enter", function()
+        local BH = ns.BH
+        if not (BH and BH.SetUnlockMode and BH.settings) then return end
+        if BH.settings.followBlizzardEditMode == false or BH.unlockMode then return end
+        BH:SetUnlockMode(true, false, true)
+        unlockedForBlizzard = BH.unlockMode and true or false
+    end, EditMode)
+    EventRegistry:RegisterCallback("EditMode.Exit", function()
+        local BH = ns.BH
+        if not unlockedForBlizzard then return end
+        unlockedForBlizzard = false
+        if BH and BH.unlockMode then BH:SetUnlockMode(false, false, true) end
+    end, EditMode)
+end
+
 --- Repaint every box (the accent changed).
 function EditMode.Refresh(frames)
     for _, frame in ipairs(frames or {}) do

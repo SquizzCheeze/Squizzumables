@@ -60,6 +60,9 @@ V2.0
   the mouse; click one to select it, then the arrow keys nudge it 1px
   (10px with Shift), and if the options window is open it jumps to that
   frame's settings.
+- Opening the game's Edit Mode (Esc > Edit Mode) unlocks Squizzumables'
+  frames too, and closing it locks them again, so everything moves from
+  one place. Settings > Unlock With Blizzard's Edit Mode turns it off.
 - Raid Tools and Callouts: their frames are live on your screen, so the
   preview column has a Show Them On Screen button beside the settings
   (the same view as Unlock Frames) to watch every change as you make it.

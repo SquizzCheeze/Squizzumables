@@ -29,6 +29,7 @@ BH.defaultSettings = {
     buttonSize = 36,
     buttonSpacing = 5,
     frameLocked = false,
+    followBlizzardEditMode = true,     -- Blizzard's Edit Mode unlocks our frames too (UI/EditMode.lua)
     -- Unused since 2.0: the grow direction decides the anchor (BH:GrowAnchor).
     -- Kept so profiles exported to an older copy still carry a value.
     anchorPoint = "LEFT",
@@ -2191,7 +2192,9 @@ end
 --- Them On Screen button passes it -- its whole point is changing settings
 --- while watching the frames (user report 2026-10-16); the window can be
 --- dragged aside if it covers one.
-function BH:SetUnlockMode(on, keepPanel)
+--- `quiet`: no chat line. Following Blizzard's Edit Mode (UI/EditMode.lua)
+--- passes it, or every visit to Edit Mode would print two.
+function BH:SetUnlockMode(on, keepPanel, quiet)
     on = on and true or false
     if self.unlockMode == on then return end
 
@@ -2261,9 +2264,11 @@ function BH:SetUnlockMode(on, keepPanel)
     end
 
     if on then
-        print("Squizzumables: frames unlocked - drag them into place, then click Done or use /sq unlock.")
+        if not quiet then
+            print("Squizzumables: frames unlocked - drag them into place, then click Done or use /sq unlock.")
+        end
     else
-        print("Squizzumables: frames locked.")
+        if not quiet then print("Squizzumables: frames locked.") end
         if self.unlockReopenPanel then
             self.unlockReopenPanel = false
             self:CreateOptionsPanel()

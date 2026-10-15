@@ -397,7 +397,11 @@ shell, setup and polish), each gated.
   selecting jumps the options window to the frame's settings row via Rows.Search(find) + JumpTo.
   Users: SetPreviewOverlay (MOVABLE_FRAMES now carry `find` and `posKey`), the CDM groups'
   ShowPreview/HidePreview (nudge moves gd.position and re-runs PositionGroup; anchored groups do not
-  move), and the Lust Alert's unlock placeholder. 4b (following Blizzard's Edit Mode) is next.
+  move), and the Lust Alert's unlock placeholder. 4a CONFIRMED in game 2026-10-16.
+  4b BUILT, untested: EventRegistry "EditMode.Enter"/"EditMode.Exit" in UI/EditMode.lua call
+  SetUnlockMode(on, false, quiet=true); exit only re-locks what enter unlocked; setting
+  `followBlizzardEditMode` (default true, Settings > Unlock With Blizzard's Edit Mode). NB SquizzFrames
+  does NOT follow Blizzard's Edit Mode -- its "EditModeChanged" is an internal message.
 - The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
   and says nothing on Windows -- use `git add -u` or the real name.
 - Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. `UI/Settings.lua`
