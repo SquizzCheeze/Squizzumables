@@ -502,9 +502,9 @@ drawers.textreminders = {
 local LIVE_TEXT = {
     raidtools = "The marker panel, pull and ready check, battle res counter and target distance are "
         .. "live frames on your screen. Show them to see every change here as you make it, and to "
-        .. "move them.",
+        .. "move them. This window stays open; drag it aside if it covers one.",
     callouts = "The callout buttons are a live frame on your screen. Show it to see every change here "
-        .. "as you make it, and to move it.",
+        .. "as you make it, and to move it. This window stays open; drag it aside if it covers it.",
 }
 
 local function NewLiveDrawer(kind)
@@ -521,7 +521,9 @@ local function NewLiveDrawer(kind)
 
             local btn = ns.CreateSQButton(host, "Show them on screen", 160, 24)
             btn:SetPoint("TOPLEFT", text, "BOTTOMLEFT", 0, -12)
-            btn:SetScript("OnClick", function() BH:SetUnlockMode(not BH.unlockMode) end)
+            -- Keeps the options window open: the point is to change settings
+            -- while watching the frames.
+            btn:SetScript("OnClick", function() BH:SetUnlockMode(not BH.unlockMode, true) end)
             host.btn = btn
             host:SetHeight(140)
         end,

@@ -2187,7 +2187,11 @@ function BH:GridTarget(frame)
     if g and frame then g:RegisterTarget(frame) end
 end
 
-function BH:SetUnlockMode(on)
+--- `keepPanel`: leave the options window open. The preview column's Show
+--- Them On Screen button passes it -- its whole point is changing settings
+--- while watching the frames (user report 2026-10-16); the window can be
+--- dragged aside if it covers one.
+function BH:SetUnlockMode(on, keepPanel)
     on = on and true or false
     if self.unlockMode == on then return end
 
@@ -2236,12 +2240,14 @@ function BH:SetUnlockMode(on)
         end
     end
 
-    if on then
+    if on and not keepPanel then
         -- Get the options panel out of the way. It is 820 wide and will usually
         -- be sitting on top of the frames being positioned. Remember whether it
         -- was open so it can be put back when frames are locked again.
         self.unlockReopenPanel = (self.optionsPanel and self.optionsPanel:IsShown()) and true or false
         if self.optionsPanel then self.optionsPanel:Hide() end
+    elseif on then
+        self.unlockReopenPanel = false
     end
 
     self:UpdateButtons()
