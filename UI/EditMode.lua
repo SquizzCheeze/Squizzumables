@@ -136,11 +136,20 @@ function EditMode.Show(frame, label, opts)
         box:EnableMouse(false)
         m.box = box
 
-        -- Own frame at TOOLTIP strata, as the old labels were: boxes overlap
-        -- each other freely, and a name at the frame's own strata disappears
-        -- under whatever is stacked on top of it.
+        -- Own frame, so it can sit above the boxes: they overlap each other
+        -- freely, and a name at the frame's own level disappears under
+        -- whatever is stacked on top of it.
+        --
+        -- HIGH at the top of its levels, not TOOLTIP as the old labels were:
+        -- the options window (DIALOG) can stay open while frames are
+        -- unlocked now, and TOOLTIP drew every name over it (user screenshot
+        -- 2026-10-16). It ignores the frame's scale too -- a reminder at 200%
+        -- had a name twice the size -- and takes the UI's own scale instead.
         local holder = CreateFrame("Frame", nil, frame)
-        holder:SetFrameStrata("TOOLTIP")
+        holder:SetFrameStrata("HIGH")
+        holder:SetFrameLevel(9000)
+        holder:SetIgnoreParentScale(true)
+        holder:SetScale(UIParent:GetEffectiveScale())
         holder:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 3)
         holder:SetSize(260, 14)
         local fs = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -170,6 +179,7 @@ function EditMode.Show(frame, label, opts)
     m.box:SetFrameLevel(frame:GetFrameLevel() + 20)
     m.label:SetText(label or "")
     m.box:Show()
+    m.holder:SetScale(UIParent:GetEffectiveScale())   -- the UI scale may have changed
     m.holder:Show()
     Paint(frame)
 end
