@@ -27,6 +27,7 @@ Group\RaidTools.lua
 Group\RoleCCAlert.lua
 Group\DeathTally.lua
 Group\FeastAnnounce.lua
+Group\Callouts.lua
 Core\ProfileIO.lua
 Core\EncounterTimeline.lua
 Core\Minimap.lua
