@@ -221,6 +221,54 @@ function BH:BuildSettingsTab(parent)
     local yOffset = -14
     local leftPad = 14
 
+    -- === Theme Section ===
+    -- First on the page and in a section of its own (user request
+    -- 2026-10-16): it restyles the whole addon, so it should not read as one
+    -- of the button settings below.
+    local themeSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    themeSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    themeSection:SetText("THEME")
+    ns.ApplyAccent(themeSection, "text")
+    yOffset = yOffset - 18
+
+    local themeNote = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    themeNote:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+    themeNote:SetWidth(370)
+    themeNote:SetJustifyH("LEFT")
+    themeNote:SetText("One look for this window and every Squizzumables frame in the game.")
+    themeNote:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
+    yOffset = yOffset - 20
+
+    -- The theme picker (2.0 phase 3), replacing the "Use class colour for
+    -- headings and accents" checkbox. An accent change repaints live (every
+    -- long-lived accent region is registered with ns.ApplyAccent); a preset
+    -- with its own panels and borders needs a reload for the rest, so the
+    -- player is offered one rather than left with half the UI in the old look.
+    local themeItems = {}
+    local themeTip = "One look for the options window and every frame in the game."
+    for _, key in ipairs(ns.Theme.ORDER) do
+        local p = ns.Theme.PRESETS[key]
+        themeItems[#themeItems + 1] = { text = p.name, value = key }
+        themeTip = themeTip .. "\n\n" .. p.name .. ": " .. p.tip
+    end
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "dropdown", label = "Theme", width = 200, items = themeItems,
+        tooltip = themeTip,
+        get = function() return ns.Theme.PresetKey() end,
+        set = function(key)
+            local from = ns.Theme.PresetKey()
+            if key == from then return end
+            ns.Theme.SetPreset(key)
+            BH:SaveSettings()
+            if ns.Theme.NeedsReload(from, key) then
+                StaticPopup_Show("SQUIZZUMABLES_THEME_RELOAD", ns.Theme.PRESETS[key].name)
+            end
+        end,
+    })
+
+    CreateSQDivider(content, yOffset)
+    yOffset = yOffset - 14
+
     -- === Profiles Section ===
     local profileSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     profileSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
@@ -379,7 +427,7 @@ function BH:BuildSettingsTab(parent)
     -- === Appearance Section ===
     local sectionLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     sectionLabel:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
-    sectionLabel:SetText("APPEARANCE")
+    sectionLabel:SetText("BUTTON APPEARANCE")
     ns.ApplyAccent(sectionLabel, "text")
     yOffset = yOffset - 22
 
@@ -433,34 +481,6 @@ function BH:BuildSettingsTab(parent)
             BH.settings.showLabelText = v
             BH:SaveSettings()
             BH:UpdateButtons()
-        end,
-    })
-
-
-    -- The theme picker (2.0 phase 3), replacing the "Use class colour for
-    -- headings and accents" checkbox. An accent change repaints live (every
-    -- long-lived accent region is registered with ns.ApplyAccent); a preset
-    -- with its own panels and borders needs a reload for the rest, so the
-    -- player is offered one rather than left with half the UI in the old look.
-    local themeItems = {}
-    local themeTip = "One look for the options window and every frame in the game."
-    for _, key in ipairs(ns.Theme.ORDER) do
-        local p = ns.Theme.PRESETS[key]
-        themeItems[#themeItems + 1] = { text = p.name, value = key }
-        themeTip = themeTip .. "\n\n" .. p.name .. ": " .. p.tip
-    end
-    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "dropdown", label = "Theme", width = 200, items = themeItems,
-        tooltip = themeTip,
-        get = function() return ns.Theme.PresetKey() end,
-        set = function(key)
-            local from = ns.Theme.PresetKey()
-            if key == from then return end
-            ns.Theme.SetPreset(key)
-            BH:SaveSettings()
-            if ns.Theme.NeedsReload(from, key) then
-                StaticPopup_Show("SQUIZZUMABLES_THEME_RELOAD", ns.Theme.PRESETS[key].name)
-            end
         end,
     })
 

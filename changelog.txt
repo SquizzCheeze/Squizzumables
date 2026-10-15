@@ -21,7 +21,7 @@ V2.0
   General (Settings). Every page is the same as before; three are renamed
   to say what they hold (Items is Consumables, Reminders is Text
   Reminders, CDM is Cooldown Manager).
-- Themes: Settings has a Theme dropdown in place of "Use class colour for
+- Themes: Settings opens with a Theme section, in place of "Use class colour for
   headings and accents", with five looks - Squizz Gold (the default),
   Dark Glass (see-through panels, thin light borders), Class Colour,
   Rainbow (an accent that slowly cycles through the colours) and Minimal
