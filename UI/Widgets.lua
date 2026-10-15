@@ -53,15 +53,19 @@ local SQ_COLORS = ns.Theme.colors
 
 -- r, g, b of the current accent. Pass "dim" for the muted variant used for
 -- secondary marks, which tracks the accent rather than being a fixed colour.
--- The theme decides which accent: its preset's own, or the class colour.
+-- The theme decides which accent: its preset's own, the class colour, or the
+-- rainbow's colour right now (UI/Theme.lua repaints it while the window is open).
 function ns.GetAccentColor(variant)
     local accent = SQ_COLORS.accent
     local r, g, b = accent[1], accent[2], accent[3]
-    if ns.Theme.AccentMode() == "class" then
+    local mode = ns.Theme.AccentMode()
+    if mode == "class" then
         local _, class = UnitClass("player")
         local c = class and C_ClassColor and C_ClassColor.GetClassColor
                   and C_ClassColor.GetClassColor(class)
         if c then r, g, b = c.r, c.g, c.b end
+    elseif mode == "rainbow" then
+        r, g, b = ns.Theme.RainbowRGB()
     end
     if variant == "dim" then
         return r * 0.7, g * 0.7, b * 0.7

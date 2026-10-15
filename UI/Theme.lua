@@ -22,9 +22,8 @@
 --     Theme.AccentMode(); Rainbow will be a third mode.
 --
 -- Presets (design doc): Squizz Gold (default), Dark Glass, Class Colour,
--- Rainbow, Minimal. Only the two that exist today are defined yet -- the
--- player's choice between them was the old useClassColorAccent checkbox. The
--- others need their own palettes and the theme picker (phase 3).
+-- Rainbow, Minimal, chosen with the Theme dropdown on the Settings page (2.0
+-- phase 3), which replaced the useClassColorAccent checkbox.
 
 local addonName, ns = ...
 
@@ -77,11 +76,57 @@ local BASE = {
     highlight   = { 1.0, 0.82, 0.0, 1 },          -- counter / tally titles
 }
 
+-- Dark Glass: see-through panels with thin light borders and a cool accent.
+local DARK_GLASS = {
+    bg          = { 0.04, 0.05, 0.07, 0.80 },
+    titleBar    = { 0.08, 0.10, 0.14, 0.85 },
+    border      = { 0.55, 0.62, 0.72, 0.45 },
+    accent      = { 0.40, 0.72, 0.95, 1 },
+    accentDim   = { 0.28, 0.50, 0.68, 0.6 },
+    control     = { 0.12, 0.14, 0.18, 0.75 },
+    controlHi   = { 0.20, 0.24, 0.30, 0.85 },
+    section     = { 0.20, 0.24, 0.30, 0.35 },
+    tabActive   = { 0.14, 0.17, 0.22, 0.85 },
+    tabInactive = { 0.05, 0.06, 0.09, 0.75 },
+    panel          = { 0.04, 0.06, 0.09, 0.55 },
+    panelSolid     = { 0.04, 0.06, 0.09, 0.65 },
+    panelButton    = { 0.10, 0.13, 0.18, 0.50 },
+    panelButtonHi  = { 0.25, 0.32, 0.42, 0.60 },
+    handleBorder   = { 0.60, 0.70, 0.80, 0.60 },
+    barBg       = { 0, 0, 0, 0.35 },
+}
+
+-- Minimal: no panels behind the in-game frames -- icons and text only -- and a
+-- quiet light-grey accent. The options window stays readable, just flatter.
+local MINIMAL = {
+    accent      = { 0.85, 0.85, 0.85, 1 },
+    accentDim   = { 0.55, 0.55, 0.55, 0.6 },
+    border      = { 0.18, 0.18, 0.20, 1 },
+    section     = { 0.12, 0.12, 0.14, 0.3 },
+    panel          = { 0, 0, 0, 0 },
+    panelSolid     = { 0, 0, 0, 0 },
+    panelButton    = { 0, 0, 0, 0 },
+    panelButtonHi  = { 0.30, 0.30, 0.30, 0.40 },
+    barBg       = { 0, 0, 0, 0.2 },
+}
+
+-- `colors` overrides BASE key by key. Two presets with the same `colors` table
+-- (nil included) differ only in the accent, which repaints live; any other
+-- difference needs a reload -- see Theme.NeedsReload.
 local PRESETS = {
-    squizz_gold  = { name = "Squizz Gold",  accent = "fixed" },
-    class_colour = { name = "Class Colour", accent = "class" },
+    squizz_gold  = { name = "Squizz Gold",  accent = "fixed",
+                     tip = "The default: dark panels and a warm gold accent." },
+    dark_glass   = { name = "Dark Glass",   accent = "fixed", colors = DARK_GLASS,
+                     tip = "See-through panels with thin light borders and a cool blue accent." },
+    class_colour = { name = "Class Colour", accent = "class",
+                     tip = "Squizz Gold's panels, with the accent in your class colour." },
+    rainbow      = { name = "Rainbow",      accent = "rainbow",
+                     tip = "Squizz Gold's panels, with an accent that slowly cycles through the colours." },
+    minimal      = { name = "Minimal",      accent = "fixed", colors = MINIMAL,
+                     tip = "No panels behind the frames in the game -- just icons and text -- and a quiet grey accent." },
 }
 Theme.PRESETS = PRESETS
+Theme.ORDER = { "squizz_gold", "dark_glass", "class_colour", "rainbow", "minimal" }
 Theme.DEFAULT_PRESET = "squizz_gold"
 
 -- The live palette. Never replaced, only refilled (see the header).
@@ -121,9 +166,54 @@ function Theme.Preset()
     return PRESETS[Theme.PresetKey()] or PRESETS[Theme.DEFAULT_PRESET]
 end
 
---- "fixed" or "class".
+--- "fixed", "class" or "rainbow".
 function Theme.AccentMode()
     return Theme.Preset().accent or "fixed"
+end
+
+-- Rainbow: once round the colour wheel every RAINBOW_PERIOD seconds, soft
+-- enough (saturation below 1) to sit on the dark panels like the gold does.
+local RAINBOW_PERIOD = 8
+function Theme.RainbowRGB()
+    local h = (GetTime() / RAINBOW_PERIOD) % 1 * 6
+    local s, v = 0.65, 1
+    local i = math.floor(h)
+    local f = h - i
+    local p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
+    if i == 0 then return v, t, p
+    elseif i == 1 then return q, v, p
+    elseif i == 2 then return p, v, t
+    elseif i == 3 then return p, q, v
+    elseif i == 4 then return t, p, v
+    end
+    return v, p, q
+end
+
+-- The rainbow accent repaints the registered accent regions ten times a
+-- second, and only while the options window is open: those regions are almost
+-- all in it, and nothing else needs the cycle badly enough to pay for it.
+local rainbowTicker
+local function UpdateRainbowTicker()
+    local want = Theme.AccentMode() == "rainbow"
+    if want and not rainbowTicker then
+        rainbowTicker = C_Timer.NewTicker(0.1, function()
+            local panel = _G.SQUIZZUMABLESOptions
+            if panel and panel:IsShown() and ns.RefreshAccentColors then
+                ns.RefreshAccentColors()
+            end
+        end)
+    elseif not want and rainbowTicker then
+        rainbowTicker:Cancel()
+        rainbowTicker = nil
+    end
+end
+
+--- Does going from preset `from` to `to` change anything besides the accent?
+--- Only accent regions repaint live; every other colour is read when its frame
+--- is made, so that part of a switch shows after a /reload.
+function Theme.NeedsReload(from, to)
+    local a, b = PRESETS[from], PRESETS[to]
+    return (a and a.colors) ~= (b and b.colors)
 end
 
 --- r, g, b, a of a theme colour, for SetTextColor(Theme.RGBA("good")) and the
@@ -149,5 +239,6 @@ end
 --- Refill the palette from the active preset (profile load, preset change).
 function Theme.Apply()
     Fill(Theme.Preset())
+    UpdateRainbowTicker()
     if ns.RefreshAccentColors then ns.RefreshAccentColors() end
 end

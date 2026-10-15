@@ -64,6 +64,20 @@ StaticPopupDialogs["SQUIZZUMABLES_NEW_PROFILE"] = {
     preferredIndex = 3,
 }
 
+-- After a theme change that is more than the accent (UI/Theme.lua
+-- NeedsReload): the accent has already repainted, the panels and borders show
+-- after a reload.
+StaticPopupDialogs["SQUIZZUMABLES_THEME_RELOAD"] = {
+    text = "%s is set. The accent has changed already; the panels and borders change after a reload. Reload now?",
+    button1 = "Reload",
+    button2 = "Later",
+    OnAccept = function() ReloadUI() end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 -- StaticPopup for Delete Profile confirmation
 StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
     text = "Delete profile '%s'? Characters using this profile will be switched to Default.",
@@ -85,6 +99,8 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
             if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
             if BH.ApplyCursor then BH:ApplyCursor() end
+            -- The new profile may have its own theme (accent repaints live).
+            ns.Theme.Apply()
             BH:RefreshSettingsTab()
             print("Squizzumables: Deleted profile '" .. data .. "', switched to Default.")
         end
@@ -347,6 +363,8 @@ function BH:BuildSettingsTab(parent)
         if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
         if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
         if BH.ApplyCursor then BH:ApplyCursor() end
+        -- The new profile may have its own theme (accent repaints live).
+        ns.Theme.Apply()
         BH:RefreshSettingsTab()
         BH:RefreshItemList()
         BH:RefreshRaidToolsTab()
@@ -419,21 +437,30 @@ function BH:BuildSettingsTab(parent)
     })
 
 
-    -- Class-coloured accents. Recolours live rather than needing a reload:
-    -- every long-lived accent region is registered with ns.ApplyAccent, and
-    -- the handful of hover handlers read ns.GetAccentColor() as they run.
+    -- The theme picker (2.0 phase 3), replacing the "Use class colour for
+    -- headings and accents" checkbox. An accent change repaints live (every
+    -- long-lived accent region is registered with ns.ApplyAccent); a preset
+    -- with its own panels and borders needs a reload for the rest, so the
+    -- player is offered one rather than left with half the UI in the old look.
+    local themeItems = {}
+    local themeTip = "One look for the options window and every frame in the game."
+    for _, key in ipairs(ns.Theme.ORDER) do
+        local p = ns.Theme.PRESETS[key]
+        themeItems[#themeItems + 1] = { text = p.name, value = key }
+        themeTip = themeTip .. "\n\n" .. p.name .. ": " .. p.tip
+    end
     yOffset = yOffset - ns.Rows.Add(content, yOffset, {
-        type = "check",
-        label = "Use class colour for headings and accents",
-        tooltip = "Draws section headings, the selected sidebar entry, checkbox ticks, "
-               .. "slider fills and button accents in your class colour. "
-               .. "Turn this off for the default warm gold.",
-        -- Until the theme picker (2.0 phase 3) this checkbox IS the choice
-        -- between the Squizz Gold and Class Colour presets.
-        get = function() return ns.Theme.PresetKey() == "class_colour" end,
-        set = function(v)
-            ns.Theme.SetPreset(v and "class_colour" or "squizz_gold")
+        type = "dropdown", label = "Theme", width = 200, items = themeItems,
+        tooltip = themeTip,
+        get = function() return ns.Theme.PresetKey() end,
+        set = function(key)
+            local from = ns.Theme.PresetKey()
+            if key == from then return end
+            ns.Theme.SetPreset(key)
             BH:SaveSettings()
+            if ns.Theme.NeedsReload(from, key) then
+                StaticPopup_Show("SQUIZZUMABLES_THEME_RELOAD", ns.Theme.PRESETS[key].name)
+            end
         end,
     })
 

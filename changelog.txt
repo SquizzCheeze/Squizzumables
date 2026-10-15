@@ -15,6 +15,23 @@ V2.0
   On Aura Removed) are moved to that buff in CDM Alerts automatically,
   without replacing a sound you had already set there.
 - /squizz cdms now opens CDM Alerts.
+- The options window's sidebar is grouped: Reminders (Consumables, Class
+  Buffs, Text Reminders), Cooldowns (Cooldown Manager, Custom Icons),
+  Alerts (Kelerts, Sounds), Group (Raid Tools, Callouts), Fun (Cursor) and
+  General (Settings). Every page is the same as before; three are renamed
+  to say what they hold (Items is Consumables, Reminders is Text
+  Reminders, CDM is Cooldown Manager).
+- Themes: Settings has a Theme dropdown in place of "Use class colour for
+  headings and accents", with five looks - Squizz Gold (the default),
+  Dark Glass (see-through panels, thin light borders), Class Colour,
+  Rainbow (an accent that slowly cycles through the colours) and Minimal
+  (no panels behind the frames, just icons and text). The accent changes
+  at once; Dark Glass and Minimal offer a reload for the panels and
+  borders. Your old choice carries over: class colour on stays Class
+  Colour. Switching profile now brings that profile's theme with it.
+- Cursor > Trail: the Test Shark button's bite now shows above the
+  settings window instead of underneath it. Real bites still follow your
+  Frame Strata setting.
 - Colours now come from one theme, the groundwork for the 2.0 look. The
   only change you can see: the headings on the Cooldown Manager pages used
   their own slightly different gold and ignored "Use class colour for

@@ -744,6 +744,8 @@ function BH:SwitchToProfile(profileName)
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
+    -- The new profile may have its own theme (accent repaints live).
+    ns.Theme.Apply()
 
     return true
 end
@@ -836,6 +838,8 @@ function BH:OnSpecChanged()
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
+    -- The new profile may have its own theme (accent repaints live).
+    ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
     -- client-side aura sound registrations have to follow it whether or not the
     -- options panel happens to be open. Leaving them would keep playing the
