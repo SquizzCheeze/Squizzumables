@@ -362,7 +362,15 @@ shell, setup and polish), each gated.
   it enters the shell. Step 1 BUILT, untested: `CreateOptionsPanel` has one `NAV` table (group ->
   pages {key, label, field, build}); keys are the 1.x tab keys (search / BH.switchTab / slash commands
   depend on them), `field` the BH frame name the builders and refreshers use. Pages are still BUILT
-  in the old order (`BUILD_ORDER`), not the sidebar's.
+  in the old order (`BUILD_ORDER`), not the sidebar's. Step 1 CONFIRMED in game 2026-10-16.
+  Step 2 BUILT, untested: Theme dropdown on Settings (`Theme.ORDER`, `PRESETS[k].tip`); accent modes
+  fixed / class / rainbow (`Theme.RainbowRGB`, a 0.1s ticker that repaints accent regions only while
+  SQUIZZUMABLESOptions is shown). Only ACCENT regions repaint live -- every other theme colour is read
+  when its frame is made -- so `Theme.NeedsReload(from, to)` (different `colors` table) shows the
+  SQUIZZUMABLES_THEME_RELOAD popup. Making every colour live would mean registering every region,
+  like ApplyAccent does; not done. Profile switches now call `ns.Theme.Apply()` (they never did).
+- The changelog is tracked as `changelog.txt` (LOWER case). `git add CHANGELOG.txt` matches nothing
+  and says nothing on Windows -- use `git add -u` or the real name.
 - Settings descriptions: pilot on Cursor CONFIRMED in game 2026-10-16. `UI/Settings.lua`
   (`ns.Settings.Describe` / `.Build`): each row = key, type, default, label, tip, `when(s)`; Describe
   registers the defaults into `BH.defaultSettings` AT LOAD (asserts a key is never described twice), Build
