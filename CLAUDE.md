@@ -307,8 +307,12 @@ shell, setup and polish), each gated.
   `Reminders/Gates.lua` (REMINDER_GATES + every text reminder's Update*). NEW TECHNIQUE from here: the
   core publishes the private names a moved block needs as `BH.X = X` in one block where the code
   used to sit, and the new file re-declares `local X = BH.X` in its header, so the moved code is
-  byte-identical. Only valid for names never reassigned after load -- grep `^s*Xs*=` first.
-  Squizzumables.lua 11,873 -> 8,895 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
+  byte-identical. Only valid for names never reassigned after load -- grep `^\s*X\s*=` first. State a
+  moved block CHANGES (scalars, flags) cannot be aliased: move its declaration with the block if
+  nothing else uses it, otherwise leave the block where it is.
+  `Reminders/Buttons.lua` (the button engine: Collect*, LayoutButtons, UpdateButtons, the blind-loss
+  poll and its ticker; its own state -- classBuffWasNeeded, the mid-click deferral -- moved with it).
+  Squizzumables.lua 11,873 -> 7,677 lines. Findings for the next moves: the "DUNGEON CALLOUTS"
   header actually runs on through ~900 lines of the reminder-button CORE (CreateButton, UnitHasBuff,
   Has*Buff, SQ_BUTTON_POOL...), used across the file -- split that range by function, not by header;
   the Death Tally section also holds the Beacon / Earth Shield constants the reminder gates use; the

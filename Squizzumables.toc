@@ -28,6 +28,7 @@ Group\RoleCCAlert.lua
 Group\DeathTally.lua
 Group\FeastAnnounce.lua
 Group\Callouts.lua
+Reminders\Buttons.lua
 Reminders\Gates.lua
 Core\ProfileIO.lua
 Core\EncounterTimeline.lua
