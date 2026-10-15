@@ -1099,6 +1099,16 @@ local function GridIcon(grid, x, y, info, selected, configured, onClick, tipLine
     if selected then
         local r, g, b = ns.GetAccentColor()
         btn:SetBackdropBorderColor(r, g, b, 1)
+        -- A 1px accent edge read the same as a configured icon's dimmer one,
+        -- so which icon the editor below is changing was hard to find (user
+        -- screenshot 2026-10-16). The selection gets a heavier frame of its
+        -- own, standing just outside the icon.
+        local mark = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+        mark:SetPoint("TOPLEFT", btn, "TOPLEFT", -3, 3)
+        mark:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 3, -3)
+        mark:SetBackdrop({ edgeFile = "Interface\\BUTTONS\\WHITE8X8", edgeSize = 2 })
+        mark:SetBackdropBorderColor(r, g, b, 1)
+        mark:SetFrameLevel(btn:GetFrameLevel() + 2)
     elseif configured then
         local r, g, b = ns.GetAccentColor("dim")
         btn:SetBackdropBorderColor(r, g, b, 0.8)
