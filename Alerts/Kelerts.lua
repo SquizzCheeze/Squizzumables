@@ -165,6 +165,8 @@ end
 local function ShowAlert(alert)
     local f = EnsureAlertFrame()
 
+    -- A new alert during the last one's fade-out takes over from it.
+    ns.Motion.CancelFade(f)
     PaintAlert(f, alert)
     local scale = (BH.settings and BH.settings.kelAlertScale) or 1.0
     f:SetScale(scale)
@@ -185,13 +187,18 @@ local function ShowAlert(alert)
     end
 
     f:Show()
+    -- 2.0 motion (UI/Motion.lua): pops in over 0.1s, holds, fades out over
+    -- 0.4s; instant with Reduce motion. The sound stops when the hold ends.
+    ns.Motion.Appear(f, 0.1, 0.9)
     local dur = math.max(1, tonumber(alert and alert.duration) or 3)
     if alertTimer then alertTimer:Cancel() end
     alertTimer = C_Timer.NewTimer(dur, function()
-        f.anim.active = false
-        f:Hide()
         alertTimer = nil
         if alertSoundTicker then alertSoundTicker:Cancel(); alertSoundTicker = nil end
+        ns.Motion.FadeOut(f, 0.4, function()
+            f.anim.active = false
+            f:Hide()
+        end)
     end)
 end
 

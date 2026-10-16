@@ -1822,9 +1822,16 @@ function BH:CreateOptionsPanel()
 
     local function SwitchTab(active)
         for key, btn in pairs(navButtons) do
+            local was = tabFrames[key]:IsShown()
             btn:SetActive(key == active)
             tabFrames[key]:SetShown(key == active)
             if previews[key] then previews[key]:SetShown(key == active) end
+            -- 2.0 motion: the page coming in fades up over 0.12s (instant
+            -- with Reduce motion). The one going is simply hidden.
+            if key == active and not was then
+                ns.Motion.Appear(tabFrames[key], 0.12)
+                if previews[key] then ns.Motion.Appear(previews[key], 0.12) end
+            end
         end
     end
     self.switchTab = SwitchTab
@@ -2636,6 +2643,11 @@ local function CreateReminderFrame(def)
         if BH[saveFn] then BH[saveFn](BH) end
     end)
     frame:Hide()
+
+    -- 2.0 motion (UI/Motion.lua): grows in from 90% over 0.15s and fades out
+    -- over 0.2s; instant with Reduce motion. Plain frames, so this runs in
+    -- combat too, for the reminders that stay up there.
+    ns.Motion.WrapShowHide(frame, { appear = 0.15, fromScale = 0.9, fade = 0.2 })
 
     local text = BH.ReminderText(frame, def)
 

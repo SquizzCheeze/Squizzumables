@@ -25,6 +25,7 @@ UI\PreviewColumn.lua
 UI\EditMode.lua
 UI\Glow.lua
 UI\Shapes.lua
+UI\Motion.lua
 Squizzumables.lua
 Group\RaidTools.lua
 Group\RoleCCAlert.lua

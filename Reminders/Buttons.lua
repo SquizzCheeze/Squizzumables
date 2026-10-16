@@ -713,6 +713,18 @@ end
 function BH:LayoutButtons(numButtons, buttons, frame)
     -- The options preview lays out its sample buttons with this too, passing
     -- its own list and host frame; everything else uses the real ones.
+    -- 2.0 motion: the real buttons fade in over 0.15s when they appear from
+    -- none (UI/Motion.lua; instant with Reduce motion). Alpha only, and only
+    -- out of combat: the frame parents the secure buttons. Not on every
+    -- rebuild -- they are laid out again every few seconds -- only on the
+    -- step from no buttons to some.
+    if not buttons then
+        local before = self.sqShownButtons or 0
+        self.sqShownButtons = numButtons
+        if before == 0 and numButtons > 0 and not InCombatLockdown() then
+            ns.Motion.Appear(self.frame, 0.15)
+        end
+    end
     buttons = buttons or self.buttons
     frame = frame or self.frame
     local size = (self.settings and self.settings.buttonSize) or 36

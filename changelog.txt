@@ -60,6 +60,10 @@ V2.0
   the mouse; click one to select it, then the arrow keys nudge it 1px
   (10px with Shift), and if the options window is open it jumps to that
   frame's settings.
+- Motion: text reminders grow in and fade out, the Lust Alert pops in
+  and fades away, your reminder buttons fade in when they appear, and the
+  options pages fade in as you switch. Settings > Misc > Reduce motion
+  makes all of it instant.
 - Setup: a new install now starts with a short setup - pick your role,
   choose your extras - every role sees them all, ticked to suit it
   (healers watch tanks and tanks watch healers with the Role CC alert;

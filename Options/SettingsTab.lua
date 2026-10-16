@@ -375,6 +375,11 @@ local SETTINGS = ns.Settings.Describe({
             { key = "guildInviteContextEnabled", type = "check", default = true,
               label = "Guild Invite on Right-Click",
               tip = "Adds a Guild Invite entry to the right-click menu on player names and unit frames." },
+            -- 2.0 motion (UI/Motion.lua): every fade and pop becomes instant.
+            { key = "reduceMotion", type = "check", default = false,
+              label = "Reduce motion",
+              tip = "Turns off the fades and pops: reminders, alerts and the pages of this window appear and "
+                  .. "disappear instantly instead." },
         },
     },
 })

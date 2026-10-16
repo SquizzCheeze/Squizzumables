@@ -414,6 +414,17 @@ shell, setup and polish), each gated.
   copies position / scale / lock from the played class's reminder in every profile. Settings: Text
   Reminders > Class (shared scale + lock, four ticks; No Pet's moved from Class Buffs), Repair on its
   own sub-tab. NEVER re-anchor one of the four to UIParent (Reset Positions did; it now resets the frame).
+- PHASE 4 (2026-10-16), built, 4c untested: 4a `UI/Setup.lua` (BH.ShowSetup, /sq setup, Run Setup on
+  the update note; role -> four ticks, EVERY role sees all four, only the pre-ticks differ -- user
+  decisions; uses the shared Squizz notes queue via BH.PresentNotesFrame / BH.NotesHidden). Fixed with it:
+  `BH.freshInstall` is decided at the TOP of LoadSettings -- the old `not SquizzumablesDB.settings` was
+  read after EnsureProfiles had created them, so it was never true (first-run greeting never showed,
+  fresh installs ran every migration). 4b RELEASE_NOTES["2.0"]. 4c `UI/Motion.lua` (Appear / FadeOut /
+  WrapShowHide, `reduceMotion` on Settings > Misc): text reminder frames are WRAPPED (their Show/Hide
+  animate; Hide during a fade is ignored; `sqHideNow` hides at once), the Lust Alert pops 0.1 / fades 0.4,
+  the reminder buttons fade in 0.15 only on the 0 -> n step and only out of combat (alpha only: they
+  parent secure buttons), options pages fade in 0.12. Not done: the expiring-buff pulse (the button
+  glow already pulses) and hover brightening.
 - Coach's Whistle settings stay where they are (hand-built, bottom of Consumables, shown only while
   the trinket is equipped). User decision 2026-10-16: the trinket is gone in season 2 but may return,
   so leave it alone -- do not move it onto Rows / a Text Reminders sub-tab unless asked.
