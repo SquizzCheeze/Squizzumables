@@ -6,9 +6,9 @@
 -- with /sq setup. Every step can be skipped, and so can the whole thing.
 --
 -- The suggested set is SUGGESTED, never forced (user decision 2026-10-16): it
--- arrives pre-ticked for the role and the player unticks anything they do not
--- want. Consumable and class buff reminders are on for everyone regardless,
--- so they are not part of it.
+-- arrives pre-ticked for the role, every role sees every option, and the
+-- player ticks what they want. Consumable and class buff reminders are on
+-- for everyone regardless, so they are not part of it.
 
 local addonName, ns = ...
 local BH = ns.BH
@@ -29,17 +29,16 @@ local ROLES = {
 }
 local ROLE_NAME = { HEALER = "healer", TANK = "tank", DAMAGER = "damage dealer" }
 
--- What each role is offered (user decision 2026-10-16). Role CC watches the
--- OTHER role a healer or tank depends on; the battle res counter and the M+
--- death tally are useful to anyone, damage dealers included.
+-- What each role gets pre-ticked (user decisions 2026-10-16). Every role is
+-- OFFERED every option -- a damage dealer may well want to know when the tank
+-- is crowd controlled -- and only the ticks differ: a healer watches the
+-- tank, a tank the healer, and the battle res counter and the M+ death tally
+-- suit anyone. ccTank / ccHealer are the Role CC alert's two roles
+-- (roleCCAlertTank / healerCCAlertEnabled).
 local SUGGESTED = {
-    HEALER  = { roleCC = true,  bres = true, tally = true },
-    TANK    = { roleCC = true,  bres = true, tally = true },
-    DAMAGER = { roleCC = false, bres = true, tally = true },
-}
-local ROLE_CC_LABEL = {
-    HEALER = "Role CC alert: tell me when a tank is crowd controlled",
-    TANK   = "Role CC alert: tell me when a healer is crowd controlled",
+    HEALER  = { ccTank = true,  ccHealer = false, bres = true, tally = true },
+    TANK    = { ccTank = false, ccHealer = true,  bres = true, tally = true },
+    DAMAGER = { ccTank = false, ccHealer = false, bres = true, tally = true },
 }
 
 local frame
@@ -71,17 +70,13 @@ end
 -- Applying the picks
 -- ----------------------------------------------------------------------------
 
--- Write the ticked set into the settings. Role CC only for a healer or tank,
--- each watching the other; the damage role leaves it as it was.
+-- Write the ticked set into the settings.
 local function ApplyPicks()
     local s = BH.settings
     local picks = state.picks
     if not (s and picks) then return end
-    if state.role == "HEALER" then
-        s.roleCCAlertTank = picks.roleCC and true or false
-    elseif state.role == "TANK" then
-        s.healerCCAlertEnabled = picks.roleCC and true or false
-    end
+    s.roleCCAlertTank      = picks.ccTank and true or false
+    s.healerCCAlertEnabled = picks.ccHealer and true or false
     s.bresCounterEnabled = picks.bres and true or false
     s.deathTallyEnabled  = picks.tally and true or false
     BH:SaveSettings()
@@ -155,24 +150,18 @@ local function BuildSetStep(page)
         cb:SetWidth(TEXT_W)
         return cb
     end
-    -- One Role CC box per role that has one, the right one shown; both write
-    -- the same pick.
-    page.roleCC = {
-        HEALER = Check(-86, ROLE_CC_LABEL.HEALER, "roleCC"),
-        TANK   = Check(-86, ROLE_CC_LABEL.TANK, "roleCC"),
-    }
-    page.bres   = Check(-116, "Battle res counter: charges left in a Mythic+ key or a raid", "bres")
-    page.tally  = Check(-146, "M+ death tally: who died how often in the current key", "tally")
+    page.ccTank   = Check(-86,  "Role CC alert: tell me when a tank is crowd controlled", "ccTank")
+    page.ccHealer = Check(-116, "Role CC alert: tell me when a healer is crowd controlled", "ccHealer")
+    page.bres     = Check(-146, "Battle res counter: charges left in a Mythic+ key or a raid", "bres")
+    page.tally    = Check(-176, "M+ death tally: who died how often in the current key", "tally")
 
     page.refresh = function()
         state.picks = state.picks or CopyTable(SUGGESTED[state.role])
         page.head:SetText("Suggested for a " .. ROLE_NAME[state.role])
-        page.note:SetText("Ticked for your role -- untick anything you don't want. All of it can be changed "
-            .. "later in the settings.")
-        for role, cb in pairs(page.roleCC) do
-            cb:SetShown(role == state.role)
-            cb:SetChecked(state.picks.roleCC)
-        end
+        page.note:SetText("Ticked for your role -- tick or untick anything you like. All of it can be "
+            .. "changed later in the settings.")
+        page.ccTank:SetChecked(state.picks.ccTank)
+        page.ccHealer:SetChecked(state.picks.ccHealer)
         page.bres:SetChecked(state.picks.bres)
         page.tally:SetChecked(state.picks.tally)
     end

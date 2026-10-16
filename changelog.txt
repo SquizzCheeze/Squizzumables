@@ -61,9 +61,10 @@ V2.0
   (10px with Shift), and if the options window is open it jumps to that
   frame's settings.
 - Setup: a new install now starts with a short setup - pick your role,
-  tick the extras suggested for it (healers and tanks: the Role CC alert
-  for the other role; everyone: the battle res counter and the M+ death
-  tally), place your frames and choose a theme. Every step can be
+  choose your extras - every role sees them all, ticked to suit it
+  (healers watch tanks and tanks watch healers with the Role CC alert;
+  everyone gets the battle res counter and the M+ death tally) - place
+  your frames and choose a theme. Every step can be
   skipped. Anyone can run it with /sq setup or the Run Setup button on
   the update note.
 - Fixed: the first-run welcome never actually showed - a new install was
