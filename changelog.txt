@@ -60,6 +60,14 @@ V2.0
   the mouse; click one to select it, then the arrow keys nudge it 1px
   (10px with Shift), and if the options window is open it jumps to that
   frame's settings.
+- Setup: a new install now starts with a short setup - pick your role,
+  tick the extras suggested for it (healers and tanks: the Role CC alert
+  for the other role; everyone: the battle res counter and the M+ death
+  tally), place your frames and choose a theme. Every step can be
+  skipped. Anyone can run it with /sq setup or the Run Setup button on
+  the update note.
+- Fixed: the first-run welcome never actually showed - a new install was
+  always treated as an update.
 - Behind the scenes, every page's settings now come from one description
   each (its default, control and search entry together), so they can no
   longer disagree. You may notice: every one of those settings is now in

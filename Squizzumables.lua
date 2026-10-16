@@ -1028,7 +1028,17 @@ function BH:LoadSettings()
     -- Always use defaults for consumables and class buffs
     -- This ensures new items added to config are always available
     local defaults = BH.defaults or {}
-    
+
+    -- A genuinely new install, decided BEFORE anything below creates the
+    -- profiles and settings. It used to be `not SquizzumablesDB.settings`, read
+    -- after EnsureProfiles and LoadFromProfile had already made them, so it
+    -- was never true: a new install ran every old-data migration on fresh
+    -- defaults, and Core/Welcome.lua's greeting -- which tested the same thing
+    -- four seconds after login -- never once showed. Read by RunMigrations and
+    -- by the first-run check (BH.freshInstall), which shows setup (2.0).
+    local freshInstall = not (SquizzumablesDB and (SquizzumablesDB.settings or SquizzumablesDB.profiles))
+    if BH.freshInstall == nil then BH.freshInstall = freshInstall end
+
     -- Initialize SquizzumablesDB if needed
     if not SquizzumablesDB then
         SquizzumablesDB = {}
@@ -1056,7 +1066,7 @@ function BH:LoadSettings()
     end
     
     -- Load appearance settings with defaults
-    local isNewInstall = not SquizzumablesDB.settings
+    local isNewInstall = freshInstall
     if not SquizzumablesDB.settings then
         SquizzumablesDB.settings = CopyTable(BH.defaultSettings)
     end
@@ -3662,6 +3672,9 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         end
     elseif msg == "notes" then
         if BH.ShowReleaseNotes then BH.ShowReleaseNotes() end
+    elseif msg == "setup" then
+        -- First-run setup (UI/Setup.lua), any time.
+        if BH.ShowSetup then BH.ShowSetup() end
     elseif msg == "welcome" then
         if BH.ShowFirstRun then BH.ShowFirstRun() end
     elseif msg == "dk" then
@@ -3886,6 +3899,7 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print("  /sq unlock - toggle Unlock Frames (drag everything into place)")
         print("  /sq reload - update buttons")
         print("  /sq notes - reopen the release notes for this version")
+        print("  /sq setup - run setup again (role, suggested extras, placing frames, theme)")
         print("  /ginvite <name> - guild invite a player")
     end
 end

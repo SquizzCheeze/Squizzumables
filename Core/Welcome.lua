@@ -363,6 +363,18 @@ local function BuildFrame()
         BH:CreateOptionsPanel()
     end)
 
+    -- 2.0: players who update are not sent through setup, but are offered it
+    -- (user decision 2026-10-15, design doc "Moving from 1.x").
+    local setupBtn = CreateSQButton(frame, "Run Setup", 110, 26)
+    setupBtn:SetPoint("LEFT", settingsBtn, "RIGHT", 8, 0)
+    setupBtn:SetScript("OnClick", function()
+        frame:Hide()
+        if BH.ShowSetup then BH.ShowSetup() end
+    end)
+    ns.Rows.AddTooltip(setupBtn, "Run Setup",
+        "Pick your role and the extras that go with it, place your frames and choose a theme. "
+     .. "Every step can be skipped. /sq setup runs it any time.")
+
     local closeBtn = CreateSQButton(frame, "Close", 90, 26)
     closeBtn:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -18, 16)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
@@ -437,10 +449,16 @@ local function CheckVersion()
 
     if seen == nil then
         -- No record at all. Distinguish a genuinely new install from an upgrade
-        -- of a version that predates this file: an existing player already has
-        -- settings saved.
-        if SquizzumablesDB.settings then
+        -- of a version that predates this file. BH.freshInstall is decided at
+        -- the top of LoadSettings, before it creates anything; testing for saved
+        -- settings here, four seconds after login, always found the ones
+        -- LoadSettings had just made, so the greeting never showed.
+        if not BH.freshInstall then
             ShowUpdated(version, true)
+        elseif BH.ShowSetup then
+            -- 2.0: a new install gets setup (UI/Setup.lua) in place of the
+            -- greeting; it says the same things and lets them be acted on.
+            BH.ShowSetup(true)
         else
             ShowFirstRun(true)
         end
@@ -462,3 +480,7 @@ end)
 -- /sq notes re-opens the current release notes on demand.
 BH.ShowReleaseNotes = function() ShowUpdated(CurrentVersion()) end
 BH.ShowFirstRun = ShowFirstRun
+-- The login notes queue, for UI/Setup.lua's window: shown in turn with the
+-- other Squizz addons' notes, never drawn through one.
+BH.PresentNotesFrame = PresentNotes
+BH.NotesHidden = OnNotesHidden
