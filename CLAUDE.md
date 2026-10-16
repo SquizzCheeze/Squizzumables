@@ -239,10 +239,11 @@ Published to CurseForge (project `1483099`) and GitHub Releases by
     git tag -a v1.61 -m "Squizzumables 1.61"
     git push --tags
 
-Last shipped: **v1.99 (2026-10-15)**. **1.x is FROZEN** (user decision 2026-10-15): no more 1.x
-releases; everything rolls into **2.0**, which is the open version (`.toc` 2.0, `changelog.txt`
-V2.0, `RELEASE_NOTES["2.0"]`). The unreleased 1.100 fix was folded into it. Tag 2.0 only when the
-user says. Welcome compares version STRINGS for equality, never numerically.
+Last shipped: **v2.0 (2026-10-16)**, all four phases of the 2.0 rebuild (user said tag after
+confirming phase 4 in game). Before it, v1.99 (2026-10-15); 1.x was frozen and rolled into 2.0. The
+next release: bump `.toc`, move the V2.0 changelog section into CHANGELOG-ARCHIVE.txt and open the
+new one, add its `RELEASE_NOTES` entry; tag only when the user says. Welcome compares version
+STRINGS for equality, never numerically.
 
 **2.0 design doc:** https://claude.ai/artifact/Kpmgq9gaowXvnR7e2pgkcg (Squizzumables 2.0 Design).
 Read it before 2.0 work. Settled there: gold stays the default accent; presets Squizz Gold, Dark
