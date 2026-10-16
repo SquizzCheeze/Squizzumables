@@ -570,29 +570,16 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                                 local cbBtn = CreateButton(id, icon, "Cast buff", "spell", castID, nil, nil, nil)
                                 cbBtn.isCombatBuff = true
                                 cbBtn:SetParent(BH.combatBuffFrame)  -- stays visible in combat
-                                -- Mirror the pet-button behaviour: hide once the buff lands on the
-                                -- player, reappear if the player loses it (e.g. dies mid-fight).
-                                -- RegisterStateDriver runs in WoW's secure env – never blocked.
-                                -- Only register the state driver when the player doesn't
-                                -- already have the buff.  If the player has it (button shown
-                                -- because a group member is missing it), skip the driver so
-                                -- the button stays visible in combat instead of hiding the
-                                -- moment combat starts just because [buff:X] is already true.
-                                local playerHasBuff = UnitHasBuff("player", buffInfo.buffVariants or buffInfo.spellID)
-                                local buffName = C_Spell.GetSpellName(castID)
-                                -- buffName can be "" (truthy in Lua) when spell data isn't cached yet,
-                                -- which would produce "[combat,buff:]hide;show" — an empty aura name.
-                                -- Also, the state-driver conditional parser uses ":" as its own
-                                -- key/value delimiter, so names containing a colon (e.g. Priest's
-                                -- "Power Word: Fortitude") break parsing with "Unknown macro option:
-                                -- buff" — confirmed via in-game testing. Skip the auto-hide driver
-                                -- for those names; the button just won't self-hide mid-combat once
-                                -- buffed (it still gets removed on the next normal refresh).
-                                if buffName and buffName ~= "" and not buffName:find(":", 1, true)
-                                    and not playerHasBuff then
-                                    RegisterStateDriver(cbBtn, "visibility",
-                                        "[combat,buff:" .. buffName .. "]hide;show")
-                                end
+                                -- No in-combat auto-hide. This used to register a
+                                -- "[combat,buff:<name>]hide;show" state driver, but "buff" is
+                                -- not a macro option the game knows, for ANY name (not just ones
+                                -- with a colon, as first thought): RegisterStateDriver threw
+                                -- "Unknown macro option: buff" right here, after CreateButton had
+                                -- shown the button but before it was stored in self.buttons. The
+                                -- teardown never saw it again, so it stayed on screen until
+                                -- /reload with the buff up, and the rest of the pass was lost
+                                -- (user report 2026-10-17, Skyfury, solo). The button now simply
+                                -- goes on the next out-of-combat refresh.
                                 self.buttons[id] = cbBtn
                                 hasCombatBuff = true
                                 classBuff_spellIDs_this_pass[buffInfo.spellID] = true

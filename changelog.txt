@@ -1,6 +1,14 @@
 Squizzumables Changelog
 =======================
 
+V2.1
+
+- Fixed: a group buff button (Skyfury, Arcane Intellect, Battle Shout and
+  the rest) could get stuck on screen after you had the buff, together with
+  an "Unknown macro option: buff" error, until a /reload. The button was
+  trying to hide itself in combat with a rule the game does not support. It
+  now just goes away on the next refresh out of combat.
+
 V2.0
 
 - CDM Alerts: Buff Alerts and the CDM Sounds page are now one tab
