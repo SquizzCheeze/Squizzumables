@@ -21,10 +21,16 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    -- 2.0 (design doc "Moving from 1.x"): the new look, the grouped sidebar,
+    -- themes, Edit Mode and setup, pointing at the theme picker.
     ["2.0"] = {
-        "CDM Alerts (Kelerts): your buffs and cooldowns in one grid, one editor. Cooldowns can now show an image too - glows, flames, arcs or your own - when ready or on cooldown. Works in combat. Replaces the CDM Sounds page.",
-        "Buff sounds you had on CDM Sounds were moved to that buff in CDM Alerts for you.",
-        "Fixed: every reminder button could pop up at once when the game stopped letting addons see your buffs (seen in the new labyrinth). They now keep showing what they last knew, the same as in combat.",
+        "A new look. Pick a theme at the top of Settings - Squizz Gold, Dark Glass, Class Colour, Rainbow or Minimal - and it restyles this window and every Squizzumables frame. Your old class-colour choice carried over.",
+        "The options window is grouped - Reminders, Cooldowns, Alerts, Group, Fun, General - with a live preview beside your settings on most pages, and every setting is in the search.",
+        "One Edit Mode: Unlock Frames, or the game's own Edit Mode, gives every frame the same named box. Click one to select it, nudge it with the arrow keys, and its settings open beside it.",
+        "Your class reminder (Beacon, Earth Shield, Symbiotic or No Pet) is now one frame, kept where you had it. Repair has its own tab.",
+        "Setup: pick your role, tick the extras you want, place your frames and choose a theme. Run Setup below, or /sq setup any time.",
+        "CDM Alerts (Kelerts): your buffs and cooldowns in one grid, one editor, and cooldowns can show an image too. Buff sounds you had on CDM Sounds moved there for you.",
+        "Fixed: every reminder button could pop up at once when the game stopped letting addons see your buffs (seen in the new labyrinth). They now keep showing what they last knew.",
     },
     ["1.99"] = {
         "Fixed: protected-function errors after a /reload in the new labyrinth, a Mythic+ key, a boss or a PvP match, and buff sounds that could all stop there. They now wait until you leave or it ends, and the ones you had keep playing.",
