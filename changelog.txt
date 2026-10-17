@@ -18,6 +18,12 @@ V2.1
   search, Unlock Frames button and previews - with each page's title and
   description along the top. The Close button at the bottom is gone; use
   the X or Escape. Search no longer lists each setting twice.
+- /squizz now opens one window for Squizzumables and SquizzFrames when
+  both are installed (on its own, it opens Squizzumables as before): the
+  other addon is listed at the bottom of the sidebar, search covers both,
+  and picking one of its pages or settings switches to it in the same
+  spot. /sq config opens Squizzumables on its own, and /squizz cdms is now
+  also /sq cdms.
 - The Frames Unlocked box (Lock All / Done) no longer shows in Blizzard's
   Edit Mode, which has its own Save and close. It still shows with
   /sq unlock and the options window's Unlock Frames.

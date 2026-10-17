@@ -1436,7 +1436,7 @@ end
 --     shell's column, with its own heading
 --   * BH.switchTab(key), self.optionsPanel (the window frame, still named
 --     SQUIZZUMABLESOptions) and self.unlockBtn, which the rest of the addon uses
-function BH:CreateOptionsPanel()
+function BH:CreateOptionsPanel(noShow)
     if not self.consumables then
         self:LoadSettings()
     end
@@ -1447,7 +1447,7 @@ function BH:CreateOptionsPanel()
         self:RefreshRaidToolsTab()
         self:RefreshTextRemindersTab()
         if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
-        self.optionsWindow:Open()
+        if not noShow then self.optionsWindow:Open() end
         return
     end
 
@@ -1609,7 +1609,8 @@ function BH:CreateOptionsPanel()
     self:RefreshTextRemindersTab()
     if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
     self:RefreshCalloutsTab()
-    win:Open("Squizzumables:settings")
+    -- noShow: built for the combined window (LibSquizzShell), not shown yet.
+    if not noShow then win:Open("Squizzumables:settings") end
 end
 
 -- The Consumables page: built by hand rather than from rows, as it always was.
@@ -3304,6 +3305,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         print(addonName.." frame reset to center")
     elseif msg == 'config' then
         BH:CreateOptionsPanel()
+    elseif msg and msg:lower() == 'cdms' then
+        -- Kelerts > CDM Alerts (2.0). Was /squizz cdms; /squizz is now the
+        -- combined window's (LibSquizzShell), where it still works too.
+        BH:CreateOptionsPanel()
+        if BH.switchTab then BH.switchTab("kel") end
+        if BH.kelPages and BH.kelPages.Select then BH.kelPages.Select("buffsounds") end
     elseif msg == 'raidtools' then
         if InCombatLockdown() then
             print(addonName..": Cannot toggle raid tools in combat")
@@ -3655,12 +3662,29 @@ end
 
 -- /squizz shortcut to open config directly; /squizz CDMS opens CDM Alerts
 -- (Kelerts > CDM Alerts since 2.0, which replaced the CDM Sounds tab)
-SLASH_SQUIZZUMABLESCONFIG1 = '/squizz'
-SlashCmdList['SQUIZZUMABLESCONFIG'] = function(msg)
-    BH:CreateOptionsPanel()
-    if msg and msg:upper() == "CDMS" then
-        if BH.switchTab then BH.switchTab("kel") end
-        if BH.kelPages and BH.kelPages.Select then BH.kelPages.Select("buffsounds") end
+-- /squizz belongs to the shared window library now (LibSquizzShell): with
+-- SquizzFrames installed too it opens the combined window, and on its own it
+-- opens ours. This tells it how to build and open our window, and claims
+-- /squizz cdms (Kelerts > CDM Alerts).
+do
+    local Shell = LibStub("LibSquizzShell-1.0", true)
+    if Shell and Shell.RegisterOpener then
+        Shell:RegisterOpener("Squizzumables", {
+            open = function(pageId, show)
+                -- Asked for the window only: build it once, nothing more.
+                if not show and BH.optionsWindow then return BH.optionsWindow end
+                BH:CreateOptionsPanel(not show)
+                if show and pageId and BH.optionsWindow then BH.optionsWindow:Open(pageId) end
+                return BH.optionsWindow
+            end,
+            slash = function(msg)
+                if not (msg and msg:upper() == "CDMS") then return false end
+                BH:CreateOptionsPanel()
+                if BH.switchTab then BH.switchTab("kel") end
+                if BH.kelPages and BH.kelPages.Select then BH.kelPages.Select("buffsounds") end
+                return true
+            end,
+        })
     end
 end
 

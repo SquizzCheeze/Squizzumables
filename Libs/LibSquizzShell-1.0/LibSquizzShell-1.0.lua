@@ -44,7 +44,7 @@
         tall (taller if the window is).
 ]]
 
-local MAJOR, MINOR = "LibSquizzShell-1.0", 1
+local MAJOR, MINOR = "LibSquizzShell-1.0", 2
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -294,6 +294,7 @@ function lib:CreateWindow(opts)
 
     f:SetScript("OnHide", function()
         if win.results then win.results:Hide() end
+        if lib.OnWindowHidden then lib.OnWindowHidden(win) end
         if opts.onHide then opts.onHide(win) end
     end)
     return win
@@ -425,6 +426,11 @@ function Window:BuildResults()
             self.searchBox:ClearFocus()
             local e = r.entry
             if not e then return end
+            if not self:OwnsAddon(e.addon) then
+                -- Another addon's setting (combined mode): its window takes over.
+                lib:HandOff(self, e.addon, e.page, e.onSelect)
+                return
+            end
             self:ShowPage(e.addon .. ":" .. e.page)
             if e.onSelect then e.onSelect(self) end
         end)
@@ -441,7 +447,16 @@ function Window:Search(query)
     query = (query or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     if query == "" then return {} end
     local strong, mid, weak = {}, {}, {}
-    for _, addonId in ipairs(self.opts.addons or {}) do
+    -- This window's addons, and while combined every other addon with an
+    -- opener: a result from one of those hands over to its window.
+    local searched, seen = {}, {}
+    for _, a in ipairs(self.opts.addons or {}) do searched[#searched + 1] = a; seen[a] = true end
+    if lib.combined then
+        for _, a in ipairs(lib.order) do
+            if not seen[a] and lib.openers[a] then searched[#searched + 1] = a end
+        end
+    end
+    for _, addonId in ipairs(searched) do
         local spec = lib.addons[addonId]
         -- An addon with its own search (Squizzumables: fuzzy, sub-tab aware)
         -- answers for itself: spec.search(query) returns entries { label,
@@ -544,25 +559,54 @@ function Window:BuildSidebar()
     local br, bg, bb = RGBA("border")
     edge:SetColorTexture(br, bg, bb, 0.5)
     self.sidebar = side
+    self:LayoutSidebar()
+end
+
+-- The sidebar's rows, rebuilt when combined mode changes. Its own addon(s) in
+-- full; while combined (/squizz), every OTHER addon with an opener follows as a
+-- single row naming it -- a click hands over to that addon's window (see
+-- lib:HandOff), which lists its own pages in full and this addon as one row.
+-- So each window keeps its own pages and none is ever built twice.
+function Window:LayoutSidebar()
+    local side = self.sidebar
+    if self.rowsHost then
+        self.rowsHost:Hide()
+        self.rowsHost:SetParent(nil)
+    end
+    local host = CreateFrame("Frame", nil, side)
+    host:SetAllPoints(side)
+    self.rowsHost = host
+    self.rows = {}
+    local combined = lib.combined and true or false
+    self.sidebarCombined = combined
+
+    local others = {}
+    if combined then
+        for _, id in ipairs(lib.order) do
+            local own = false
+            for _, a in ipairs(self.opts.addons or {}) do if a == id then own = true end end
+            if not own and lib.openers[id] and lib.addons[id] then others[#others + 1] = id end
+        end
+    end
 
     local y = -10
-    local many = #(self.opts.addons or {}) > 1
+    local many = #(self.opts.addons or {}) > 1 or #others > 0
     for _, addonId in ipairs(self.opts.addons or {}) do
         local spec = lib.addons[addonId]
         if spec then
             if many then
-                local h = Text(side, 13, "textBright")
+                local h = Text(host, 13, "textBright")
                 h:SetPoint("TOPLEFT", 12, y)
                 h:SetText(spec.title or addonId)
                 y = y - 22
             end
             for _, group in ipairs(spec.groups or {}) do
-                local gh = Text(side, 10, "textDim")
+                local gh = Text(host, 10, "textDim")
                 gh:SetPoint("TOPLEFT", 12, y)
                 gh:SetText((group.label or ""):upper())
                 y = y - 18
                 for _, page in ipairs(group.pages or {}) do
-                    local row = CreateFrame("Button", nil, side, "BackdropTemplate")
+                    local row = CreateFrame("Button", nil, host, "BackdropTemplate")
                     row:SetHeight(ROW_H)
                     row:SetPoint("TOPLEFT", 6, y)
                     row:SetPoint("TOPRIGHT", -6, y)
@@ -595,6 +639,28 @@ function Window:BuildSidebar()
             y = y - 6
         end
     end
+
+    -- The other addons, one row each (combined mode only).
+    for _, addonId in ipairs(others) do
+        local spec = lib.addons[addonId]
+        local row = CreateFrame("Button", nil, host, "BackdropTemplate")
+        row:SetHeight(ROW_H + 4)
+        row:SetPoint("TOPLEFT", 6, y)
+        row:SetPoint("TOPRIGHT", -6, y)
+        row:SetBackdrop({ bgFile = WHITE })
+        row:SetBackdropColor(RGBA("control"))
+        local label = Text(row, 13, "textBright")
+        label:SetPoint("LEFT", 8, 0)
+        label:SetText(spec.title or addonId)
+        local arrow = Text(row, 13, "textDim")
+        arrow:SetPoint("RIGHT", -8, 0)
+        arrow:SetText(">")
+        row:SetScript("OnEnter", function(r) r:SetBackdropColor(RGBA("controlHi")) end)
+        row:SetScript("OnLeave", function(r) r:SetBackdropColor(RGBA("control")) end)
+        row:SetScript("OnClick", function() lib:HandOff(self, addonId) end)
+        y = y - ROW_H - 10
+    end
+    if self.current then self:HighlightRow(self.current.addon .. ":" .. self.current.key) end
 end
 
 function Window:HighlightRow(id)
@@ -736,7 +802,13 @@ function Window:BuildCombatHandling()
     f:SetScript("OnEvent", function(frame, event)
         if event == "PLAYER_REGEN_DISABLED" then
             if mode == "hide" then
-                if frame:IsShown() then frame.sqWasShown = true; frame:Hide() end
+                -- Not a close: combined mode outlives the fight.
+                if frame:IsShown() then
+                    frame.sqWasShown = true
+                    lib.handingOff = true
+                    frame:Hide()
+                    lib.handingOff = false
+                end
             else
                 frame:SetAlpha(0.5)
             end
@@ -751,10 +823,20 @@ function Window:BuildCombatHandling()
 end
 
 -- Resolve "addon:key" or a bare key (first addon that has it).
+function Window:OwnsAddon(addonId)
+    for _, a in ipairs(self.opts.addons or {}) do
+        if a == addonId then return true end
+    end
+    return false
+end
+
+-- Only this window's own pages: another addon's page is never shown here (it
+-- belongs in that addon's window -- see ShowPage and lib:HandOff).
 function Window:FindPage(id)
     if not id then return nil end
     local addonId, key = id:match("^([^:]+):(.+)$")
     if addonId then
+        if not self:OwnsAddon(addonId) then return nil end
         local spec = lib.addons[addonId]
         return spec and spec.pageByKey[key]
     end
@@ -773,6 +855,12 @@ function Window:FirstPage()
 end
 
 function Window:ShowPage(id)
+    -- Another addon's page: its own window shows it, while combined.
+    local foreign = type(id) == "string" and id:match("^([^:]+):")
+    if foreign and not self:OwnsAddon(foreign) then
+        if lib.combined then lib:HandOff(self, foreign, id:match("^[^:]+:(.+)$")) end
+        return
+    end
     local page = self:FindPage(id) or self:FirstPage()
     if not page then return end
     local isFill = page.layout == "fill"
@@ -976,6 +1064,8 @@ end
 
 --- Show the window on `id` (or the page it was last on, or the first page).
 function Window:Open(id)
+    -- The sidebar lists the other addons only while combined.
+    if self.sidebarCombined ~= (lib.combined and true or false) then self:LayoutSidebar() end
     self.frame:Show()
     self.frame:Raise()
     local cur = self.current
@@ -985,3 +1075,110 @@ end
 function Window:Toggle(id)
     if self.frame:IsShown() then self.frame:Hide() else self:Open(id) end
 end
+
+-- ---------------------------------------------------------------------------
+-- The combined window (/squizz)
+--
+-- With both addons installed, /squizz opens ONE window for both. It is not a
+-- third window holding everyone's pages -- pages pin furniture to the window
+-- that built them and some exist once only -- but the addons' own windows
+-- working as one: while combined, each window's sidebar lists the other
+-- addons as a row, its search covers them, and choosing one of theirs hands
+-- over to that addon's window at the same place and size (lib:HandOff). Only
+-- one is ever shown. Closing it (X, Escape) ends combined mode, so /sf and /sq
+-- open each addon's window on its own again.
+--
+-- Each addon registers an opener at load:
+--   lib:RegisterOpener("SquizzFrames", {
+--       open  = function(pageId, show) ... return window end, -- build; show if asked
+--       slash = function(msg) ... return handled end,         -- optional: /squizz <msg>
+--   })
+-- ---------------------------------------------------------------------------
+
+lib.openers = lib.openers or {}
+
+function lib:RegisterOpener(addonId, opener)
+    lib.openers[addonId] = opener
+    local known = false
+    for _, a in ipairs(lib.order) do if a == addonId then known = true end end
+    if not known then lib.order[#lib.order + 1] = addonId end
+end
+
+local function WindowOf(addonId)
+    local op = lib.openers[addonId]
+    return op and op.open and op.open(nil, false)
+end
+
+--- Swap from `from` to `addonId`'s window (on `key`, if given), at the same
+--- place and size, then call after(win) if given.
+function lib:HandOff(from, addonId, key, after)
+    local win = WindowOf(addonId)
+    if not win or win == from then return end
+    local f, t = from.frame, win.frame
+    if f:IsShown() and f:GetLeft() then
+        t:ClearAllPoints()
+        t:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", f:GetLeft(), f:GetTop())
+        t:SetSize(f:GetWidth(), f:GetHeight())
+    end
+    lib.handingOff = true
+    f:Hide()
+    lib.handingOff = false
+    -- Through the addon's opener, not win:Open directly: an addon may do work
+    -- on opening (Squizzumables refreshes its pages' values first).
+    lib.openers[addonId].open(key and (addonId .. ":" .. key) or nil, true)
+    if after then after(win) end
+end
+
+--- /squizz: toggle the combined window. An addon's opener may claim a
+--- subcommand first (Squizzumables: /squizz cdms).
+function lib:OpenCombined(msg)
+    msg = msg or ""
+    -- Build every addon's window (hidden) first: the sidebar lists them and
+    -- the search reads their indexes, which fill as their pages are built.
+    local ids = {}
+    for _, a in ipairs(lib.order) do
+        if lib.openers[a] then ids[#ids + 1] = a end
+    end
+    if #ids == 0 then return end
+
+    lib.combined = #ids > 1
+    for _, a in ipairs(ids) do WindowOf(a) end
+    -- Laid out again once every addon is registered: a window built before
+    -- the next addon's pages existed would otherwise not list it.
+    for _, a in ipairs(ids) do
+        local w = WindowOf(a)
+        if w then w:LayoutSidebar() end
+    end
+
+    -- One of the windows is already up: /squizz again closes it if it is the
+    -- combined window, and otherwise turns it into the combined window right
+    -- where it is (its sidebar gains the other addons) rather than opening a
+    -- second window beside it.
+    if msg == "" then
+        for _, a in ipairs(ids) do
+            local w = WindowOf(a)
+            if w and w.frame:IsShown() then
+                if w.sidebarCombined and lib.combined then
+                    w.frame:Hide()
+                else
+                    w:Open()
+                end
+                return
+            end
+        end
+    end
+    for _, a in ipairs(ids) do
+        local op = lib.openers[a]
+        if msg ~= "" and op.slash and op.slash(msg) then return end
+    end
+    local first = lib.openers[ids[1]]
+    first.open(nil, true)
+end
+
+-- Closing a window (not handing over) ends combined mode.
+lib.OnWindowHidden = function()
+    if not lib.handingOff then lib.combined = false end
+end
+
+SLASH_SQUIZZSHELL1 = "/squizz"
+SlashCmdList.SQUIZZSHELL = function(msg) lib:OpenCombined(msg) end
