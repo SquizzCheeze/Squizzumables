@@ -121,6 +121,16 @@ Rows.currentSection = nil
 
 function Rows.RegisterSearchEntry(label, tooltip, frame)
     if not label or label == "" or not Rows.currentPage then return end
+    -- One entry per widget. A row's widget is registered twice -- once by its
+    -- constructor (UI/Widgets.lua's IndexForSearch) and again by Finish below,
+    -- with the same frame -- and every setting came up twice in the results
+    -- (user screenshot 2026-10-17). The second registration only fills in a
+    -- tooltip the first did not have.
+    local existing = frame and entryByFrame[frame]
+    if existing then
+        if tooltip and not existing.tooltip then existing.tooltip = tooltip end
+        return
+    end
     local entry = {
         label   = label,
         tooltip = tooltip,
