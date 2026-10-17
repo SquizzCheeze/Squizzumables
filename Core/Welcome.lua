@@ -425,7 +425,7 @@ local function ShowFirstRun(queued)
      .. "that go with it. Reminders appear in dungeons, raids and delves -- not out in the "
      .. "world -- and each one is a button you can click to fix the problem.\n\n"
      .. "Nothing needs configuring to start. When you do want to change something, everything "
-     .. "is under /sq config, or the minimap button, and there is a search box at the top.", queued)
+     .. "is under /sq, or the minimap button, and there is a search box at the top.", queued)
 end
 
 --- The note after updating.

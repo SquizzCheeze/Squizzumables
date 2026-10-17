@@ -3311,7 +3311,12 @@ end
 
 SLASH_SQUIZZUMABLES1 = '/sq'
 SlashCmdList['SQUIZZUMABLES'] = function(msg)
-    if msg == 'reset' then
+    msg = (msg or ""):match("^%s*(.-)%s*$")
+    -- Bare /sq opens the options window (user request 2026-10-17); the command
+    -- list moved to /sq help (any unknown command still prints it).
+    if msg == "" then
+        BH:CreateOptionsPanel()
+    elseif msg == 'reset' then
         BH.frame:ClearAllPoints()
         BH.frame:SetPoint('CENTER')
         print(addonName.." frame reset to center")
@@ -3661,7 +3666,8 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         -- Keep this list in step when a *player-facing* command is added, and
         -- see CLAUDE.md for the full set including the hidden ones.
         print(addonName.." commands:")
-        print("  /sq config - open options")
+        print("  /sq - open options (/sq config also works)")
+        print("  /sq help - this list")
         print("  /sq reset - reset frame position")
         print("  /sq raidtools - toggle raid tools frame")
         print("  /sq unlock - toggle Unlock Frames (drag everything into place)")

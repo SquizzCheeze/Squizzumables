@@ -191,7 +191,7 @@ local function BuildReadyStep(page)
     head:SetText("You're set")
     local note = Dim(Text(page, -30))
     note:SetText("Reminders appear in dungeons, raids and delves, and each one is a button you can click to "
-        .. "fix the problem. Everything is under /sq config or the minimap button, with a search box at the "
+        .. "fix the problem. Everything is under /sq or the minimap button, with a search box at the "
         .. "top.\n\nLast thing: pick a look. The theme changes this window and every Squizzumables frame.")
 
     local b = ns.CreateSQButton(page, "Choose a Theme", 160, 28)

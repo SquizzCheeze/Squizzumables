@@ -20,11 +20,13 @@ V2.1
   the X or Escape. Search no longer lists each setting twice. The
   Unlock Frames button is now called Edit Mode, as in SquizzFrames, and
   lights up while your frames are unlocked.
+- /sq on its own now opens the options window (it used to list the
+  commands; that list is now /sq help).
 - /squizz now opens one window for Squizzumables and SquizzFrames when
   both are installed (on its own, it opens Squizzumables as before): the
   other addon is listed at the bottom of the sidebar, search covers both,
   and picking one of its pages or settings switches to it in the same
-  spot. /sq config opens Squizzumables on its own, and /squizz cdms is now
+  spot. /sq (or /sq config) opens Squizzumables on its own, and /squizz cdms is now
   also /sq cdms. In that window, Edit Mode turns on for both addons at
   once, and the window stays open while you move things.
 - The Frames Unlocked box (Lock All / Done) no longer shows in Blizzard's
