@@ -44,7 +44,7 @@
         tall (taller if the window is).
 ]]
 
-local MAJOR, MINOR = "LibSquizzShell-1.0", 2
+local MAJOR, MINOR = "LibSquizzShell-1.0", 3
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -138,10 +138,19 @@ end
 -- Registration ---------------------------------------------------------------
 
 --- Register (or re-register) an addon's sidebar groups and pages.
-function lib:RegisterAddon(addonId, spec)
-    if not lib.addons[addonId] then
-        lib.order[#lib.order + 1] = addonId
+-- Add an addon to lib.order once. Both RegisterAddon and RegisterOpener add
+-- it, in either order -- checking only lib.addons let an addon whose opener
+-- registered first be added twice, and the combined window listed it twice
+-- (user screenshot 2026-10-17).
+local function AddToOrder(addonId)
+    for _, a in ipairs(lib.order) do
+        if a == addonId then return end
     end
+    lib.order[#lib.order + 1] = addonId
+end
+
+function lib:RegisterAddon(addonId, spec)
+    AddToOrder(addonId)
     spec.id = addonId
     lib.addons[addonId] = spec
     spec.pageByKey = {}
@@ -1099,9 +1108,7 @@ lib.openers = lib.openers or {}
 
 function lib:RegisterOpener(addonId, opener)
     lib.openers[addonId] = opener
-    local known = false
-    for _, a in ipairs(lib.order) do if a == addonId then known = true end end
-    if not known then lib.order[#lib.order + 1] = addonId end
+    AddToOrder(addonId)
 end
 
 local function WindowOf(addonId)
