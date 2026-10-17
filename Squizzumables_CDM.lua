@@ -1654,6 +1654,17 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
     -- GetBuffPlaceholder.
     local showInactive = (groupData.showInactiveBuffs or self.previewMode) and true or false
 
+    -- Blizzard's Edit Mode open while we preview: every slot is a placeholder
+    -- of ours. In Edit Mode Blizzard's viewer shows EVERY tracked buff (sample
+    -- data, CooldownViewerItemMixin:ShouldBeShown) and keeps laying them out
+    -- inside itself -- and that viewer is parked offscreen for Edit Mode (see
+    -- ApplyBlizzardVisibility). Taken as active buffs, every slot pointed at a
+    -- frame offscreen and the group drew as an empty box, while Unlock Frames
+    -- (no buffs up, so all placeholders) drew the full styled mock (user
+    -- screenshot 2026-10-17). Placeholders here make the two look the same.
+    local blizzEditing = self.previewMode and EditModeManagerFrame
+        and EditModeManagerFrame.IsEditModeActive and EditModeManagerFrame:IsEditModeActive() or false
+
     -- Buffs drawn natively (Squizzumables_CDMAuras.lua) take their slot as a
     -- cell of ours instead of Blizzard's frame.
     --
@@ -1755,7 +1766,7 @@ function cdmModule:LayoutBorrowedBuffIcons(groupName)
                             end
                         end
                         if slotFrame then
-                            if child:IsShown() then
+                            if child:IsShown() and not blizzEditing then
                                 shown[#shown + 1] = slotFrame
                             elseif showInactive then
                                 inactive[#inactive + 1] = cdID

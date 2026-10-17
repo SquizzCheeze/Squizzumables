@@ -13,6 +13,9 @@ V2.1
   poisons, paladin auras and Rites, and the rest. They used to be hidden
   for the whole key. Inside a key the group buffs hide in combat like the
   other buttons, where elsewhere they stay up so you can rebuff someone.
+- Fixed: in Blizzard's Edit Mode the Buffs and Buff Bars groups showed as
+  empty boxes. They now show the same styled sample icons and bars as
+  Unlock Frames.
 - Fixed: pet buttons (Call Pet, Summon Imp and the rest) stopped showing
   inside a Mythic+ key in 2.0, so after the key's start dismissed your pet
   there was no button to call it back. The buttons stopped updating
