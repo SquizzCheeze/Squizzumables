@@ -759,6 +759,7 @@ function BH:RefreshSettingsTab()
     end
 
     if self.unlockBtn then
-        self.unlockBtn:SetText(self.unlockMode and "Lock Frames" or "Unlock Frames")
+        self.unlockBtn:SetText("Edit Mode")
+        if self.unlockBtn.SetActive then self.unlockBtn:SetActive(self.unlockMode) end
     end
 end

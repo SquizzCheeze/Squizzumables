@@ -1580,9 +1580,11 @@ function BH:CreateOptionsPanel(noShow)
         previewWidth = ns.PreviewColumn.WIDTH,
         combat = "hide",
         buttons = {
-            { key = "unlock", label = self.unlockMode and "Lock Frames" or "Unlock Frames", width = 112,
+            -- "Edit Mode", as SquizzFrames' button is (user request 2026-10-17);
+            -- lit while frames are unlocked (SetUnlockMode).
+            { key = "unlock", label = "Edit Mode", width = 90,
               tip = "Makes every draggable frame in the addon visible and movable at once, whatever "
-                .. "its own lock setting says. The options panel hides while unlocked so it is not in "
+                .. "its own lock setting says. The options panel hides while it is on so it is not in "
                 .. "the way. Also available as /sq unlock.",
               onClick = function() bh:SetUnlockMode(not bh.unlockMode) end },
         },
@@ -1956,7 +1958,10 @@ function BH:SetUnlockMode(on, keepPanel, quiet)
     self:UpdateFrameLock()
     self:UpdateKelAlertUnlockState()
     if self.unlockBtn then
-        self.unlockBtn:SetText(on and "Lock Frames" or "Unlock Frames")
+        -- Labelled "Edit Mode" like SquizzFrames' (user request 2026-10-17); lit in
+        -- the accent while unlocked, as SquizzFrames' is while editing.
+        self.unlockBtn:SetText("Edit Mode")
+        if self.unlockBtn.SetActive then self.unlockBtn:SetActive(on) end
     end
 
     if on then

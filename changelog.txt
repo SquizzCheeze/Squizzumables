@@ -15,9 +15,11 @@ V2.1
   other buttons, where elsewhere they stay up so you can rebuff someone.
 - The options window is now the same window as SquizzFrames' (shared
   between the two addons). It looks and works as before - the same pages,
-  search, Unlock Frames button and previews - with each page's title and
+  search and previews - with each page's title and
   description along the top. The Close button at the bottom is gone; use
-  the X or Escape. Search no longer lists each setting twice.
+  the X or Escape. Search no longer lists each setting twice. The
+  Unlock Frames button is now called Edit Mode, as in SquizzFrames, and
+  lights up while your frames are unlocked.
 - /squizz now opens one window for Squizzumables and SquizzFrames when
   both are installed (on its own, it opens Squizzumables as before): the
   other addon is listed at the bottom of the sidebar, search covers both,
@@ -26,7 +28,7 @@ V2.1
   also /sq cdms.
 - The Frames Unlocked box (Lock All / Done) no longer shows in Blizzard's
   Edit Mode, which has its own Save and close. It still shows with
-  /sq unlock and the options window's Unlock Frames.
+  /sq unlock and the options window's Edit Mode button.
 - Fixed: with Hide Blizzard's Cooldown Manager on, Blizzard's own cooldown
   bars and icons sat in the top-left corner of the screen in Blizzard's
   Edit Mode. They are now moved fully off screen while it is open.
