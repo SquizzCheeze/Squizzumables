@@ -282,7 +282,8 @@ shell, setup and polish), each gated.
   yet set; never overwrites).
 - ⚠ **The options WINDOW is now SHARED with SquizzFrames (2026-10-17, SquizzFrames 2.0 phase 3
   step 6).** `Libs/LibSquizzShell-1.0`, byte-identical to SquizzFrames' copy (change both, bump
-  `MINOR`). `BH:CreateOptionsPanel` only registers the pages (`Shell:RegisterAddon("Squizzumables")`,
+  `MINOR`). ⚠ Since 2026-10-18 RoleRoulette (`AddOns\RoleRoulette\Libs`) carries a THIRD copy of
+  this and of LibSquizzTheme: change all three. `BH:CreateOptionsPanel` only registers the pages (`Shell:RegisterAddon("Squizzumables")`,
   one `NAV` table, every page `layout = "fill"`) and builds them in `BUILD_ORDER` through
   `win:BuildAllPages(order)`; the shell draws the title bar, search box, Unlock Frames button,
   sidebar, page header, preview column, resize, Escape and the combat hide. Kept as they were and
