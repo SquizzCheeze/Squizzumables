@@ -13,6 +13,9 @@ V2.1
   poisons, paladin auras and Rites, and the rest. They used to be hidden
   for the whole key. Inside a key the group buffs hide in combat like the
   other buttons, where elsewhere they stay up so you can rebuff someone.
+- Hunters: a Revive Pet button now appears, out of combat, when your pet
+  has died. Before, nothing showed: the Call Pet buttons only appear with
+  no pet at all, and a dead pet still counts as one.
 - The theme is now shared with SquizzFrames: picking a preset in either
   addon changes both. It is saved for your whole account rather than per
   profile, so switching profiles no longer changes it. Your current choice

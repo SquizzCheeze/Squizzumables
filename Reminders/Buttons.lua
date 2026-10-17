@@ -288,6 +288,28 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                 end
             end
 
+            -- Hunter: a DEAD pet still exists, so the Call Pet buttons above
+            -- (which want no pet at all) never appeared after a pet died in a
+            -- pull, and Call Pet cannot bring it back anyway (user report
+            -- 2026-10-17, M+). Offer Revive Pet instead, on the same terms as
+            -- the Call Pet buttons: shown while Call Pet 1 is enabled, not for
+            -- a Marksmanship hunter without Unbreakable Bond, not while dead.
+            if class == "HUNTER" and UnitExists("pet") and UnitIsDead("pet")
+                and not UnitIsDeadOrGhost("player") and self:IsEnabled(883) then
+                local REVIVE_PET_SPELL_ID = 982
+                local isMM = self:GetCurrentSpecID() == 254
+                if (not isMM or BH.PlayerKnowsSpell(1223323)) and BH.PlayerKnowsSpell(REVIVE_PET_SPELL_ID) then
+                    local icon = GetSpellIcon(REVIVE_PET_SPELL_ID)
+                    if icon then
+                        local reviveBtn = CreateButton(id, icon, "Revive pet", "spell", REVIVE_PET_SPELL_ID, "Revive", nil, nil)
+                        reviveBtn:SetParent(BH.frame)  -- out of combat only: reviving is a cast
+                        self.buttons[id] = reviveBtn
+                        classBuff_spellIDs_this_pass[REVIVE_PET_SPELL_ID] = true
+                        id = id + 1
+                    end
+                end
+            end
+
             -- Normal class buff handling. Shown in M+ too since 2.1 (user request
             -- 2026-10-17): these were skipped for a whole key on the belief that
             -- they could not be used mid-key, but they can be cast between pulls,
