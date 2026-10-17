@@ -127,7 +127,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
             -- player buffs in that state, which would cause a false alert + sound.
             -- Shown in M+ too since 2.1 (user request 2026-10-17): an aura can be
             -- cast between pulls, and these buttons only rebuild out of combat.
-            if UnitIsDeadOrGhost("player") then
+            if UnitIsDeadOrGhost("player") or self.aurasHiddenPass then
                 -- do nothing
             else
             -- Paladin aura logic: scan group paladins to see who has which aura
@@ -230,7 +230,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
             -- and must stay in agreement, or a Rite user gets an oil button competing
             -- for the same main-hand slot.
             -- Not shown while dead. Shown in M+ since 2.1: a Rite can be cast between pulls.
-            if not UnitIsDeadOrGhost("player") then
+            if not UnitIsDeadOrGhost("player") and not self.aurasHiddenPass then
                 local paladinRites = info.weaponImbues or {}
                 for _, rite in ipairs(paladinRites) do
                     if rite.spellID and BH.PlayerKnowsSpell(rite.spellID) and self:IsEnabled(rite.spellID) then
@@ -315,7 +315,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
             -- they could not be used mid-key, but they can be cast between pulls,
             -- and the buttons only rebuild out of combat (see UpdateButtons). The
             -- group-wide ones stay out-of-combat only inside a key: see cbBtn below.
-            do
+            if not self.aurasHiddenPass then  -- auras unreadable: pets only (see UpdateButtons)
             local buffList = info.spellID and { info } or info
 
             -- Earth Shield button logic (priority-based, max 2 buttons):
@@ -864,19 +864,23 @@ function BH:UpdateButtons()
         return
     end
 
-    -- Same out of combat whenever the client is hiding auras. Every aura read
-    -- comes back nil, nil counts as "missing", and the rebuild below then
-    -- showed EVERY button at once (user report 2026-10-15, 12.1.5 labyrinth,
-    -- surviving /reload, cured by relog -- so a client state left stuck, not
-    -- the zone itself). Keep the last readable pass's buttons.
+    -- Out of combat while the client is hiding auras. Every aura read comes
+    -- back nil, nil counts as "missing", and a full rebuild showed EVERY button
+    -- at once (user report 2026-10-15, 12.1.5 labyrinth, surviving /reload,
+    -- cured by relog). So the aura-driven buttons are left out of this pass.
+    --
+    -- But NOT the whole rebuild, as 2.0 first did: auras can be hidden for an
+    -- entire Mythic+ key, and freezing every button for the key also froze the
+    -- pet buttons, which need no aura data -- the key's start dismisses your
+    -- pet and no Call Pet button appeared any more (user report 2026-10-17).
+    -- The pass still runs; CollectClassBuffButtons builds only the pet
+    -- buttons while self.aurasHiddenPass is set, and the consumables block
+    -- below is skipped.
     --
     -- Deliberately NOT gated on the addon restrictions as well: ChallengeMode
     -- is active for a whole Mythic+ key, so that would freeze the buttons
     -- between pulls, where they have always worked.
-    if BH.Gate.AurasHidden() then
-        self:UpdateAllReminders()
-        return
-    end
+    local aurasHidden = BH.Gate.AurasHidden() and true or false
 
     -- Don't tear the buttons down in the middle of a click.
     --
@@ -942,6 +946,7 @@ function BH:UpdateButtons()
     local classBuff_spellIDs_this_pass = {}
     local _, class = UnitClass("player")
     local hasPetButton, hasCombatBuff
+    self.aurasHiddenPass = aurasHidden
     id, hasPetButton, hasCombatBuff =
         self:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_this_pass)
 
@@ -949,7 +954,10 @@ function BH:UpdateButtons()
 
     -- Symbiotic Relationship button, food/flask/oil consumable buttons, and reminder
     -- frames only show when in a valid instance (or preview mode), not in open world.
-    if ShouldShowButtons() then
+    if aurasHidden then
+        -- Auras unreadable (see the top of this function): only the pet
+        -- buttons above were built; every consumable reads auras.
+    elseif ShouldShowButtons() then
 
     -- Symbiotic Relationship button for Druids with the talent
     -- Guardian Druid: cast on healer | Restoration Druid: cast on tank

@@ -1051,7 +1051,10 @@ tainted depends on what else has run first. Three things learned the hard way:
   combat + Encounter / ChallengeMode / PvPMatch only (`SoundsBlocked` in Alerts/BuffSounds.lua). Encounter and
   ChallengeMode are still unmeasured; measure with `/sq buffsounds try` before trusting either way.
   Do NOT gate the reminder buttons on the restrictions:
-  ChallengeMode lasts a whole key; `BH:UpdateButtons` gates on `AurasAreSecret()` only.
+  ChallengeMode lasts a whole key; `BH:UpdateButtons` gates on `AurasAreSecret()` only, and since
+  2026-10-17 that gate does NOT skip the pass: it sets `self.aurasHiddenPass`, so only the pet
+  buttons (which read no aura) are built and the consumables block is skipped. Skipping the whole
+  pass froze the pet buttons for a whole key (no Call Pet after the key dismissed the pet).
 
   Generalise this: for anything protected that runs on a tear-down-then-rebuild shape, assume the
   rebuild half can be refused for reasons you will not be able to explain, and make it retry.
