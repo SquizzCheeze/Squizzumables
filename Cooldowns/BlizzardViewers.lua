@@ -204,6 +204,23 @@ end
 -- The reason parking was chosen first still has to be handled either way:
 -- an invisible viewer's item frames still take the mouse. MuteViewerItems does
 -- that, on the sweep that already exists for pooled frames.
+-- Take a viewer's clamp-to-screen off while it is parked offscreen (on =
+-- true), remembering what it was, and put it back (on = false). Only the
+-- viewer's own flag: nothing of Edit Mode's is called.
+local function UnclampForPark(f, on)
+    if not (f and f.SetClampedToScreen) then return end
+    local st = BS(f)
+    if on then
+        if st.clampSaved == nil then
+            st.clampSaved = (f.IsClampedToScreen and f:IsClampedToScreen()) and true or false
+        end
+        f:SetClampedToScreen(false)
+    elseif st.clampSaved ~= nil then
+        f:SetClampedToScreen(st.clampSaved)
+        st.clampSaved = nil
+    end
+end
+
 local function ParkFrame(f, groupFrame)
     if InCombatLockdown() then
         -- These are Edit Mode managed frames; moving them is not worth
@@ -218,7 +235,13 @@ local function ParkFrame(f, groupFrame)
         -- an addon anchored to either gets the same answer.
         f:SetPoint("TOPLEFT", groupFrame, "TOPLEFT", 0, 0)
         f:SetPoint("BOTTOMRIGHT", groupFrame, "BOTTOMRIGHT", 0, 0)
+        UnclampForPark(f, false)
     else
+        -- Blizzard's viewers are Edit Mode frames, clamped to the screen, so
+        -- "far offscreen" stopped at the top-left corner -- Edit Mode then
+        -- drew the parked viewers' sample bars and icons there (user
+        -- screenshot 2026-10-17). Unclamped while parked; put back on return.
+        UnclampForPark(f, true)
         f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PARK_X, PARK_Y)
     end
     BS(f).parkGuard = nil
@@ -226,6 +249,7 @@ end
 
 local function RestoreFramePoints(f)
     if not BS(f).origPoints or InCombatLockdown() then return end
+    UnclampForPark(f, false)
     BS(f).restoring = true
     f:ClearAllPoints()
     for _, p in ipairs(BS(f).origPoints) do
