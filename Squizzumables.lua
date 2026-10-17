@@ -1420,440 +1420,200 @@ end
 -- Main Options Panel
 -- ============================================================================
 
+-- The options window (2.0.x): LibSquizzShell-1.0, the window shared with
+-- SquizzFrames (Libs/; a copy in each addon -- change both and bump MINOR). It
+-- draws the title bar (name, search, Unlock Frames, close), the grouped
+-- sidebar, each page's header, the preview column, resizing, Escape and the
+-- hide-in-combat; this function only registers the pages and builds them.
+--
+-- What stayed ours:
+--   * every page builder, unchanged -- each is handed its frame, as before,
+--     and BH[page.field] still names it
+--   * the settings search: ns.Rows indexes every row as it is built, and the
+--     shell asks it for results (spec.search) so ranking, sub-tab jumps and
+--     the flash are exactly what they were
+--   * the preview column's content (UI/PreviewColumn.lua), built into the
+--     shell's column, with its own heading
+--   * BH.switchTab(key), self.optionsPanel (the window frame, still named
+--     SQUIZZUMABLESOptions) and self.unlockBtn, which the rest of the addon uses
 function BH:CreateOptionsPanel()
     if not self.consumables then
         self:LoadSettings()
     end
 
-    if self.optionsPanel then
+    if self.optionsWindow then
         self:RefreshItemList()
         self:RefreshSettingsTab()
         self:RefreshRaidToolsTab()
         self:RefreshTextRemindersTab()
         if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
-        self.optionsPanel:Show()
+        self.optionsWindow:Open()
         return
     end
 
-    -- Main frame
-    local panel = CreateFrame("Frame", "SQUIZZUMABLESOptions", UIParent, "BackdropTemplate")
-    -- Wider than the old 460x600: ten categories no longer have to be crammed
-    -- into a tab strip that wrapped onto two rows, and the extra width gives
-    -- the option rows somewhere to breathe. 900 since 2.0's preview column
-    -- (230px on the right of a page): the pages are laid out at up to 400px
-    -- plus a scrollbar, so the minimum keeps them clear of it.
-    panel:SetSize(900, 620)
-    panel:SetPoint("CENTER")
-    panel:SetFrameStrata("DIALOG")
-    panel:SetMovable(true)
-    panel:SetResizable(true)
-    if panel.SetResizeBounds then
-        panel:SetResizeBounds(840, 520)
-    elseif panel.SetMinResize then
-        panel:SetMinResize(840, 520)
-    end
-    panel:EnableMouse(true)
-    ApplySQBackdrop(panel, SQ_COLORS.bg, SQ_COLORS.border)
-    self.optionsPanel = panel
-
-    -- Resize grip, bottom-right.
-    local resizeGrip = CreateFrame("Button", nil, panel)
-    resizeGrip:SetSize(16, 16)
-    resizeGrip:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -2, 2)
-    local gripTex = resizeGrip:CreateTexture(nil, "OVERLAY")
-    gripTex:SetAllPoints()
-    gripTex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    gripTex:SetVertexColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    resizeGrip:SetScript("OnMouseDown", function() panel:StartSizing("BOTTOMRIGHT") end)
-    resizeGrip:SetScript("OnMouseUp", function() panel:StopMovingOrSizing() end)
-
-    -- Combat protection: hide in combat, show after
-    panel:RegisterEvent("PLAYER_REGEN_DISABLED")
-    panel:RegisterEvent("PLAYER_REGEN_ENABLED")
-    panel.wasShown = false
-    panel:SetScript("OnEvent", function(self, event)
-        if event == "PLAYER_REGEN_DISABLED" then
-            if self:IsShown() then
-                self.wasShown = true
-                self:Hide()
-            end
-        elseif event == "PLAYER_REGEN_ENABLED" then
-            if self.wasShown then
-                self.wasShown = false
-                self:Show()
-            end
-        end
-    end)
-
-    -- Title bar
-    local titleBar = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    titleBar:SetHeight(32)
-    titleBar:SetPoint("TOPLEFT", panel, "TOPLEFT", 1, -1)
-    titleBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -1, -1)
-    titleBar:SetBackdrop({
-        bgFile = "Interface\\BUTTONS\\WHITE8X8",
-    })
-    titleBar:SetBackdropColor(SQ_COLORS.titleBar[1], SQ_COLORS.titleBar[2], SQ_COLORS.titleBar[3], SQ_COLORS.titleBar[4])
-    titleBar:EnableMouse(true)
-    titleBar:RegisterForDrag("LeftButton")
-    titleBar:SetScript("OnDragStart", function() panel:StartMoving() end)
-    titleBar:SetScript("OnDragStop", function() panel:StopMovingOrSizing() end)
-
-    -- Title text
-    local titleMain = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleMain:SetPoint("LEFT", titleBar, "LEFT", 12, 0)
-    titleMain:SetText("SQUIZZUMABLES")
-    titleMain:SetTextColor(SQ_COLORS.textBright[1], SQ_COLORS.textBright[2], SQ_COLORS.textBright[3])
-
-    local titleSub = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    titleSub:SetPoint("LEFT", titleMain, "RIGHT", 6, 0)
-    titleSub:SetText("Configuration")
-    titleSub:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, titleBar)
-    closeBtn:SetSize(32, 32)
-    closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -2, 0)
-    local closeText = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    closeText:SetPoint("CENTER")
-    closeText:SetText("X")
-    closeText:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-    closeBtn:SetScript("OnEnter", function() closeText:SetTextColor(SQ_COLORS.danger[1], SQ_COLORS.danger[2], SQ_COLORS.danger[3]) end)
-    closeBtn:SetScript("OnLeave", function() closeText:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3]) end)
-    closeBtn:SetScript("OnClick", function() panel:Hide() end)
-    -- Also close on Escape
-    table.insert(UISpecialFrames, "SQUIZZUMABLESOptions")
-
-    -- ------------------------------------------------------------------------
-    -- Settings search
-    --
-    -- Every option widget indexes itself as it is built, so this is only the
-    -- box, the results list and the jump. Sits in the title bar, left of the
-    -- close button.
-    -- ------------------------------------------------------------------------
-    -- Unlock Frames lives in the title bar rather than on the Settings tab, so
-    -- it is one click away from whichever category is open -- positioning
-    -- frames is something you do while looking at their settings, not after
-    -- navigating back to Settings. Placed left of the search box to keep it off
-    -- the close button.
-    local unlockBtn = CreateSQButton(titleBar, "Unlock Frames", 112, 22)
-    unlockBtn:SetScript("OnClick", function()
-        BH:SetUnlockMode(not BH.unlockMode)
-    end)
-    ns.Rows.AddTooltip(unlockBtn, "Unlock Frames",
-        "Makes every draggable frame in the addon visible and movable at once, whatever its own "
-        .. "lock setting says. The options panel hides while unlocked so it is not in the way. "
-        .. "Also available as /sq unlock.")
-    self.unlockBtn = unlockBtn
-
-    local searchBox = CreateSQEditBox(titleBar, 180, 20, { maxLetters = 40 })
-    searchBox:SetPoint("RIGHT", closeBtn, "LEFT", -8, 0)
-
-    local searchHint = searchBox:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    searchHint:SetPoint("LEFT", searchBox, "LEFT", 4, 0)
-    searchHint:SetText("Search settings...")
-    searchHint:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-
-    -- Results drop below the box, over the content area.
-    local resultsFrame = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    resultsFrame:SetPoint("TOPRIGHT", searchBox, "BOTTOMRIGHT", 4, -4)
-    resultsFrame:SetWidth(300)
-    resultsFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-    ApplySQBackdrop(resultsFrame, SQ_COLORS.bg, SQ_COLORS.border)
-    resultsFrame:Hide()
-    self.searchResultsFrame = resultsFrame
-
-    local MAX_RESULTS  = 8
-    local RESULT_H     = 30
-    local resultButtons = {}
-
-    local function HideResults()
-        resultsFrame:Hide()
-    end
-
-    local function ShowResults(query)
-        local results = ns.Rows.Search(query, MAX_RESULTS)
-        if #results == 0 then
-            HideResults()
-            return
-        end
-        for i, res in ipairs(results) do
-            local btn = resultButtons[i]
-            if not btn then
-                btn = CreateFrame("Button", nil, resultsFrame)
-                btn:SetHeight(RESULT_H)
-                btn:SetPoint("TOPLEFT", resultsFrame, "TOPLEFT", 4, -4 - (i - 1) * RESULT_H)
-                btn:SetPoint("TOPRIGHT", resultsFrame, "TOPRIGHT", -4, -4 - (i - 1) * RESULT_H)
-
-                local hl = btn:CreateTexture(nil, "BACKGROUND")
-                hl:SetAllPoints()
-                hl:SetColorTexture(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 0.6)
-                hl:Hide()
-                btn:SetScript("OnEnter", function() hl:Show() end)
-                btn:SetScript("OnLeave", function() hl:Hide() end)
-
-                btn.title = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                btn.title:SetPoint("TOPLEFT", btn, "TOPLEFT", 6, -3)
-                btn.title:SetJustifyH("LEFT")
-                btn.title:SetTextColor(SQ_COLORS.text[1], SQ_COLORS.text[2], SQ_COLORS.text[3])
-
-                -- Which category the option lives in, so a result is
-                -- identifiable when two tabs use a similar label ("Scale"
-                -- appears on several).
-                btn.where = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                btn.where:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 6, 3)
-                btn.where:SetJustifyH("LEFT")
-                ns.ApplyAccent(btn.where, "text")
-
-                resultButtons[i] = btn
-            end
-            btn.title:SetText(res.entry.label)
-            -- "Raid Tools > Pull Timer" where the page has sub-tabs, so a
-            -- result names the sub-tab it will switch to rather than just the
-            -- page, which for a six-section page says almost nothing.
-            local pageLabel = res.entry.page and res.entry.page.label or ""
-            local sectionLabel = res.entry.section and res.entry.section.label
-            btn.where:SetText(sectionLabel and (pageLabel .. " > " .. sectionLabel) or pageLabel)
-            btn:SetScript("OnClick", function()
-                ns.Rows.JumpTo(res.entry)
-                searchBox:SetText("")
-                searchBox:ClearFocus()
-                searchHint:Show()
-                HideResults()
-            end)
-            btn:Show()
-        end
-        for i = #results + 1, #resultButtons do resultButtons[i]:Hide() end
-        resultsFrame:SetHeight(#results * RESULT_H + 8)
-        resultsFrame:Show()
-    end
-
-    searchBox:SetScript("OnTextChanged", function(box)
-        local text = box:GetText()
-        searchHint:SetShown(text == "")
-        ShowResults(text)
-    end)
-    searchBox.onFocusGained = function() searchHint:Hide() end
-    searchBox.onFocusLost = function(box)
-        searchHint:SetShown(box:GetText() == "")
-    end
-    searchBox:SetScript("OnEscapePressed", function(box)
-        box:SetText("")
-        box:ClearFocus()
-        HideResults()
-    end)
-    -- Enter takes the top result, so a query can be completed without the mouse.
-    searchBox:SetScript("OnEnterPressed", function(box)
-        local results = ns.Rows.Search(box:GetText(), 1)
-        if results[1] then ns.Rows.JumpTo(results[1].entry) end
-        box:SetText("")
-        box:ClearFocus()
-        HideResults()
-    end)
-
-    -- Anchored after the search box exists, so it sits to its left rather than
-    -- next to the close button, where a misclick would shut the panel.
-    unlockBtn:SetPoint("RIGHT", searchBox, "LEFT", -10, 0)
-    panel:HookScript("OnHide", HideResults)
-
-    -- Accent line under title
-    local accentLine = titleBar:CreateTexture(nil, "OVERLAY")
-    accentLine:SetHeight(1)
-    accentLine:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
-    accentLine:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
-    ns.ApplyAccent(accentLine, "texture", 0.4)
-
-    -- Left navigation sidebar.
-    --
-    -- Replaces a horizontal tab strip that had to wrap onto two rows to fit ten
-    -- categories. A vertical list scales to any number of entries, keeps every
-    -- category visible at once, and leaves the full width of the panel for the
-    -- options themselves.
-    local NAV_WIDTH  = 180
-    local NAV_ITEM_H = 26
-
-    local navBar = CreateFrame("Frame", nil, panel, "BackdropTemplate")
-    navBar:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 0, 0)
-    navBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 1, 40)
-    navBar:SetWidth(NAV_WIDTH)
-    navBar:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
-    navBar:SetBackdropColor(SQ_COLORS.tabInactive[1], SQ_COLORS.tabInactive[2], SQ_COLORS.tabInactive[3], 1)
-
-    -- Divider between the sidebar and the content area.
-    local navEdge = navBar:CreateTexture(nil, "OVERLAY")
-    navEdge:SetWidth(1)
-    navEdge:SetPoint("TOPRIGHT", navBar, "TOPRIGHT", 0, 0)
-    navEdge:SetPoint("BOTTOMRIGHT", navBar, "BOTTOMRIGHT", 0, 0)
-    navEdge:SetColorTexture(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.5)
+    local Shell = LibStub("LibSquizzShell-1.0")
+    local bh = self
 
     -- The pages, in six named groups (2.0 shell, design doc "Options window").
     -- Keys are the 1.x tab keys, which search, BH.switchTab and the slash
     -- commands use; `field` is the frame's name on BH, which the page builders
     -- and refreshers use; `build` is the BH method that fills it (Consumables
-    -- is built further down, by hand). No Nameplates page: the purge-glow
+    -- is built by BuildConsumablesPage). No Nameplates page: the purge-glow
     -- module is disabled and unloaded -- see the Nameplate purge glow note in
     -- CLAUDE.md for what to restore when the feature comes back.
     local NAV = {
         { group = "Reminders", pages = {
-            { key = "items",      label = "Consumables",      field = "itemsTab",         preview = "buttons" },
-            { key = "classbuffs", label = "Class Buffs",      field = "classBuffsTab",    build = "BuildClassBuffsTab", preview = "buttons" },
-            { key = "reminders",  label = "Text Reminders",   field = "textRemindersTab", build = "BuildTextRemindersTab", preview = "textreminders" },
+            { key = "items",      label = "Consumables",      field = "itemsTab",         preview = "buttons",
+              subtitle = "Food, flasks, oils and the rest of your consumables" },
+            { key = "classbuffs", label = "Class Buffs",      field = "classBuffsTab",    build = "BuildClassBuffsTab", preview = "buttons",
+              subtitle = "Your class's buffs, pets and weapon imbues" },
+            { key = "reminders",  label = "Text Reminders",   field = "textRemindersTab", build = "BuildTextRemindersTab", preview = "textreminders",
+              subtitle = "On-screen reminders for what you're missing" },
         } },
         { group = "Cooldowns", pages = {
-            { key = "cdm",        label = "Cooldown Manager", field = "cdmTab",           build = "BuildCDMTab" },
-            { key = "cdmcustom",  label = "Custom Icons",     field = "cdmCustomTab",     build = "BuildCustomCooldownsTab" },
+            { key = "cdm",        label = "Cooldown Manager", field = "cdmTab",           build = "BuildCDMTab",
+              subtitle = "Your cooldown, utility and buff groups" },
+            { key = "cdmcustom",  label = "Custom Icons",     field = "cdmCustomTab",     build = "BuildCustomCooldownsTab",
+              subtitle = "Icons of your own for spells and items" },
         } },
         { group = "Alerts", pages = {
-            { key = "kel",        label = "Kelerts",          field = "kelTab",           build = "BuildJustForKelTab", preview = "kelerts" },
-            { key = "sounds",     label = "Sounds",           field = "soundsTab",        build = "BuildSoundsTab" },
+            { key = "kel",        label = "Kelerts",          field = "kelTab",           build = "BuildJustForKelTab", preview = "kelerts",
+              subtitle = "Alerts for buffs, cooldowns and more" },
+            { key = "sounds",     label = "Sounds",           field = "soundsTab",        build = "BuildSoundsTab",
+              subtitle = "Sounds for your alerts" },
         } },
         { group = "Group", pages = {
-            { key = "raidtools",  label = "Raid Tools",       field = "raidToolsTab",     build = "BuildRaidToolsTab", preview = "raidtools" },
-            { key = "callouts",   label = "Callouts",         field = "calloutsTab",      build = "BuildCalloutsTab", preview = "callouts" },
+            { key = "raidtools",  label = "Raid Tools",       field = "raidToolsTab",     build = "BuildRaidToolsTab", preview = "raidtools",
+              subtitle = "Markers, pull timer, ready check and more" },
+            { key = "callouts",   label = "Callouts",         field = "calloutsTab",      build = "BuildCalloutsTab", preview = "callouts",
+              subtitle = "Quick callouts for your group" },
         } },
         { group = "Fun", pages = {
-            { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab", preview = "cursor" },
+            { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab", preview = "cursor",
+              subtitle = "Effects that follow your cursor" },
         } },
         { group = "General", pages = {
-            { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab", preview = "buttons" },
+            { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab", preview = "buttons",
+              subtitle = "Theme, profiles and general options" },
         } },
     }
     -- The order the pages were always BUILT in, kept as it was: a builder may
-    -- lean on something an earlier one set up, and the sidebar's new order is
-    -- no reason to find out.
+    -- lean on something an earlier one set up, and the sidebar's order is no
+    -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor" }
+        "classbuffs", "callouts", "kel", "cursor", "items" }
 
-    local NAV_GROUP_H = 22
-
-    local navCursorY = -6
-
-    -- A group's name above its pages: small, accent-coloured, not clickable.
-    local function CreateGroupHeading(text)
-        local fs = navBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        fs:SetPoint("TOPLEFT", navBar, "TOPLEFT", 12, navCursorY - 8)
-        fs:SetJustifyH("LEFT")
-        fs:SetText(text:upper())
-        ns.ApplyAccent(fs, "text", 0.85)
-        navCursorY = navCursorY - NAV_GROUP_H
-        return fs
-    end
-
-    local function CreateTab(text)
-        local item = CreateFrame("Button", nil, navBar, "BackdropTemplate")
-        item:SetHeight(NAV_ITEM_H)
-        item:SetPoint("TOPLEFT", navBar, "TOPLEFT", 0, navCursorY)
-        item:SetPoint("TOPRIGHT", navBar, "TOPRIGHT", -1, navCursorY)
-        navCursorY = navCursorY - NAV_ITEM_H
-
-        item:SetBackdrop({ bgFile = "Interface\\BUTTONS\\WHITE8X8" })
-        item:SetBackdropColor(0, 0, 0, 0)
-
-        local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        itemLabel:SetPoint("LEFT", item, "LEFT", 22, 0)
-        itemLabel:SetJustifyH("LEFT")
-        itemLabel:SetText(text)
-        itemLabel:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-        item.label = itemLabel
-
-        -- Accent bar down the left edge of the selected entry, replacing the
-        -- underline the horizontal tabs used.
-        local marker = item:CreateTexture(nil, "OVERLAY")
-        marker:SetWidth(3)
-        marker:SetPoint("TOPLEFT", item, "TOPLEFT", 0, 0)
-        marker:SetPoint("BOTTOMLEFT", item, "BOTTOMLEFT", 0, 0)
-        ns.ApplyAccent(marker, "texture", 1)
-        marker:Hide()
-        item.marker = marker
-
-        item:SetScript("OnEnter", function(self)
-            if not self.isActive then
-                self:SetBackdropColor(SQ_COLORS.controlHi[1], SQ_COLORS.controlHi[2], SQ_COLORS.controlHi[3], 0.5)
-            end
-        end)
-        item:SetScript("OnLeave", function(self)
-            if not self.isActive then self:SetBackdropColor(0, 0, 0, 0) end
-        end)
-
-        item.SetActive = function(self, active)
-            self.isActive = active
-            if active then
-                self:SetBackdropColor(SQ_COLORS.tabActive[1], SQ_COLORS.tabActive[2], SQ_COLORS.tabActive[3], 1)
-                self.label:SetTextColor(SQ_COLORS.textBright[1], SQ_COLORS.textBright[2], SQ_COLORS.textBright[3])
-                self.marker:Show()
-            else
-                self:SetBackdropColor(0, 0, 0, 0)
-                self.label:SetTextColor(SQ_COLORS.textDim[1], SQ_COLORS.textDim[2], SQ_COLORS.textDim[3])
-                self.marker:Hide()
-            end
-        end
-        return item
-    end
-
-    -- Content area: everything right of the sidebar.
-    local contentArea = CreateFrame("Frame", nil, panel)
-    contentArea:SetPoint("TOPLEFT", navBar, "TOPRIGHT", 1, 0)
-    contentArea:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 40)
-
-    -- One sidebar entry and one content frame per page. A page with a
-    -- `preview` kind gets a preview column on its right (UI/PreviewColumn.lua)
-    -- and is narrowed to make room for it.
-    local navButtons, tabFrames, pageByKey, previews = {}, {}, {}, {}
-    for _, group in ipairs(NAV) do
-        CreateGroupHeading(group.group)
-        for _, page in ipairs(group.pages) do
-            local frame = CreateFrame("Frame", nil, contentArea)
-            local preview = page.preview and ns.PreviewColumn.Create(contentArea, page.preview)
-            if preview then
-                frame:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, 0)
-                frame:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -ns.PreviewColumn.WIDTH, 0)
-                previews[page.key] = preview
-            else
-                frame:SetAllPoints()
-            end
-            frame:Hide()
-            self[page.field] = frame
-            tabFrames[page.key] = frame
-            pageByKey[page.key] = page
-            local key = page.key
-            local btn = CreateTab(page.label)
-            navButtons[key] = btn
-            btn:SetScript("OnClick", function() self.switchTab(key) end)
-        end
-    end
-
-    local function SwitchTab(active)
-        for key, btn in pairs(navButtons) do
-            local was = tabFrames[key]:IsShown()
-            btn:SetActive(key == active)
-            tabFrames[key]:SetShown(key == active)
-            if previews[key] then previews[key]:SetShown(key == active) end
-            -- 2.0 motion: the page coming in fades up over 0.12s (instant
-            -- with Reduce motion). The one going is simply hidden.
-            if key == active and not was then
-                ns.Motion.Appear(tabFrames[key], 0.12)
-                if previews[key] then ns.Motion.Appear(previews[key], 0.12) end
-            end
-        end
-    end
-    self.switchTab = SwitchTab
-    SwitchTab("settings")
-
-    -- Build each page with ns.Rows.currentPage set, so every option widget the
-    -- page creates is indexed against the right sidebar category. That is what
-    -- lets the settings search say where a result lives and jump to it.
-    for _, key in ipairs(BUILD_ORDER) do
-        local page = pageByKey[key]
-        local builder = self[page.build]
-        if builder then
+    -- Build a page with ns.Rows.currentPage set, so every option widget it
+    -- creates is indexed against it -- that is what lets a search result say
+    -- where it lives and jump to it.
+    local function Builder(page)
+        return function(host)
+            bh[page.field] = host
             ns.Rows.currentPage = page
-            builder(self, tabFrames[key])
+            if page.key == "items" then
+                bh:BuildConsumablesPage(host)
+            else
+                local builder = bh[page.build]
+                if builder then builder(bh, host) end
+            end
+            ns.Rows.currentPage = nil
         end
     end
-    ns.Rows.currentPage = nil
-    local itemsTab = tabFrames.items
 
-    -- Build items tab
+    local groups = {}
+    for _, group in ipairs(NAV) do
+        local pages = {}
+        for _, page in ipairs(group.pages) do
+            local kind = page.preview
+            pages[#pages + 1] = {
+                key = page.key, label = page.label, subtitle = page.subtitle,
+                layout = "fill",
+                build = Builder(page),
+                preview = kind and function(column)
+                    local pc = ns.PreviewColumn.Create(column, kind)
+                    if pc then
+                        pc:ClearAllPoints()
+                        pc:SetAllPoints(column)
+                        pc:Show()
+                    end
+                end or nil,
+                previewTitle = false, -- PreviewColumn draws its own heading
+            }
+        end
+        groups[#groups + 1] = { label = group.group, pages = pages }
+    end
+
+    Shell:RegisterAddon("Squizzumables", {
+        title = "Squizzumables",
+        groups = groups,
+        -- Our own search: fuzzy, ranked, and its jump opens the right sub-tab
+        -- and flashes the row. The window has already shown the page, so the
+        -- jump's own switchTab is stood down for the call.
+        search = function(query)
+            local out = {}
+            for _, res in ipairs(ns.Rows.Search(query, 12)) do
+                local e = res.entry
+                if e.page and e.page.key then
+                    out[#out + 1] = {
+                        label = e.label,
+                        page = e.page.key,
+                        path = e.page.label .. ((e.section and e.section.label) and (" > " .. e.section.label) or ""),
+                        onSelect = function()
+                            local switch = bh.switchTab
+                            bh.switchTab = nil
+                            ns.Rows.JumpTo(e)
+                            bh.switchTab = switch
+                        end,
+                    }
+                end
+            end
+            return out
+        end,
+    })
+
+    local win = Shell:CreateWindow({
+        name = "SQUIZZUMABLESOptions",
+        addons = { "Squizzumables" },
+        title = "SQUIZZUMABLES",
+        width = 900, height = 620,
+        minWidth = 840, minHeight = 520,
+        previewWidth = ns.PreviewColumn.WIDTH,
+        combat = "hide",
+        buttons = {
+            { key = "unlock", label = self.unlockMode and "Lock Frames" or "Unlock Frames", width = 112,
+              tip = "Makes every draggable frame in the addon visible and movable at once, whatever "
+                .. "its own lock setting says. The options panel hides while unlocked so it is not in "
+                .. "the way. Also available as /sq unlock.",
+              onClick = function() bh:SetUnlockMode(not bh.unlockMode) end },
+        },
+        -- 2.0 motion: the page coming in fades up over 0.12s (instant with
+        -- Reduce motion), its preview with it.
+        onShowPage = function(_, _, page)
+            if page and page.frame then ns.Motion.Appear(page.frame, 0.12) end
+            if page and page.previewFrame then ns.Motion.Appear(page.previewFrame, 0.12) end
+        end,
+    })
+    self.optionsWindow = win
+    self.optionsPanel = win.frame
+    self.unlockBtn = win.buttons.unlock
+    self.switchTab = function(key) win:ShowPage("Squizzumables:" .. key) end
+
+    local order = {}
+    for _, key in ipairs(BUILD_ORDER) do order[#order + 1] = "Squizzumables:" .. key end
+    win:BuildAllPages(order)
+
+    self:RefreshItemList()
+    self:RefreshClassBuffList()
+    self:RefreshSettingsTab()
+    self:RefreshRaidToolsTab()
+    self:RefreshTextRemindersTab()
+    if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
+    self:RefreshCalloutsTab()
+    win:Open("Squizzumables:settings")
+end
+
+-- The Consumables page: built by hand rather than from rows, as it always was.
+function BH:BuildConsumablesPage(itemsTab)
     local desc = itemsTab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     desc:SetPoint("TOPLEFT", itemsTab, "TOPLEFT", 14, -10)
     desc:SetWidth(400)
@@ -1869,31 +1629,6 @@ function BH:CreateOptionsPanel()
     scrollChild:SetSize(390, 1)
     scrollFrame:SetScrollChild(scrollChild)
     self.scrollChild = scrollChild
-
-    -- Bottom bar with close button
-    local bottomBar = CreateFrame("Frame", nil, panel)
-    bottomBar:SetHeight(40)
-    bottomBar:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 1, 1)
-    bottomBar:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 1)
-
-    local bottomLine = bottomBar:CreateTexture(nil, "OVERLAY")
-    bottomLine:SetHeight(1)
-    bottomLine:SetPoint("TOPLEFT", bottomBar, "TOPLEFT", 0, 0)
-    bottomLine:SetPoint("TOPRIGHT", bottomBar, "TOPRIGHT", 0, 0)
-    bottomLine:SetColorTexture(SQ_COLORS.border[1], SQ_COLORS.border[2], SQ_COLORS.border[3], 0.3)
-
-    local closeBtnBottom = CreateSQButton(bottomBar, "Close", 80, 26)
-    closeBtnBottom:SetPoint("CENTER", bottomBar, "CENTER", 0, 0)
-    closeBtnBottom:SetScript("OnClick", function() panel:Hide() end)
-
-    self:RefreshItemList()
-    self:RefreshClassBuffList()
-    self:RefreshSettingsTab()
-    self:RefreshRaidToolsTab()
-    self:RefreshTextRemindersTab()
-    if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
-    self:RefreshCalloutsTab()
-    panel:Show()
 end
 
 

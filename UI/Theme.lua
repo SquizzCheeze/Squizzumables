@@ -55,6 +55,8 @@ local function UpdateRainbowTicker()
             local panel = _G.SQUIZZUMABLESOptions
             if panel and panel:IsShown() and ns.RefreshAccentColors then
                 ns.RefreshAccentColors()
+                local BH = ns.BH
+                if BH and BH.optionsWindow then BH.optionsWindow:RefreshAccent() end
             end
         end)
     elseif not want and rainbowTicker then
@@ -98,6 +100,9 @@ end
 function Theme.Apply()
     UpdateRainbowTicker()
     if ns.RefreshAccentColors then ns.RefreshAccentColors() end
+    -- The options window's own accent (LibSquizzShell: selected sidebar row).
+    local BH = ns.BH
+    if BH and BH.optionsWindow then BH.optionsWindow:RefreshAccent() end
 end
 
 LST:RegisterCallback(Theme.Apply)

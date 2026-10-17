@@ -280,6 +280,20 @@ shell, setup and polish), each gated.
   the grid now changes height. `MigrateBuffEventAlerts` moved old Active/Applied/Removed cooldown
   entries into `BuffSounds()` once per spec (`sd.buffEventsMoved`; waits if `soundAlertsBySpell` is not
   yet set; never overwrites).
+- ⚠ **The options WINDOW is now SHARED with SquizzFrames (2026-10-17, SquizzFrames 2.0 phase 3
+  step 6).** `Libs/LibSquizzShell-1.0`, byte-identical to SquizzFrames' copy (change both, bump
+  `MINOR`). `BH:CreateOptionsPanel` only registers the pages (`Shell:RegisterAddon("Squizzumables")`,
+  one `NAV` table, every page `layout = "fill"`) and builds them in `BUILD_ORDER` through
+  `win:BuildAllPages(order)`; the shell draws the title bar, search box, Unlock Frames button,
+  sidebar, page header, preview column, resize, Escape and the combat hide. Kept as they were and
+  still the contract for the rest of the addon: every page builder (handed its frame; `BH[field]`
+  names it), `BH.switchTab(key)`, `self.optionsPanel` (the window frame, still the global
+  `SQUIZZUMABLESOptions`), `self.unlockBtn` (a shell button; `SetText` works). Search is still
+  `ns.Rows`: the shell asks `spec.search(query)`, which maps `Rows.Search` results and jumps with
+  `Rows.JumpTo` (with `switchTab` stood down -- the window has shown the page). Preview columns are
+  `ns.PreviewColumn.Create` built into the shell's column (`previewTitle = false`, they draw their
+  own heading). Consumables is `BH:BuildConsumablesPage`. The bottom Close bar is gone (the title
+  bar's X and Escape remain). The notes below describe the pre-shell window where they differ.
 - ⚠ **Theme is now SHARED with SquizzFrames (2026-10-17, SquizzFrames 2.0 phase 1).** The palette,
   presets and the CHOICE moved into `Libs/LibSquizzTheme-1.0` (a byte-identical copy in each addon;
   change both and bump `MINOR`, same rule as LibSquizzGrid). `UI/Theme.lua` is now a thin layer keeping
