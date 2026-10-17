@@ -123,7 +123,10 @@ function BH:UpdateRaidToolsVisibility()
         -- was left: it used to be re-anchored to the options panel every time,
         -- which meant it jumped back beside the panel on each toggle and could
         -- not be parked somewhere out of the way.
-        if self.previewControlFrame then
+        -- Not when Blizzard's Edit Mode did the unlocking (UI/EditMode.lua sets
+        -- unlockFromBlizzard): its own Save and close end it, and the box only
+        -- sat on top of Edit Mode's frames (user screenshot 2026-10-17).
+        if self.previewControlFrame and not self.unlockFromBlizzard then
             self:LoadUnlockControlPosition()
             self.previewControlFrame:Show()
         end

@@ -215,14 +215,20 @@ if EventRegistry and EventRegistry.RegisterCallback then
         local BH = ns.BH
         if not (BH and BH.SetUnlockMode and BH.settings) then return end
         if BH.settings.followBlizzardEditMode == false or BH.unlockMode then return end
+        -- Read by SetAllFramesPreview: no Lock All / Done box when Blizzard's
+        -- Edit Mode did the unlocking -- its own Save and close do that job
+        -- (user screenshot 2026-10-17). Cleared on exit.
+        BH.unlockFromBlizzard = true
         BH:SetUnlockMode(true, false, true)
         unlockedForBlizzard = BH.unlockMode and true or false
+        if not unlockedForBlizzard then BH.unlockFromBlizzard = nil end
     end, EditMode)
     EventRegistry:RegisterCallback("EditMode.Exit", function()
         local BH = ns.BH
         if not unlockedForBlizzard then return end
         unlockedForBlizzard = false
         if BH and BH.unlockMode then BH:SetUnlockMode(false, false, true) end
+        if BH then BH.unlockFromBlizzard = nil end
     end, EditMode)
 end
 

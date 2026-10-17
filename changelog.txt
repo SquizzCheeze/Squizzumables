@@ -13,6 +13,9 @@ V2.1
   poisons, paladin auras and Rites, and the rest. They used to be hidden
   for the whole key. Inside a key the group buffs hide in combat like the
   other buttons, where elsewhere they stay up so you can rebuff someone.
+- The Frames Unlocked box (Lock All / Done) no longer shows in Blizzard's
+  Edit Mode, which has its own Save and close. It still shows with
+  /sq unlock and the options window's Unlock Frames.
 - Fixed: with Hide Blizzard's Cooldown Manager on, Blizzard's own cooldown
   bars and icons sat in the top-left corner of the screen in Blizzard's
   Edit Mode. They are now moved fully off screen while it is open.
