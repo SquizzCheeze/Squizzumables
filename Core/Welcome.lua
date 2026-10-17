@@ -21,6 +21,15 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.1"] = {
+        "The options window is now shared with SquizzFrames, and /squizz opens one window for both addons when you have both: search covers both, and Edit Mode moves both addons' frames at once.",
+        "/sq on its own opens the options window (/sq help lists the commands).",
+        "One theme for both addons: picking a preset in either changes both, and it is saved for your whole account.",
+        "Class buff buttons (Arcane Intellect, Skyfury, Earth Shield, poisons and the rest) now show during a Mythic+ key, out of combat.",
+        "Fixed: pet buttons were missing inside a Mythic+ key. Hunters also get a Revive Pet button when the pet has died.",
+        "Fixed: a group buff button could stay on screen after you had the buff, with an \"Unknown macro option: buff\" error.",
+        "In Blizzard's Edit Mode, the Buffs groups show sample icons and Blizzard's own cooldown bars move fully off screen.",
+    },
     -- 2.0 (design doc "Moving from 1.x"): the new look, the grouped sidebar,
     -- themes, Edit Mode and setup, pointing at the theme picker.
     ["2.0"] = {
