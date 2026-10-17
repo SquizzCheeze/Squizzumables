@@ -123,10 +123,11 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
     local info = BH.classBuffs and BH.classBuffs[class]
     if info then
         if info.auraCheck and info.auras then
-            -- Auras cannot be changed in M+ (aura mastery doesn't swap the aura) - skip entirely
-            -- Also skip while dead/ghost: the aura persists but the API can't read
+            -- Skip while dead/ghost: the aura persists but the API can't read
             -- player buffs in that state, which would cause a false alert + sound.
-            if BH.challengeModeActive or UnitIsDeadOrGhost("player") then
+            -- Shown in M+ too since 2.1 (user request 2026-10-17): an aura can be
+            -- cast between pulls, and these buttons only rebuild out of combat.
+            if UnitIsDeadOrGhost("player") then
                 -- do nothing
             else
             -- Paladin aura logic: scan group paladins to see who has which aura
@@ -219,7 +220,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                     end
                 end
             end
-            end -- challengeModeActive else
+            end -- dead or ghost else
 
             -- Lightsmith weapon imbue buttons (Rite of Sanctification / Rite of Adjuration)
             -- Lightsmith is a Holy *and* Protection hero tree, and the two Rites are a
@@ -228,8 +229,8 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
             -- Lightsmith paladin. The oil block below keys off the same two spell IDs
             -- and must stay in agreement, or a Rite user gets an oil button competing
             -- for the same main-hand slot.
-            -- Not shown in M+ (can't be cast mid-key), not shown while dead.
-            if not BH.challengeModeActive and not UnitIsDeadOrGhost("player") then
+            -- Not shown while dead. Shown in M+ since 2.1: a Rite can be cast between pulls.
+            if not UnitIsDeadOrGhost("player") then
                 local paladinRites = info.weaponImbues or {}
                 for _, rite in ipairs(paladinRites) do
                     if rite.spellID and BH.PlayerKnowsSpell(rite.spellID) and self:IsEnabled(rite.spellID) then
@@ -287,8 +288,12 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                 end
             end
 
-            -- Normal class buff handling: skip in M+ (buttons not usable mid-key)
-            if not BH.challengeModeActive then
+            -- Normal class buff handling. Shown in M+ too since 2.1 (user request
+            -- 2026-10-17): these were skipped for a whole key on the belief that
+            -- they could not be used mid-key, but they can be cast between pulls,
+            -- and the buttons only rebuild out of combat (see UpdateButtons). The
+            -- group-wide ones stay out-of-combat only inside a key: see cbBtn below.
+            do
             local buffList = info.spellID and { info } or info
 
             -- Earth Shield button logic (priority-based, max 2 buttons):
@@ -568,8 +573,17 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                             local icon = GetSpellIcon(castID)
                             if icon then
                                 local cbBtn = CreateButton(id, icon, "Cast buff", "spell", castID, nil, nil, nil)
-                                cbBtn.isCombatBuff = true
-                                cbBtn:SetParent(BH.combatBuffFrame)  -- stays visible in combat
+                                -- Outside a key, group-wide buffs stay visible in combat
+                                -- (rebuff someone who died mid-fight). Inside a key they
+                                -- are out-of-combat only, like every other button here
+                                -- (user request 2026-10-17): parented to BH.frame, which
+                                -- hides on PLAYER_REGEN_DISABLED.
+                                if BH.challengeModeActive then
+                                    cbBtn:SetParent(BH.frame)
+                                else
+                                    cbBtn.isCombatBuff = true
+                                    cbBtn:SetParent(BH.combatBuffFrame)  -- stays visible in combat
+                                end
                                 -- No in-combat auto-hide. This used to register a
                                 -- "[combat,buff:<name>]hide;show" state driver, but "buff" is
                                 -- not a macro option the game knows, for ANY name (not just ones
@@ -581,7 +595,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                                 -- (user report 2026-10-17, Skyfury, solo). The button now simply
                                 -- goes on the next out-of-combat refresh.
                                 self.buttons[id] = cbBtn
-                                hasCombatBuff = true
+                                if not BH.challengeModeActive then hasCombatBuff = true end
                                 classBuff_spellIDs_this_pass[buffInfo.spellID] = true
                                 id = id+1
                             end
@@ -589,7 +603,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                     end
                 end
             end
-            end  -- not challengeModeActive
+            end  -- normal class buff handling
         end
     end
     return id, hasPetButton, hasCombatBuff

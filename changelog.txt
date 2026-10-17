@@ -8,6 +8,11 @@ V2.1
   an "Unknown macro option: buff" error, until a /reload. The button was
   trying to hide itself in combat with a rule the game does not support. It
   now just goes away on the next refresh out of combat.
+- Class buff buttons now show during a Mythic+ key, out of combat:
+  Arcane Intellect, Skyfury, Earth Shield, Water and Lightning Shield,
+  poisons, paladin auras and Rites, and the rest. They used to be hidden
+  for the whole key. Inside a key the group buffs hide in combat like the
+  other buttons, where elsewhere they stay up so you can rebuff someone.
 - The theme is now shared with SquizzFrames: picking a preset in either
   addon changes both. It is saved for your whole account rather than per
   profile, so switching profiles no longer changes it. Your current choice
