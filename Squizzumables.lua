@@ -1586,7 +1586,14 @@ function BH:CreateOptionsPanel(noShow)
               tip = "Makes every draggable frame in the addon visible and movable at once, whatever "
                 .. "its own lock setting says. The options panel hides while it is on so it is not in "
                 .. "the way. Also available as /sq unlock.",
-              onClick = function() bh:SetUnlockMode(not bh.unlockMode) end },
+              -- Combined (/squizz): switches every addon's Edit Mode at once.
+              onClick = function()
+                  if Shell.combined and Shell.ToggleCombinedEdit then
+                      Shell:ToggleCombinedEdit()
+                  else
+                      bh:SetUnlockMode(not bh.unlockMode)
+                  end
+              end },
         },
         -- 2.0 motion: the page coming in fades up over 0.12s (instant with
         -- Reduce motion), its preview with it.
@@ -3682,6 +3689,20 @@ do
                 if show and pageId and BH.optionsWindow then BH.optionsWindow:Open(pageId) end
                 return BH.optionsWindow
             end,
+            -- The combined window's one Edit Mode (lib:ToggleCombinedEdit).
+            -- The window stays open (keepPanel), as SquizzFrames' does, and no
+            -- Frames Unlocked box: the title-bar button is the control here.
+            editMode = function(on)
+                if on and not BH.unlockMode then
+                    BH.unlockFromCombined = true
+                    BH:SetUnlockMode(true, true)
+                    if not BH.unlockMode then BH.unlockFromCombined = nil end
+                elseif not on and BH.unlockMode then
+                    BH:SetUnlockMode(false, true)
+                    BH.unlockFromCombined = nil
+                end
+            end,
+            isEditing = function() return BH.unlockMode and true or false end,
             slash = function(msg)
                 if not (msg and msg:upper() == "CDMS") then return false end
                 BH:CreateOptionsPanel()

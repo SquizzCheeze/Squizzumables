@@ -126,7 +126,9 @@ function BH:UpdateRaidToolsVisibility()
         -- Not when Blizzard's Edit Mode did the unlocking (UI/EditMode.lua sets
         -- unlockFromBlizzard): its own Save and close end it, and the box only
         -- sat on top of Edit Mode's frames (user screenshot 2026-10-17).
-        if self.previewControlFrame and not self.unlockFromBlizzard then
+        -- Nor from the combined /squizz window's Edit Mode button, which is
+        -- itself the control there (unlockFromCombined, set by our opener).
+        if self.previewControlFrame and not self.unlockFromBlizzard and not self.unlockFromCombined then
             self:LoadUnlockControlPosition()
             self.previewControlFrame:Show()
         end

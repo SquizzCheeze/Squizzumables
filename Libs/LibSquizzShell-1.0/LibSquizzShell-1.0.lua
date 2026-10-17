@@ -44,7 +44,7 @@
         tall (taller if the window is).
 ]]
 
-local MAJOR, MINOR = "LibSquizzShell-1.0", 3
+local MAJOR, MINOR = "LibSquizzShell-1.0", 4
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -1182,9 +1182,34 @@ function lib:OpenCombined(msg)
     first.open(nil, true)
 end
 
--- Closing a window (not handing over) ends combined mode.
+-- One Edit Mode for every addon while combined (user request 2026-10-17):
+-- either window's Edit Mode button switches them all, on if none is on and
+-- off otherwise. Each opener may give editMode(on) and isEditing(); an addon
+-- without them is left alone. Outside combined mode each button only drives
+-- its own addon.
+function lib:ToggleCombinedEdit()
+    local any = false
+    for _, op in pairs(lib.openers) do
+        if op.isEditing and op.isEditing() then any = true end
+    end
+    local on = not any
+    lib.combinedEdit = on
+    for _, op in pairs(lib.openers) do
+        if op.editMode then op.editMode(on) end
+    end
+end
+
+-- Closing a window (not handing over) ends combined mode -- and the shared
+-- Edit Mode, if the combined window's button turned it on.
 lib.OnWindowHidden = function()
-    if not lib.handingOff then lib.combined = false end
+    if lib.handingOff then return end
+    if lib.combined and lib.combinedEdit then
+        for _, op in pairs(lib.openers) do
+            if op.editMode then op.editMode(false) end
+        end
+    end
+    lib.combinedEdit = false
+    lib.combined = false
 end
 
 SLASH_SQUIZZSHELL1 = "/squizz"

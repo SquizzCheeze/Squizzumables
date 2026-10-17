@@ -25,7 +25,8 @@ V2.1
   other addon is listed at the bottom of the sidebar, search covers both,
   and picking one of its pages or settings switches to it in the same
   spot. /sq config opens Squizzumables on its own, and /squizz cdms is now
-  also /sq cdms.
+  also /sq cdms. In that window, Edit Mode turns on for both addons at
+  once, and the window stays open while you move things.
 - The Frames Unlocked box (Lock All / Done) no longer shows in Blizzard's
   Edit Mode, which has its own Save and close. It still shows with
   /sq unlock and the options window's Edit Mode button.
