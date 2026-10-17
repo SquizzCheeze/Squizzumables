@@ -280,6 +280,16 @@ shell, setup and polish), each gated.
   the grid now changes height. `MigrateBuffEventAlerts` moved old Active/Applied/Removed cooldown
   entries into `BuffSounds()` once per spec (`sd.buffEventsMoved`; waits if `soundAlertsBySpell` is not
   yet set; never overwrites).
+- ⚠ **Theme is now SHARED with SquizzFrames (2026-10-17, SquizzFrames 2.0 phase 1).** The palette,
+  presets and the CHOICE moved into `Libs/LibSquizzTheme-1.0` (a byte-identical copy in each addon;
+  change both and bump `MINOR`, same rule as LibSquizzGrid). `UI/Theme.lua` is now a thin layer keeping
+  the `ns.Theme` API, plus our rainbow ticker. The choice is ACCOUNT-WIDE: each addon hands the library
+  its SV root (`Theme.Attach`, called after migrations) and it lives in `SquizzumablesDB.sharedTheme`
+  `{preset, at, seed}`. A real pick (`at` > 0) beats any seed, newest wins; with no pick, the highest
+  seed priority wins (ours 2 = this profile's old `theme.preset`/`useClassColorAccent`, none on a new
+  install; SquizzFrames 1 = class colour). The profile keys are still WRITTEN on every pick, for
+  exports to older copies, but no longer read after the first seed. A profile switch no longer changes
+  the theme. The notes below describe the pre-sharing shape and are otherwise still accurate.
 - **Theme** -- `UI/Theme.lua`, `ns.Theme`, DONE 2026-10-15, untested in game. Loads before Widgets.
   `Theme.colors` is the ONE live palette (Widgets aliases it as `SQ_COLORS`; refilled in place by
   `Theme.Apply`, never replaced). BASE = Squizz Gold = today's values exactly, including in-game keys

@@ -99,7 +99,7 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
             if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
             if BH.ApplyCursor then BH:ApplyCursor() end
-            -- The new profile may have its own theme (accent repaints live).
+            -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
             ns.Theme.Apply()
             BH:RefreshSettingsTab()
             print("Squizzumables: Deleted profile '" .. data .. "', switched to Default.")
@@ -587,7 +587,7 @@ function BH:BuildSettingsTab(parent)
         if BH.cdm and BH.cdm.OnProfileChanged then BH.cdm:OnProfileChanged() end
         if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
         if BH.ApplyCursor then BH:ApplyCursor() end
-        -- The new profile may have its own theme (accent repaints live).
+        -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
         ns.Theme.Apply()
         BH:RefreshSettingsTab()
         BH:RefreshItemList()

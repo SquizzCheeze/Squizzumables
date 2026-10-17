@@ -8,6 +8,124 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V2.0
+
+- CDM Alerts: Buff Alerts and the CDM Sounds page are now one tab
+  (Kelerts > CDM Alerts). Your buffs and your Essential and Utility
+  cooldowns sit in one grid, and clicking any of them opens the same
+  editor. Cooldowns can now show an image as well as play a sound - the
+  same images as buffs (screen edge glow, flames, the ( ) arcs and the
+  rest, or your own) - on Ready or On cooldown, for a few seconds or
+  until the spell's next event (a Ready image stays up until you use the
+  spell). It works in combat. The CDM Sounds sidebar page is gone.
+- Buff sounds you had on the old CDM Sounds page (Active, On Aura Applied,
+  On Aura Removed) are moved to that buff in CDM Alerts automatically,
+  without replacing a sound you had already set there.
+- /squizz cdms now opens CDM Alerts.
+- The options window's sidebar is grouped: Reminders (Consumables, Class
+  Buffs, Text Reminders), Cooldowns (Cooldown Manager, Custom Icons),
+  Alerts (Kelerts, Sounds), Group (Raid Tools, Callouts), Fun (Cursor) and
+  General (Settings). Every page is the same as before; three are renamed
+  to say what they hold (Items is Consumables, Reminders is Text
+  Reminders, CDM is Cooldown Manager).
+- Themes: Settings opens with a Theme section, in place of "Use class colour for
+  headings and accents", with five looks - Squizz Gold (the default),
+  Dark Glass (see-through panels, thin light borders), Class Colour,
+  Rainbow (an accent that slowly cycles through the colours) and Minimal
+  (no panels behind the frames, just icons and text). The accent changes
+  at once; Dark Glass and Minimal offer a reload for the panels and
+  borders. Your old choice carries over: class colour on stays Class
+  Colour. Switching profile now brings that profile's theme with it.
+- Preview column: Consumables, Class Buffs and Settings show your reminder
+  buttons on the right of the page - a missing flask, food running low
+  and your class buff - and they change as you edit: size, spacing, grow
+  direction, labels, fonts, icon shape, glow and theme. They are drawn by
+  the same code as the real buttons. The options window is a little wider
+  (900) to make room.
+- Reminder buttons: a new Label Position (Settings > Button Text) puts the
+  name below, above, left or right of the icon, or on it; Auto keeps
+  today's placement (below, or right in a vertical layout). The Label X
+  and Y offsets now move it from there in every layout - in a vertical
+  layout they used to do nothing. Your labels stay exactly where they
+  are.
+- Cursor page: your own cursor is the preview. While the page is open the
+  rings and trail draw above the options window (and show out of combat
+  even with Only In Combat on), so every change shows on the cursor as
+  you make it. Closing the page puts them back as you set them.
+- Kelerts page: the preview is a small copy of your screen with the alert
+  drawn where it shows - the Lust Alert's image or animation at its size
+  and position, or on CDM Alerts the selected buff's or cooldown's image
+  (full-screen glows, the arcs, placed images). It follows the sub-tab.
+- Text Reminders page: the preview shows the big reminders the open
+  sub-tab sets up - Beacon, Earth Shield, Symbiotic and Repair on Class,
+  No Food In Bags on Bags, Healer In CC on Role CC - at their Scale, faded
+  when turned off.
+- Unlock Frames: the green boxes are gone. Every frame - reminder buttons,
+  text reminders, raid tools, battle res, death tally, callouts, target
+  distance, the Lust Alert and the Cooldown Manager groups - gets the same
+  box in your theme's accent with its name above it. It lights up under
+  the mouse; click one to select it, then the arrow keys nudge it 1px
+  (10px with Shift), and if the options window is open it jumps to that
+  frame's settings.
+- Motion: text reminders grow in and fade out, the Lust Alert pops in
+  and fades away, your reminder buttons fade in when they appear, and the
+  options pages fade in as you switch. Settings > Misc > Reduce motion
+  makes all of it instant.
+- Setup: a new install now starts with a short setup - pick your role,
+  choose your extras - every role sees them all, ticked to suit it
+  (healers watch tanks and tanks watch healers with the Role CC alert;
+  everyone gets the battle res counter and the M+ death tally) - place
+  your frames and choose a theme. Every step can be
+  skipped. Anyone can run it with /sq setup or the Run Setup button on
+  the update note.
+- Fixed: the first-run welcome never actually showed - a new install was
+  always treated as an update.
+- Behind the scenes, every page's settings now come from one description
+  each (its default, control and search entry together), so they can no
+  longer disagree. You may notice: every one of those settings is now in
+  the settings search; Repair's Durability Threshold and the font sizes
+  no longer show a different number from the one in use; and a few rows
+  are spaced slightly differently.
+- One Class Reminder: Remember Your Beacon, Remember Earth Shield,
+  Symbiotic Relationship and No Pet each belong to one class, so they now
+  share one frame - one place, one size, one lock, one box in Edit Mode.
+  Each still has its own on/off on Text Reminders > Class, where No Pet's
+  setting moved from Class Buffs. It keeps the position and size you had
+  for your class's reminder. The Repair reminder has its own sub-tab.
+- Opening the game's Edit Mode (Esc > Edit Mode) unlocks Squizzumables'
+  frames too, and closing it locks them again, so everything moves from
+  one place. Settings > Unlock With Blizzard's Edit Mode turns it off.
+- Raid Tools and Callouts: their frames are live on your screen, so the
+  preview column has a Show Them On Screen button beside the settings
+  (the same view as Unlock Frames) to watch every change as you make it.
+- CDM Alerts: the icon you have selected gets a clear frame round it, so
+  you can see which one the editor below is changing.
+- The button preview fits vertical layouts and side labels instead of
+  pushing the names off the column.
+- Cursor > Trail: the Test Shark button's bite now shows above the
+  settings window instead of underneath it. Real bites still follow your
+  Frame Strata setting.
+- Colours now come from one theme, the groundwork for the 2.0 look. The
+  only change you can see: the headings on the Cooldown Manager pages used
+  their own slightly different gold and ignored "Use class colour for
+  headings and accents"; they now match the rest of the window.
+- New installs and new profiles start with the warm gold accent; class
+  colour stays one tick away. Existing profiles keep what they had.
+- The reminder buttons now grow the way you set them without a second
+  setting: Grow Down keeps the top button where you placed it, Grow Up the
+  bottom one, Right the left end, Left the right end, Outward the middle.
+  The separate Anchor Point setting is gone. A vertical stack set to grow
+  down used to grow up and down from its middle unless Anchor Point was
+  changed to Top as well.
+- Fixed: after a /reload inside a delve, buff sounds stayed silent until
+  you left it. They were waiting out the delve's addon restriction, which
+  turns out not to block them; they now set themselves up straight away.
+- Fixed: every reminder button could appear at once, out of combat, when
+  the game had stopped letting addons see your buffs (seen in the 12.1.5
+  labyrinth after a /reload; only logging out cleared it). The buttons now
+  keep showing what they last knew until your buffs can be read again,
+  the same as they already did in combat.
+
 V1.99
 
 - Fixed: "Squizzumables tried to call the protected function" errors

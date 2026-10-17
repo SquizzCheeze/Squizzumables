@@ -643,7 +643,7 @@ function BH:SwitchToProfile(profileName)
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
-    -- The new profile may have its own theme (accent repaints live).
+    -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
 
     return true
@@ -737,7 +737,7 @@ function BH:OnSpecChanged()
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
-    -- The new profile may have its own theme (accent repaints live).
+    -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
     -- client-side aura sound registrations have to follow it whether or not the
@@ -1080,7 +1080,9 @@ function BH:LoadSettings()
 
     -- Then backfill anything still missing, at any depth.
     ApplyDefaults(self.settings, BH.defaultSettings)
-    -- The theme follows whichever settings just loaded (2.0).
+    -- Join the theme shared with SquizzFrames (account-wide), offering this
+    -- profile's own pre-sharing choice as the seed, then repaint from it.
+    ns.Theme.Attach(isNewInstall)
     ns.Theme.Apply()
 
     -- Enforce minimum button spacing
