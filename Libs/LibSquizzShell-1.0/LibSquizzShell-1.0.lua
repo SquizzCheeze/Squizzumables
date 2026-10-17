@@ -44,7 +44,7 @@
         tall (taller if the window is).
 ]]
 
-local MAJOR, MINOR = "LibSquizzShell-1.0", 4
+local MAJOR, MINOR = "LibSquizzShell-1.0", 5
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -204,6 +204,15 @@ local function Clean(s)
     s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("^%s+", ""):gsub("%s+$", "")
     if s == "" then return nil end
     return s
+end
+
+--- Where a control being built sits: its section title (the last titled pane
+--- before it) and its page key, or nil. For addons that look a control's
+--- tooltip up by place (SquizzFrames' Modules/Options/Tooltips.lua).
+function lib:SectionOf(frame)
+    local page = OwningPage(frame)
+    if not page then return nil end
+    return page.lastSection, page.key
 end
 
 --- A section title on a page: controls made after it are filed under it.
