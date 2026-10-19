@@ -3405,6 +3405,14 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": Cooldown Manager module not loaded.")
         end
+    elseif msg and msg:lower():match("^rotprobe") then
+        -- Unlisted: what the rotation helper and spell APIs still answer under
+        -- each 12.1.5 restriction (Core/RotationProbe.lua; CLAUDE.md).
+        if BH.RotProbe then
+            BH.RotProbe:Command(msg:match("^%S+%s*(.*)$"))
+        else
+            print(addonName .. ": rotation probe not loaded.")
+        end
     elseif msg == "cdmnative" then
         if BH.cdm and BH.cdm.native then
             BH.cdm.native:PrintDiagnostics()

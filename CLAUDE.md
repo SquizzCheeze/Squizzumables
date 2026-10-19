@@ -147,6 +147,19 @@ without a fundamentally different detection approach that doesn't depend on read
   Removing it means the file, its `.toc` line, **and** the `cdmModule.eventFrame` export in
   `Squizzumables_CDM.lua`, which exists only so this can reach that handler.
 
+- **`/sq rotprobe` is a temporary diagnostic (2026-10-19) — delete it once the rotation feature
+  is built or abandoned.** `Core/RotationProbe.lua` measures what an addon can still read while the
+  12.1.5 restrictions are up, as groundwork for a "rotation helper plus" feature (Blizzard's next
+  spell from `C_AssistedCombat.GetNextCastSpell`, with user include/exclude rules and a
+  cooldowns/defensives row). It counts plain / secret / nil / error for: the next spell, proc-glow
+  event payloads, `IsSpellUsable`, `IsSpellInRange`, `GetSpellCooldown`, the cooldown DURATION
+  OBJECT, a remaining-cooldown curve fed to `SetAlpha` ("show when ready", decided engine-side) and
+  `UnitHealthPercent(curve)` fed to `SetAlpha`. Buckets are the active `C_RestrictedActions`
+  restrictions plus the instance type. `on | off | report | clear | add <id> | remove <id>`;
+  stays on across reloads until `off`; counts live in `SquizzumablesDB.rotProbe`, so they can be
+  read straight from the SavedVariables file. Removing it means the file, its `.toc` line and the
+  `rotprobe` branch in the `/sq` handler.
+
 - **The diagnostics are unlisted, and CLAUDE.md is the only place they are written down.** The
   `/sq` help output prints only the player-facing commands (`config`, `reset`, `raidtools`,
   `unlock`, `reload`, `notes`, `/ginvite`). Every diagnostic below still works exactly as before —
