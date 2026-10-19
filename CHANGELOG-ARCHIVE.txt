@@ -8,6 +8,56 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V2.1
+
+- Fixed: a group buff button (Skyfury, Arcane Intellect, Battle Shout and
+  the rest) could get stuck on screen after you had the buff, together with
+  an "Unknown macro option: buff" error, until a /reload. The button was
+  trying to hide itself in combat with a rule the game does not support. It
+  now just goes away on the next refresh out of combat.
+- Class buff buttons now show during a Mythic+ key, out of combat:
+  Arcane Intellect, Skyfury, Earth Shield, Water and Lightning Shield,
+  poisons, paladin auras and Rites, and the rest. They used to be hidden
+  for the whole key. Inside a key the group buffs hide in combat like the
+  other buttons, where elsewhere they stay up so you can rebuff someone.
+- The options window is now the same window as SquizzFrames' (shared
+  between the two addons). It looks and works as before - the same pages,
+  search and previews - with each page's title and
+  description along the top. The Close button at the bottom is gone; use
+  the X or Escape. Search no longer lists each setting twice. The
+  Unlock Frames button is now called Edit Mode, as in SquizzFrames, and
+  lights up while your frames are unlocked.
+- /sq on its own now opens the options window (it used to list the
+  commands; that list is now /sq help).
+- /squizz now opens one window for Squizzumables and SquizzFrames when
+  both are installed (on its own, it opens Squizzumables as before): the
+  other addon is listed at the bottom of the sidebar, search covers both,
+  and picking one of its pages or settings switches to it in the same
+  spot. /sq (or /sq config) opens Squizzumables on its own, and /squizz cdms is now
+  also /sq cdms. In that window, Edit Mode turns on for both addons at
+  once, and the window stays open while you move things.
+- The Frames Unlocked box (Lock All / Done) no longer shows in Blizzard's
+  Edit Mode, which has its own Save and close. It still shows with
+  /sq unlock and the options window's Edit Mode button.
+- Fixed: with Hide Blizzard's Cooldown Manager on, Blizzard's own cooldown
+  bars and icons sat in the top-left corner of the screen in Blizzard's
+  Edit Mode. They are now moved fully off screen while it is open.
+- Fixed: in Blizzard's Edit Mode the Buffs and Buff Bars groups showed as
+  empty boxes. They now show the same styled sample icons and bars as
+  Unlock Frames.
+- Fixed: pet buttons (Call Pet, Summon Imp and the rest) stopped showing
+  inside a Mythic+ key in 2.0, so after the key's start dismissed your pet
+  there was no button to call it back. The buttons stopped updating
+  whenever the game hid aura information, which it can do for a whole key;
+  the pet buttons need none and now always update out of combat.
+- Hunters: a Revive Pet button now appears, out of combat, when your pet
+  has died. Before, nothing showed: the Call Pet buttons only appear with
+  no pet at all, and a dead pet still counts as one.
+- The theme is now shared with SquizzFrames: picking a preset in either
+  addon changes both. It is saved for your whole account rather than per
+  profile, so switching profiles no longer changes it. Your current choice
+  carries over.
+
 V2.0
 
 - CDM Alerts: Buff Alerts and the CDM Sounds page are now one tab

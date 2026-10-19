@@ -160,8 +160,8 @@ without a fundamentally different detection approach that doesn't depend on read
   read straight from the SavedVariables file. Removing it means the file, its `.toc` line and the
   `rotprobe` branch in the `/sq` handler.
 
-- **Rotation Helper icon (`Cooldowns/RotationIcon.lua`, 2026-10-19, UNTESTED in game, not yet in
-  the changelog).** Step 1 of the rotation feature: one movable icon showing
+- **Rotation Helper icon (`Cooldowns/RotationIcon.lua`, 2026-10-19, CONFIRMED in game by the user:
+  icon matches the bars, no swipe flicker, procs glow; in the open V2.2 changelog).** Step 1 of the rotation feature: one movable icon showing
   `C_AssistedCombat.GetNextCastSpell(false)`, polled at the `assistedCombatIconUpdateRate` CVar
   (floored at 0.05) like Blizzard's own highlight. On it: the cooldown/GCD swipe from
   `GetSpellCooldownDuration` (refreshed on `SPELL_UPDATE_COOLDOWN`/`_CHARGES` and spell change, NOT
