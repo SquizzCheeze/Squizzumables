@@ -60,6 +60,7 @@ Cooldowns\BlizzardViewers.lua
 Cooldowns\Layout.lua
 Cooldowns\API.lua
 Cooldowns\OptionsTab.lua
+Cooldowns\RotationIcon.lua
 #Squizzumables_Nameplates.lua
 Alerts\Kelerts.lua
 Alerts\BuffSounds.lua

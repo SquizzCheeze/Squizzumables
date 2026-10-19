@@ -160,6 +160,18 @@ without a fundamentally different detection approach that doesn't depend on read
   read straight from the SavedVariables file. Removing it means the file, its `.toc` line and the
   `rotprobe` branch in the `/sq` handler.
 
+- **Rotation Helper icon (`Cooldowns/RotationIcon.lua`, 2026-10-19, UNTESTED in game, not yet in
+  the changelog).** Step 1 of the rotation feature: one movable icon showing
+  `C_AssistedCombat.GetNextCastSpell(false)`, polled at the `assistedCombatIconUpdateRate` CVar
+  (floored at 0.05) like Blizzard's own highlight. On it: the cooldown/GCD swipe from
+  `GetSpellCooldownDuration` (refreshed on `SPELL_UPDATE_COOLDOWN`/`_CHARGES` and spell change, NOT
+  every tick), red when `IsSpellInRange` is false, grey/blue from `IsSpellUsable`, and `ns.Glow` from
+  `IsSpellOverlayed`. Every read goes through `Plain()` so an unmeasured restriction degrades to no
+  tint. Wired as `POSITION_PAIRS` `rotationFrame`/`rotationPosition`, a `MOVABLE_FRAMES` entry and the
+  Cooldowns > Rotation Helper page (`ns.Settings.Describe`, keys `rotation*`, off by default). Planned
+  next, per the user: swap rules (suggests X -> show Y), a "ready now" row with curve-driven fade, a
+  defensives row. The user knows Blizzard gives only ONE suggestion; a true queue is impossible.
+
 - **The diagnostics are unlisted, and CLAUDE.md is the only place they are written down.** The
   `/sq` help output prints only the player-facing commands (`config`, `reset`, `raidtools`,
   `unlock`, `reload`, `notes`, `/ginvite`). Every diagnostic below still works exactly as before —

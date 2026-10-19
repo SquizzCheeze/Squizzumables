@@ -391,6 +391,7 @@ local POSITION_PAIRS = {
     { "healerCCReminderFrame",    "healerCCReminderPosition" },
     { "deathTallyFrame",          "deathTallyPosition" },
     { "targetDistanceFrame",      "targetDistancePosition" },
+    { "rotationFrame",            "rotationPosition" },        -- Cooldowns/RotationIcon.lua
 }
 
 -- All position keys stored in profiles.
@@ -1475,6 +1476,8 @@ function BH:CreateOptionsPanel(noShow)
               subtitle = "Your cooldown, utility and buff groups" },
             { key = "cdmcustom",  label = "Custom Icons",     field = "cdmCustomTab",     build = "BuildCustomCooldownsTab",
               subtitle = "Icons of your own for spells and items" },
+            { key = "rotation",   label = "Rotation Helper",  field = "rotationTab",      build = "BuildRotationTab",
+              subtitle = "Blizzard's suggested next spell, on an icon of your own" },
         } },
         { group = "Alerts", pages = {
             { key = "kel",        label = "Kelerts",          field = "kelTab",           build = "BuildJustForKelTab", preview = "kelerts",
@@ -1501,7 +1504,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2447,6 +2450,7 @@ local MOVABLE_FRAMES = {
     { field = "calloutsButtonFrame", label = "Callouts",       enabled = "dungeonCallouts", muteChildren = true,
       find = "Callouts", posKey = "calloutsFramePosition" },
     { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled", find = "Show Target Distance" },
+    { field = "rotationFrame",       label = "Rotation Helper", enabled = "rotationEnabled", find = "Show Rotation Icon" },
 }
 
 -- Every text reminder, from the registry rather than by hand -- except the
