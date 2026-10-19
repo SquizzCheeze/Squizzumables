@@ -87,6 +87,14 @@ local function NewIcon(parent, name)
     cd:SetHideCountdownNumbers(true)
     f.cooldown = cd
 
+    -- Text sits on its own layer ABOVE the cooldown: a child frame draws over
+    -- its parent's regions, so a keybind on the icon frame itself would be
+    -- under the swipe.
+    local textHost = CreateFrame("Frame", nil, f)
+    textHost:SetAllPoints()
+    textHost:SetFrameLevel(cd:GetFrameLevel() + 2)
+    f.textHost = textHost
+
     f:EnableMouse(false)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", StartDrag)
@@ -145,6 +153,38 @@ local function UpdateCooldown(f, spellID, show, ignoreGCD)
     else
         f.cooldown:Clear()
     end
+end
+
+-- The key that casts the spell, through the cooldown groups' own lookup
+-- (BH.cdm.shared.ApplyKeybindText: action-bar slots mapped to binding commands,
+-- lowest slot wins, rebuilt on binding/bar changes). `look` is shaped like a
+-- CDM group's settings. The suggestion can be a talent's REPLACEMENT while the
+-- bar holds the base spell, which that lookup only handles the other way
+-- round, so the base spell is tried too.
+local keybindLook = { showKeybind = false }
+
+local function ApplyKeybind(f, spellID)
+    local shared = BH.cdm and BH.cdm.shared
+    local apply = shared and shared.ApplyKeybindText
+    if not apply then return end
+    apply(f.textHost, spellID, keybindLook)
+    local fs = f.textHost._sqKeybind
+    if spellID and keybindLook.showKeybind and fs and fs:GetText() == "" and C_Spell.GetBaseSpell then
+        local ok, base = pcall(C_Spell.GetBaseSpell, spellID)
+        base = ok and Plain(base)
+        if base and base ~= spellID then apply(f.textHost, base, keybindLook) end
+    end
+end
+
+local function BuildKeybindLook(s)
+    local c = s.rotationKeybindColor or {}
+    keybindLook = {
+        showKeybind = s.rotationKeybind ~= false,
+        keybindSize = s.rotationKeybindSize or 12,
+        keybindPosition = s.rotationKeybindPosition or "TOPRIGHT",
+        keybindOffsetX = -1, keybindOffsetY = -1,
+        keybindColor = { c.r or 1, c.g or 1, c.b or 1, 1 },
+    }
 end
 
 local function ResetLook(f)
@@ -266,7 +306,9 @@ local function LayoutRow(f, s)
             icon.icon:SetTexture(readySpells[i] and C_Spell.GetSpellTexture(LiveSpellID(readySpells[i]))
                 or PLACEHOLDER_ICON)
             ResetLook(icon)
-            icon.cdDirty = true
+            icon.cooldown:SetHideCountdownNumbers(not s.rotationCountdown)
+            icon.cdDirty, icon.kbDirty = true, true
+            if not readySpells[i] then ApplyKeybind(icon, nil) end
             icon:Show()
         else
             icon.spellID = nil
@@ -301,9 +343,14 @@ local function UpdateRow(f, s)
         else
             local id = LiveSpellID(icon.spellID)
             if icon.cdDirty or id ~= icon.liveID then
+                if id ~= icon.liveID then icon.kbDirty = true end
                 icon.cdDirty, icon.liveID = false, id
                 icon.icon:SetTexture(C_Spell.GetSpellTexture(id) or PLACEHOLDER_ICON)
                 UpdateCooldown(icon, id, s.rotationReadySwipe ~= false, ignoreGCD)
+            end
+            if icon.kbDirty then
+                icon.kbDirty = false
+                ApplyKeybind(icon, id)
             end
             -- The fade: the cooldown's remaining time through the curve,
             -- straight to SetAlpha. Never read, never compared.
@@ -329,6 +376,7 @@ end
 
 local shownSpell        -- the spell on the main icon now
 local cooldownDirty = true
+local keybindDirty = true
 
 local function ShouldShow(s, spellID)
     if BH.unlockMode then return true end
@@ -377,6 +425,7 @@ function Rotation.Update()
             shownSpell = false
             f.icon:SetTexture(PLACEHOLDER_ICON)
             ResetLook(f)
+            ApplyKeybind(f, nil)
         end
         return
     end
@@ -384,11 +433,15 @@ function Rotation.Update()
     if spellID ~= shownSpell then
         shownSpell = spellID
         f.icon:SetTexture(C_Spell.GetSpellTexture(spellID) or PLACEHOLDER_ICON)
-        cooldownDirty = true
+        cooldownDirty, keybindDirty = true, true
     end
     if cooldownDirty then
         cooldownDirty = false
         UpdateCooldown(f, spellID, s.rotationSwipe ~= false, false)
+    end
+    if keybindDirty then
+        keybindDirty = false
+        ApplyKeybind(f, spellID)
     end
     Tint(f, s, spellID)
     ProcGlow(f, s, spellID)
@@ -428,10 +481,12 @@ function BH:ApplyRotation()
     local size = s.rotationSize or 56
     f:SetSize(size, size)
     ns.Glow.Resize(f)
+    f.cooldown:SetHideCountdownNumbers(not s.rotationCountdown)
+    BuildKeybindLook(s)
     LoadReadySpells()
     BuildReadyCurve(s)
     LayoutRow(f, s)
-    shownSpell, cooldownDirty = nil, true
+    shownSpell, cooldownDirty, keybindDirty = nil, true, true
     wait = 0
     driver:Show()
     Rotation.Update()
@@ -481,9 +536,20 @@ ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 ev:RegisterEvent("SPELL_UPDATE_CHARGES")
 ev:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+ev:RegisterEvent("UPDATE_BINDINGS")
+ev:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 ev:SetScript("OnEvent", function(_, event, unit)
     if event == "PLAYER_LOGIN" then
         C_Timer.After(2, function() BH:ApplyRotation() end)
+        return
+    end
+    if event == "UPDATE_BINDINGS" or event == "ACTIONBAR_SLOT_CHANGED" then
+        -- The shared keybind map is rebuilt lazily; the CDM invalidates it too,
+        -- but only while its own module is running.
+        if BH.cdm and BH.cdm.InvalidateKeybinds then BH.cdm.InvalidateKeybinds() end
+        keybindDirty = true
+        local f = BH.rotationFrame
+        for _, icon in ipairs(f and f.row.icons or {}) do icon.kbDirty = true end
         return
     end
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
@@ -552,6 +618,27 @@ local ROTATION = ns.Settings.Describe({
             { key = "rotationProcGlow", type = "check", default = true,
               label = "Glow On Procs",
               tip = "Glows when a spell is lit up by a proc, as it would on your action bars." },
+            { key = "rotationCountdown", type = "check", default = false,
+              label = "Cooldown Numbers",
+              tip = "Shows the seconds left on each icon's cooldown. On the main icon this includes the global "
+                .. "cooldown." },
+            { type = "divider" },
+            { type = "header", label = "KEYBINDS" },
+            { key = "rotationKeybind", type = "check", default = true,
+              label = "Show Keybinds",
+              tip = "Shows the key that casts each spell, on the main icon and the Ready Now row -- read from your "
+                .. "action bars, the same as the Cooldown Manager groups. A spell that is on no bar, or on a bar with "
+                .. "no key, shows nothing." },
+            { key = "rotationKeybindSize", type = "slider", default = 12, min = 8, max = 24, step = 1,
+              label = "Keybind Text Size", tip = "Font size of the keybind text.",
+              when = function(s) return s.rotationKeybind ~= false end },
+            { key = "rotationKeybindPosition", type = "dropdown", default = "TOPRIGHT", width = 200,
+              items = ns.TEXT_POSITION_ITEMS,
+              label = "Keybind Position", tip = "Where on the icon the keybind sits.",
+              when = function(s) return s.rotationKeybind ~= false end },
+            { key = "rotationKeybindColor", type = "color", default = { r = 1, g = 1, b = 1 },
+              label = "Keybind Colour", tip = "Colour of the keybind text.",
+              when = function(s) return s.rotationKeybind ~= false end },
         } },
         { key = "ready", label = "Ready Now", rows = {
             { type = "header", label = "READY NOW ROW" },

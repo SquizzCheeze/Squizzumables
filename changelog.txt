@@ -15,3 +15,6 @@ V2.2
   is bright when the spell is ready and fades while it is on cooldown
   (how far is up to you, down to hidden), with the same swipe, range,
   resource and proc cues as the main icon.
+- Rotation Helper icons show their keybind (from your action bars, the same
+  as the Cooldown Manager groups; size, position and colour on the Main
+  Icon tab), and can show cooldown numbers.
