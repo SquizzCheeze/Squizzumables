@@ -243,9 +243,16 @@ local function PlaceRowIcon(icon, f, side, i, size, gap)
     end
 end
 
+-- How many placeholders Edit Mode shows while this spec's list is empty, so
+-- the row can be placed (and seen to exist) before any spell is chosen. The
+-- first version drew nothing at all until the list was filled, which read as
+-- "the row is broken" (user report 2026-10-19).
+local EMPTY_PREVIEW = 3
+
 local function LayoutRow(f, s)
     local row = f.row
     local n = #readySpells
+    if n == 0 then n = EMPTY_PREVIEW end
     local size = s.rotationReadySize or 40
     local gap = s.rotationReadySpacing or 4
     for i = #row.icons + 1, n do row.icons[i] = NewIcon(row) end
@@ -256,7 +263,8 @@ local function LayoutRow(f, s)
             ns.Glow.Resize(icon)
             PlaceRowIcon(icon, f, s.rotationReadySide, i, size, gap)
             icon.spellID, icon.liveID = readySpells[i], nil
-            icon.icon:SetTexture(C_Spell.GetSpellTexture(LiveSpellID(readySpells[i])) or PLACEHOLDER_ICON)
+            icon.icon:SetTexture(readySpells[i] and C_Spell.GetSpellTexture(LiveSpellID(readySpells[i]))
+                or PLACEHOLDER_ICON)
             ResetLook(icon)
             icon.cdDirty = true
             icon:Show()
@@ -270,13 +278,22 @@ end
 
 local function UpdateRow(f, s)
     local row = f.row
-    if not s.rotationReadyEnabled or #readySpells == 0 then
+    if not s.rotationReadyEnabled then
         row:Hide()
         return
     end
+    -- An empty list shows only in Edit Mode, as placeholders (LayoutRow).
+    local count = #readySpells
+    if count == 0 then
+        if not BH.unlockMode then
+            row:Hide()
+            return
+        end
+        count = EMPTY_PREVIEW
+    end
     row:Show()
     local ignoreGCD = s.rotationReadyIgnoreGCD ~= false
-    for i = 1, #readySpells do
+    for i = 1, count do
         local icon = row.icons[i]
         icon:EnableMouse(BH.unlockMode and true or false)
         if BH.unlockMode then
@@ -541,7 +558,15 @@ local ROTATION = ns.Settings.Describe({
             { key = "rotationReadyEnabled", type = "check", default = false,
               label = "Show Ready Now Row",
               tip = "A row of spells you choose beside the main icon. Each one is bright when it is ready and "
-                .. "fades while it is on cooldown." },
+                .. "fades while it is on cooldown.",
+              apply = function(on)
+                  local map = BH.settings.rotationReadySpells
+                  local text = type(map) == "table" and map[ns.Settings.SpecKey()] or ""
+                  if on and strtrim(text) == "" then
+                      print("Squizzumables: the Ready Now row has no spells for this spec yet -- press "
+                          .. "Fill From Rotation Helper, or type spell names below.")
+                  end
+              end },
             { type = "text",
               label = "Not a queue: the game gives addons only the one suggestion, and hides the cooldowns "
                 .. "themselves in combat. The row shows which of your spells are ready, in the order you list "
