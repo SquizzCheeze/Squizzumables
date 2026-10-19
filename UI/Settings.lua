@@ -50,6 +50,9 @@
 --   invert = true
 --       a check that stores the opposite of what it shows (Show minimap
 --       button = not minimapButtonHidden).
+--   perSpec = true
+--       an editbox holding one value per specialization, stored as
+--       { [specID] = text } (default {}); it shows the current spec's.
 --
 -- A page that is part described and part hand-built (Settings: the theme
 -- picker and the profile manager are not settings) gives `sections` instead of
@@ -81,6 +84,15 @@ function Settings.Describe(desc)
         for _, row in ipairs(rows) do Register(row) end
     end
     return desc
+end
+
+-- The key a `perSpec` row files its value under: the current spec's ID, or 0
+-- before the spec is known (a fresh character at login).
+function Settings.SpecKey()
+    local SI = C_SpecializationInfo
+    local index = SI and SI.GetSpecialization and SI.GetSpecialization()
+    local id = index and SI.GetSpecializationInfo and SI.GetSpecializationInfo(index)
+    return (type(id) == "number" and id > 0) and id or 0
 end
 
 local function Disabled(desc, row)
@@ -140,6 +152,20 @@ local function Spec(desc, row)
             return c.r or 1, c.g or 1, c.b or 1
         end
         spec.set = function(r, g, b) Set({ r = r, g = g, b = b }) end
+    elseif t == "editbox" and row.perSpec then
+        -- One value per specialization, stored as { [specID] = text } (the
+        -- Rotation Helper's spell lists: each spec has its own spells). The
+        -- row shows and edits the current spec's.
+        local function Map()
+            local m = BH.settings[key]
+            return type(m) == "table" and m or {}
+        end
+        spec.get = function() return Map()[Settings.SpecKey()] or "" end
+        spec.set = function(v)
+            local m = Map()
+            m[Settings.SpecKey()] = strtrim(v or "")
+            Set(m)
+        end
     elseif t == "editbox" then
         spec.get = function() return BH.settings[key] or "" end
         spec.set = function(v) Set(strtrim(v or "")) end

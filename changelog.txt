@@ -9,3 +9,9 @@ V2.2
   when out of range, grey when it can't be cast (blue when you're short on
   resources) and a glow on procs. It is Blizzard's suggestion - one spell
   at a time - shown where you want it.
+- New: a Ready Now row beside the Rotation Helper icon (its own tab on the
+  same page). List the spells you want, per spec and in your order, or
+  fill it from the rotation helper's spells that have cooldowns. Each icon
+  is bright when the spell is ready and fades while it is on cooldown
+  (how far is up to you, down to hidden), with the same swipe, range,
+  resource and proc cues as the main icon.

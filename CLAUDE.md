@@ -168,9 +168,19 @@ without a fundamentally different detection approach that doesn't depend on read
   every tick), red when `IsSpellInRange` is false, grey/blue from `IsSpellUsable`, and `ns.Glow` from
   `IsSpellOverlayed`. Every read goes through `Plain()` so an unmeasured restriction degrades to no
   tint. Wired as `POSITION_PAIRS` `rotationFrame`/`rotationPosition`, a `MOVABLE_FRAMES` entry and the
-  Cooldowns > Rotation Helper page (`ns.Settings.Describe`, keys `rotation*`, off by default). Planned
-  next, per the user: swap rules (suggests X -> show Y), a "ready now" row with curve-driven fade, a
-  defensives row. The user knows Blizzard gives only ONE suggestion; a true queue is impossible.
+  Cooldowns > Rotation Helper page (`ns.Settings.Describe`, keys `rotation*`, off by default). The
+  user knows Blizzard gives only ONE suggestion; a true queue is impossible.
+  - **Ready Now row (2026-10-19, UNTESTED in game):** the page's second sub-tab. A child of the main
+    icon (moves/hides with it, no position of its own). Spells per spec in `rotationReadySpells`, a
+    `{[specID] = "id, name, ..."}` map, edited through the NEW `perSpec = true` editbox option in
+    `UI/Settings.lua` (`Settings.SpecKey()`). Each icon's alpha is `GetSpellCooldownDuration(id,
+    ignoreGCD)` -> `EvaluateRemainingDuration(stepCurve)` -> `SetAlpha` on the icon texture and the
+    cooldown frame (NOT the frame, so a proc glow stays visible). That alpha path is exactly what
+    rotprobe measured as accepted -- this row is its first visible test. Spells go through
+    `LiveSpellID` (`C_Spell.GetOverrideSpell`) for talent replacements. "Fill From Rotation Helper"
+    keeps helper spells with `GetSpellBaseCooldown` > 1.5s or charges (that global is undocumented
+    but live; pcall'd).
+  - Still to do: swap rules (suggests X -> show Y; user said skip for now), a defensives row.
 
 - **The diagnostics are unlisted, and CLAUDE.md is the only place they are written down.** The
   `/sq` help output prints only the player-facing commands (`config`, `reset`, `raidtools`,
