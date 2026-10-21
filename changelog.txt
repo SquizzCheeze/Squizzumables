@@ -15,6 +15,9 @@ V2.2
   is bright when the spell is ready and fades while it is on cooldown
   (how far is up to you, down to hidden), with the same swipe, range,
   resource and proc cues as the main icon.
+- The hunter NO PET reminder now also shows when your pet is DEAD (as
+  PET DEAD, so you know to Revive it rather than Call it), including in the
+  middle of a fight - before, a dead pet still counted as "having a pet".
 - Rotation Helper icons show their keybind (from your action bars, the same
   as the Cooldown Manager groups; size, position and colour on the Main
   Icon tab), and can show cooldown numbers.

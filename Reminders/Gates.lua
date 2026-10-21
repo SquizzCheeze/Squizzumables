@@ -396,19 +396,55 @@ function BH:UpdateCoachWhistleReminder()
     end
 end
 
--- Hunter: No Pet reminder
+-- Hunter: No Pet / Pet Dead reminder.
+--
+-- A DEAD pet still exists, so checking UnitExists alone left the reminder
+-- hidden for the case that matters most -- the pet dying mid-pull (user
+-- request 2026-10-21). It now shows for a dead pet too, saying PET DEAD so the
+-- fix (Revive Pet, not Call Pet) is obvious. Whether the pet is dead is read
+-- through BH.Secrets: should the game ever hide it, the pet counts as alive,
+-- so this can never cry wolf.
+local function PetIsDead()
+    if not UnitExists("pet") then return false end
+    local dead = UnitIsDead("pet")
+    if BH.Secrets.IsSecret(dead) then return false end
+    return dead and true or false
+end
+
 function BH:UpdatePetReminder()
     local frame = self:ReminderGate(BH.REMINDERS_BY_KEY.pet)
     if not frame then return end
 
-    -- Show when player has no active pet
-    if UnitExists("pet") then
+    local dead = PetIsDead()
+    if UnitExists("pet") and not dead then
         frame:Hide()
     else
+        local text = self.petReminderText
+        if text then text:SetText(dead and "PET DEAD" or BH.REMINDERS_BY_KEY.pet.text) end
         frame:Show()
         local locked = self.settings and self.settings.petReminderLocked
         frame:EnableMouse(BH:ReminderMouseEnabled(locked))
     end
+end
+
+-- The pet dying fires nothing the general reminder pass listens for, so it is
+-- watched here: the pet's health and flags, plus UNIT_PET. The reminder is
+-- refreshed only when "no pet / dead / alive" actually changes, so the stream
+-- of UNIT_HEALTH events during a fight costs one comparison each. Plain frames
+-- only, so it works in combat.
+do
+    local lastState
+    local watch = CreateFrame("Frame")
+    watch:RegisterUnitEvent("UNIT_HEALTH", "pet")
+    watch:RegisterUnitEvent("UNIT_FLAGS", "pet")
+    watch:RegisterEvent("UNIT_PET")
+    watch:SetScript("OnEvent", function(_, event, unit)
+        if event == "UNIT_PET" and unit ~= "player" then return end
+        local state = not UnitExists("pet") and "none" or (PetIsDead() and "dead" or "alive")
+        if state == lastState then return end
+        lastState = state
+        if BH.UpdatePetReminder then BH:UpdatePetReminder() end
+    end)
 end
 
 -- Update food "no items in bag" reminder
