@@ -2209,9 +2209,6 @@ BH.REMINDERS = {
         tooltip = "Shows a reminder when your most damaged equipped item drops below the durability threshold. Hidden during combat.",
         text = "REPAIR", color = { 0.9, 0.2, 0.2 },
         size = { 300, 40 }, defaultY = 120,
-        -- The only reminder that was never given the HIGH strata. Kept as-is
-        -- so its stacking order relative to other frames does not change.
-        strata = false,
     },
     {
         key = "symbiotic", globalName = "SQUIZZUMABLESSymbioticReminder",
@@ -2327,10 +2324,13 @@ end
 local CLASS_REMINDER_KEYS = { "beacon", "earthShield", "symbiotic", "pet" }
 BH.CLASS_REMINDER_KEYS = CLASS_REMINDER_KEYS
 
+-- Every text reminder's strata; see CreateReminderFrame.
+local REMINDER_STRATA = "LOW"
+
 local classReminderFrame = CreateFrame("Frame", "SQUIZZUMABLESClassReminder", UIParent)
 classReminderFrame:SetSize(340, 50)
 classReminderFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
-classReminderFrame:SetFrameStrata("HIGH")
+classReminderFrame:SetFrameStrata(REMINDER_STRATA)
 classReminderFrame:SetMovable(true)
 classReminderFrame:SetClampedToScreen(true)
 classReminderFrame:EnableMouse(false)
@@ -2379,7 +2379,10 @@ local function CreateReminderFrame(def)
     else
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, def.defaultY)
     end
-    if def.strata ~= false then frame:SetFrameStrata("HIGH") end
+    -- LOW, under every Blizzard window (MEDIUM and up): at HIGH, the 1.x
+    -- default, a reminder drew over the world map, the Great Vault and the
+    -- rest (user report 2026-10-25, NO PET over the map).
+    frame:SetFrameStrata(REMINDER_STRATA)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)

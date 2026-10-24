@@ -18,6 +18,9 @@ V2.2
 - The hunter NO PET reminder now also shows when your pet is DEAD (as
   PET DEAD, so you know to Revive it rather than Call it), including in the
   middle of a fight - before, a dead pet still counted as "having a pet".
+- Fixed: text reminders (NO PET, NO FOOD IN BAGS, BEACON and the rest) drew
+  on top of Blizzard's windows, such as the world map and the Great Vault.
+  They now sit behind them.
 - Rotation Helper icons show their keybind (from your action bars, the same
   as the Cooldown Manager groups; size, position and colour on the Main
   Icon tab), and can show cooldown numbers.
