@@ -102,6 +102,7 @@ function HG.Apply(proxy, groupData, preview)
     if not want then
         if host then
             for _, layer in ipairs(host.layers or { host }) do ns.Glow.Hide(layer) end
+            if host.edge then host.edge.anim:Stop(); host.edge:Hide() end
             host:Hide()
         end
         if proxy then live[proxy] = nil end
@@ -146,6 +147,52 @@ function HG.Apply(proxy, groupData, preview)
             ns.Glow.Show(layer)
             ns.Glow.Resize(layer)
         end
+    end
+
+    -- The ring sits mostly OUTSIDE the icon, so on a tight row it reads as
+    -- being under the icons (user screenshot 2026-10-28). A pulsing border ON
+    -- the icon's edge puts it on top -- border only, never the icon face (user:
+    -- "i only wanted the border glow"). Square icons only: a shaped icon keeps
+    -- the shaped ring, which already follows its outline.
+    -- On a child of the host, so the host's secret alpha shows and hides it.
+    local edge = host.edge
+    if not edge then
+        edge = CreateFrame("Frame", nil, host)
+        edge:SetAllPoints(proxy)
+        edge.sides = {}
+        for i = 1, 4 do
+            local t = edge:CreateTexture(nil, "OVERLAY")
+            t:SetTexture("Interface\\Buttons\\WHITE8X8")
+            t:SetBlendMode("ADD")
+            edge.sides[i] = t
+        end
+        local anim = edge:CreateAnimationGroup()
+        anim:SetLooping("BOUNCE")
+        local fade = anim:CreateAnimation("Alpha")
+        fade:SetFromAlpha(0.45)
+        fade:SetToAlpha(1)
+        fade:SetDuration(0.6)
+        edge.anim = anim
+        host.edge = edge
+    end
+    -- Thicker with the Brightness slider: 2px at 1, up to 5px at 4.
+    local th = 1 + count
+    if edge.thick ~= th then
+        edge.thick = th
+        local top, bottom, left, right = edge.sides[1], edge.sides[2], edge.sides[3], edge.sides[4]
+        for _, t in ipairs(edge.sides) do t:ClearAllPoints() end
+        top:SetPoint("TOPLEFT"); top:SetPoint("TOPRIGHT"); top:SetHeight(th)
+        bottom:SetPoint("BOTTOMLEFT"); bottom:SetPoint("BOTTOMRIGHT"); bottom:SetHeight(th)
+        left:SetPoint("TOPLEFT", 0, -th); left:SetPoint("BOTTOMLEFT", 0, th); left:SetWidth(th)
+        right:SetPoint("TOPRIGHT", 0, -th); right:SetPoint("BOTTOMRIGHT", 0, th); right:SetWidth(th)
+    end
+    for _, t in ipairs(edge.sides) do t:SetVertexColor(c[1], c[2], c[3], 1) end
+    if shape then
+        edge.anim:Stop()
+        edge:Hide()
+    else
+        edge:Show()
+        if not edge.anim:IsPlaying() then edge.anim:Play() end
     end
     host:Show()
 
