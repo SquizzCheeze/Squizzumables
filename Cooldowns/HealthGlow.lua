@@ -77,8 +77,8 @@ end
 
 -- Never reads the result: it goes straight from the game to SetAlpha.
 -- Actual health, not predicted -- an incoming heal does not mean you are safe.
-local function Paint(host, curve)
-    if IsDead() then host:SetAlpha(0) return end
+local function Paint(proxy, host, curve)
+    if proxy._sqOnCD or IsDead() then host:SetAlpha(0) return end
     local ok, v = pcall(UnitHealthPercent, "player", false, curve)
     if ok then
         host:SetAlpha(v)
@@ -159,13 +159,21 @@ function HG.Apply(proxy, groupData, preview)
 
     local curve = CurveFor(HG.Pct(groupData))
     live[proxy] = curve
-    if curve then Paint(host, curve) else host:SetAlpha(0) end
+    if curve then Paint(proxy, host, curve) else host:SetAlpha(0) end
+end
+
+-- One icon, after its cooldown state (proxy._sqOnCD) was re-read in
+-- ApplyProxyVisuals' greying pass.
+function HG.Refresh(proxy)
+    local curve = live[proxy]
+    local host = proxy.HealthGlow
+    if curve and host and host:IsShown() then Paint(proxy, host, curve) end
 end
 
 local function PaintAll()
     for proxy, curve in pairs(live) do
         local host = proxy.HealthGlow
-        if host and host:IsShown() then Paint(host, curve) end
+        if host and host:IsShown() then Paint(proxy, host, curve) end
     end
 end
 

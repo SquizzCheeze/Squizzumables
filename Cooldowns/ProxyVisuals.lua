@@ -377,6 +377,12 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
             end
         end
 
+        -- Low Health Glow stays dark while the ability is on cooldown: there
+        -- is nothing to press (user request 2026-10-28). Readable in combat,
+        -- the same booleans this greying uses.
+        proxy._sqOnCD = onCD
+        if cdmModule.healthGlow then cdmModule.healthGlow.Refresh(proxy) end
+
         local hasAura, auraReadable = CooldownAuraActive(proxy.cooldownID, proxy.spellID)
 
         -- What "active" means depends on which kind of entry this is.
