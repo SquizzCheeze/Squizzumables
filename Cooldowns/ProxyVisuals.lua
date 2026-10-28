@@ -58,6 +58,13 @@ local PlayAlertsFor            = shared.PlayAlertsFor
 -- so a preview icon must never reach it. The preview mocks that state itself.
 local function ApplyProxyVisuals(proxy, groupData, preview)
     if not proxy or not groupData then return end
+    -- A potion/Healthstone you carry none of stays hidden, whatever else would
+    -- show it (Layout.lua leaves it no slot). The preview still shows it.
+    if not preview and proxy.spellCategory and cdmModule.CategoryCarried
+       and not cdmModule.CategoryCarried(proxy.spellCategory) then
+        proxy:Hide()
+        return
+    end
 
     -- Fill in an icon that was not available when the proxy was built.
     --

@@ -134,16 +134,39 @@ local function SyncIcon(proxy, cat, itemID)
     end
 end
 
--- Bags changed (bought, looted or used up a potion): re-pick each icon. The
--- cooldown passes do this too, but none of them fires on a plain bag change.
+-- Do you carry any item of this category? An icon for one you carry none of
+-- is hidden and takes no slot in its group (user request 2026-10-28: a
+-- Healthstone only matters with a warlock about). Layout.lua and
+-- ApplyProxyVisuals both ask.
+function cdmModule.CategoryCarried(cat)
+    if learned[cat] and Count(learned[cat]) then return true end
+    local c = CATEGORIES[cat]
+    for _, id in ipairs(c and c.items or {}) do
+        if Count(id) then return true end
+    end
+    -- A category this file has no item list for: never hide it.
+    return c == nil
+end
+
+-- Bags changed (bought, looted or used up a potion): re-pick each icon, and
+-- re-lay the groups when a category went from carried to not or back. The
+-- cooldown passes re-pick icons too, but none of them fires on a bag change.
+local carriedWas = {}
 local bagWatch = CreateFrame("Frame")
 bagWatch:RegisterEvent("BAG_UPDATE_DELAYED")
 bagWatch:SetScript("OnEvent", function()
     if not cdmModule.ForEachProxy then return end
+    local relayout = false
+    for cat in pairs(CATEGORIES) do
+        local now = cdmModule.CategoryCarried(cat)
+        if carriedWas[cat] ~= nil and carriedWas[cat] ~= now then relayout = true end
+        carriedWas[cat] = now
+    end
     cdmModule.ForEachProxy(function(proxy)
         local cat = proxy.spellCategory
         if cat then SyncIcon(proxy, cat, ItemFor(cat)) end
     end)
+    if relayout and cdmModule.ScheduleReconcile then cdmModule:ScheduleReconcile() end
 end)
 
 -- Same contract as EquipSlotCooldown: start, duration, onCD, or nil when

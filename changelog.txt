@@ -31,4 +31,5 @@ V2.2
 - Fixed: potions and Healthstones you added to Blizzard's Cooldown Manager
   showed on Blizzard's bars but never on ours. Combat Potion, Health
   Potion, Healthstone and Demonic Healthstone now show with their
-  cooldowns, read from whichever one you carry.
+  cooldowns, read from whichever one you carry, with that item's own icon.
+  An icon only shows while you have one in your bags.

@@ -237,6 +237,21 @@ function cdmModule:LayoutGroup(groupName)
         end)
     end
 
+    -- Potions and Healthstones you carry none of are hidden and take no slot
+    -- (Cooldowns/ItemCategories.lua, CategoryCarried).
+    if cdmModule.CategoryCarried then
+        local kept = {}
+        for _, member in ipairs(members) do
+            local p = member.proxy
+            if p and p.spellCategory and not cdmModule.CategoryCarried(p.spellCategory) then
+                p:Hide()
+            else
+                kept[#kept + 1] = member
+            end
+        end
+        members = kept
+    end
+
     -- Hide Until Active packs the row: only the icons actually showing take a
     -- slot, so they sit together instead of being stranded at fixed positions
     -- with gaps where the inactive ones would be. With a Centered growth
@@ -386,7 +401,9 @@ function cdmModule:PositionFreeIcon(cooldownID)
     proxy:ClearAllPoints()
     proxy:SetPoint("CENTER", UIParent, "BOTTOMLEFT", savedFree.x, savedFree.y)
     proxy:SetFrameStrata("MEDIUM")
-    proxy:Show()
+    -- A free potion/Healthstone you carry none of stays hidden, as in a group.
+    proxy:SetShown(not (proxy.spellCategory and cdmModule.CategoryCarried
+        and not cdmModule.CategoryCarried(proxy.spellCategory)))
 
     -- Make free proxy icons draggable (safe â€” this is OUR frame, not Blizzard's)
     if not proxy._sqzFreeDrag then
