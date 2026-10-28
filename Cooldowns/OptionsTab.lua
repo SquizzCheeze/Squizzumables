@@ -1238,6 +1238,17 @@ function BH:BuildLowHealthGlowRows(content, indent, yOffset, groupName, groupDat
         "Colour of the low health glow, separate from the proc and active glows.")
     yOffset = yOffset - 32
 
+    local brightSlider = CreateSQSlider(content, "Low Health Glow Brightness", 220, 1, HG.MAX_BRIGHTNESS, 1)
+    brightSlider:SetValue(HG.Brightness(groupData))
+    brightSlider:SetAfterValueChanged(function(v)
+        groupData.lowHealthGlowBrightness = v
+        BH.cdm:ScheduleReconcile()
+    end)
+    brightSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(brightSlider, "Low Health Glow Brightness",
+        "How bright the low health glow is: each step layers the ring once more.")
+    yOffset = yOffset - 46
+
     local head = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     head:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
     head:SetText("Icons that glow:")

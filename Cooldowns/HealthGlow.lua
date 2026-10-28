@@ -41,6 +41,13 @@ function HG.Pct(groupData)
     return (groupData and groupData.lowHealthPct) or HG.DEFAULT_PCT
 end
 
+HG.DEFAULT_BRIGHTNESS = 2
+HG.MAX_BRIGHTNESS = 4
+function HG.Brightness(groupData)
+    local b = (groupData and groupData.lowHealthGlowBrightness) or HG.DEFAULT_BRIGHTNESS
+    return math.max(1, math.min(HG.MAX_BRIGHTNESS, math.floor(b)))
+end
+
 function HG.Color(groupData)
     return (groupData and groupData.lowHealthGlowColor) or HG.DEFAULT_COLOR
 end
@@ -94,7 +101,7 @@ function HG.Apply(proxy, groupData, preview)
 
     if not want then
         if host then
-            ns.Glow.Hide(host)
+            for _, layer in ipairs(host.layers or { host }) do ns.Glow.Hide(layer) end
             host:Hide()
         end
         if proxy then live[proxy] = nil end
@@ -110,18 +117,37 @@ function HG.Apply(proxy, groupData, preview)
         proxy.HealthGlow = host
     end
 
-    -- A glow is tinted as it starts, so a new colour restarts it.
-    local c = HG.Color(groupData)
-    if not SameColor(host.sqGlowColor, c) then
-        host.sqGlowColor = c
-        ns.Glow.Hide(host)
+    -- Brightness = how many copies of the ring are stacked. The ring is drawn
+    -- additively, so each copy adds light (user request 2026-10-28: brighter).
+    -- Copies are children of the host, so its secret alpha covers them all.
+    host.layers = host.layers or { host }
+    local count = HG.Brightness(groupData)
+    for i = #host.layers + 1, count do
+        local layer = CreateFrame("Frame", nil, host)
+        layer:SetAllPoints()
+        layer.sqGlowSelfOnly = true
+        host.layers[i] = layer
     end
-    -- The icon's shape, as the other glows have it (TextAndShapes).
-    ns.Glow.SetShape(host, proxy.ProcGlow and proxy.ProcGlow.sqGlowShape)
 
+    local c = HG.Color(groupData)
+    local shape = proxy.ProcGlow and proxy.ProcGlow.sqGlowShape
+    for i, layer in ipairs(host.layers) do
+        if i > count then
+            ns.Glow.Hide(layer)
+        else
+            -- A glow is tinted as it starts, so a new colour restarts it.
+            ---@diagnostic disable-next-line: undefined-field
+            if not SameColor(layer.sqGlowColor, c) then
+                layer.sqGlowColor = c
+                ns.Glow.Hide(layer)
+            end
+            -- The icon's shape, as the other glows have it (TextAndShapes).
+            ns.Glow.SetShape(layer, shape)
+            ns.Glow.Show(layer)
+            ns.Glow.Resize(layer)
+        end
+    end
     host:Show()
-    ns.Glow.Show(host)
-    ns.Glow.Resize(host)
 
     -- The options preview shows it lit, so the colour and the ticked icons
     -- can be seen without being hurt.
