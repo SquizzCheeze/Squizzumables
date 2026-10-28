@@ -21,6 +21,12 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.2"] = {
+        "New: Rotation Helper (Cooldowns > Rotation Helper) - Blizzard's suggested next spell on an icon you can place anywhere, with a Ready Now row beside it.",
+        "New: Low Health Glow on Cooldown Manager and custom groups (Behaviour tab) - tick the icons that should glow while your health is low and they are ready to use. Works in combat.",
+        "Fixed: potions and Healthstones from Blizzard's Cooldown Manager now show on your groups, with your item's own icon, while you carry one.",
+        "The NO PET reminder shows PET DEAD for a dead pet, and text reminders now sit behind Blizzard's windows.",
+    },
     ["2.1"] = {
         "The options window is now shared with SquizzFrames, and /squizz opens one window for both addons when you have both: search covers both, and Edit Mode moves both addons' frames at once.",
         "/sq on its own opens the options window (/sq help lists the commands).",
