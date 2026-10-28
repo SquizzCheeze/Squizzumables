@@ -152,6 +152,61 @@ ev:RegisterEvent("PLAYER_ALIVE")
 ev:RegisterEvent("PLAYER_UNGHOST")
 ev:SetScript("OnEvent", PaintAll)
 
+-- /sq hpglow: settings, each glow frame's state, and how the curve answers.
+-- Defensive end to end (it may run in combat): one pcall, a terminator line.
+function HG.PrintDiagnostics()
+    local S = BH.Secrets
+    local function show(v)
+        if S.IsSecret(v) then return "<secret>" end
+        return tostring(v)
+    end
+    local ok, err = pcall(function()
+        print("|cff33cc99Squizzumables|r Low Health Glow:")
+        local specData = cdmModule.shared.GetSpecData and cdmModule.shared.GetSpecData()
+        for name, gd in pairs(specData and specData.groups or {}) do
+            if gd.lowHealthGlow or gd.lowHealthIcons then
+                local n, ids = 0, {}
+                for id in pairs(gd.lowHealthIcons or {}) do n = n + 1; ids[#ids + 1] = tostring(id) end
+                print(("  group %s: on=%s pct=%s ticked=%d {%s}"):format(name,
+                    tostring(gd.lowHealthGlow), tostring(HG.Pct(gd)), n, table.concat(ids, ",")))
+            end
+        end
+        local frames = 0
+        cdmModule.ForEachProxy(function(proxy, cdID, copyGroup)
+            local h = proxy.HealthGlow
+            if h then
+                frames = frames + 1
+                print(("  icon %s%s: hostShown=%s visible=%s glowing=%s tier=%s live=%s alpha=%s vt=%s")
+                    :format(tostring(cdID), copyGroup and (" (copy in " .. copyGroup .. ")") or "",
+                    tostring(h:IsShown()), tostring(h:IsVisible()), tostring(h.sqGlowing),
+                    tostring(h.sqGlowTier), tostring(live[proxy] ~= nil), show(h:GetAlpha()),
+                    tostring(proxy.viewerType)))
+            end
+        end)
+        print(("  glow frames: %d, combat: %s"):format(frames, tostring(InCombatLockdown())))
+        print("  health %: " .. show(UnitHealthPercent("player", false)))
+        local pct = HG.DEFAULT_PCT
+        for _, gd in pairs(specData and specData.groups or {}) do
+            if gd.lowHealthGlow then pct = HG.Pct(gd) break end
+        end
+        local curve = CurveFor(pct)
+        if curve then
+            local parts = {}
+            for _, x in ipairs({ 0.05, 0.2, pct / 100 - 0.01, pct / 100, pct / 100 + 0.01, 0.6, 1 }) do
+                local okE, y = pcall(curve.Evaluate, curve, x)
+                parts[#parts + 1] = ("%.2f->%s"):format(x, okE and show(y) or "err")
+            end
+            print(("  curve (%d%%): %s"):format(pct, table.concat(parts, "  ")))
+            local okU, y = pcall(UnitHealthPercent, "player", false, curve)
+            print("  curve at your health: " .. (okU and show(y) or ("error " .. tostring(y))))
+        else
+            print("  curve: could not be created")
+        end
+    end)
+    if not ok then print("  error: " .. tostring(err)) end
+    print("  -- end of hpglow --")
+end
+
 -- Label and icon for one member of a group, for the options checklist.
 -- item: { cdID, spellID, equipSlot, spellCategory } (cdmModule:PreviewMembers).
 function HG.MemberLabel(item)

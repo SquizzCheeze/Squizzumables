@@ -3420,6 +3420,12 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         else
             print(addonName .. ": rotation probe not loaded.")
         end
+    elseif msg == "hpglow" then
+        if BH.cdm and BH.cdm.healthGlow then
+            BH.cdm.healthGlow.PrintDiagnostics()
+        else
+            print(addonName .. ": low health glow not loaded.")
+        end
     elseif msg == "cdmnative" then
         if BH.cdm and BH.cdm.native then
             BH.cdm.native:PrintDiagnostics()
