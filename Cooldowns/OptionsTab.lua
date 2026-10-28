@@ -1213,7 +1213,7 @@ function BH:BuildLowHealthGlowRows(content, indent, yOffset, groupName, groupDat
         "Glow the icons ticked below while your health is under the threshold -- a nudge to use a "
         .. "defensive or a potion.\n\nWorks in combat: the game itself compares your health with the "
         .. "threshold and only the glow's visibility changes, so nothing hidden is ever read.")
-    lowCB:SetChecked(groupData.lowHealthGlow)
+    lowCB:SetChecked(groupData.lowHealthGlow ~= false)
     yOffset = yOffset - 32
 
     local pctSlider = CreateSQSlider(content, "Glow Below Health %", 220, 5, 95, 5)

@@ -87,7 +87,10 @@ end
 -- Called from ApplyProxyVisuals for every icon in a group, on every pass.
 function HG.Apply(proxy, groupData, preview)
     local cdID = proxy and proxy.cooldownID
-    local want = groupData and groupData.lowHealthGlow
+    -- On unless switched off: ticking an icon is the opt-in. A separate
+    -- master switch that had to be ticked as well read as "doesn't work"
+    -- (user test 2026-10-28: icons ticked, switch never touched).
+    local want = groupData and groupData.lowHealthGlow ~= false
         and proxy.viewerType ~= "buff" and proxy.viewerType ~= "buffbar"
         and cdID and groupData.lowHealthIcons and groupData.lowHealthIcons[cdID]
     local host = proxy and proxy.HealthGlow
@@ -187,7 +190,7 @@ function HG.PrintDiagnostics()
         print("  health %: " .. show(UnitHealthPercent("player", false)))
         local pct = HG.DEFAULT_PCT
         for _, gd in pairs(specData and specData.groups or {}) do
-            if gd.lowHealthGlow then pct = HG.Pct(gd) break end
+            if gd.lowHealthGlow ~= false and gd.lowHealthIcons then pct = HG.Pct(gd) break end
         end
         local curve = CurveFor(pct)
         if curve then
