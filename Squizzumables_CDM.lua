@@ -2175,8 +2175,9 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     iconTex:SetAllPoints()
     local texture = ResolveProxyTexture(spellID, equipSlot)
     if not texture and proxy.spellCategory then
-        local _, catIcon = cdmModule.CategoryLabel(proxy.spellCategory)
-        texture = catIcon
+        -- The potion you carry, not the generic category icon.
+        texture = cdmModule.CategoryIcon(proxy.spellCategory)
+        proxy._sqCatIcon = texture
     end
     if texture then
         iconTex:SetTexture(texture)

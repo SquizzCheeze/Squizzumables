@@ -351,6 +351,7 @@ function cdmModule:GetAvailableCooldowns()
                     local catIcon
                     if spellCategory and not spellName and cdmModule.CategoryLabel then
                         spellName, catIcon = cdmModule.CategoryLabel(spellCategory)
+                        catIcon = cdmModule.CategoryIcon(spellCategory) or catIcon
                     end
                     local dupe = (spellID and seenSpells[spellID])
                         or (spellName and seenNames[spellName])

@@ -108,6 +108,44 @@ local function ItemFor(cat)
     return learned[cat]
 end
 
+-- The icon of the potion/Healthstone you actually carry (or last used), not
+-- Blizzard's generic one per category (user request 2026-10-28). Falls back to
+-- the generic icon while there is no item to show.
+local function IconFor(cat, itemID)
+    local icon = itemID and C_Item.GetItemIconByID and C_Item.GetItemIconByID(itemID)
+    if icon and not BH.Secrets.IsSecret(icon) then return icon end
+    local _, generic = cdmModule.CategoryLabel(cat)
+    return generic
+end
+
+function cdmModule.CategoryIcon(cat)
+    return IconFor(cat, cat and ItemFor(cat))
+end
+
+-- Keep a proxy's icon on the item it is reading; changes when you swap which
+-- potion you carry. Cached so an unchanged icon costs nothing.
+local function SyncIcon(proxy, cat, itemID)
+    if not proxy.Icon then return end
+    local icon = IconFor(cat, itemID)
+    if icon and proxy._sqCatIcon ~= icon then
+        proxy._sqCatIcon = icon
+        proxy.Icon:SetTexture(icon)
+        proxy._iconSet = true
+    end
+end
+
+-- Bags changed (bought, looted or used up a potion): re-pick each icon. The
+-- cooldown passes do this too, but none of them fires on a plain bag change.
+local bagWatch = CreateFrame("Frame")
+bagWatch:RegisterEvent("BAG_UPDATE_DELAYED")
+bagWatch:SetScript("OnEvent", function()
+    if not cdmModule.ForEachProxy then return end
+    cdmModule.ForEachProxy(function(proxy)
+        local cat = proxy.spellCategory
+        if cat then SyncIcon(proxy, cat, ItemFor(cat)) end
+    end)
+end)
+
 -- Same contract as EquipSlotCooldown: start, duration, onCD, or nil when
 -- there is nothing to read (no item of the category known yet -- shown ready,
 -- as Blizzard's icon is).
@@ -115,6 +153,7 @@ function cdmModule.CategoryCooldown(proxy)
     local cat = proxy and proxy.spellCategory
     if not cat or not (C_Container and C_Container.GetItemCooldown) then return nil end
     local itemID = ItemFor(cat)
+    SyncIcon(proxy, cat, itemID)
     if not itemID then return nil end
     local ok, start, duration, enable = pcall(C_Container.GetItemCooldown, itemID)
     if not ok then return nil end
