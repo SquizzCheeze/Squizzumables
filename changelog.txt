@@ -27,8 +27,8 @@ V2.2
 - New: Low Health Glow for Cooldown Manager and custom groups (Behaviour
   tab). Tick the icons in a group that should glow while your health is
   below a threshold you set (default 35%) and the ability is ready, in a
-  colour of your own - a
-  nudge to use a defensive or a potion. Works in combat.
+  colour of your own - a nudge to use a defensive or a potion. Works in
+  combat.
 - Fixed: potions and Healthstones you added to Blizzard's Cooldown Manager
   showed on Blizzard's bars but never on ours. Combat Potion, Health
   Potion, Healthstone and Demonic Healthstone now show with their
