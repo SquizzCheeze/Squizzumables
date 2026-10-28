@@ -157,6 +157,7 @@ function cdmModule:Reconcile()
         if existing then
             existing.spellID = cdData.spellID
             existing.equipSlot = cdData.equipSlot
+            existing.spellCategory = cdData.spellCategory
             existing.viewerType = cdData.viewerType
             existing.auraIDs = cdData.auraIDs
             existing.hasAura = cdData.hasAura
@@ -167,6 +168,7 @@ function cdmModule:Reconcile()
             self.registry[cdID] = {
                 spellID = cdData.spellID,
                 equipSlot = cdData.equipSlot,
+                spellCategory = cdData.spellCategory,
                 cooldownID = cdID,
                 viewerType = cdData.viewerType,
                 auraIDs = cdData.auraIDs,
@@ -244,7 +246,9 @@ function cdmModule:Reconcile()
         -- dragged it into Essential or Utility in Blizzard's own settings.
         -- Requiring a spellID here dropped it on the floor, so honouring the
         -- filter would have shown the player one fewer icon than Blizzard does.
-        elseif assignment and (entry.spellID or entry.equipSlot) then
+        -- spellCategory: potions and Healthstones, which carry neither until
+        -- one is used (Cooldowns/ItemCategories.lua).
+        elseif assignment and (entry.spellID or entry.equipSlot or entry.spellCategory) then
             entry.managed = true
 
             if assignment == "FREE" then

@@ -217,7 +217,12 @@ local function DiscoverCooldowns()
         if catIDs then
             for orderIndex, cdID in ipairs(catIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.isKnown then
+                -- A potion/Healthstone entry (spellCategoryID) is not a spell
+                -- you "know"; Blizzard's bar shows it regardless, so ours does.
+                ---@diagnostic disable-next-line: undefined-field
+                local spellCategory = info and BH.Secrets.SafeNumber(info.spellCategoryID, nil)
+                if spellCategory == 0 then spellCategory = nil end
+                if info and (info.isKnown or spellCategory) then
                     -- spellID is nilable as of 12.1 and really is absent on the
                     -- equip-slot entries (a trinket is identified by its
                     -- inventory slot, not a spell), which the filtered list can
@@ -279,6 +284,7 @@ local function DiscoverCooldowns()
                             cooldownID = cdID,
                             spellID = spellID,
                             equipSlot = equipSlot,
+                            spellCategory = spellCategory,
                             viewerType = viewerInfo.viewerType,
                             auraIDs = auraIDs,
                             hasAura = info.hasAura,

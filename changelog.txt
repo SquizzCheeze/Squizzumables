@@ -24,3 +24,11 @@ V2.2
 - Rotation Helper icons show their keybind (from your action bars, the same
   as the Cooldown Manager groups; size, position and colour on the Main
   Icon tab), and can show cooldown numbers.
+- New: Low Health Glow for Cooldown Manager and custom groups (Behaviour
+  tab). Tick the icons in a group that should glow while your health is
+  below a threshold you set (default 35%), in a colour of your own - a
+  nudge to use a defensive or a potion. Works in combat.
+- Fixed: potions and Healthstones you added to Blizzard's Cooldown Manager
+  showed on Blizzard's bars but never on ours. Combat Potion, Health
+  Potion, Healthstone and Demonic Healthstone now show with their
+  cooldowns, read from whichever one you carry.

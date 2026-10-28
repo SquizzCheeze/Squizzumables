@@ -2155,6 +2155,10 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     proxy.spellID = spellID
     proxy.equipSlot = equipSlot
     proxy.cooldownID = cooldownID
+    -- A potion/Healthstone entry (Cooldowns/ItemCategories.lua): no spellID,
+    -- no equip slot, and the equip-slot path everywhere -- see EquipSlotCooldown.
+    proxy.spellCategory = cdmModule.CategoryForCooldown
+        and cdmModule.CategoryForCooldown(cooldownID) or nil
 
     -- Background, behind the icon. Shows through wherever the icon does not
     -- cover it, and gives a group a visible footprint when its icons are
@@ -2170,6 +2174,10 @@ local function CreateProxyIcon(cooldownID, spellID, iconSize, equipSlot)
     local iconTex = proxy:CreateTexture(nil, "ARTWORK")
     iconTex:SetAllPoints()
     local texture = ResolveProxyTexture(spellID, equipSlot)
+    if not texture and proxy.spellCategory then
+        local _, catIcon = cdmModule.CategoryLabel(proxy.spellCategory)
+        texture = catIcon
+    end
     if texture then
         iconTex:SetTexture(texture)
         proxy._iconSet = true
@@ -2384,7 +2392,7 @@ local function ApplyUsableTint(proxy, enabled)
     -- Not for an equip-slot entry: the spellID a trinket carries is its use
     -- effect, and asking IsSpellUsable about that answers for the spell, not the
     -- item -- see EquipSlotCooldown.
-    if enabled and proxy.spellID and not proxy.equipSlot then
+    if enabled and proxy.spellID and not proxy.equipSlot and not proxy.spellCategory then
         if proxy._outOfRange then
             tint = TINT_OUT_OF_RANGE
         elseif C_Spell.IsSpellUsable then
@@ -2429,6 +2437,11 @@ end
 --
 -- Returns start, duration, onCD; nil when there is nothing to read.
 local function EquipSlotCooldown(proxy)
+    -- A potion/Healthstone entry reads its item cooldown the same way, off
+    -- whichever item of the category you carry (Cooldowns/ItemCategories.lua).
+    if proxy.spellCategory and cdmModule.CategoryCooldown then
+        return cdmModule.CategoryCooldown(proxy)
+    end
     if not (proxy.equipSlot and GetInventoryItemCooldown) then return nil end
     local start, duration, enable = GetInventoryItemCooldown("player", proxy.equipSlot)
     start = BH.Secrets.SafeNumber(start, nil)
@@ -2458,8 +2471,8 @@ local function UpdateProxyCooldown(proxy)
     if not proxy or not proxy.Cooldown then return end
 
     -- Trinkets and the like -- see EquipSlotCooldown for why this is tested
-    -- before, and instead of, the spell.
-    if proxy.equipSlot then
+    -- before, and instead of, the spell. Potions and Healthstones too.
+    if proxy.equipSlot or proxy.spellCategory then
         local start, duration, onCD = EquipSlotCooldown(proxy)
         proxy.Cooldown:SetReverse(false)
         if onCD then
@@ -3620,6 +3633,7 @@ cdmModule.shared = {
     SetProcGlow              = SetProcGlow,
     SyncProcGlow             = SyncProcGlow,
     ResizeSpellAlert         = ResizeSpellAlert,
+    RaiseGlowFrame           = RaiseGlowFrame,
     ApplyUsableTint          = ApplyUsableTint,
     EquipSlotCooldown        = EquipSlotCooldown,
     SpellIDForCooldown       = SpellIDForCooldown,
@@ -3746,6 +3760,7 @@ function cdmModule:PreviewMembers(groupName)
     for cdID, proxy in pairs(group.members or {}) do
         out.items[#out.items + 1] = {
             cdID = cdID, spellID = proxy.spellID, equipSlot = proxy.equipSlot,
+            spellCategory = proxy.spellCategory,
             viewerType = proxy.viewerType,
         }
     end

@@ -142,6 +142,12 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
         if changed then ns.Glow.Set(proxy.ActiveGlow, false) end
     end
 
+    -- Low Health Glow (Cooldowns/HealthGlow.lua): its own frame, its alpha
+    -- set by the game from your health, so it works in combat.
+    if cdmModule.healthGlow then
+        cdmModule.healthGlow.Apply(proxy, groupData, preview)
+    end
+
     -- Alpha
     local alpha = groupData.alpha or DEFAULT_ALPHA
     proxy:SetAlpha(alpha)
@@ -320,15 +326,17 @@ local function ApplyProxyVisuals(proxy, groupData, preview)
     -- Desaturation: greyscale icon when spell is NOT on cooldown
     -- An equip-slot entry (a trinket) reads the item cooldown instead of the
     -- spell, and may have no spellID at all -- see EquipSlotCooldown.
-    if not preview and proxy.Icon and (proxy.spellID or proxy.equipSlot) then
+    -- Potions and Healthstones (spellCategory) read their item cooldown the same way.
+    local itemEntry = proxy.equipSlot or proxy.spellCategory
+    if not preview and proxy.Icon and (proxy.spellID or itemEntry) then
         local onCD = false
-        if proxy.equipSlot then
+        if itemEntry then
             local _, _, itemOnCD = EquipSlotCooldown(proxy)
             onCD = itemOnCD and true or false
         end
         -- LiveSpellID: this is the read that decides "grey it out", and on a
         -- talent-overridden spell the base ID reports permanently ready.
-        local cdInfo = not proxy.equipSlot and C_Spell.GetSpellCooldown
+        local cdInfo = not itemEntry and C_Spell.GetSpellCooldown
             and C_Spell.GetSpellCooldown(LiveSpellID(proxy.spellID))
         if cdInfo then
             local start = cdInfo.startTime

@@ -59,6 +59,8 @@ Cooldowns\Reconcile.lua
 Cooldowns\BlizzardViewers.lua
 Cooldowns\Layout.lua
 Cooldowns\API.lua
+Cooldowns\ItemCategories.lua
+Cooldowns\HealthGlow.lua
 Cooldowns\OptionsTab.lua
 Cooldowns\RotationIcon.lua
 #Squizzumables_Nameplates.lua

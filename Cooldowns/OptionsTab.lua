@@ -1197,6 +1197,89 @@ end
 -- ---------------------------------------------------------------------------
 -- Behaviour: what the icon does as the ability changes state.
 -- ---------------------------------------------------------------------------
+-- Low Health Glow (Cooldowns/HealthGlow.lua): on/off, threshold, colour, and
+-- which of the group's icons glow. A method on BH rather than a local: this
+-- file's main chunk is a long one.
+function BH:BuildLowHealthGlowRows(content, indent, yOffset, groupName, groupData)
+    local HG = BH.cdm and BH.cdm.healthGlow
+    if not HG then return yOffset end
+
+    local lowCB = CreateSQCheckbox(content, "Low Health Glow", function(checked)
+        groupData.lowHealthGlow = checked
+        BH.cdm:ScheduleReconcile()
+    end)
+    lowCB:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(lowCB, "Low Health Glow",
+        "Glow the icons ticked below while your health is under the threshold -- a nudge to use a "
+        .. "defensive or a potion.\n\nWorks in combat: the game itself compares your health with the "
+        .. "threshold and only the glow's visibility changes, so nothing hidden is ever read.")
+    lowCB:SetChecked(groupData.lowHealthGlow)
+    yOffset = yOffset - 32
+
+    local pctSlider = CreateSQSlider(content, "Glow Below Health %", 220, 5, 95, 5)
+    pctSlider:SetValue(HG.Pct(groupData))
+    pctSlider:SetAfterValueChanged(function(v)
+        groupData.lowHealthPct = v
+        BH.cdm:ScheduleReconcile()
+    end)
+    pctSlider:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(pctSlider, "Glow Below Health %",
+        "The glow shows while your health is below this percentage of your maximum.")
+    yOffset = yOffset - 46
+
+    local lc = HG.Color(groupData)
+    local lowPicker = CreateSQColorPicker(content, "Low Health Glow Colour",
+        lc[1], lc[2], lc[3], lc[4] or 1, function(r, g, b, a)
+            groupData.lowHealthGlowColor = { r, g, b, a }
+            BH.cdm:ScheduleReconcile()
+        end)
+    lowPicker:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    ns.Rows.AddTooltip(lowPicker, "Low Health Glow Colour",
+        "Colour of the low health glow, separate from the proc and active glows.")
+    yOffset = yOffset - 32
+
+    local head = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    head:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+    head:SetText("Icons that glow:")
+    head:SetTextColor(ns.Theme.RGBA("textDim"))
+    yOffset = yOffset - 20
+
+    local members = BH.cdm:PreviewMembers(groupName)
+    local items = {}
+    for _, item in ipairs(members and members.items or {}) do
+        if item.viewerType ~= "buff" and item.viewerType ~= "buffbar" then
+            local name, icon = HG.MemberLabel(item)
+            items[#items + 1] = { cdID = item.cdID, name = name, icon = icon }
+        end
+    end
+    table.sort(items, function(a, b) return a.name < b.name end)
+
+    if #items == 0 then
+        local none = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        none:SetPoint("TOPLEFT", content, "TOPLEFT", indent, yOffset)
+        none:SetWidth(380)
+        none:SetJustifyH("LEFT")
+        none:SetText("No cooldown icons in this group yet.")
+        none:SetTextColor(ns.Theme.RGBA("textDim"))
+        return yOffset - 24
+    end
+
+    -- Two columns, like the checkbox pairs above.
+    for i, it in ipairs(items) do
+        local label = it.icon and ("|T" .. it.icon .. ":14:14:0:0:64:64:5:59:5:59|t " .. it.name) or it.name
+        local cb = CreateSQCheckbox(content, label, function(checked)
+            groupData.lowHealthIcons = groupData.lowHealthIcons or {}
+            groupData.lowHealthIcons[it.cdID] = checked or nil
+            BH.cdm:ScheduleReconcile()
+        end)
+        local col = (i - 1) % 2
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", indent + col * 190, yOffset)
+        cb:SetChecked(groupData.lowHealthIcons and groupData.lowHealthIcons[it.cdID])
+        if col == 1 or i == #items then yOffset = yOffset - 26 end
+    end
+    return yOffset - 6
+end
+
 local function BuildGroupBehaviourSection(content, indent, yOffset, groupName, groupData, specData)
     local tooltipCB = CreateSQCheckbox(content, "Show Tooltip", function(checked)
         groupData.showTooltip = checked
@@ -1329,6 +1412,8 @@ local function BuildGroupBehaviourSection(content, indent, yOffset, groupName, g
             .. "this addon in your icon's shape, square included, so the colour applies whatever shape "
             .. "the group uses.")
         yOffset = yOffset - 32
+
+        yOffset = BH:BuildLowHealthGlowRows(content, indent, yOffset, groupName, groupData)
     end
     -- Each row closes itself above, so a buff group's section simply ends after
     -- Glow On Ready rather than leaving the gap its hidden rows used to fill.

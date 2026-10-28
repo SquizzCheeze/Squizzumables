@@ -325,7 +325,10 @@ function cdmModule:GetAvailableCooldowns()
         if catIDs then
             for _, cdID in ipairs(catIDs) do
                 local info = C_CooldownViewer.GetCooldownViewerCooldownInfo(cdID)
-                if info and info.isKnown then
+                ---@diagnostic disable-next-line: undefined-field
+                local spellCategory = info and BH.Secrets.SafeNumber(info.spellCategoryID, nil)
+                if spellCategory == 0 then spellCategory = nil end
+                if info and (info.isKnown or spellCategory) then
                     -- The raw set on purpose, not Blizzard's filtered list.
                     -- This is the assignment page: a spell you have hidden on
                     -- Blizzard's bars is exactly the sort of thing you might
@@ -343,6 +346,12 @@ function cdmModule:GetAvailableCooldowns()
                     if spellName and BH.Secrets.IsSecret(spellName) then
                         spellName = nil
                     end
+                    -- Potions and Healthstones: no spell, so their name and
+                    -- icon come from the category (Cooldowns/ItemCategories.lua).
+                    local catIcon
+                    if spellCategory and not spellName and cdmModule.CategoryLabel then
+                        spellName, catIcon = cdmModule.CategoryLabel(spellCategory)
+                    end
                     local dupe = (spellID and seenSpells[spellID])
                         or (spellName and seenNames[spellName])
                     if not dupe then
@@ -352,8 +361,9 @@ function cdmModule:GetAvailableCooldowns()
                             cooldownID = cdID,
                             spellID = spellID,
                             equipSlot = equipSlot,
+                            spellCategory = spellCategory,
                             name = spellName or ("Spell " .. cdID),
-                            icon = ResolveProxyTexture(spellID, equipSlot),
+                            icon = ResolveProxyTexture(spellID, equipSlot) or catIcon,
                             viewerType = viewerInfo.viewerType,
                             category = info.category,
                         }
