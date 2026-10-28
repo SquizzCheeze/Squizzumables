@@ -102,6 +102,7 @@ function HG.Apply(proxy, groupData, preview)
     if not want then
         if host then
             for _, layer in ipairs(host.layers or { host }) do ns.Glow.Hide(layer) end
+            if host.wash then host.wash.anim:Stop(); host.wash:Hide() end
             host:Hide()
         end
         if proxy then live[proxy] = nil end
@@ -147,6 +148,41 @@ function HG.Apply(proxy, groupData, preview)
             ns.Glow.Resize(layer)
         end
     end
+
+    -- The ring sits mostly OUTSIDE the icon, so on a tight row it reads as
+    -- being under the icons (user screenshot 2026-10-28). A pulsing wash of
+    -- the same colour over the icon face puts the warning on top of it.
+    -- Lives on the host, so the host's secret alpha shows and hides it too.
+    local wash = host.wash
+    if not wash then
+        wash = host:CreateTexture(nil, "OVERLAY")
+        wash:SetAllPoints(proxy.Icon or proxy)
+        wash:SetTexture("Interface\\Buttons\\WHITE8X8")
+        wash:SetBlendMode("ADD")
+        local anim = wash:CreateAnimationGroup()
+        anim:SetLooping("BOUNCE")
+        local fade = anim:CreateAnimation("Alpha")
+        fade:SetDuration(0.6)
+        wash.fade = fade
+        wash.anim = anim
+        host.wash = wash
+    end
+    -- A shaped icon: follow its mask, so the wash does not fill the corners.
+    local mask = proxy._sqMask
+    if mask ~= wash.mask then
+        if wash.mask then pcall(wash.RemoveMaskTexture, wash, wash.mask) end
+        if mask and pcall(wash.AddMaskTexture, wash, mask) then
+            wash.mask = mask
+        else
+            wash.mask = nil
+        end
+    end
+    wash:SetVertexColor(c[1], c[2], c[3], 1)
+    -- Brighter with the Brightness slider: 0.25-0.55 at 1, up to 0.4-0.85 at 4.
+    wash.fade:SetFromAlpha(0.2 + 0.05 * count)
+    wash.fade:SetToAlpha(math.min(0.85, 0.45 + 0.1 * count))
+    wash:Show()
+    if not wash.anim:IsPlaying() then wash.anim:Play() end
     host:Show()
 
     -- The options preview shows it lit, so the colour and the ticked icons
