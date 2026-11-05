@@ -3,7 +3,8 @@ Squizzumables Changelog
 
 V2.4
 
-- New: a bundled sound, "The Ducky of the Opera".
+- New: three bundled sounds, "The Ducky of the Opera", "For Ducky, Every
+  Song Is Sung" and "He Started It".
 
 V2.3
 
