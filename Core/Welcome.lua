@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.4"] = {
+        "Three new bundled sounds, each 40 seconds to match Bloodlust: The Ducky of the Opera, For Ducky, Every Song Is Sung and He Started It.",
+    },
     ["2.3"] = {
         "Now runs on WoW Forever as well as retail, with Forever's food, flasks, weapon oils and class buffs.",
         "On Forever, buttons cast your highest rank and stay hidden until you have learned the spell. Rogue poisons appear with the weapon oils.",
