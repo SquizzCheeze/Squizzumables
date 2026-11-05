@@ -489,10 +489,10 @@ function BH:BuildSettingsTab(parent)
     -- Spec-specific profile dropdown
     -- Build items: first entry = none (use character-level profile), then all profiles
     local function GetSpecProfileDropdownItems()
-        local specIndex = GetSpecialization()
+        local specIndex = BH.GetSpecialization()
         local specName = "Current Spec"
         if specIndex then
-            local _, name = GetSpecializationInfo(specIndex)
+            local _, name = BH.GetSpecializationInfo(specIndex)
             if name then specName = name end
         end
         local items = { { text = "\226\128\148 (use character profile)", value = "" } }
@@ -743,10 +743,10 @@ function BH:RefreshSettingsTab()
     end
 
     if self.specProfileDropdown then
-        local specIndex = GetSpecialization()
+        local specIndex = BH.GetSpecialization()
         local specName = "Current Spec"
         if specIndex then
-            local _, name = GetSpecializationInfo(specIndex)
+            local _, name = BH.GetSpecializationInfo(specIndex)
             if name then specName = name end
         end
         local specItems = { { text = "\226\128\148 (use character profile)", value = "" } }

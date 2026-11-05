@@ -6,6 +6,18 @@ local addonName, ns = ...
 ns.BH = ns.BH or {}
 local BH = ns.BH
 
+-- WoW Forever (game type "camelot"): the 12.1 engine with vanilla content,
+-- reporting a 1.60+ interface number. Retail stays the unbranched path.
+local clientInterface = select(4, GetBuildInfo())
+BH.IS_FOREVER = type(clientInterface) == "number"
+    and clientInterface >= 16000 and clientInterface < 20000
+
+-- The bare spec globals come from Blizzard_DeprecatedSpecialization, which does
+-- not load on Forever, so calls go through these.
+local C_SI = C_SpecializationInfo
+BH.GetSpecialization = _G.GetSpecialization or C_SI.GetSpecialization
+BH.GetSpecializationInfo = _G.GetSpecializationInfo or C_SI.GetSpecializationInfo
+
 -- Default consumables and buffs (Midnight 12.0)
 BH.defaults = {
     consumables = {

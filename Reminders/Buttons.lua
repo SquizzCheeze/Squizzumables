@@ -107,6 +107,16 @@ function BH:FireClassBuffSounds(spellIDsThisPass)
     end
 end
 
+-- A Paladin aura on a unit. On Forever it can be any rank of the entry's spell.
+local function FindAuraRank(unit, spellID)
+    local ranks = BH.SPELL_RANKS and BH.SPELL_RANKS[spellID]
+    if not ranks then return BH.Secrets.GetAuraBySpellID(unit, spellID) end
+    for _, rankID in ipairs(ranks) do
+        local auraData = BH.Secrets.GetAuraBySpellID(unit, rankID)
+        if auraData then return auraData end
+    end
+end
+
 -- Append every class-buff button for this pass: group buffs, self buffs, tank
 -- buffs, weapon imbues, Paladin auras, Lightsmith rites and pet summons.
 --
@@ -145,7 +155,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
             local myHasDevotion = false
             local myActiveAuras = {}   -- spellID -> true for auras I have up right now
             for _, auraInfo in ipairs(info.auras) do
-                local auraData = BH.Secrets.GetAuraBySpellID("player", auraInfo.spellID)
+                local auraData = FindAuraRank("player", auraInfo.spellID)
                 local source = BH.Secrets.SafeAuraSourceUnit(auraData)
                 if auraData and (not source or UnitIsUnit(source, "player")) then
                     myActiveCount = myActiveCount + 1
@@ -175,7 +185,7 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                             local _, unitClass = UnitClass(unit)
                             if unitClass == "PALADIN" then
                                 for _, auraInfo in ipairs(info.auras) do
-                                    local auraData = BH.Secrets.GetAuraBySpellID(unit, auraInfo.spellID)
+                                    local auraData = FindAuraRank(unit, auraInfo.spellID)
                                     local source = BH.Secrets.SafeAuraSourceUnit(auraData)
                                     if source and UnitIsUnit(source, unit) then
                                         coveredByOthers[auraInfo.spellID] = true
@@ -213,7 +223,8 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
 
                 for _, auraInfo in ipairs(showAuras) do
                     local icon = GetSpellIcon(auraInfo.spellID)
-                    if icon then
+                    -- Forever: characters level up, so the aura may not be learned yet.
+                    if icon and (not BH.IS_FOREVER or BH.PlayerKnowsSpell(auraInfo.spellID)) then
                         self.buttons[id] = CreateButton(id, icon, "Cast aura", "spell", auraInfo.spellID, auraInfo.label, nil, nil)
                         classBuff_spellIDs_this_pass[auraInfo.spellID] = true
                         id = id + 1
@@ -257,8 +268,8 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                 local petBuffList = info.spellID and { info } or info
                 for _, buffInfo in ipairs(petBuffList) do
                     if buffInfo.petCheck and buffInfo.spellID and self:IsEnabled(buffInfo.spellID) then
-                        local specIndex = GetSpecialization()
-                        local currentSpecID = specIndex and select(1, GetSpecializationInfo(specIndex))
+                        local specIndex = BH.GetSpecialization()
+                        local currentSpecID = specIndex and select(1, BH.GetSpecializationInfo(specIndex))
                         local isMMHunter = (class == "HUNTER") and (currentSpecID == 254)
                         local hasUnbreakableBond = BH.PlayerKnowsSpell(1223323)
                         local skipForMM = isMMHunter and not hasUnbreakableBond
@@ -590,7 +601,8 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                         -- Check all group/raid members for the buff
                         local checkIDs = buffInfo.buffVariants or buffInfo.spellID
                         local needsBuff = GroupNeedsBuff(checkIDs)
-                        if needsBuff then
+                        -- Forever: characters level up, so the spell may not be learned yet.
+                        if needsBuff and (not BH.IS_FOREVER or BH.PlayerKnowsSpell(buffInfo.spellID)) then
                             local castID = buffInfo.castSpellID or buffInfo.spellID
                             local icon = GetSpellIcon(castID)
                             if icon then

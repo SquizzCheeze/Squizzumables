@@ -566,7 +566,7 @@ end
 -- are "you are missing this buff, click to apply it"; a healthstone is "you are
 -- not carrying one", and the moment you *use* it is not a moment for a
 -- reminder. So this is a bag-presence check with no button.
-local HEALTHSTONE_ITEM_IDS = {
+local HEALTHSTONE_ITEM_IDS = BH.FOREVER_HEALTHSTONE_ITEMS or {
     5512,    -- Healthstone
     224464,  -- Demonic Healthstone
 }

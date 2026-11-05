@@ -283,7 +283,7 @@ end
 -- Spec key for per-spec saves
 local function GetSpecKey()
     local _, _, classID = UnitClass("player")
-    local specIndex = GetSpecialization() or 1
+    local specIndex = BH.GetSpecialization() or 1
     return classID .. "_" .. specIndex
 end
 

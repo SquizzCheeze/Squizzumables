@@ -1,6 +1,14 @@
 Squizzumables Changelog
 =======================
 
+V2.3
+
+- New: Squizzumables now runs on WoW Forever as well as retail. Forever has
+  its own food, flask, weapon oil and class buff lists, with every rank of a
+  spell counted. Buttons cast your highest rank and stay hidden until you
+  have learned the spell. Rogue poisons appear with the weapon oils.
+- Not on Forever yet: elixirs, Paladin blessings and augment runes.
+
 V2.2
 
 - New: Rotation Helper (Cooldowns > Rotation Helper, off until you switch

@@ -1,10 +1,10 @@
-## Interface: 120105
+## Interface: 120105, 16001
 ## Title: Squizzumables
 ## Notes: Reminds you to apply food, flasks, oils and class buffs in dungeons, raids and delves. Use /sq config to customize.
 ## Author: Squizz
 ## X-License: MIT
 ## X-Curse-Project-ID: 1483099
-## Version: 2.2
+## Version: 2.3
 ## SavedVariables: SquizzumablesDB
 ## IconTexture: Interface\Icons\INV_Misc_Food_15
 ## AddonCompartmentFunc: Squizzumables_OnAddonCompartmentClick
@@ -16,6 +16,7 @@ Libs\LibSquizzGrid-1.0\LibSquizzGrid-1.0.lua
 Libs\LibSquizzTheme-1.0\LibSquizzTheme-1.0.lua
 Libs\LibSquizzShell-1.0\LibSquizzShell-1.0.lua
 Squizzumables_Config.lua
+Squizzumables_Config_Forever.lua
 Squizzumables_Secrets.lua
 Core\Gate.lua
 UI\Theme.lua

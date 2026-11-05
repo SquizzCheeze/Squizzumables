@@ -329,6 +329,14 @@ end
 -- Use this instead of IsSpellKnown anywhere in the addon.
 function BH.PlayerKnowsSpell(spellID)
     if not spellID then return false end
+    -- Forever: an entry's spellID is its lowest rank, and any rank counts.
+    local ranks = BH.SPELL_RANKS and BH.SPELL_RANKS[spellID]
+    if ranks then
+        for _, rankID in ipairs(ranks) do
+            if C_SpellBook.IsSpellKnown(rankID) then return true end
+        end
+        return false
+    end
     -- The IsPlayerSpell / IsSpellKnownOrOverridesKnown / IsSpellKnown globals that
     -- used to follow this check are all deprecated aliases into C_SpellBook, and
     -- were unreachable anyway: IsSpellKnown always returns a boolean, so the
@@ -669,9 +677,9 @@ end
 -- Get the numeric spec ID for the player's current specialisation.
 -- Returns nil if no spec is active (e.g. no talents chosen yet).
 function BH:GetCurrentSpecID()
-    local specIndex = GetSpecialization()
+    local specIndex = BH.GetSpecialization()
     if not specIndex then return nil end
-    local specID = select(1, GetSpecializationInfo(specIndex))
+    local specID = select(1, BH.GetSpecializationInfo(specIndex))
     return specID
 end
 

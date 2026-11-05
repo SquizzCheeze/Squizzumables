@@ -21,6 +21,10 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.3"] = {
+        "Now runs on WoW Forever as well as retail, with Forever's food, flasks, weapon oils and class buffs.",
+        "On Forever, buttons cast your highest rank and stay hidden until you have learned the spell. Rogue poisons appear with the weapon oils.",
+    },
     ["2.2"] = {
         "New: Rotation Helper (Cooldowns > Rotation Helper) - Blizzard's suggested next spell on an icon you can place anywhere, with a Ready Now row beside it.",
         "New: Low Health Glow on Cooldown Manager and custom groups (Behaviour tab) - tick the icons that should glow while your health is low and they are ready to use. Works in combat.",

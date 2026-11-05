@@ -416,7 +416,9 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         btn:SetAttribute("item", "item:" .. actionValue)
     elseif actionType == "spell" then
         btn:SetAttribute("type", "spell")
-        btn:SetAttribute("spell", actionValue)
+        -- Forever: by name, which casts the highest rank known.
+        ---@cast actionValue number
+        btn:SetAttribute("spell", BH.IS_FOREVER and C_Spell.GetSpellName(actionValue) or actionValue)
     elseif actionType == "oil" then
         -- Oil uses macro to apply to specific weapon slot
         btn:SetAttribute("type", "macro")
