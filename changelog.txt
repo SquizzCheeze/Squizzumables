@@ -1,6 +1,10 @@
 Squizzumables Changelog
 =======================
 
+V2.4
+
+- New: a bundled sound, "The Ducky of the Opera".
+
 V2.3
 
 - New: Squizzumables now runs on WoW Forever as well as retail. Forever has

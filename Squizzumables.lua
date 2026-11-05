@@ -1834,6 +1834,7 @@ local SQ_BUNDLED_SOUNDS = {
     { name = "Squizzumables: Ducky's Lust Attack 2", file = "DUCKYS_LUST_ATTACK2.ogg" },
     { name = "Squizzumables: Kel's Flail",        file = "Kel's Flail.ogg" },
     { name = "Squizzumables: Chemical X",         file = "ChemicalX.mp3" },
+    { name = "Squizzumables: The Ducky of the Opera", file = "The Ducky of the Opera.mp3" },
 }
 
 -- Registers all user custom sounds from settings into LibSharedMedia.
