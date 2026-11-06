@@ -2246,9 +2246,11 @@ BH.REMINDERS = {
     },
     {
         key = "pet", globalName = "SQUIZZUMABLESPetReminder",
-        -- Survival (255) has no pet.
-        gates = { "enabled", "class", "notSpec", "visible" },
-        class = "HUNTER", notSpec = 255, classFrame = true,
+        -- Survival (255) has no pet. Forever: not until Call Pet is learned,
+        -- since a low-level hunter has no pet to call.
+        gates = BH.IS_FOREVER and { "enabled", "class", "notSpec", "knows", "visible" }
+            or { "enabled", "class", "notSpec", "visible" },
+        class = "HUNTER", notSpec = 255, knowsSpell = 883, classFrame = true,
         label = "No Pet Reminder (Hunter)",
         -- Its tick moved from Class Buffs to Text Reminders > Class in 2.0.
         enableLabel = "Enable No Pet Reminder",

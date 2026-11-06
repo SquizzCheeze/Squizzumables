@@ -472,10 +472,39 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                 end
             end
 
+            -- Hunter aspects (Forever): only one can be up at a time, so while
+            -- none is, every known, enabled aspect gets a button and the player
+            -- picks. Any rank of any aspect counts as up.
+            do
+                local aspects, upIDs = {}, {}
+                for _, buffInfo in ipairs(buffList) do
+                    if buffInfo.aspect then
+                        aspects[#aspects + 1] = buffInfo
+                        for _, rankID in ipairs(BH.SPELL_RANKS and BH.SPELL_RANKS[buffInfo.spellID] or { buffInfo.spellID }) do
+                            upIDs[#upIDs + 1] = rankID
+                        end
+                    end
+                end
+                if #aspects > 0 and not UnitIsDeadOrGhost("player") and not UnitHasBuff("player", upIDs) then
+                    for _, buffInfo in ipairs(aspects) do
+                        if self:IsEnabled(buffInfo.spellID) and BH.PlayerKnowsSpell(buffInfo.spellID) then
+                            local icon = GetSpellIcon(buffInfo.spellID)
+                            if icon then
+                                self.buttons[id] = CreateButton(id, icon, "Cast aspect", "spell", buffInfo.spellID, buffInfo.label, nil, nil)
+                                classBuff_spellIDs_this_pass[buffInfo.spellID] = true
+                                id = id + 1
+                            end
+                        end
+                    end
+                end
+            end
+
             for _, buffInfo in ipairs(buffList) do
                 if buffInfo.spellID and self:IsEnabled(buffInfo.spellID) then
                     if buffInfo.poisonGroup then
                         -- Already handled in the rogue poison batch above
+                    elseif buffInfo.aspect then
+                        -- Already handled in the hunter aspect batch above
                     elseif buffInfo.earthShield and earthShieldHandled then
                         -- Already handled in multi-shaman Earth Shield batch above
                     elseif buffInfo.healthstoneCheck then

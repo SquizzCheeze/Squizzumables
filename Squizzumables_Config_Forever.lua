@@ -34,6 +34,8 @@ local RANKS = {
     [465]   = { 465, 10290, 643, 10291, 1032, 10292, 10293 },        -- Devotion Aura
     [7294]  = { 7294, 10298, 10299, 10300, 10301 },                  -- Retribution Aura
     [6201]  = { 6201, 6202, 5699, 11729, 11730 },                    -- Create Healthstone
+    [13165] = { 13165, 14318, 14319, 14320, 14321, 14322, 25296 },   -- Aspect of the Hawk
+    [20043] = { 20043, 20190 },                                      -- Aspect of the Wild
 }
 BH.SPELL_RANKS = RANKS
 
@@ -219,6 +221,14 @@ BH.defaults.classBuffs = {
     HUNTER = {
         -- One Call Pet here, so no stable slots and none of callPetCheck's icon test.
         { spellID = 883, petCheck = true, label = "Pet" },  -- Call Pet
+        -- Only one aspect can be up at a time: while none is, every known and
+        -- enabled one gets a button, so the player picks.
+        { spellID = 13165, aspect = true, label = "Hawk" },     -- Aspect of the Hawk
+        { spellID = 13163, aspect = true, label = "Monkey" },   -- Aspect of the Monkey
+        { spellID = 20043, aspect = true, label = "Wild" },     -- Aspect of the Wild
+        { spellID = 13161, aspect = true, label = "Beast" },    -- Aspect of the Beast
+        { spellID = 5118, aspect = true, label = "Cheetah" },   -- Aspect of the Cheetah
+        { spellID = 13159, aspect = true, label = "Pack" },     -- Aspect of the Pack
     },
     SHAMAN = {
         { spellID = 324, selfBuff = true, label = "Lightning Shield", buffVariants = RANKS[324] },

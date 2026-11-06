@@ -1,6 +1,14 @@
 Squizzumables Changelog
 =======================
 
+V2.5
+
+- New (WoW Forever): Hunter aspects are class buffs. While no aspect is up,
+  each one you know gets a button: Hawk, Monkey, Wild, Beast, Cheetah and
+  Pack. Untick any you don't want on the Class Buffs tab.
+- Fixed (WoW Forever): the No Pet reminder no longer shows before you have
+  learned Call Pet at level 10.
+
 V2.4
 
 - New: three bundled sounds, "The Ducky of the Opera", "For Ducky, Every
