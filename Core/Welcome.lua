@@ -21,6 +21,11 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.5"] = {
+        "The lust song no longer replays after a /reload or a loading screen while you still have Sated or Exhaustion.",
+        "WoW Forever: Hunter aspects are class buffs. While none is up, each one you know gets a button.",
+        "WoW Forever: the No Pet reminder waits until you have learned Call Pet.",
+    },
     ["2.4"] = {
         "Three new bundled sounds, each 40 seconds to match Bloodlust: The Ducky of the Opera, For Ducky, Every Song Is Sung and He Started It.",
     },
