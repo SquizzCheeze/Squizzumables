@@ -8,6 +8,8 @@ V2.5
   Pack. Untick any you don't want on the Class Buffs tab.
 - Fixed (WoW Forever): the No Pet reminder no longer shows before you have
   learned Call Pet at level 10.
+- Fixed: the lust song could replay after a /reload or a loading screen
+  (porting to a city) while you still had Sated or Exhaustion.
 
 V2.4
 

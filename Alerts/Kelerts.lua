@@ -361,10 +361,18 @@ BH.AlertTriggerActive = TriggerActive
 -- can only ever remove a replay, never a real alert.
 local FRESH_TRIGGER_WINDOW = 5
 
+--
+-- The built-in lust alert is the exception to "unreadable fires": its debuffs
+-- are NeverSecret, so an unreadable timer on one is not a real reading. The
+-- likely case is a loading screen or a /reload, where the aura is back before
+-- its duration is, and answering nil there replayed the song in the city or
+-- on reload with the same Sated still up (user reports 2026-11-07). It now
+-- counts as old instead.
 local function TriggerAge(alert)
     local t = alert.trigger or {}
+    local builtin = alert.builtin and not t.spellID
     local ids
-    if alert.builtin and not t.spellID then
+    if builtin then
         ids = LUST_DEBUFF_IDS
     else
         local spellID = tonumber(t.spellID)
@@ -377,11 +385,15 @@ local function TriggerAge(alert)
         if aura then
             local dur = BH.Secrets.SafeAuraDuration(aura)
             local exp = BH.Secrets.SafeAuraExpiration(aura)
-            if not (dur and exp and dur > 0) then return nil end
-            local age = GetTime() - (exp - dur)
-            if not youngest or age < youngest then youngest = age end
+            if dur and exp and dur > 0 then
+                local age = GetTime() - (exp - dur)
+                if not youngest or age < youngest then youngest = age end
+            elseif not builtin then
+                return nil
+            end
         end
     end
+    if builtin and not youngest then return math.huge end
     return youngest
 end
 
