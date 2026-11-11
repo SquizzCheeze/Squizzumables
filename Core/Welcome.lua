@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.6"] = {
+        "Two new bundled sounds: Nori and SQUIZZ! From Upsidedownland.",
+    },
     ["2.5"] = {
         "The lust song no longer replays after a /reload or a loading screen while you still have Sated or Exhaustion.",
         "WoW Forever: Hunter aspects are class buffs. While none is up, each one you know gets a button.",
