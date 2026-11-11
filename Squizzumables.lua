@@ -1837,6 +1837,8 @@ local SQ_BUNDLED_SOUNDS = {
     { name = "Squizzumables: The Ducky of the Opera", file = "The Ducky of the Opera.mp3" },
     { name = "Squizzumables: For Ducky, Every Song Is Sung", file = "For Ducky, Every Song Is Sung.mp3" },
     { name = "Squizzumables: He Started It",      file = "He Started It.mp3" },
+    { name = "Squizzumables: Nori",               file = "Nori.mp3" },
+    { name = "Squizzumables: SQUIZZ! From Upsidedownland", file = "SQUIZZ! From Upsidedownland.mp3" },
 }
 
 -- Registers all user custom sounds from settings into LibSharedMedia.

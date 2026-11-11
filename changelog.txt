@@ -1,6 +1,10 @@
 Squizzumables Changelog
 =======================
 
+V2.6
+
+- New: two more bundled sounds, "Nori" and "SQUIZZ! From Upsidedownland".
+
 V2.5
 
 - New (WoW Forever): Hunter aspects are class buffs. While no aspect is up,
