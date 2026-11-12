@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Blizzard UI source
+
+Blizzard's UI source is at C:\dev\wow-ui-source. Search it to verify any API, event or mixin before using it. It is a local git clone; check which branch is checked out (`git -C C:\dev\wow-ui-source branch`) before trusting it for a PTR or Forever question.
+
 ## What this is
 
 Squizzumables is a World of Warcraft retail addon (Lua 5.1, WoW API). It reminds players to apply
