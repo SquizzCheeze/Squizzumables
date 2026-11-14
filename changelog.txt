@@ -1,6 +1,11 @@
 Squizzumables Changelog
 =======================
 
+V2.7
+
+- New: four more bundled sounds, "Defensives", "Herding Cats",
+  "Herding Cats 2" and "Kelli Flailing".
+
 V2.6
 
 - New: two more bundled sounds, "Nori" and "SQUIZZ! From Upsidedownland".

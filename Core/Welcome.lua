@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.7"] = {
+        "Four new bundled sounds: Defensives, Herding Cats, Herding Cats 2 and Kelli Flailing.",
+    },
     ["2.6"] = {
         "Two new bundled sounds: Nori and SQUIZZ! From Upsidedownland.",
     },
