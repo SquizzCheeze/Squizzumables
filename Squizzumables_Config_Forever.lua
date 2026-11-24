@@ -207,10 +207,10 @@ BH.defaults.consumables = {
 }
 
 BH.defaults.classBuffs = {
-    PRIEST = { spellID = 1243, buffVariants = WithGroupBuff(1243, 21562, 21564) },  -- Power Word: Fortitude, Prayer of Fortitude
-    MAGE = { spellID = 1459, buffVariants = WithGroupBuff(1459, 23028) },           -- Arcane Intellect, Arcane Brilliance
+    PRIEST = { spellID = 1243, perMember = true, buffVariants = WithGroupBuff(1243, 21562, 21564) },  -- Power Word: Fortitude, Prayer of Fortitude
+    MAGE = { spellID = 1459, perMember = true, buffVariants = WithGroupBuff(1459, 23028) },           -- Arcane Intellect, Arcane Brilliance
     WARRIOR = { spellID = 6673, buffVariants = RANKS[6673] },                       -- Battle Shout
-    DRUID = { spellID = 1126, buffVariants = WithGroupBuff(1126, 21849, 21850) },   -- Mark of the Wild, Gift of the Wild
+    DRUID = { spellID = 1126, perMember = true, buffVariants = WithGroupBuff(1126, 21849, 21850) },   -- Mark of the Wild, Gift of the Wild
     WARLOCK = {
         { spellID = 688, petCheck = true, label = "Imp" },          -- Summon Imp
         { spellID = 697, petCheck = true, label = "Voidwalker" },   -- Summon Voidwalker

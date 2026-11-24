@@ -411,6 +411,10 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
 
     DressButton(btn, texture, tooltip, actionType, actionValue, labelText, headerText, expirationTime, itemLink, craftingQuality, bagCount)
 
+    -- A pooled button may still carry the unit a per-member buff button set
+    -- (Forever); callers that want one set it after CreateButton returns.
+    btn:SetAttribute("unit", nil)
+
     if actionType == "item" then
         btn:SetAttribute("type", "item")
         btn:SetAttribute("item", "item:" .. actionValue)
@@ -445,7 +449,9 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
         elseif actionType == "oil" then
             GameTooltip:SetItemByID(actionValue.itemID)
         elseif actionType == "spell" then
-            GameTooltip:SetSpellByID(actionValue)
+            -- Forever: the rank the by-name cast will use, not the entry's rank 1.
+            ---@cast actionValue number
+            GameTooltip:SetSpellByID(BH.IS_FOREVER and BH.HighestKnownRank(actionValue) or actionValue)
         else
             GameTooltip:SetText(tooltip)
         end

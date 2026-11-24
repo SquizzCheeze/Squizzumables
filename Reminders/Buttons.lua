@@ -626,6 +626,50 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                                 id = id+1
                             end
                         end
+                    elseif BH.IS_FOREVER and buffInfo.perMember then
+                        -- Forever: these buffs are single-target, so one button
+                        -- casting at "whatever is targeted" spent the mana on a
+                        -- friendly NPC (user report 2026-11-24). Instead: one
+                        -- button per person missing it, each locked to its unit.
+                        -- Yours comes first and always targets you.
+                        if BH.PlayerKnowsSpell(buffInfo.spellID) then
+                            local checkIDs = buffInfo.buffVariants or buffInfo.spellID
+                            local icon = GetSpellIcon(buffInfo.spellID)
+                            local units = { "player" }
+                            local groupSize = GetNumGroupMembers()
+                            if groupSize > 0 then
+                                local isRaid = IsInRaid()
+                                for i = 1, groupSize do
+                                    local unit = isRaid and ("raid" .. i) or ("party" .. i)
+                                    if not UnitIsUnit(unit, "player") and UnitExists(unit)
+                                        and UnitIsPlayer(unit) and UnitIsConnected(unit)
+                                        and not UnitIsDeadOrGhost(unit) and UnitIsVisible(unit) then
+                                        units[#units + 1] = unit
+                                    end
+                                end
+                            end
+                            for _, unit in ipairs(units) do
+                                local isMe = unit == "player"
+                                if icon and not (isMe and UnitIsDeadOrGhost("player"))
+                                    and not UnitHasBuff(unit, checkIDs) then
+                                    local who = isMe and "Me" or (UnitName(unit) or unit)
+                                    local pmBtn = CreateButton(id, icon, "Cast on " .. who, "spell",
+                                        buffInfo.spellID, who, nil, nil)
+                                    pmBtn:SetAttribute("unit", unit)
+                                    -- Same parenting as the group-buff button below.
+                                    if BH.challengeModeActive then
+                                        pmBtn:SetParent(BH.frame)
+                                    else
+                                        pmBtn.isCombatBuff = true
+                                        pmBtn:SetParent(BH.combatBuffFrame)
+                                        hasCombatBuff = true
+                                    end
+                                    self.buttons[id] = pmBtn
+                                    classBuff_spellIDs_this_pass[buffInfo.spellID] = true
+                                    id = id + 1
+                                end
+                            end
+                        end
                     else
                         -- Check all group/raid members for the buff
                         local checkIDs = buffInfo.buffVariants or buffInfo.spellID

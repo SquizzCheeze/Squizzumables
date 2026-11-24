@@ -350,6 +350,18 @@ function BH.PlayerKnowsSpell(spellID)
     return false
 end
 
+-- Forever: the highest rank of a ranked spell the player knows, so a tooltip
+-- describes what a by-name cast actually casts. Unranked spells, and retail,
+-- get their own ID back.
+function BH.HighestKnownRank(spellID)
+    local ranks = BH.SPELL_RANKS and BH.SPELL_RANKS[spellID]
+    if not ranks then return spellID end
+    for i = #ranks, 1, -1 do
+        if C_SpellBook.IsSpellKnown(ranks[i]) then return ranks[i] end
+    end
+    return spellID
+end
+
 -- ============================================================================
 -- Profile System
 -- ============================================================================
