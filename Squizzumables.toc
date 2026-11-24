@@ -38,6 +38,7 @@ Group\Callouts.lua
 Reminders\Items.lua
 Reminders\Helpers.lua
 Reminders\Buttons.lua
+Reminders\BuffFlyout.lua
 Reminders\Gates.lua
 Reminders\RemindersTab.lua
 Reminders\ClassBuffsTab.lua

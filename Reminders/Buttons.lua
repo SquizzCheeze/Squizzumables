@@ -627,47 +627,37 @@ function BH:CollectClassBuffButtons(id, addedItems, class, classBuff_spellIDs_th
                             end
                         end
                     elseif BH.IS_FOREVER and buffInfo.perMember then
-                        -- Forever: these buffs are single-target, so one button
+                        -- Forever: these buffs are single-target, so a button
                         -- casting at "whatever is targeted" spent the mana on a
-                        -- friendly NPC (user report 2026-11-24). Instead: one
-                        -- button per person missing it, each locked to its unit.
-                        -- Yours comes first and always targets you.
-                        if BH.PlayerKnowsSpell(buffInfo.spellID) then
+                        -- friendly NPC (user report 2026-11-24). One button, locked
+                        -- to the next person missing it (you first); right-click
+                        -- opens BuffFlyout's grid to pick someone else.
+                        local icon = GetSpellIcon(buffInfo.spellID)
+                        if icon and BH.PlayerKnowsSpell(buffInfo.spellID) then
                             local checkIDs = buffInfo.buffVariants or buffInfo.spellID
-                            local icon = GetSpellIcon(buffInfo.spellID)
-                            local units = { "player" }
-                            local groupSize = GetNumGroupMembers()
-                            if groupSize > 0 then
-                                local isRaid = IsInRaid()
-                                for i = 1, groupSize do
-                                    local unit = isRaid and ("raid" .. i) or ("party" .. i)
-                                    if not UnitIsUnit(unit, "player") and UnitExists(unit)
-                                        and UnitIsPlayer(unit) and UnitIsConnected(unit)
-                                        and not UnitIsDeadOrGhost(unit) and UnitIsVisible(unit) then
-                                        units[#units + 1] = unit
-                                    end
+                            local missing = BH.BuffFlyout.MissingUnits(checkIDs, UnitHasBuff)
+                            local first = missing[1]
+                            if first then
+                                local who = first == "player" and "Me" or (UnitName(first) or first)
+                                local pmBtn = CreateButton(id, icon, "Cast on " .. who, "spell",
+                                    buffInfo.spellID, who, nil, nil, nil, nil,
+                                    #missing > 1 and #missing or nil)
+                                pmBtn:SetAttribute("unit", first)
+                                -- Same parenting as the group-buff button below.
+                                if BH.challengeModeActive then
+                                    pmBtn:SetParent(BH.frame)
+                                else
+                                    pmBtn.isCombatBuff = true
+                                    pmBtn:SetParent(BH.combatBuffFrame)
+                                    hasCombatBuff = true
                                 end
-                            end
-                            for _, unit in ipairs(units) do
-                                local isMe = unit == "player"
-                                if icon and not (isMe and UnitIsDeadOrGhost("player"))
-                                    and not UnitHasBuff(unit, checkIDs) then
-                                    local who = isMe and "Me" or (UnitName(unit) or unit)
-                                    local pmBtn = CreateButton(id, icon, "Cast on " .. who, "spell",
-                                        buffInfo.spellID, who, nil, nil)
-                                    pmBtn:SetAttribute("unit", unit)
-                                    -- Same parenting as the group-buff button below.
-                                    if BH.challengeModeActive then
-                                        pmBtn:SetParent(BH.frame)
-                                    else
-                                        pmBtn.isCombatBuff = true
-                                        pmBtn:SetParent(BH.combatBuffFrame)
-                                        hasCombatBuff = true
-                                    end
-                                    self.buttons[id] = pmBtn
-                                    classBuff_spellIDs_this_pass[buffInfo.spellID] = true
-                                    id = id + 1
-                                end
+                                self.buttons[id] = pmBtn
+                                classBuff_spellIDs_this_pass[buffInfo.spellID] = true
+                                id = id + 1
+                                -- Laid out after the row is placed, so the grid can
+                                -- measure where the button ended up.
+                                self.pendingFlyout = { btn = pmBtn, spellID = buffInfo.spellID,
+                                    icon = icon, missing = missing }
                             end
                         end
                     else
@@ -986,8 +976,9 @@ function BH:UpdateButtons()
     -- input state we did not anticipate can never stall updates indefinitely.
     if not self.unlockMode and IsMouseButtonDown and IsMouseButtonDown()
         and _updateButtonsDeferrals < 6 then
+        local overFlyout = BH.BuffFlyout.IsMouseOver()
         for _, btn in ipairs(self.buttons) do
-            if btn:IsShown() and btn:IsMouseOver() then
+            if overFlyout or (btn:IsShown() and btn:IsMouseOver()) then
                 if not _updateButtonsHoverRetry then
                     _updateButtonsHoverRetry = true
                     _updateButtonsDeferrals = _updateButtonsDeferrals + 1
@@ -1003,6 +994,9 @@ function BH:UpdateButtons()
     _updateButtonsDeferrals = 0
 
     -- clear existing buttons - return to pool so frames are reused next UpdateButtons call
+    -- (the Forever buff grid's tiles first: they are children of one of these)
+    BH.BuffFlyout.Release(SQ_BUTTON_POOL)
+    self.pendingFlyout = nil
     for i,btn in ipairs(self.buttons) do
         btn:Hide()
         btn:ClearAllPoints()
@@ -1239,6 +1233,11 @@ function BH:UpdateButtons()
     -- The green tint on this frame is applied by SetAllFramesPreview along
     -- with every other movable frame. It used to be duplicated here, which
     -- meant two overlay textures stacked on the same frame.
+
+    -- Forever's pick-who grid, now that its button has its place in the row.
+    local pf = self.pendingFlyout
+    self.pendingFlyout = nil
+    if pf then BH.BuffFlyout.Attach(pf.btn, pf.spellID, pf.icon, pf.missing) end
 
     self:UpdateAllReminders()
 end

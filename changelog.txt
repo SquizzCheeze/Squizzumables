@@ -5,10 +5,12 @@ V2.8
 
 - Fixed (WoW Forever): Mark of the Wild, Power Word: Fortitude and Arcane
   Intellect are single-target there, so the button cast on whoever you had
-  targeted (a friendly NPC took the buff and your mana). Now there is a
-  button for you that always buffs you, and in a group one more for each
-  member missing it, named under the icon. The tooltip shows your highest
-  rank instead of rank 1.
+  targeted (a friendly NPC took the buff and your mana). The button now
+  buffs the next person missing it, you first, then tanks, healers and the
+  rest, with their name under it and a count of how many are missing.
+  Right-click it to pick someone else: a grid of up to 8 names opens, the
+  last tile showing "+N" when more are missing. It closes when the mouse
+  leaves. The tooltip shows your highest rank instead of rank 1.
 
 V2.7
 

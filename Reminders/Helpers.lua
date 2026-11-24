@@ -414,6 +414,9 @@ local function CreateButton(id, texture, tooltip, actionType, actionValue, label
     -- A pooled button may still carry the unit a per-member buff button set
     -- (Forever); callers that want one set it after CreateButton returns.
     btn:SetAttribute("unit", nil)
+    -- ...and the right-click that opens BuffFlyout's grid.
+    btn:SetAttribute("type2", nil)
+    btn:SetAttribute("macrotext2", nil)
 
     if actionType == "item" then
         btn:SetAttribute("type", "item")
