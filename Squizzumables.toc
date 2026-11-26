@@ -55,6 +55,7 @@ Core\UIScale.lua
 DataTexts\Panel.lua
 DataTexts\Guild.lua
 DataTexts\Friends.lua
+ItemBars\ItemBars.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua

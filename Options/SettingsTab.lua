@@ -100,6 +100,7 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
             if BH.ApplyCursor then BH:ApplyCursor() end
             if BH.ApplyDataTexts then BH:ApplyDataTexts() end
+            if BH.ApplyItemBars then BH:ApplyItemBars() end
             -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
             ns.Theme.Apply()
             BH:RefreshSettingsTab()
@@ -657,6 +658,7 @@ function BH:BuildSettingsTab(parent)
         if BH.ApplyTargetDistance then BH:ApplyTargetDistance() end
         if BH.ApplyCursor then BH:ApplyCursor() end
         if BH.ApplyDataTexts then BH:ApplyDataTexts() end
+        if BH.ApplyItemBars then BH:ApplyItemBars() end
         -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
         ns.Theme.Apply()
         BH:RefreshSettingsTab()

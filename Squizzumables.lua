@@ -665,6 +665,7 @@ function BH:SwitchToProfile(profileName)
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
     if self.ApplyDataTexts then self:ApplyDataTexts() end
+    if self.ApplyItemBars then self:ApplyItemBars() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
 
@@ -760,6 +761,7 @@ function BH:OnSpecChanged()
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
     if self.ApplyDataTexts then self:ApplyDataTexts() end
+    if self.ApplyItemBars then self:ApplyItemBars() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
@@ -1522,6 +1524,8 @@ function BH:CreateOptionsPanel(noShow)
         { group = "Interface", pages = {
             { key = "datatexts",  label = "Data Texts",       field = "dataTextsTab",     build = "BuildDataTextsTab",
               subtitle = "Guild, friends and other live readouts" },
+            { key = "itembars",   label = "Item Bars",        field = "itemBarsTab",      build = "BuildItemBarsTab",
+              subtitle = "Bars that fill themselves from your bags" },
         } },
         { group = "General", pages = {
             { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab", preview = "buttons",
@@ -1532,7 +1536,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2004,6 +2008,7 @@ function BH:SetUnlockMode(on, keepPanel, quiet)
     self:UpdateCalloutsButtonFrame()
     self:UpdateFrameLock()
     self:UpdateKelAlertUnlockState()
+    if self.ApplyItemBars then self:ApplyItemBars() end
     if self.unlockBtn then
         -- Labelled "Edit Mode" like SquizzFrames' (user request 2026-10-17); lit in
         -- the accent while unlocked, as SquizzFrames' is while editing.
@@ -2501,6 +2506,16 @@ local MOVABLE_FRAMES = {
       skip = function(s) return s and s.dtAttachMinimap end,
       nudge = function(dx, dy) BH:DataTextNudge(dx, dy) end },
 }
+
+-- ItemBars/ItemBars.lua: each bar's holder (the full-size grid). The secure
+-- bar itself is hidden while Edit Mode is on, so nothing is used by a drag.
+for n = 1, 5 do
+    MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+        field = "itemBar" .. n, label = "Item Bar " .. n, enabled = "ib" .. n .. "Enabled", gate = "ibEnabled",
+        find = "Show Bar " .. n,
+        nudge = function(dx, dy) ns.ItemBars.Nudge(n, dx, dy) end,
+    }
+end
 
 -- Every text reminder, from the registry rather than by hand -- except the
 -- four class reminders, which move as one Class Reminder frame.

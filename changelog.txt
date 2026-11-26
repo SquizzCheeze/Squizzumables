@@ -25,6 +25,15 @@ V2.8
   grouped by game, and its right-click menu also sets your status and your
   Battle.net broadcast. If you use ElvUI, its font, colours and minimap
   texts are copied over the first time, so the two look the same.
+- New: Item Bars (Interface > Item Bars), off until you switch them on. Up
+  to five bars of item buttons that fill themselves from your bags, quest
+  log and gear. Each bar shows the groups you tick: quest items, gear with
+  a Use:, containers, holiday and other usable items, potions, flasks,
+  vantus runes, food, augment runes, weapon oils, bandages and a list of
+  your own. Groups are worked out from the items themselves, so a new
+  expansion's potions need no update. Ctrl-right-click a button to hide
+  that item. If you use WindTools' Extra Items Bar, its bars' positions,
+  sizes and groups are copied over the first time.
 
 V2.7
 
