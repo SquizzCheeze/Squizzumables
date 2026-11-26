@@ -178,7 +178,8 @@ local function Take(k, rec)
         -- WoW Forever's micro menu draws a bar frame round its buttons
         -- (retail's has none). Emptied, it kept its old size until Edit Mode
         -- next laid it out, leaving a bare border on screen.
-        for _, art in ipairs({ MicroMenu.BorderArt, MicroMenu.BackgroundArt }) do
+        for _, key in ipairs({ "BorderArt", "BackgroundArt" }) do
+            local art = rawget(MicroMenu, key)
             if art then art:SetAlpha(0) end
         end
         for _, b in ipairs(list) do
