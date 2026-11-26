@@ -248,7 +248,12 @@ DT.SETTINGS = ns.Settings.Describe({
             { key = "dtBorder", type = "check", default = true,
               label = "Border", tip = "A one-pixel border round the panel." },
             { key = "dtBorderColor", type = "color", default = { r = 0, g = 0, b = 0 },
-              label = "Border Colour", tip = "Colour of the border.", when = BorderOn },
+              label = "Border Colour", tip = "Colour of the border.",
+              when = function(s) return BorderOn(s) and not s.dtBorderClassColor end },
+            { key = "dtBorderClassColor", type = "check", default = false,
+              label = "Class Colour Border",
+              tip = "Colour the border with your class colour instead of the Border Colour above.",
+              when = BorderOn },
         } },
 
         { key = "text", label = "Text", rows = {
@@ -473,8 +478,14 @@ local function Style()
         })
         local bc = s.dtBackdropColor or {}
         panel:SetBackdropColor(bc.r or 0.1, bc.g or 0.1, bc.b or 0.1, (s.dtBackdropAlpha or 100) / 100)
-        local ec = s.dtBorderColor or {}
-        panel:SetBackdropBorderColor(ec.r or 0, ec.g or 0, ec.b or 0, 1)
+        local er, eg, eb
+        if s.dtBorderClassColor then
+            er, eg, eb = DT.ClassColor(select(2, UnitClass("player")))
+        else
+            local ec = s.dtBorderColor or {}
+            er, eg, eb = ec.r or 0, ec.g or 0, ec.b or 0
+        end
+        panel:SetBackdropBorderColor(er, eg, eb, 1)
     else
         panel:SetBackdrop(nil)
     end
