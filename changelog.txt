@@ -93,6 +93,15 @@ V2.8
   for the faction you watch (renown, friendship and paragon included). The
   two bars are placed in Edit Mode. Each waits while ElvUI does the same
   job, and your ElvUI settings for them are copied over the first time.
+- New: Buffs and Debuffs (Interface > Buffs and Debuffs), off until you
+  switch it on. Blizzard's own buff and debuff frames with square icons and
+  a thin edge (the debuff type's colour on debuffs), the timer inside the
+  icon and your choice of fonts for the timer and stacks. Size, direction,
+  icons per row and spacing stay in Edit Mode, and right-click still
+  cancels a buff. It waits while ElvUI's Buffs and Debuffs are on; your
+  ElvUI fonts for them are copied over the first time.
+- Chat: Up and Down in the edit box go through what you typed without
+  holding Alt (Alt+Up for /cast and other secure commands).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
   been relying on another addon to load it.
 
