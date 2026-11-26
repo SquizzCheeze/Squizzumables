@@ -103,6 +103,17 @@ V2.8
   frames are hidden (untick to keep them). It waits while ElvUI's Buffs and
   Debuffs are on; your ElvUI layout and positions are copied over the
   first time.
+- New: Tooltip (Interface > Tooltip), off until you switch it on. The
+  game's tooltip with a flat dark look and a thin edge, your fonts for the
+  text, title line and comparisons, and where it shows: above the right
+  chat panel, a spot you place in Edit Mode, or at the cursor. It can hide
+  in combat (or show only with Shift, Ctrl or Alt). A health bar above or
+  below with percent or current / max. Players get their class colour,
+  title, guild and rank, realm on Shift, AFK/DND, level in its difficulty
+  colour and a coloured spec line; creatures their reaction colour, level,
+  elite or rare tag and type. Both show their role and their target, and
+  the PvP and faction lines are dropped. It waits while ElvUI's tooltip is
+  on; your ElvUI tooltip settings are copied over the first time.
 - Chat: Up and Down in the edit box go through what you typed without
   holding Alt (Alt+Up for /cast and other secure commands).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
