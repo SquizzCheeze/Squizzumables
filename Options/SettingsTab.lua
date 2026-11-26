@@ -111,6 +111,7 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             if BH.ApplyWaypoints then BH:ApplyWaypoints() end
             if BH.ApplyEventTracker then BH:ApplyEventTracker() end
             if BH.ApplyObjectiveTracker then BH:ApplyObjectiveTracker() end
+            if BH.ApplyQuestExtras then BH:ApplyQuestExtras() end
             -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
             ns.Theme.Apply()
             BH:RefreshSettingsTab()
@@ -679,6 +680,7 @@ function BH:BuildSettingsTab(parent)
         if BH.ApplyWaypoints then BH:ApplyWaypoints() end
         if BH.ApplyEventTracker then BH:ApplyEventTracker() end
         if BH.ApplyObjectiveTracker then BH:ApplyObjectiveTracker() end
+        if BH.ApplyQuestExtras then BH:ApplyQuestExtras() end
         -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
         ns.Theme.Apply()
         BH:RefreshSettingsTab()

@@ -161,6 +161,22 @@ V2.8
   them: "/way 45.2 67.1" for the zone you're in, "/way #2248 45.2, 67.1"
   for another (not while TomTom is loaded). It waits while WindTools'
   Super Tracker is on; its settings are copied over the first time.
+- New: Quests (Interface > Quests), each part off until you switch it on:
+  - Progress: "[30] Steelsnap - Steelsnap's Rib 1/1" in the middle of the
+    screen or in chat as objectives move on, and a line when a quest is
+    accepted or complete, in place of the game's own messages. Level, quest
+    type, daily/weekly and group size are each optional; counts over 75 (or
+    your choice) only show when done. Sounds for each, if you like.
+  - Announce: the same to party, instance or raid chat, with an Announce
+    tick on the objective tracker's header. Never while the game blocks
+    addon chat.
+  - Auto Collapse: the objective tracker folded to its header, hidden or
+    shown by situation (combat, vehicle, resting, dungeon, raid, delve,
+    battleground, arena, open world, housing). It only hides and shows the
+    tracker's sections, so quest item buttons keep working.
+  - Screenshots: one when you earn an achievement.
+  Each waits while the WindTools equivalent is on; your WindTools settings
+  are copied over the first time.
 - New: Objective Tracker (Interface > Objective Tracker), off until you
   switch it on. Restyles Blizzard's quest tracker: fonts for the section
   headers and the quest text, colours (or class colour) for headers, quest
