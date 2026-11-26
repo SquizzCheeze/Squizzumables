@@ -265,24 +265,56 @@ local function Progress(text)
     return text:sub(1, s1 - 1) .. piece .. text:sub(e1 + 1)
 end
 
+-- The objective text is rewritten ONLY from Blizzard's own text, kept in
+-- original[fs] as Blizzard sets it. Rewriting whatever the string holds now
+-- fed our own output back in: the digits of a colour code matched "%d+/%d+"
+-- and every refresh nested another one (V2.8 testing, 2026-11-27).
+-- The SetText post-hook runs before Blizzard measures the line, so a line
+-- that wraps because of the percentage is given its real height.
+local original = {}
+local rewriting
+
+local function Rewrite(fs)
+    local base = original[fs]
+    if not base then return end
+    local new = Active() and Progress(base) or base
+    if fs:GetText() ~= new then
+        rewriting = true
+        fs:SetText(new)
+        rewriting = false
+    end
+end
+
 local hookedLines = {}
 local function StyleLine(line)
-    if not hookedLines[line] then
-        hookedLines[line] = true
-        if line.Text then HookColour(line.Text, ObjectiveColour) end
-    end
-    local s = Settings()
-    if s.otNoDash and line.Dash and line.Dash:IsShown() then
-        line.Dash:Hide()
-    end
     local fs = line.Text
-    if fs then
+    if fs and not hookedLines[line] then
+        hookedLines[line] = true
+        HookColour(fs, ObjectiveColour)
+        hooksecurefunc(fs, "SetText", function(self, text)
+            if rewriting then return end
+            if type(text) == "string" and (not canaccessvalue or canaccessvalue(text)) then
+                original[self] = text
+                Rewrite(self)
+            else
+                original[self] = nil
+            end
+        end)
+        -- Set before the hook existed, so still Blizzard's own text.
         local text = fs:GetText()
-        if text and (not canaccessvalue or canaccessvalue(text)) then
-            local new = Progress(text)
-            if new ~= text then fs:SetText(new) end
+        if type(text) == "string" and (not canaccessvalue or canaccessvalue(text)) then original[fs] = text end
+    end
+    local dash = line.Dash
+    if dash then
+        if Settings().otNoDash and Active() then
+            dash:Hide()
+            dash:SetText(nil)
+        elseif line.dashStyle == OBJECTIVE_DASH_STYLE_SHOW and not dash:IsShown() then
+            dash:SetText(QUEST_DASH)
+            dash:Show()
         end
     end
+    if fs then Rewrite(fs) end
 end
 
 local hookedBlocks = {}
