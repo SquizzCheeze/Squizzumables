@@ -120,7 +120,7 @@ local keys = {}   -- short name (Name or Name-Realm) -> { level, map }
 local LKS
 
 local function KeystoneLine(tt, unit)
-    if Settings().ttKeystone == false then return end
+    if BH.IS_FOREVER or Settings().ttKeystone == false then return end
     local level, map
     local isMe = UnitIsUnit(unit, "player")
     if canaccessvalue(isMe) and isMe then
@@ -147,7 +147,7 @@ end
 
 local lastRequest = 0
 local function RequestKeys()
-    if not (LKS and IsInGroup() and not IsInRaid()) then return end
+    if BH.IS_FOREVER or not (LKS and IsInGroup() and not IsInRaid()) then return end
     if GetTime() - lastRequest < 10 then return end
     lastRequest = GetTime()
     LKS.Request("PARTY")
@@ -600,7 +600,7 @@ function TT.ApplyMore()
     end)
     HookGroupFinder()
 
-    LKS = LibStub and LibStub("LibKeystone", true)
+    LKS = not BH.IS_FOREVER and LibStub and LibStub("LibKeystone", true) or nil
     if LKS then LKS.Register(TT, OnKeystone) end
 
     local ev = CreateFrame("Frame")

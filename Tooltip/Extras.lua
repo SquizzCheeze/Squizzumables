@@ -90,7 +90,7 @@ end
 
 local function Mythic(tt, unit)
     local s = Settings()
-    if InCombatLockdown() or s.ttMythic == false then return end
+    if BH.IS_FOREVER or InCombatLockdown() or s.ttMythic == false then return end
     local info = C_PlayerInfo and C_PlayerInfo.GetPlayerMythicPlusRatingSummary
         and C_PlayerInfo.GetPlayerMythicPlusRatingSummary(unit)
     local score = info and info.currentSeasonScore

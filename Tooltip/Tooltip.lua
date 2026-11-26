@@ -152,11 +152,11 @@ TT.SETTINGS = ns.Settings.Describe({
             { type = "header", label = "PLAYERS" },
             { key = "ttItemLevel", type = "check", default = true, label = "Item Level with Shift",
               tip = "Hold Shift over a player, out of combat, to inspect them and see their item level." },
-            { key = "ttMythic", type = "check", default = true, label = "Mythic+ Score",
+            { retail = true, key = "ttMythic", type = "check", default = true, label = "Mythic+ Score",
               tip = "Out of combat." },
-            { key = "ttMythicBest", type = "check", default = true, label = "Best Mythic+ Run",
+            { retail = true, key = "ttMythicBest", type = "check", default = true, label = "Best Mythic+ Run",
               when = function(s) return s.ttMythic ~= false end },
-            { key = "ttMythicColor", type = "check", default = true, label = "Score in Its Colour",
+            { retail = true, key = "ttMythicColor", type = "check", default = true, label = "Score in Its Colour",
               when = function(s) return s.ttMythic ~= false end },
             { key = "ttMount", type = "check", default = true, label = "Their Mount",
               tip = "Out of combat. Hold Ctrl for where it comes from." },
@@ -184,16 +184,16 @@ TT.SETTINGS = ns.Settings.Describe({
             { key = "ttFactionIcon", type = "check", default = true, label = "Faction Icon on Players" },
             { key = "ttPetIcon", type = "check", default = true, label = "Battle Pet Type Icon" },
             { key = "ttPetID", type = "check", default = true, label = "Battle Pet ID" },
-            { type = "header", label = "MYTHIC+" },
-            { key = "ttBetterMythic", type = "check", default = true, label = "Best Run's Dungeon and Upgrades",
+            { retail = true, type = "header", label = "MYTHIC+" },
+            { retail = true, key = "ttBetterMythic", type = "check", default = true, label = "Best Run's Dungeon and Upgrades",
               tip = "The best run shows the dungeon and a + for each upgrade it was timed by (+++ at 60% of the "
                 .. "timer, ++ at 80%)." },
-            { key = "ttKeystone", type = "check", default = true, label = "Their Keystone",
+            { retail = true, key = "ttKeystone", type = "check", default = true, label = "Their Keystone",
               tip = "Yours always; other players' when they run an addon that shares keystones (BigWigs, Details "
                 .. "and many others do)." },
-            { key = "ttShortDungeons", type = "check", default = true, label = "Short Dungeon Names" },
-            { key = "ttDungeonIcons", type = "check", default = true, label = "Dungeon Icons" },
+            { retail = true, key = "ttDungeonIcons", type = "check", default = true, label = "Dungeon Icons" },
             { type = "header", label = "PROGRESS" },
+            { key = "ttShortDungeons", type = "check", default = true, label = "Short Dungeon and Raid Names" },
             { key = "ttProgression", type = "check", default = true, label = "Raid Progression with Shift",
               tip = "Bosses killed in this season's raids, highest difficulty first. Out of combat." },
             { key = "ttTierSet", type = "check", default = true, label = "Tier Set Pieces",
@@ -214,8 +214,23 @@ TT.SETTINGS = ns.Settings.Describe({
     },
 })
 
+-- WoW Forever has no Mythic+: rows marked `retail` are left off its pages
+-- (their defaults stay registered, and the code checks BH.IS_FOREVER too).
+local function ForClient(desc)
+    if not BH.IS_FOREVER then return desc end
+    local copy = setmetatable({ pages = {} }, { __index = desc })
+    for _, page in ipairs(desc.pages) do
+        local rows = {}
+        for _, row in ipairs(page.rows) do
+            if not row.retail then rows[#rows + 1] = row end
+        end
+        copy.pages[#copy.pages + 1] = setmetatable({ rows = rows }, { __index = page })
+    end
+    return copy
+end
+
 function BH:BuildTooltipTab(parent)
-    ns.Settings.Build(TT.SETTINGS, parent)
+    ns.Settings.Build(ForClient(TT.SETTINGS), parent)
 end
 
 -- ============================================================================
