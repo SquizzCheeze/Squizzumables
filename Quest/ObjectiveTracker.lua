@@ -116,10 +116,12 @@ OT.SETTINGS = ns.Settings.Describe({
               label = "Mouse-Over Colour", when = function(s) return s.otQuestColors and not s.otQuestClass end },
             { type = "header", label = "OBJECTIVES" },
             { key = "otObjColors", type = "check", default = true, label = "Colour Objectives" },
-            { key = "otObjColor", type = "color", default = { r = 0.842, g = 0.815, b = 0.677 }, label = "Colour",
+            { key = "otObjClass", type = "check", default = false, label = "Class Colour",
               when = function(s) return s.otObjColors end },
+            { key = "otObjColor", type = "color", default = { r = 0.842, g = 0.815, b = 0.677 }, label = "Colour",
+              when = function(s) return s.otObjColors and not s.otObjClass end },
             { key = "otObjHighlight", type = "color", default = { r = 0.992, g = 0.965, b = 0.827 },
-              label = "Mouse-Over Colour", when = function(s) return s.otObjColors end },
+              label = "Mouse-Over Colour", when = function(s) return s.otObjColors and not s.otObjClass end },
         } },
         { key = "bar", label = "Header Bar", rows = {
             { key = "otBar", type = "check", default = true, label = "Bar Under Each Section Header" },
@@ -203,43 +205,74 @@ end
 -- Colours
 -- ============================================================================
 
--- What Blizzard just set -> ours, or nil to leave it (failed, complete, timers).
-local function QuestTitleColour(r, g, b)
+local function Brighter(r, g, b)
+    return math.min(r + 0.2, 1), math.min(g + 0.2, 1), math.min(b + 0.2, 1)
+end
+
+-- Colour pickers: (fontString, the colour Blizzard set) -> ours, or nil to
+-- leave Blizzard's (failed, complete, timers).
+--
+-- Quest titles are always ours, whatever Blizzard picked: it may be the
+-- tracker's Header colour or (Forever, and retail with "Show Quest Difficulty
+-- Color") the quest's difficulty colour, which matched nothing we looked
+-- for, so those titles never changed. Hover is read from the block itself.
+local function QuestTitleColour(fs)
     local s = Settings()
     if not s.otQuestColors then return end
-    local C = OBJECTIVE_TRACKER_COLOR
-    if not C then return end
-    local hi
-    if Same(C.Header, r, g, b) then hi = false elseif Same(C.HeaderHighlight, r, g, b) then hi = true else return end
+    local block = fs:GetParent()
+    local hi = block and block.isHighlighted
     if s.otQuestClass then
-        local cr, cg, cb = ClassRGB()
-        if hi then return math.min(cr + 0.2, 1), math.min(cg + 0.2, 1), math.min(cb + 0.2, 1) end
-        return cr, cg, cb
+        if hi then return Brighter(ClassRGB()) end
+        return ClassRGB()
     end
     if hi then return RGB(s.otQuestHighlight, 0.282, 0.859, 0.984) end
     return RGB(s.otQuestColor, 0, 0.659, 1)
 end
 
-local function ObjectiveColour(r, g, b)
+local function ObjectiveColour(_, r, g, b)
     local s = Settings()
     if not s.otObjColors then return end
     local C = OBJECTIVE_TRACKER_COLOR
     if not C then return end
-    if Same(C.Normal, r, g, b) then return RGB(s.otObjColor, 0.842, 0.815, 0.677) end
-    if Same(C.NormalHighlight, r, g, b) then return RGB(s.otObjHighlight, 0.992, 0.965, 0.827) end
+    local hi
+    if Same(C.Normal, r, g, b) then hi = false elseif Same(C.NormalHighlight, r, g, b) then hi = true else return end
+    if s.otObjClass then
+        if hi then return Brighter(ClassRGB()) end
+        return ClassRGB()
+    end
+    if hi then return RGB(s.otObjHighlight, 0.992, 0.965, 0.827) end
+    return RGB(s.otObjColor, 0.842, 0.815, 0.677)
 end
 
 local recolouring
+local function SetColour(fs, pick, r, g, b)
+    local nr, ng, nb = pick(fs, r, g, b)
+    if nr then
+        recolouring = true
+        fs:SetTextColor(nr, ng, nb)
+        recolouring = false
+    end
+end
+
 local function HookColour(fs, pick)
     hooksecurefunc(fs, "SetTextColor", function(self, r, g, b)
         if recolouring or not Active() then return end
-        local nr, ng, nb = pick(r, g, b)
-        if nr then
-            recolouring = true
-            self:SetTextColor(nr, ng, nb)
-            recolouring = false
-        end
+        SetColour(self, pick, r, g, b)
     end)
+end
+
+-- Colour a string now, from the colour Blizzard MEANT it to have
+-- (fs.colorStyle), not what it shows. Blizzard sets the colour once and only
+-- again when it changes, so a string coloured before our hook went on stayed
+-- Blizzard's until the first mouse-over (user report 2026-11-27).
+local function Recolour(fs, pick)
+    if not Active() then return end
+    local cs = fs.colorStyle
+    if type(cs) == "table" and cs.r then
+        SetColour(fs, pick, cs.r, cs.g, cs.b)
+    else
+        SetColour(fs, pick, fs:GetTextColor())
+    end
 end
 
 -- ============================================================================
@@ -271,18 +304,46 @@ end
 -- and every refresh nested another one (V2.8 testing, 2026-11-27).
 -- The SetText post-hook runs before Blizzard measures the line, so a line
 -- that wraps because of the percentage is given its real height.
-local original = {}
+-- Quest titles go through the same machinery: on Forever (and wherever
+-- quest difficulty colours are on) Blizzard writes the colour INTO the title
+-- as |cff..|r, which beats any SetTextColor, so ours needs it taken off.
+local function TitleText(text)
+    if not Settings().otQuestColors then return text end
+    return text:match("^|c%x%x%x%x%x%x%x%x(.*)|r$") or text
+end
+
+local original, transform = {}, {}
 local rewriting
 
 local function Rewrite(fs)
     local base = original[fs]
     if not base then return end
-    local new = Active() and Progress(base) or base
+    local new = Active() and transform[fs](base) or base
     if fs:GetText() ~= new then
         rewriting = true
         fs:SetText(new)
         rewriting = false
     end
+end
+
+local function Readable(text)
+    return type(text) == "string" and (not canaccessvalue or canaccessvalue(text))
+end
+
+local function HookText(fs, fn)
+    transform[fs] = fn
+    hooksecurefunc(fs, "SetText", function(self, text)
+        if rewriting then return end
+        if Readable(text) then
+            original[self] = text
+            Rewrite(self)
+        else
+            original[self] = nil
+        end
+    end)
+    -- Set before the hook existed, so still Blizzard's own text.
+    local text = fs:GetText()
+    if Readable(text) then original[fs] = text end
 end
 
 local hookedLines = {}
@@ -291,19 +352,9 @@ local function StyleLine(line)
     if fs and not hookedLines[line] then
         hookedLines[line] = true
         HookColour(fs, ObjectiveColour)
-        hooksecurefunc(fs, "SetText", function(self, text)
-            if rewriting then return end
-            if type(text) == "string" and (not canaccessvalue or canaccessvalue(text)) then
-                original[self] = text
-                Rewrite(self)
-            else
-                original[self] = nil
-            end
-        end)
-        -- Set before the hook existed, so still Blizzard's own text.
-        local text = fs:GetText()
-        if type(text) == "string" and (not canaccessvalue or canaccessvalue(text)) then original[fs] = text end
+        HookText(fs, Progress)
     end
+    if fs then Recolour(fs, ObjectiveColour) end
     local dash = line.Dash
     if dash then
         if Settings().otNoDash and Active() then
@@ -321,7 +372,10 @@ local hookedBlocks = {}
 local function StyleBlock(block)
     if not hookedBlocks[block] then
         hookedBlocks[block] = true
-        if block.HeaderText then HookColour(block.HeaderText, QuestTitleColour) end
+        if block.HeaderText then
+            HookColour(block.HeaderText, QuestTitleColour)
+            HookText(block.HeaderText, TitleText)
+        end
         if block.AddObjective then
             hooksecurefunc(block, "AddObjective", function(self, key)
                 if not Active() then return end
@@ -331,13 +385,8 @@ local function StyleBlock(block)
         end
     end
     if block.HeaderText then
-        local r, g, b = block.HeaderText:GetTextColor()
-        local nr, ng, nb = QuestTitleColour(r, g, b)
-        if nr then
-            recolouring = true
-            block.HeaderText:SetTextColor(nr, ng, nb)
-            recolouring = false
-        end
+        Rewrite(block.HeaderText)
+        Recolour(block.HeaderText, QuestTitleColour)
     end
     for _, line in pairs(block.usedLines or {}) do StyleLine(line) end
 end
@@ -501,6 +550,7 @@ local function Seed()
     end
     if type(t.infoColor) == "table" then
         if t.infoColor.enable ~= nil then s.otObjColors = t.infoColor.enable and true or false end
+        if t.infoColor.classColor ~= nil then s.otObjClass = t.infoColor.classColor and true or false end
         s.otObjColor = Colour(t.infoColor.customColorNormal) or s.otObjColor
         s.otObjHighlight = Colour(t.infoColor.customColorHighlight) or s.otObjHighlight
     end
