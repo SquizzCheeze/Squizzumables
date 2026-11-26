@@ -44,7 +44,7 @@
         tall (taller if the window is).
 ]]
 
-local MAJOR, MINOR = "LibSquizzShell-1.0", 5
+local MAJOR, MINOR = "LibSquizzShell-1.0", 6
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -577,6 +577,45 @@ function Window:BuildSidebar()
     local br, bg, bb = RGBA("border")
     edge:SetColorTexture(br, bg, bb, 0.5)
     self.sidebar = side
+
+    -- The rows scroll once there are more than the window's height holds
+    -- (MINOR 6). The bar sits in the sidebar's right edge and only shows
+    -- while there is something to scroll.
+    local sf = CreateFrame("ScrollFrame", nil, side)
+    sf:SetPoint("TOPLEFT")
+    sf:SetPoint("BOTTOMRIGHT", -1, 0)
+    local bar = CreateFrame("Slider", nil, side, "BackdropTemplate")
+    bar:SetPoint("TOPRIGHT", -1, -2)
+    bar:SetPoint("BOTTOMRIGHT", -1, 2)
+    bar:SetWidth(4)
+    bar:SetOrientation("VERTICAL")
+    bar:SetMinMaxValues(0, 0)
+    bar:SetValueStep(1)
+    bar:SetBackdrop({ bgFile = WHITE })
+    bar:SetBackdropColor(RGBA("control"))
+    local thumb = bar:CreateTexture(nil, "OVERLAY")
+    thumb:SetSize(4, 30)
+    local tr, tg, tb = RGBA("controlHi")
+    thumb:SetColorTexture(tr, tg, tb, 1)
+    bar:SetThumbTexture(thumb)
+    bar:Hide()
+    local child = CreateFrame("Frame", nil, sf)
+    child:SetSize(SIDEBAR_W - 1, 1)
+    sf:SetScrollChild(child)
+    sf:SetScript("OnScrollRangeChanged", function(_, _, yrange)
+        yrange = yrange or 0
+        bar:SetMinMaxValues(0, yrange)
+        if bar:GetValue() > yrange then bar:SetValue(yrange) end
+        bar:SetShown(yrange > 0)
+    end)
+    bar:SetScript("OnValueChanged", function(_, v) sf:SetVerticalScroll(v) end)
+    sf:EnableMouseWheel(true)
+    sf:SetScript("OnMouseWheel", function(_, delta)
+        local lo, hi = bar:GetMinMaxValues()
+        bar:SetValue(math.max(lo, math.min(hi, bar:GetValue() - delta * (ROW_H + 2) * 2)))
+    end)
+    self.sidebarScroll, self.sidebarChild = sf, child
+
     self:LayoutSidebar()
 end
 
@@ -591,8 +630,13 @@ function Window:LayoutSidebar()
         self.rowsHost:Hide()
         self.rowsHost:SetParent(nil)
     end
-    local host = CreateFrame("Frame", nil, side)
-    host:SetAllPoints(side)
+    local host = CreateFrame("Frame", nil, self.sidebarChild or side)
+    if self.sidebarChild then
+        host:SetPoint("TOPLEFT")
+        host:SetWidth(SIDEBAR_W - 1)
+    else
+        host:SetAllPoints(side)
+    end
     self.rowsHost = host
     self.rows = {}
     local combined = lib.combined and true or false
@@ -677,6 +721,12 @@ function Window:LayoutSidebar()
         row:SetScript("OnLeave", function(r) r:SetBackdropColor(RGBA("control")) end)
         row:SetScript("OnClick", function() lib:HandOff(self, addonId) end)
         y = y - ROW_H - 10
+    end
+    -- The list's full height, so the scroll frame knows how far it goes.
+    if self.sidebarChild then
+        local h = math.max(1, -y + 4)
+        host:SetHeight(h)
+        self.sidebarChild:SetHeight(h)
     end
     if self.current then self:HighlightRow(self.current.addon .. ":" .. self.current.key) end
 end
