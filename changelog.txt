@@ -148,7 +148,9 @@ V2.8
 - New: World Map (Interface > World Map), off until you switch it on. The
   map and quest log window's scale, fading while you move (how far and how
   fast; never while the mouse is over the map), no dark backdrop behind the
-  full-size map, and Blizzard's coordinates for you and the cursor. It
+  full-size map, and Blizzard's coordinates for you and the cursor. The
+  parts of each zone you haven't explored are shown too (tinted if you
+  like), on retail and WoW Forever, from the game's own map data. It
   waits while ElvUI's or WindTools' world map is on; their settings are
   copied over the first time.
 - Chat: Up and Down in the edit box go through what you typed without

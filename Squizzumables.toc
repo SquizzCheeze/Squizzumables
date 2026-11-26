@@ -70,6 +70,8 @@ Tooltip\Extras.lua
 Tooltip\QuestWeights.lua
 Tooltip\More.lua
 Maps\Minimap.lua
+Maps\RevealData_Retail.lua
+Maps\RevealData_Forever.lua
 Maps\WorldMap.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
