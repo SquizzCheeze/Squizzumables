@@ -312,7 +312,8 @@ local function UpdateBarText()
         barText:SetText(AbbreviateNumbers(UnitHealth(unit)) .. " / " .. AbbreviateNumbers(UnitHealthMax(unit)))
     else
         local pct = UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)
-        if pct then barText:SetFormattedText("%d%%", pct --[[@as number]]) else barText:SetText("") end
+        ---@cast pct number
+        if pct then barText:SetFormattedText("%d%%", pct) else barText:SetText("") end
     end
 end
 
