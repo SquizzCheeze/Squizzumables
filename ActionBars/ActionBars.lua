@@ -202,6 +202,10 @@ local pages = {
         { key = "abVehicleSize", type = "slider", default = 32, min = 16, max = 64, step = 1,
           label = "Leave Vehicle Size", tip = "Size of the Leave Vehicle button.",
           when = function(s) return s.abVehicle end },
+        { key = "abHideBags", type = "check", default = true,
+          label = "Hide Blizzard's Bag Bar",
+          tip = "Hides the backpack and bag buttons. ElvUI hides them along with its own action bars, so "
+            .. "this keeps them hidden once these take over. Your bags still open with their key (B)." },
         { type = "header", label = "TEXT" },
         { key = "abFont", type = "dropdown", default = "__default",
           items = function() return BH:BuildFontDropdownItems() end,
@@ -844,6 +848,17 @@ function AB.Apply()
     end
     LayoutVehicle(s)
     if X then X.Apply(s) end
+
+    -- Blizzard's bag bar. Only reparented (its events stay on), so unticking
+    -- puts it straight back without a reload.
+    local bagsBar = _G.BagsBar
+    if bagsBar then
+        if AB.active and s.abHideBags ~= false then
+            if bagsBar:GetParent() ~= hider then bagsBar:SetParent(hider) end
+        elseif bagsBar:GetParent() == hider then
+            bagsBar:SetParent(UIParent)
+        end
+    end
 end
 
 -- Edit Mode's arrow-key nudge (MOVABLE_FRAMES in Squizzumables.lua).

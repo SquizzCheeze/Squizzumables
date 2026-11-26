@@ -50,6 +50,9 @@ V2.8
   opacity, mouseover fade and a visibility condition, placed in Edit Mode.
   The buttons are Blizzard's own, so their keybinds and pet autocast work
   as before. Your ElvUI settings for these are copied over the first time.
+- Action Bars: Hide Blizzard's Bag Bar (General tab, on by default).
+  ElvUI hides the bag bar along with its own action bars, so it came
+  back once those were turned off.
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
   been relying on another addon to load it.
 
