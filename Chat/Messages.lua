@@ -377,6 +377,7 @@ end
 -- ============================================================================
 
 local hooked = setmetatable({}, { __mode = "k" })
+local historySize = setmetatable({}, { __mode = "k" })   -- edit box -> history size set
 local counters = setmetatable({}, { __mode = "k" })
 
 local LINK_TOOLTIP = { item = true, spell = true, achievement = true, quest = true, currency = true,
@@ -399,7 +400,15 @@ function M.StyleChat(chat, s)
     local eb = chat.editBox
     if eb then
         eb:SetAltArrowKeyMode(s.chUseAltKey and true or false)
-        if eb.SetHistoryLines then eb:SetHistoryLines(math.max(1, s.chEditHistory or 20)) end
+        -- Setting the size clears the box's history, so only when it changes
+        -- (this runs on every restyle), and the remembered lines go back in.
+        local size = math.max(1, s.chEditHistory or 20)
+        if eb.SetHistoryLines and historySize[eb] ~= size then
+            local first = historySize[eb] == nil
+            historySize[eb] = size
+            eb:SetHistoryLines(size)
+            if not first then M.ReplayInto(eb) end
+        end
     end
     if s.chShortChannels ~= false or s.chTimeColored then Wrap(chat) end
 
@@ -512,17 +521,19 @@ function M.RememberLine(line)
     while #h > keep do table.remove(h, 1) end
 end
 
-local function Replay()
+function M.ReplayInto(eb)
     local h = History()
     if not h or #h == 0 then return end
     replaying = true
+    for _, line in ipairs(h) do eb:AddHistoryLine(line) end
+    replaying = false
+end
+
+local function Replay()
     for _, name in ipairs(CHAT_FRAMES or {}) do
         local eb = _G[name] and _G[name].editBox
-        if eb then
-            for _, line in ipairs(h) do eb:AddHistoryLine(line) end
-        end
+        if eb then M.ReplayInto(eb) end
     end
-    replaying = false
 end
 
 -- ============================================================================
