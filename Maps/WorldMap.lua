@@ -278,7 +278,8 @@ local function Reveal(pin)
                             fw = FileSize(pw)
                         end
                         local tex = pool:Acquire()
-                        map:AddMaskableTexture(tex)
+                        -- Not map:AddMaskableTexture: Blizzard walks that table from secure
+                        -- code, so our textures there would taint the map.
                         tex:SetDrawLayer(drawLayer, subLevel)
                         tex:SetSize(pw, ph)
                         tex:SetTexCoord(0, pw / fw, 0, ph / fh)
