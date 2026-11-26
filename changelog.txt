@@ -34,6 +34,18 @@ V2.8
   expansion's potions need no update. Ctrl-right-click a button to hide
   that item. If you use WindTools' Extra Items Bar, its bars' positions,
   sizes and groups are copied over the first time.
+- New: Action Bars (Interface > Action Bars), off until you switch them
+  on. Up to 13 bars, numbered as ElvUI numbers them so each shows the
+  same action slots, with your existing keybinds. Bar 1 pages for
+  vehicles, forms, stealth and Shift-number like the main bar. Per bar:
+  buttons, rows, size, spacing, growth, background, empty buttons,
+  click-through, opacity, mouseover fade and a visibility condition.
+  Square icons, thin borders, proc glows, cooldown numbers and a Leave
+  Vehicle button. They stay off while ElvUI's own action bars are on;
+  your ElvUI bars' positions and settings are copied over the first
+  time. Built on LibActionButton-1.0 (BSD licence, included).
+- Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
+  been relying on another addon to load it.
 
 V2.7
 

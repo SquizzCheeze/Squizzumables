@@ -11,7 +11,9 @@
 ## AddonCompartmentFuncOnEnter: Squizzumables_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: Squizzumables_OnAddonCompartmentLeave
 Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
 Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+Libs\LibActionButton-1.0\LibActionButton-1.0.lua
 Libs\LibSquizzGrid-1.0\LibSquizzGrid-1.0.lua
 Libs\LibSquizzTheme-1.0\LibSquizzTheme-1.0.lua
 Libs\LibSquizzShell-1.0\LibSquizzShell-1.0.lua
@@ -56,6 +58,7 @@ DataTexts\Panel.lua
 DataTexts\Guild.lua
 DataTexts\Friends.lua
 ItemBars\ItemBars.lua
+ActionBars\ActionBars.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
