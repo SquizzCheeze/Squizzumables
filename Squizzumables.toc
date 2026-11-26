@@ -69,6 +69,7 @@ Tooltip\Tooltip.lua
 Tooltip\Extras.lua
 Tooltip\QuestWeights.lua
 Tooltip\More.lua
+Maps\Minimap.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua

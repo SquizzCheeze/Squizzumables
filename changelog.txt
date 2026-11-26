@@ -133,6 +133,17 @@ V2.8
   down. Your WindTools tooltip settings are copied over the first time.
   The quest data is MMOSimca's, from LibObjectiveProgress, used with
   permission given in its notes.
+- New: Minimap (Interface > Minimap), off until you switch it on. A square
+  (or round) minimap you size, scale and place in Edit Mode, with a thin
+  edge. Blizzard's header, zoom buttons and compass are cleared; the zone
+  name sits on top (always, on mouseover or never) in its PvP colour. The
+  icons round it - tracking, mail, crafting orders, instance difficulty,
+  the expansion summary, calendar, event link and the add-on list - can
+  each be placed in a corner, sized, nudged or hidden. Right-click for
+  tracking, middle-click or Shift-right-click for a menu of the game's
+  windows, and the zoom can reset itself after a few seconds. Blizzard's
+  clock can show under it. It waits while ElvUI's minimap is on; your
+  ElvUI minimap settings and position are copied over the first time.
 - Chat: Up and Down in the edit box go through what you typed without
   holding Alt (Alt+Up for /cast and other secure commands).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
