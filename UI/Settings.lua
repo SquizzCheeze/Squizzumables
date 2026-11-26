@@ -41,6 +41,9 @@
 --       what changes once it is written -- runs before the save and the
 --       page's own `apply`. For a row whose effect differs from the page's
 --       (Raid Tools: visibility here, the marker layout there).
+--   read = function() return on end, write = function(on) ... end
+--       a check that shows and changes something other than a saved setting,
+--       such as a game CVar (the world map's coordinates). No default.
 --   scale = 100
 --       a slider showing value * scale while storing value (a scale of 1.0
 --       shown as 100%).
@@ -127,7 +130,16 @@ local function Spec(desc, row)
         indent = row.indent,
         disabled = Disabled(desc, row),
     }
-    if t == "check" then
+    if t == "check" and row.read then
+        -- Not stored here: the row shows and changes something else, such as a
+        -- game setting (row.read() / row.write(v)).
+        spec.get = function() return row.read() and true or false end
+        spec.set = function(v, userInput)
+            row.write(v)
+            if row.apply then row.apply(v, userInput) end
+            if desc.apply then desc.apply() end
+        end
+    elseif t == "check" then
         if row.invert then
             spec.get = function() return not BH.settings[key] end
             spec.set = function(v) Set(not v) end

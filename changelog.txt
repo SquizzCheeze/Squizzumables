@@ -145,6 +145,12 @@ V2.8
   windows, and the zoom can reset itself after a few seconds. Blizzard's
   clock can show under it. It waits while ElvUI's minimap is on; your
   ElvUI minimap settings and position are copied over the first time.
+- New: World Map (Interface > World Map), off until you switch it on. The
+  map and quest log window's scale, fading while you move (how far and how
+  fast; never while the mouse is over the map), no dark backdrop behind the
+  full-size map, and Blizzard's coordinates for you and the cursor. It
+  waits while ElvUI's or WindTools' world map is on; their settings are
+  copied over the first time.
 - Chat: Up and Down in the edit box go through what you typed without
   holding Alt (Alt+Up for /cast and other secure commands).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had

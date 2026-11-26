@@ -374,7 +374,17 @@ local function Shape()
     local round = Settings().mmRound
     Minimap:SetMaskTexture(round and ROUND_MASK or SQUARE_MASK)
     local compass = _G.MinimapCompassTexture
-    if compass then compass:SetShown(round and true or false) end
+    if compass then
+        compass:SetShown(round and true or false)
+        -- Blizzard sizes the ring (215 x 226) for its 198px map; keep it in step
+        -- with ours, or a smaller map leaves a gap inside the ring.
+        local w = Minimap:GetWidth()
+        if w and w > 0 then
+            compass:ClearAllPoints()
+            compass:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
+            compass:SetSize(w * 215 / 198, w * 226 / 198)
+        end
+    end
     -- Other add-ons place their minimap buttons by this.
     _G.GetMinimapShape = function() return round and "ROUND" or "SQUARE" end
     local hybrid = _G.HybridMinimap
