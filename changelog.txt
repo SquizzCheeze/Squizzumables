@@ -43,7 +43,8 @@ V2.8
   Square icons, thin borders, proc glows, cooldown numbers and a Leave
   Vehicle button. They stay off while ElvUI's own action bars are on;
   your ElvUI bars' positions and settings are copied over the first
-  time. Built on LibActionButton-1.0 (BSD licence, included).
+  time. Keybinds show short: S-1, A-C-2, MWU, MWD, M4, N5.
+  Built on LibActionButton-1.0 (BSD licence, included).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
   been relying on another addon to load it.
 

@@ -357,8 +357,40 @@ end
 
 -- The ElvUI look: once per button. LAB skips its own texture handling for a
 -- MasqueSkinned button, so nothing it does later puts the round art back.
+-- Short keybind text: SHIFT-1 -> S-1, ALT-CTRL-MOUSEWHEELUP -> A-C-MWU.
+-- LAB shows the raw key unless LibKeyBound is loaded, so each button gets its
+-- own GetHotkey (a field on the button wins over LAB's metatable method).
+local KEY_SHORT = {
+    MOUSEWHEELUP = "MWU", MOUSEWHEELDOWN = "MWD",
+    LeftButton = "M1", RightButton = "M2", MiddleButton = "M3",
+    SPACE = "Spc", BACKSPACE = "Bs", ESCAPE = "Esc", ENTER = "Ent", TAB = "Tab",
+    INSERT = "Ins", DELETE = "Del", HOME = "Hm", END = "End", PAGEUP = "PU", PAGEDOWN = "PD",
+    CAPSLOCK = "Cap", NUMLOCK = "NL",
+}
+local function ShortKey(key)
+    if not key or key == "" then return key end
+    local mods, base = key:match("^(.-)([^%-]+)$")
+    if not base then return key end
+    if mods == "" and key:sub(-1) == "-" then return key end   -- the minus key itself
+    local short = KEY_SHORT[base]
+        or base:match("^BUTTON(%d+)$") and ("M" .. base:match("^BUTTON(%d+)$"))
+        or base:match("^NUMPAD(.+)$") and ("N" .. (({ DIVIDE = "/", MULTIPLY = "*", MINUS = "-", PLUS = "+",
+            DECIMAL = "." })[base:match("^NUMPAD(.+)$")] or base:match("^NUMPAD(.+)$")))
+        or base
+    mods = mods:gsub("SHIFT%-", "S-"):gsub("CTRL%-", "C-"):gsub("ALT%-", "A-"):gsub("META%-", "M-")
+    return mods .. short
+end
+
+local function ShortHotkey(self)
+    local key = GetBindingKey(self.config.keyBoundTarget or "")
+    if not key and self.sqElvCmd then key = GetBindingKey(self.sqElvCmd) end
+    if not key then key = GetBindingKey(("CLICK %s:%s"):format(self:GetName(), self.config.keyBoundClickButton)) end
+    return key and ShortKey(key) or nil
+end
+
 local function Skin(btn)
     btn.MasqueSkinned = true
+    btn.GetHotkey = ShortHotkey
     local normal = btn:GetNormalTexture()
     if normal then normal:SetAlpha(0) end
     if btn.NormalTexture then btn.NormalTexture:SetAlpha(0) end
@@ -519,6 +551,7 @@ local function CreateBar(def)
     for i = 1, NUM_BUTTONS do
         local btn = LAB:CreateButton(i, "SquizzumablesActionBar" .. n .. "Button" .. i, header, ButtonConfig(def, i, s))
         btn.sqOwned = true
+        btn.sqElvCmd = def.elv and (def.elv .. i) or nil
         if n == 1 then
             for page = 1, maxPage do btn:SetState(page, "action", (page - 1) * NUM_BUTTONS + i) end
         else
