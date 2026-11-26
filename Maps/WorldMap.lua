@@ -236,8 +236,12 @@ local function Reveal(pin)
     local areas = artID and Areas(artID)
     if not areas or #areas == 0 then return end
 
+    -- Before the map has first laid out a map (not opened since login) it has
+    -- no zoom levels and asking for the layer errors; it redraws us on open.
+    local canvas = map:GetCanvasContainer()
+    if not (canvas and canvas.zoomLevels) then return end
     local layers = C_Map.GetMapArtLayers(mapID)
-    local layer = layers and layers[map:GetCanvasContainer():GetCurrentLayerIndex()]
+    local layer = layers and layers[canvas:GetCurrentLayerIndex()]
     if not layer then return end
     local tileW, tileH = layer.tileWidth, layer.tileHeight
 
