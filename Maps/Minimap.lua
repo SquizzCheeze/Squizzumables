@@ -83,6 +83,11 @@ local ICONS = {
       get = function() return _G.MinimapBackdrop and rawget(_G.MinimapBackdrop, "ExternalEventURLButton") end },
     { key = "Addons", label = "Add-on List", point = "BOTTOMRIGHT", x = 0, y = 0, scale = 1, hide = false,
       get = function() return _G.AddonCompartmentFrame end },
+    -- The group finder eye. Blizzard keeps it by the micro menu and re-anchors
+    -- it whenever that menu moves; it is parented to the minimap here so it
+    -- draws above the map and stays visible wherever the micro menu goes.
+    { key = "Queue", label = "Group Finder Eye", point = "BOTTOMRIGHT", x = -4, y = 48, scale = 0.5, hide = false,
+      get = function() return _G.QueueStatusButton end, parent = true },
 }
 
 local iconRows = {}
@@ -315,7 +320,8 @@ local function PlaceIcons()
             elseif hide then
                 f:SetParent(hidden)
             else
-                if origParent[f] and f:GetParent() ~= origParent[f] then f:SetParent(origParent[f]) end
+                local parent = icon.parent and Minimap or origParent[f]
+                if parent and f:GetParent() ~= parent then f:SetParent(parent) end
                 local point = s[k .. "Point"] or icon.point
                 f:SetPoint(point, Minimap, point, s[k .. "X"] or icon.x, s[k .. "Y"] or icon.y)
                 f:SetScale(s[k .. "Scale"] or icon.scale)
@@ -484,6 +490,8 @@ local function Hook()
             end)
         end
     end
+    local queue = _G.QueueStatusButton
+    if queue and queue.UpdatePosition then hooksecurefunc(queue, "UpdatePosition", PlaceIcons) end
     if _G.MiniMapIndicatorFrame_UpdatePosition then
         hooksecurefunc("MiniMapIndicatorFrame_UpdatePosition", PlaceIcons)
     end

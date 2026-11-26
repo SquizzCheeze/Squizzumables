@@ -673,6 +673,7 @@ function BH:SwitchToProfile(profileName)
     if self.ApplyTooltip then self:ApplyTooltip() end
     if self.ApplyMinimap then self:ApplyMinimap() end
     if self.ApplyWorldMap then self:ApplyWorldMap() end
+    if self.ApplyWaypoints then self:ApplyWaypoints() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
 
@@ -776,6 +777,7 @@ function BH:OnSpecChanged()
     if self.ApplyTooltip then self:ApplyTooltip() end
     if self.ApplyMinimap then self:ApplyMinimap() end
     if self.ApplyWorldMap then self:ApplyWorldMap() end
+    if self.ApplyWaypoints then self:ApplyWaypoints() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
@@ -1549,7 +1551,9 @@ function BH:CreateOptionsPanel(noShow)
             { key = "minimap",    label = "Minimap",          field = "minimapTab",       build = "BuildMinimapTab",
               subtitle = "Shape, size, placement, zone name and the icons round it" },
             { key = "worldmap",   label = "World Map",        field = "worldMapTab",      build = "BuildWorldMapTab",
-              subtitle = "Scale, fading while you move and coordinates" },
+              subtitle = "Scale, fading, coordinates and unexplored areas" },
+            { key = "waypoints",  label = "Map Pins",         field = "waypointsTab",     build = "BuildWaypointsTab",
+              subtitle = "The pin arrow, its distance, and /way" },
             { key = "actionbars", label = "Action Bars",      field = "actionBarsTab",    build = "BuildActionBarsTab",
               subtitle = "Up to 13 bars with your ElvUI keybinds" },
             { key = "itembars",   label = "Item Bars",        field = "itemBarsTab",      build = "BuildItemBarsTab",
@@ -1564,7 +1568,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat", "tweaks", "bufframe", "tooltip", "minimap", "worldmap" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat", "tweaks", "bufframe", "tooltip", "minimap", "worldmap", "waypoints" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2044,6 +2048,7 @@ function BH:SetUnlockMode(on, keepPanel, quiet)
     if self.ApplyTooltip then self:ApplyTooltip() end
     if self.ApplyMinimap then self:ApplyMinimap() end
     if self.ApplyWorldMap then self:ApplyWorldMap() end
+    if self.ApplyWaypoints then self:ApplyWaypoints() end
     if self.unlockBtn then
         -- Labelled "Edit Mode" like SquizzFrames' (user request 2026-10-17); lit in
         -- the accent while unlocked, as SquizzFrames' is while editing.

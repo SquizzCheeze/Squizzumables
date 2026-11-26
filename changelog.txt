@@ -153,6 +153,17 @@ V2.8
   like), on retail and WoW Forever, from the game's own map data. It
   waits while ElvUI's or WindTools' world map is on; their settings are
   copied over the first time.
+- New: Map Pins (Interface > Map Pins), off until you switch it on. A pin
+  you place is tracked straight away, middle-click a pin to remove it, the
+  arrow can show at any distance (Blizzard hides it past 1,000 yards), and
+  the distance under it takes your font, size and colour, as a plain
+  number if you like. /way also takes coordinates as guide sites write
+  them: "/way 45.2 67.1" for the zone you're in, "/way #2248 45.2, 67.1"
+  for another (not while TomTom is loaded). It waits while WindTools'
+  Super Tracker is on; its settings are copied over the first time.
+- Minimap: the group finder eye is one of its icons now (bottom right,
+  small, as in ElvUI), placed, sized or hidden like the others, instead of
+  sitting by the micro menu.
 - Chat: Up and Down in the edit box go through what you typed without
   holding Alt (Alt+Up for /cast and other secure commands).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had

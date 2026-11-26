@@ -73,6 +73,7 @@ Maps\Minimap.lua
 Maps\RevealData_Retail.lua
 Maps\RevealData_Forever.lua
 Maps\WorldMap.lua
+Maps\Waypoints.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
