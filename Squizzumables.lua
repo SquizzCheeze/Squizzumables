@@ -668,6 +668,7 @@ function BH:SwitchToProfile(profileName)
     if self.ApplyItemBars then self:ApplyItemBars() end
     if self.ApplyActionBars then self:ApplyActionBars() end
     if self.ApplyChat then self:ApplyChat() end
+    if self.ApplyTweaks then self:ApplyTweaks() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
 
@@ -766,6 +767,7 @@ function BH:OnSpecChanged()
     if self.ApplyItemBars then self:ApplyItemBars() end
     if self.ApplyActionBars then self:ApplyActionBars() end
     if self.ApplyChat then self:ApplyChat() end
+    if self.ApplyTweaks then self:ApplyTweaks() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
@@ -1530,6 +1532,8 @@ function BH:CreateOptionsPanel(noShow)
               subtitle = "Guild, friends and other live readouts" },
             { key = "chat",       label = "Chat",             field = "chatTab",          build = "BuildChatTab",
               subtitle = "Chat panels, fonts, tabs and timestamps" },
+            { key = "tweaks",     label = "Tweaks",           field = "tweaksTab",        build = "BuildTweaksTab",
+              subtitle = "Auto repair, totem bar, reputation bar and more" },
             { key = "actionbars", label = "Action Bars",      field = "actionBarsTab",    build = "BuildActionBarsTab",
               subtitle = "Up to 13 bars with your ElvUI keybinds" },
             { key = "itembars",   label = "Item Bars",        field = "itemBarsTab",      build = "BuildItemBarsTab",
@@ -1544,7 +1548,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat", "tweaks" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2019,6 +2023,7 @@ function BH:SetUnlockMode(on, keepPanel, quiet)
     if self.ApplyItemBars then self:ApplyItemBars() end
     if self.ApplyActionBars then self:ApplyActionBars() end
     if self.ApplyChat then self:ApplyChat() end
+    if self.ApplyTweaks then self:ApplyTweaks() end
     if self.unlockBtn then
         -- Labelled "Edit Mode" like SquizzFrames' (user request 2026-10-17); lit in
         -- the accent while unlocked, as SquizzFrames' is while editing.
@@ -2544,6 +2549,19 @@ for _, k in ipairs({ "Stance", "Pet", "Micro" }) do
         nudge = function(dx, dy) ns.ActionBars.Nudge(k, dx, dy) end,
     }
 end
+-- Tweaks/Tweaks.lua: totem bar and reputation bar.
+MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+    field = "totemBar", label = "Totem Bar", enabled = "twTotems", gate = "twTotems", find = "Show the Totem Bar",
+    nudge = function(dx, dy)
+        ns.Tweaks.Nudge("twTotemPosition", { point = "CENTER", relPoint = "CENTER", x = -200, y = -250 }, dx, dy)
+    end,
+}
+MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+    field = "repBar", label = "Reputation Bar", enabled = "twRep", gate = "twRep", find = "Show the Reputation Bar",
+    nudge = function(dx, dy)
+        ns.Tweaks.Nudge("twRepPosition", { point = "CENTER", relPoint = "CENTER", x = 0, y = -300 }, dx, dy)
+    end,
+}
 -- Chat/Chat.lua: the two chat panels.
 for _, side in ipairs({ "Left", "Right" }) do
     MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {

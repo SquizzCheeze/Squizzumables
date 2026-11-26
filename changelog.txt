@@ -85,6 +85,14 @@ V2.8
   Currencies (the ones you track), System (frame rate, latency, add-on
   memory), Time (local and realm, with your lockouts) and Gold (this
   session, and every character on the account).
+- New: Tweaks (Interface > Tweaks), each off until you switch it on:
+  auto repair (guild funds first, or your own gold), the talking head's
+  size or hiding it, Blizzard's cooldown numbers on or off, collapsing the
+  objective tracker in Mythic+, a totem bar (Blizzard's own totem buttons,
+  so tooltips and right-click to cancel still work) and a reputation bar
+  for the faction you watch (renown, friendship and paragon included). The
+  two bars are placed in Edit Mode. Each waits while ElvUI does the same
+  job, and your ElvUI settings for them are copied over the first time.
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
   been relying on another addon to load it.
 

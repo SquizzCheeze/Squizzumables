@@ -63,6 +63,7 @@ ActionBars\ExtraBars.lua
 ActionBars\ActionBars.lua
 Chat\Messages.lua
 Chat\Chat.lua
+Tweaks\Tweaks.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
