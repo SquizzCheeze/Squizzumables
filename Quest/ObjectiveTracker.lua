@@ -396,9 +396,21 @@ end
 -- ============================================================================
 
 local bars = {}
+-- Set on each header string itself, not only through ObjectiveTrackerHeaderFont:
+-- the headers did not follow that font object's size (user report
+-- 2026-11-27). They auto-shrink to fit their width, so re-fit after.
+local function HeadFont(fs)
+    local s = Settings()
+    fs:SetFont(ResolveFont(s.otHeadFont), s.otHeadSize or 14, Flags(s.otHeadOutline or "OUTLINE"))
+    local shadow = s.otHeadOutline == "SHADOW"
+    fs:SetShadowOffset(shadow and 1 or 0, shadow and -1 or 0)
+    if fs.ScaleTextToFit then fs:ScaleTextToFit() end
+end
+
 local function StyleHeader(header)
     local fs = header and header.Text
     if not fs then return end
+    HeadFont(fs)
     local s = Settings()
     if s.otHeadClass then
         fs:SetTextColor(ClassRGB())
@@ -474,6 +486,7 @@ local function StyleTitle()
     local frame = _G.ObjectiveTrackerFrame
     local fs = frame and frame.Header and frame.Header.Text
     if not fs then return end
+    HeadFont(fs)
     local s = Settings()
     if s.otTitleClass then
         fs:SetTextColor(ClassRGB())
