@@ -126,14 +126,13 @@ MM.SETTINGS = ns.Settings.Describe({
             { key = "mmRound", type = "check", default = false, label = "Round Instead of Square" },
             { key = "mmRotate", type = "check", default = false, label = "Rotate With You",
               tip = "The game's Rotate Minimap option." },
-            { key = "mmEdge", type = "check", default = true, label = "Border",
-              when = function(s) return not s.mmRound end },
+            { key = "mmEdge", type = "check", default = true, label = "Border" },
             { key = "mmEdgeSize", type = "slider", default = 1, min = 1, max = 6, step = 1, label = "Border Size",
-              when = function(s) return not s.mmRound and s.mmEdge ~= false end },
+              when = function(s) return s.mmEdge ~= false end },
             { key = "mmEdgeClass", type = "check", default = false, label = "Border in Your Class Colour",
-              when = function(s) return not s.mmRound and s.mmEdge ~= false end },
+              when = function(s) return s.mmEdge ~= false end },
             { key = "mmEdgeColor", type = "color", default = { r = 0, g = 0, b = 0 }, label = "Border Colour",
-              when = function(s) return not s.mmRound and s.mmEdge ~= false and not s.mmEdgeClass end },
+              when = function(s) return s.mmEdge ~= false and not s.mmEdgeClass end },
             { type = "header", label = "MOUSE" },
             { key = "mmRightClick", type = "check", default = true, label = "Right-Click for Tracking" },
             { key = "mmMenu", type = "check", default = true, label = "Middle-Click for the Game Menu",
@@ -204,6 +203,9 @@ end
 -- Holder, mover, edge
 -- ============================================================================
 
+local SQUARE_MASK = 130937  -- a plain white square
+local ROUND_MASK = 186178   -- the game's round minimap mask, by file ID (the old path no longer resolves)
+
 local holder, mover, edge, zoneText
 local DEFAULT_POS = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 4, y = -4 }
 
@@ -245,6 +247,12 @@ local function Build()
     bg:SetAllPoints()
     bg:SetColorTexture(0, 0, 0, 1)
     edge.bg = bg
+    -- The round map's border: the same mask as the map, on a slightly larger
+    -- square, so only a ring shows round the map.
+    local mask = edge:CreateMaskTexture()
+    mask:SetAllPoints()
+    mask:SetTexture(ROUND_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    edge.mask = mask
 
     zoneText = Minimap:CreateFontString(nil, "OVERLAY")
     zoneText:SetPoint("TOP", Minimap, "TOP", 0, -3)
@@ -367,26 +375,20 @@ end
 -- Shape
 -- ============================================================================
 
-local SQUARE_MASK = 130937  -- a plain white square
-local ROUND_MASK = 186178   -- the game's round minimap mask, by file ID (the old path no longer resolves)
-
 local function Shape()
     local round = Settings().mmRound
     Minimap:SetMaskTexture(round and ROUND_MASK or SQUARE_MASK)
+    -- Blizzard's compass ring never shows: the round map wears our own border,
+    -- the edge drawn through the same round mask (see Apply).
     local compass = _G.MinimapCompassTexture
-    if compass then
-        compass:SetShown(round and true or false)
-        -- Blizzard sizes the ring (215 x 226) for its 198px map; keep it in step
-        -- with ours, or a smaller map leaves a gap inside the ring.
-        -- The ring hangs off a different parent from the map, at its own scale, so
-        -- convert the map's width into the ring's units.
-        local w = Minimap:GetWidth()
-        local cs = compass:GetEffectiveScale()
-        if w and w > 0 and cs and cs > 0 then
-            w = w * Minimap:GetEffectiveScale() / cs
-            compass:ClearAllPoints()
-            compass:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
-            compass:SetSize(w * 215 / 198, w * 226 / 198)
+    if compass then compass:Hide() end
+    if edge and edge.mask then
+        if round and not edge.masked then
+            edge.bg:AddMaskTexture(edge.mask)
+            edge.masked = true
+        elseif not round and edge.masked then
+            edge.bg:RemoveMaskTexture(edge.mask)
+            edge.masked = false
         end
     end
     -- Other add-ons place their minimap buttons by this.
@@ -527,7 +529,7 @@ function MM.Apply()
     local pos = s.mmPosition or DEFAULT_POS
     holder:ClearAllPoints()
     holder:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
-    local border = (not s.mmRound and s.mmEdge ~= false) and (s.mmEdgeSize or 1) or 1
+    local border = s.mmEdge ~= false and (s.mmEdgeSize or 1) or 1
     holder:SetSize(size * scale + border * 2, size * scale + border * 2)
 
     Minimap:ClearAllPoints()
@@ -540,7 +542,7 @@ function MM.Apply()
 
     edge:ClearAllPoints()
     edge:SetAllPoints(holder)
-    edge:SetShown(not s.mmRound and s.mmEdge ~= false)
+    edge:SetShown(s.mmEdge ~= false)
     local ec = s.mmEdgeColor or { r = 0, g = 0, b = 0 }
     if s.mmEdgeClass then
         local _, class = UnitClass("player")
