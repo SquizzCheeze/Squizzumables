@@ -144,6 +144,31 @@ TT.SETTINGS = ns.Settings.Describe({
             { key = "ttHidePvP", type = "check", default = true, label = "Hide the PvP Line" },
             { key = "ttHideFaction", type = "check", default = true, label = "Hide the Faction Line" },
         } },
+        -- Stage 2; the code is in Tooltip/Extras.lua.
+        { key = "extras", label = "Extras", rows = {
+            { type = "header", label = "PLAYERS" },
+            { key = "ttItemLevel", type = "check", default = true, label = "Item Level with Shift",
+              tip = "Hold Shift over a player, out of combat, to inspect them and see their item level." },
+            { key = "ttMythic", type = "check", default = true, label = "Mythic+ Score",
+              tip = "Out of combat." },
+            { key = "ttMythicBest", type = "check", default = true, label = "Best Mythic+ Run",
+              when = function(s) return s.ttMythic ~= false end },
+            { key = "ttMythicColor", type = "check", default = true, label = "Score in Its Colour",
+              when = function(s) return s.ttMythic ~= false end },
+            { key = "ttMount", type = "check", default = true, label = "Their Mount",
+              tip = "Out of combat. Hold Ctrl for where it comes from." },
+            { type = "header", label = "IDS" },
+            { key = "ttIDs", type = "dropdown", default = "HIDE", items = MODIFIERS, label = "Show IDs",
+              tip = "Spell, item, aura, creature, currency, toy and quest IDs." },
+            { type = "header", label = "ITEMS" },
+            { key = "ttQuality", type = "check", default = false, label = "Edge in the Item's Quality Colour" },
+            { key = "ttCountBags", type = "check", default = true, label = "How Many in Your Bags" },
+            { key = "ttCountBank", type = "check", default = false, label = "How Many in Your Bank" },
+            { key = "ttCountStack", type = "check", default = false, label = "Stack Size" },
+            { key = "ttSellPrice", type = "dropdown", default = "BLIZZARD", label = "Sell Price",
+              items = { { text = "Blizzard's coins", value = "BLIZZARD" }, { text = "As a line of text", value = "TEXT" },
+                        { text = "Hidden", value = "HIDE" } } },
+        } },
     },
 })
 
@@ -709,9 +734,17 @@ local function Seed()
     BH:SaveSettings()
 end
 
+-- For Tooltip/Extras.lua (stage 2), which loads after this file.
+TT.shared = {
+    Active = Active, Settings = Settings, Elv = Elv, TooltipUnit = TooltipUnit, ModDown = ModDown,
+    ClassColor = ClassColor, Wrap = Wrap, Hex = Hex, skins = skins,
+}
+
 function BH:ApplyTooltip()
     Seed()
+    if TT.SeedExtras then TT.SeedExtras() end
     TT.Apply()
+    if TT.ApplyExtras then TT.ApplyExtras() end
 end
 
 local ev = CreateFrame("Frame")

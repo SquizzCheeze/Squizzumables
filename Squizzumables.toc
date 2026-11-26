@@ -66,6 +66,7 @@ Chat\Chat.lua
 Tweaks\Tweaks.lua
 Auras\BuffFrame.lua
 Tooltip\Tooltip.lua
+Tooltip\Extras.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua

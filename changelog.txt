@@ -114,6 +114,13 @@ V2.8
   elite or rare tag and type. Both show their role and their target, and
   the PvP and faction lines are dropped. It waits while ElvUI's tooltip is
   on; your ElvUI tooltip settings are copied over the first time.
+- Tooltip: an Extras tab. Hold Shift over a player for their item level;
+  their Mythic+ score and best run, and the mount they ride (Ctrl for where
+  it comes from), all out of combat. IDs for spells, items, auras,
+  creatures, currencies, toys, mounts and quests (always, never, or with a
+  key held). On items: how many you have in your bags and bank, the stack
+  size, an edge in the item's quality colour, and the sell price as
+  Blizzard's coins, a line of text or not at all.
 - Chat: Up and Down in the edit box go through what you typed without
   holding Alt (Alt+Up for /cast and other secure commands).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
