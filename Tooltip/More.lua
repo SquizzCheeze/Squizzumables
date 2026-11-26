@@ -195,21 +195,29 @@ local raids   -- { { name, short, stats = { M = {ids}, H = ..., N = ..., L = ...
 -- This season's raids from the Encounter Journal, then each boss's kill
 -- statistic by its name ("<boss> kills (<difficulty> <raid>)"). Once per
 -- session; a raid whose statistics are not found simply gets no line.
+local NO_RAIDS, lastTry = {}, 0
 local function FindRaids()
     if raids then return raids end
-    raids = {}
-    if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex) then return raids end
+    -- Nothing found yet: try again later rather than once and never.
+    if GetTime() - lastTry < 30 then return NO_RAIDS end
+    lastTry = GetTime()
+    if not (EJ_GetNumTiers and EJ_SelectTier and EJ_GetInstanceByIndex) then return NO_RAIDS end
+    local tiers = EJ_GetNumTiers() or 0
+    if tiers < 1 then return NO_RAIDS end
+    -- 0 means the journal has no tier chosen yet, which cannot be put back.
     local was = EJ_GetCurrentTier()
-    EJ_SelectTier(EJ_GetNumTiers())
+    local found = {}
+    EJ_SelectTier(tiers)
     local i = 1
     while true do
         local _, name = EJ_GetInstanceByIndex(i, true)
         if not name then break end
-        raids[#raids + 1] = { name = name, short = ShortName(name), stats = {} }
+        found[#found + 1] = { name = name, short = ShortName(name), stats = {} }
         i = i + 1
     end
-    if was then EJ_SelectTier(was) end
-    if #raids == 0 then return raids end
+    if was and was >= 1 and was ~= tiers then EJ_SelectTier(was) end
+    if #found == 0 then return NO_RAIDS end
+    raids = found
 
     for _, cat in ipairs(GetStatisticsCategoryList() or {}) do
         for j = 1, (GetCategoryNumAchievements(cat) or 0) do
