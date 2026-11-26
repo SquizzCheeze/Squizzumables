@@ -63,6 +63,17 @@ V2.8
   time. More of ElvUI's chat options follow.
 - Chat: a strip of three data texts under each chat panel (Chat > Data
   Texts tab), as in ElvUI, copied from your ElvUI chat data texts.
+- Chat: Messages and Edit Box tabs. Clickable web links (click to copy),
+  item and spell tooltips on hover, short channel names ([G], [P], [2]),
+  a timestamp colour, names of people you know in their class colour,
+  role icons for your group, keywords highlighted with a sound, alert
+  sounds per channel, hiding repeated spam in Say, Yell and channels,
+  arrow keys without Alt, typed lines remembered across reloads, a
+  character count, lines per mouse wheel turn and a Copy Chat button.
+  Your ElvUI choices are copied over the first time. Messages hidden from
+  add-ons during encounters show exactly as Blizzard draws them.
+- Chat: the chat text no longer runs out past the right of its panel
+  when the panel sits near the left edge of the screen.
 - Data Texts: six new texts, usable on the minimap strip as well.
   Talent/Loot Specialization (right-click to switch either), Durability,
   Currencies (the ones you track), System (frame rate, latency, add-on

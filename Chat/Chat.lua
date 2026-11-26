@@ -232,6 +232,7 @@ CH.SETTINGS = ns.Settings.Describe({
             { key = "chDataRight3", type = "dropdown", default = "Gold", items = DataItems,
               label = "Right", when = DataOn },
         } },
+        unpack(ns.ChatMessages.PAGES),   -- Messages, Edit Box (Chat/Messages.lua)
     },
 })
 
@@ -436,6 +437,7 @@ local function StyleChat(chat, s)
 
     StyleTab(_G[name .. "Tab"], s)
     StyleEditBox(chat.editBox, s)
+    ns.ChatMessages.StyleChat(chat, s)
 
     if styled[chat] then return end
     styled[chat] = true
@@ -633,6 +635,13 @@ function CH.Apply()
     if QuickJoinToastButton then QuickJoinToastButton:SetParent(hider) end
     if TextToSpeechButtonFrame then TextToSpeechButtonFrame:SetParent(hider) end
     Arrange(s)
+    ns.ChatMessages.Apply(s, panels, function(side)
+        if side == "Left" then
+            return FCFDock_GetSelectedWindow and FCFDock_GetSelectedWindow(GeneralDockManager) or ChatFrame1
+        end
+        local w = (s.chRightWindow or 0) > 0 and _G["ChatFrame" .. s.chRightWindow]
+        return w and not w.isDocked and w:IsShown() and w or nil
+    end)
     ElvPanels(s.chHideElvUIPanels ~= false)
     ApplyTimestamps(s)
 end
@@ -788,6 +797,7 @@ end
 function BH:ApplyChat()
     SeedFromElvUI()
     SeedDataFromElvUI()
+    ns.ChatMessages.Seed(ElvUI())
     CH.Apply()
 end
 

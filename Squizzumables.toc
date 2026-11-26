@@ -61,6 +61,7 @@ DataTexts\Texts.lua
 ItemBars\ItemBars.lua
 ActionBars\ExtraBars.lua
 ActionBars\ActionBars.lua
+Chat\Messages.lua
 Chat\Chat.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
