@@ -483,6 +483,11 @@ end
 local placing
 local function PlaceWindow(chat, panel, w, h)
     placing = true
+    -- Edit Mode clamps the window by its selection box, which reaches over
+    -- the (hidden) button column on the left: near the screen edge that
+    -- pushed the window right and its text out past the panel. The panel is
+    -- clamped instead.
+    chat:SetClampedToScreen(false)
     chat:ClearAllPoints()
     chat:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 5, 5)
     chat:SetSize(w - 10, h - 32)
