@@ -500,14 +500,20 @@ local function CreateBar(def)
     local n = def.n
     if bars[n] then return bars[n] end
     local holder = MakeHolder("SquizzumablesActionBar" .. n .. "Holder", function() SavePosition(n) end)
-    local header = CreateFrame("Frame", "SquizzumablesActionBar" .. n, UIParent,
-        "SecureHandlerStateTemplate, BackdropTemplate")
+    -- SecureHandlerStateTemplate ALONE: combined with BackdropTemplate, the
+    -- second template's OnLoad replaces SecureHandler_OnLoad, the header never
+    -- gets WrapScript/Execute, and LAB's CreateButton fails. The background is
+    -- a child frame instead.
+    local header = CreateFrame("Frame", "SquizzumablesActionBar" .. n, UIParent, "SecureHandlerStateTemplate")
     header:SetAttribute("_onstate-page", [[
         self:SetAttribute("state", newstate)
         control:ChildUpdate("state", newstate)
     ]])
+    local backdrop = CreateFrame("Frame", nil, header, "BackdropTemplate")
+    backdrop:SetAllPoints()
+    backdrop:SetFrameLevel(header:GetFrameLevel())
 
-    local rec = { def = def, holder = holder, header = header, buttons = {}, drivers = {} }
+    local rec = { def = def, holder = holder, header = header, backdrop = backdrop, buttons = {}, drivers = {} }
     local s = BH.settings
     local maxPage = n == 1 and Bar1MaxPage() or def.page
     for i = 1, NUM_BUTTONS do
@@ -597,11 +603,12 @@ local function LayoutBar(def, s)
     header:SetSize(W, H)
     header:SetFrameStrata(s[p .. "Strata"] or "LOW")
     if s[p .. "Backdrop"] then
-        header:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-        header:SetBackdropColor(0.06, 0.06, 0.06, s.abBackdropAlpha or 0.8)
-        header:SetBackdropBorderColor(0, 0, 0, 1)
+        local bd = rec.backdrop
+        bd:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+        bd:SetBackdropColor(0.06, 0.06, 0.06, s.abBackdropAlpha or 0.8)
+        bd:SetBackdropBorderColor(0, 0, 0, 1)
     else
-        header:SetBackdrop(nil)
+        rec.backdrop:SetBackdrop(nil)
     end
 
     local right = grow:find("RIGHT") and -1 or 1
