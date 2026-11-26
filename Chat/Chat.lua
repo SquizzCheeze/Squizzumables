@@ -596,6 +596,12 @@ local function Arrange(s)
         local inset = (s.chCopyButton ~= false and 22 or 0) + (s.chChatButtons ~= false and 88 or 0)
         dock:SetPoint("BOTTOMRIGHT", primary, "TOPRIGHT", -inset, 3)
         dock:SetHeight(22)
+        -- The "N Chat Windows" list opens over the voice and copy buttons.
+        local list = dock.overflowButton and dock.overflowButton.list
+        if list then
+            list:SetFrameStrata("DIALOG")
+            list:SetToplevel(true)
+        end
     end
 
     PlaceEditBoxes(s, left, primary)
