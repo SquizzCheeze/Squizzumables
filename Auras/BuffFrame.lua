@@ -34,8 +34,31 @@ function AU.ElvUIOn()
     return p and p.enable and true or false
 end
 
+-- ElvUI's separate "Disabled Blizzard" option (on by default) kills
+-- Blizzard's buff and debuff frames even with its own buffs off, which
+-- leaves nothing on screen at all.
+function AU.ElvUIKillsBlizzard()
+    local E = Elv()
+    local p = E and E.private and E.private.auras
+    return p and p.disableBlizzard and true or false
+end
+
+local warned
+local function Warn()
+    if warned or not (BH.settings and BH.settings.auEnabled) then return end
+    if AU.ElvUIOn() then
+        warned = true
+        print("|cff33cc99Squizzumables:|r ElvUI's Buffs and Debuffs are still on (ElvUI > Buffs and Debuffs > "
+            .. "Enable). Turn them off, /reload, and Squizzumables takes over.")
+    elseif AU.ElvUIKillsBlizzard() then
+        warned = true
+        print("|cff33cc99Squizzumables:|r ElvUI is hiding Blizzard's buff and debuff frames, so there is "
+            .. "nothing to show. Untick ElvUI > Buffs and Debuffs > Disabled Blizzard, then /reload.")
+    end
+end
+
 local function Active()
-    return BH.settings and BH.settings.auEnabled and not AU.ElvUIOn()
+    return BH.settings and BH.settings.auEnabled and not AU.ElvUIOn() and not AU.ElvUIKillsBlizzard()
 end
 
 local function Apply() if AU.Apply then AU.Apply() end end
@@ -69,12 +92,13 @@ AU.SETTINGS = ns.Settings.Describe({
             { key = "auEnabled", type = "check", default = false, label = "Restyle Buffs and Debuffs",
               tip = "Blizzard's buff and debuff frames with square icons, a thin edge and your fonts. Their size, "
                 .. "direction, icons per row and spacing stay in Edit Mode (Buff Frame, Debuff Frame), and "
-                .. "right-click still cancels a buff.\n\nWaits while ElvUI's Buffs and Debuffs are on (ElvUI > "
-                .. "Buffs and Debuffs > Enable, then /reload).",
+                .. "right-click still cancels a buff.\n\nWaits while ElvUI's Buffs and Debuffs are on, or while "
+                .. "ElvUI hides Blizzard's (untick both ElvUI > Buffs and Debuffs > Enable and Disabled Blizzard, "
+                .. "then /reload).",
               apply = function(v)
-                  if v and AU.ElvUIOn() then
-                      print("|cff33cc99Squizzumables:|r ElvUI's Buffs and Debuffs are still on. Turn them off in "
-                          .. "ElvUI, /reload, and this takes over.")
+                  if v then
+                      warned = nil
+                      Warn()
                   elseif not v and AU.styledAny and not reloadAsked then
                       reloadAsked = true
                       print("|cff33cc99Squizzumables:|r Blizzard's buff look comes back after a /reload.")
@@ -246,6 +270,7 @@ end
 
 function BH:ApplyBuffFrame()
     Seed()
+    Warn()
     AU.Apply()
 end
 
