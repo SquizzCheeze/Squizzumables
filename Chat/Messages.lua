@@ -90,7 +90,7 @@ M.PAGES = {
         { key = "chCountChars", type = "check", default = true, label = "Character Count",
           tip = "How many of the 255 characters you have used, at the right of the edit box." },
         { type = "header", label = "SCROLLING" },
-        { key = "chScrollLines", type = "slider", default = 3, min = 1, max = 10, step = 1,
+        { key = "chScrollLines", type = "slider", default = 1, min = 1, max = 10, step = 1,
           label = "Lines per Mouse Wheel Turn", tip = "How far one turn of the mouse wheel scrolls." },
         { type = "header", label = "COPY" },
         { key = "chCopyButton", type = "check", default = true, label = "Copy Chat Button",
@@ -413,7 +413,7 @@ function M.StyleChat(chat, s)
 
     -- More than one line per wheel turn (Blizzard scrolls one).
     chat:HookScript("OnMouseWheel", function(self, delta)
-        local n = Active() and (Settings().chScrollLines or 3) or 1
+        local n = Active() and (Settings().chScrollLines or 1) or 1
         if n <= 1 or IsShiftKeyDown() or IsControlKeyDown() then return end
         for _ = 2, n do
             if delta > 0 then self:ScrollUp() else self:ScrollDown() end
@@ -564,6 +564,12 @@ local ALERT_FROM_ELV = { WHISPER = "chAlertWhisper", GUILD = "chAlertGuild", OFF
 
 function M.Seed(E)
     local s = BH.settings
+    -- The first build defaulted to 3 lines per wheel turn (and copied
+    -- ElvUI's 3); Blizzard's is 1. Moved once, so a 3 picked later stays.
+    if s and not s.chScrollLinesReset then
+        s.chScrollLinesReset = true
+        if s.chScrollLines == 3 then s.chScrollLines = 1 end
+    end
     if not s or s.chMsgSeededFromElvUI then return end
     local db = E and E.db and E.db.chat
     if type(db) ~= "table" then return end
@@ -584,7 +590,6 @@ function M.Seed(E)
     if type(tc) == "table" and tc.r then s.chTimeColor = { r = tc.r, g = tc.g, b = tc.b } end
     if tonumber(db.throttleInterval) then s.chThrottle = tonumber(db.throttleInterval) end
     if tonumber(db.editboxHistorySize) then s.chEditHistory = tonumber(db.editboxHistorySize) end
-    if tonumber(db.numScrollMessages) then s.chScrollLines = tonumber(db.numScrollMessages) end
     -- ElvUI's own default keyword is its name; anything else was picked.
     if type(db.keywords) == "string" and db.keywords ~= "ElvUI" then s.chKeywords = db.keywords end
     local lsm = LibStub and LibStub("LibSharedMedia-3.0", true)
