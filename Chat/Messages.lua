@@ -396,6 +396,21 @@ local function UpdateCount(eb)
     fs:SetText(strlenutf8(text) .. "/255")
 end
 
+function M.ArrowMode(eb)
+    if not Active() then return end
+    -- While the autocomplete list is open it needs the arrows itself.
+    local ac = _G.AutoCompleteBox
+    if ac and ac:IsShown() and ac.parent == eb then return end
+    local want = Settings().chUseAltKey and true or false
+    if eb:GetAltArrowKeyMode() ~= want then eb:SetAltArrowKeyMode(want) end
+end
+
+if AutoComplete_HideIfAttachedTo then
+    hooksecurefunc("AutoComplete_HideIfAttachedTo", function(eb)
+        if eb and counters[eb] then M.ArrowMode(eb) end
+    end)
+end
+
 function M.StyleChat(chat, s)
     local eb = chat.editBox
     if eb then
@@ -441,6 +456,11 @@ function M.StyleChat(chat, s)
         fs:SetPoint("RIGHT", eb, "RIGHT", -6, 0)
         counters[eb] = fs
         eb:HookScript("OnTextChanged", UpdateCount)
+        -- Blizzard's name autocomplete puts back the arrow mode it first saw
+        -- (the game's default, Alt needed) when it closes; ours goes back on
+        -- whenever the box is used.
+        eb:HookScript("OnEditFocusGained", M.ArrowMode)
+        eb:HookScript("OnTextChanged", M.ArrowMode)
         hooksecurefunc(eb, "AddHistoryLine", function(_, line) M.RememberLine(line) end)
     end
 
