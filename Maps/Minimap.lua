@@ -126,8 +126,14 @@ MM.SETTINGS = ns.Settings.Describe({
             { key = "mmRound", type = "check", default = false, label = "Round Instead of Square" },
             { key = "mmRotate", type = "check", default = false, label = "Rotate With You",
               tip = "The game's Rotate Minimap option." },
-            { key = "mmEdge", type = "check", default = true, label = "Thin Edge",
+            { key = "mmEdge", type = "check", default = true, label = "Border",
               when = function(s) return not s.mmRound end },
+            { key = "mmEdgeSize", type = "slider", default = 1, min = 1, max = 6, step = 1, label = "Border Size",
+              when = function(s) return not s.mmRound and s.mmEdge ~= false end },
+            { key = "mmEdgeClass", type = "check", default = false, label = "Border in Your Class Colour",
+              when = function(s) return not s.mmRound and s.mmEdge ~= false end },
+            { key = "mmEdgeColor", type = "color", default = { r = 0, g = 0, b = 0 }, label = "Border Colour",
+              when = function(s) return not s.mmRound and s.mmEdge ~= false and not s.mmEdgeClass end },
             { type = "header", label = "MOUSE" },
             { key = "mmRightClick", type = "check", default = true, label = "Right-Click for Tracking" },
             { key = "mmMenu", type = "check", default = true, label = "Middle-Click for the Game Menu",
@@ -238,6 +244,7 @@ local function Build()
     local bg = edge:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0, 0, 0, 1)
+    edge.bg = bg
 
     zoneText = Minimap:CreateFontString(nil, "OVERLAY")
     zoneText:SetPoint("TOP", Minimap, "TOP", 0, -3)
@@ -506,10 +513,11 @@ function MM.Apply()
     local pos = s.mmPosition or DEFAULT_POS
     holder:ClearAllPoints()
     holder:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, pos.x or 0, pos.y or 0)
-    holder:SetSize(size * scale + 2, size * scale + 2)
+    local border = (not s.mmRound and s.mmEdge ~= false) and (s.mmEdgeSize or 1) or 1
+    holder:SetSize(size * scale + border * 2, size * scale + border * 2)
 
     Minimap:ClearAllPoints()
-    Minimap:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -1 / scale, -1 / scale)
+    Minimap:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -border / scale, -border / scale)
     Minimap:SetSize(size, size)
     -- Nudge the map canvas so it redraws at the new size.
     local zoom = Minimap:GetZoom()
@@ -519,6 +527,12 @@ function MM.Apply()
     edge:ClearAllPoints()
     edge:SetAllPoints(holder)
     edge:SetShown(not s.mmRound and s.mmEdge ~= false)
+    local ec = s.mmEdgeColor or { r = 0, g = 0, b = 0 }
+    if s.mmEdgeClass then
+        local _, class = UnitClass("player")
+        ec = (C_ClassColor and C_ClassColor.GetClassColor(class)) or RAID_CLASS_COLORS[class] or ec
+    end
+    edge.bg:SetColorTexture(ec.r, ec.g, ec.b, 1)
 
     SetFont(zoneText, s.mmZoneFont, s.mmZoneSize or 14, s.mmZoneOutline or "OUTLINE")
     zoneText:SetWidth(size - 8)

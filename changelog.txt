@@ -134,8 +134,9 @@ V2.8
   The quest data is MMOSimca's, from LibObjectiveProgress, used with
   permission given in its notes.
 - New: Minimap (Interface > Minimap), off until you switch it on. A square
-  (or round) minimap you size, scale and place in Edit Mode, with a thin
-  edge. Blizzard's header, zoom buttons and compass are cleared; the zone
+  (or round) minimap you size, scale and place in Edit Mode, with a
+  border of the size and colour you choose (or your class colour).
+  Blizzard's header, zoom buttons and compass are cleared; the zone
   name sits on top (always, on mouseover or never) in its PvP colour. The
   icons round it - tracking, mail, crafting orders, instance difficulty,
   the expansion summary, calendar, event link and the add-on list - can
