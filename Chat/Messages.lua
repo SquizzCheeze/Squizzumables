@@ -82,7 +82,7 @@ M.PAGES = {
     } },
     { key = "editbox", label = "Edit Box", rows = {
         { key = "chUseAltKey", type = "check", default = false, label = "Arrow Keys Need Alt",
-          tip = "Off: the arrow keys move the cursor and Up/Down go through what you typed before. On: hold Alt "
+          tip = "Off: the arrow keys move the cursor and Up/Down go through what you typed before (Alt+Up for /cast and other secure commands). On: hold Alt "
             .. "for that (so the arrow keys still turn your character)." },
         { key = "chEditHistory", type = "slider", default = 20, min = 0, max = 100, step = 5,
           label = "Remembered Lines",
@@ -396,6 +396,41 @@ local function UpdateCount(eb)
     fs:SetText(strlenutf8(text) .. "/255")
 end
 
+-- Up/Down without Alt: the game only steps through its own history with Alt
+-- held, so plain Up/Down step through ours. Secure commands (/cast, /target...)
+-- are left out, since text an add-on puts in the box can't run them; Alt+Up
+-- still reaches the game's own history, which has them.
+local historyIndex = setmetatable({}, { __mode = "k" })
+
+local function IsSecure(line)
+    local cmd = line:match("^(/%S+)")
+    return cmd and IsSecureCmd and IsSecureCmd(cmd) or false
+end
+
+function M.HistoryKey(eb, key)
+    if key ~= "UP" and key ~= "DOWN" then return end
+    if not Active() or IsAltKeyDown() or Settings().chUseAltKey then return end
+    local ac = _G.AutoCompleteBox
+    if ac and ac:IsShown() and ac.parent == eb then return end
+    local all = SquizzumablesDB and SquizzumablesDB.chatTyped
+    if not all or #all == 0 then return end
+    local lines = {}
+    for _, line in ipairs(all) do
+        if not IsSecure(line) then lines[#lines + 1] = line end
+    end
+    if #lines == 0 then return end
+    local i = historyIndex[eb] or 0
+    i = key == "UP" and math.min(i + 1, #lines) or i - 1
+    if i < 1 then
+        historyIndex[eb] = 0
+        eb:SetText("")
+        return
+    end
+    historyIndex[eb] = i
+    eb:SetText(lines[#lines - i + 1])
+    eb:SetCursorPosition(#lines[#lines - i + 1])
+end
+
 function M.ArrowMode(eb)
     if not Active() then return end
     -- While the autocomplete list is open it needs the arrows itself.
@@ -461,6 +496,8 @@ function M.StyleChat(chat, s)
         -- whenever the box is used.
         eb:HookScript("OnEditFocusGained", M.ArrowMode)
         eb:HookScript("OnTextChanged", M.ArrowMode)
+        eb:HookScript("OnKeyDown", M.HistoryKey)
+        eb:HookScript("OnEditFocusGained", function(self) historyIndex[self] = 0 end)
         hooksecurefunc(eb, "AddHistoryLine", function(_, line) M.RememberLine(line) end)
     end
 
