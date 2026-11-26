@@ -72,6 +72,12 @@ V2.8
   character count, lines per mouse wheel turn and a Copy Chat button.
   Your ElvUI choices are copied over the first time. Messages hidden from
   add-ons during encounters show exactly as Blizzard draws them.
+- Chat: Blizzard's chat menu, channels and voice mute/deafen buttons in a
+  row at the top right of the left panel (right-clicking Copy Chat also
+  opens the chat menu); a small arrow on each data text strip hides or
+  shows that panel; and Keep Chat History (Edit Box tab, off until you
+  switch it on), which brings each window's recent chat back after a
+  reload or your next login on that character.
 - Chat: the chat text no longer runs out past the right of its panel
   when the panel sits near the left edge of the screen.
 - Data Texts: six new texts, usable on the minimap strip as well.

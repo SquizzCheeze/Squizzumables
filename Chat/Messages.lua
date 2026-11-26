@@ -95,7 +95,14 @@ M.PAGES = {
         { type = "header", label = "COPY" },
         { key = "chCopyButton", type = "check", default = true, label = "Copy Chat Button",
           tip = "A button at the top right of each panel opens that window's text to copy from. Lines that were "
-            .. "hidden from add-ons (in an encounter) can't be copied." },
+            .. "hidden from add-ons (in an encounter) can't be copied. Right-click it for the chat menu "
+            .. "(emotes, languages, voice)." },
+        { type = "header", label = "HISTORY" },
+        { key = "chHistory", type = "check", default = false, label = "Keep Chat History",
+          tip = "Each window's recent chat comes back after a reload or the next time you log in to this "
+            .. "character. Lines hidden from add-ons (in an encounter) aren't kept." },
+        { key = "chHistorySize", type = "slider", default = 100, min = 10, max = 500, step = 10,
+          label = "Lines Kept per Window", when = function(s) return s.chHistory end },
     } },
 }
 
@@ -427,6 +434,62 @@ function M.StyleChat(chat, s)
         eb:HookScript("OnTextChanged", UpdateCount)
         hooksecurefunc(eb, "AddHistoryLine", function(_, line) M.RememberLine(line) end)
     end
+
+    -- Chat lines (not add-on prints or system lines) for the history.
+    hooksecurefunc(chat, "AddMessage", function(self, msg, r, g, b, _, _, _, event)
+        M.KeepLine(self, msg, r, g, b, event)
+    end)
+end
+
+-- ============================================================================
+-- Chat history, per character
+-- ============================================================================
+
+local restoring
+
+local function ChatHistory(create)
+    local guid = UnitGUID("player")
+    if not (SquizzumablesDB and guid) then return nil end
+    if create then SquizzumablesDB.chatHistory = SquizzumablesDB.chatHistory or {} end
+    local all = SquizzumablesDB.chatHistory
+    if not all then return nil end
+    if create then all[guid] = all[guid] or {} end
+    return all[guid]
+end
+
+function M.KeepLine(chat, msg, r, g, b, event)
+    if restoring or not Active() then return end
+    local s = Settings()
+    if not s.chHistory or type(event) ~= "string" or Secret(event) or not event:match("^CHAT_MSG_")
+        or event == "CHAT_MSG_SYSTEM" then return end
+    if type(msg) ~= "string" or Secret(msg) then return end
+    if Secret(r) or Secret(g) or Secret(b) then r, g, b = nil, nil, nil end
+    local h = ChatHistory(true)
+    if not h then return end
+    local id = chat:GetID()
+    h[id] = h[id] or {}
+    local list = h[id]
+    list[#list + 1] = { msg, r, g, b }
+    local keep = s.chHistorySize or 100
+    while #list > keep do table.remove(list, 1) end
+end
+
+local restored
+function M.RestoreHistory()
+    if restored or not Active() then return end
+    restored = true
+    local h = ChatHistory(false)
+    if not (h and Settings().chHistory) then return end
+    restoring = true
+    for _, name in ipairs(CHAT_FRAMES or {}) do
+        local chat = _G[name]
+        local list = chat and h[chat:GetID()]
+        if list and #list > 0 then
+            for _, line in ipairs(list) do pcall(chat.AddMessage, chat, line[1], line[2], line[3], line[4]) end
+            chat:AddMessage("|cff888888- chat history above -|r")
+        end
+    end
+    restoring = false
 end
 
 -- ============================================================================
@@ -543,7 +606,15 @@ function M.Apply(s, panels, windowFor)
                 GameTooltip:Show()
             end)
             b:SetScript("OnLeave", GameTooltip_Hide)
-            b:SetScript("OnClick", function() M.Copy(windowFor(side)) end)
+            b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            b:SetScript("OnClick", function(_, button)
+                local menu = _G.ChatFrameMenuButton
+                if button == "RightButton" and menu and menu.OpenMenu then
+                    menu:OpenMenu()
+                else
+                    M.Copy(windowFor(side))
+                end
+            end)
             copyButtons[side] = b
         end
         b:ClearAllPoints()
@@ -553,6 +624,7 @@ function M.Apply(s, panels, windowFor)
         b:SetShown(s.chCopyButton ~= false and windowFor(side) ~= nil)
     end
     for eb in pairs(counters) do UpdateCount(eb) end
+    M.RestoreHistory()
 end
 
 -- ============================================================================

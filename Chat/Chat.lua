@@ -204,6 +204,13 @@ CH.SETTINGS = ns.Settings.Describe({
             { type = "header", label = "EDIT BOX" },
             { key = "chEditBoxPosition", type = "dropdown", default = "BELOW_CHAT", items = EDITBOX,
               label = "Edit Box Position", tip = "Where you type." },
+            { type = "header", label = "BUTTONS" },
+            { key = "chChatButtons", type = "check", default = true, label = "Chat Menu and Voice Buttons",
+              tip = "Blizzard's chat menu (emotes, languages), channels and voice mute/deafen buttons, in a row at "
+                .. "the top right of the left panel." },
+            { key = "chToggles", type = "check", default = true, label = "Hide/Show Buttons",
+              tip = "A small arrow at the outer end of each data text strip hides or shows that chat panel. The "
+                .. "edit box still opens while a panel is hidden.", when = DataOn },
             { type = "header", label = "ELVUI" },
             { key = "chHideElvUIPanels", type = "check", default = true,
               label = "Hide ElvUI's Chat Panels",
@@ -550,11 +557,14 @@ local function Arrange(s)
         if DT and s.chDataTexts ~= false then
             data:SetHeight(dh)
             data.box:Paint(r, g, b, 1, true)
-            local each = w / 3
+            -- Room for the hide/show arrow at the outer end.
+            local toggle = s.chToggles ~= false and 16 or 0
+            local x0 = side == "Left" and toggle or 0
+            local each = (w - toggle) / 3
             for i, slot in ipairs(data.slots) do
                 slot:ClearAllPoints()
-                slot:SetPoint("TOPLEFT", data, "TOPLEFT", each * (i - 1), 0)
-                slot:SetPoint("BOTTOMRIGHT", data, "BOTTOMLEFT", each * i, 0)
+                slot:SetPoint("TOPLEFT", data, "TOPLEFT", x0 + each * (i - 1), 0)
+                slot:SetPoint("BOTTOMRIGHT", data, "BOTTOMLEFT", x0 + each * i, 0)
                 slot:Show()
                 DT.SetSlot(slot, s["chData" .. side .. i])
             end
@@ -582,7 +592,9 @@ local function Arrange(s)
     if dock and primary then
         dock:ClearAllPoints()
         dock:SetPoint("BOTTOMLEFT", primary, "TOPLEFT", 0, 3)
-        dock:SetPoint("BOTTOMRIGHT", primary, "TOPRIGHT", 0, 3)
+        -- Tabs stop short of the copy button and the chat menu/voice row.
+        local inset = (s.chCopyButton ~= false and 22 or 0) + (s.chChatButtons ~= false and 88 or 0)
+        dock:SetPoint("BOTTOMRIGHT", primary, "TOPRIGHT", -inset, 3)
         dock:SetHeight(22)
     end
 
@@ -603,6 +615,110 @@ local function ElvPanels(hide)
                 f:SetParent(elvHidden[name])
                 elvHidden[name] = nil
             end
+        end
+    end
+end
+
+-- ============================================================================
+-- Chat menu / voice row, and hiding a panel
+-- ============================================================================
+
+local VOICE = { "ChatFrameMenuButton", "ChatFrameChannelButton", "ChatFrameToggleVoiceDeafenButton",
+    "ChatFrameToggleVoiceMuteButton" }
+
+local function ChatButtons(s, left)
+    local prev
+    for _, name in ipairs(VOICE) do
+        local b = _G[name]
+        if b then
+            if s.chChatButtons ~= false then
+                b:SetParent(left)
+                b:SetFrameStrata("MEDIUM")
+                b:SetScale(0.7)
+                b:ClearAllPoints()
+                -- Scaled 0.7, so offsets are in its own units (/0.7).
+                if prev then
+                    b:SetPoint("RIGHT", prev, "LEFT", -2, 0)
+                else
+                    local copy = s.chCopyButton ~= false and 22 or 0
+                    b:SetPoint("TOPRIGHT", left, "TOPRIGHT", -(5 + copy) / 0.7, -4 / 0.7)
+                end
+                prev = b
+            else
+                b:SetParent(hider)
+            end
+        end
+    end
+end
+
+local toggles = {}
+
+local function WindowsOn(side, s)
+    local list = {}
+    if side == "Left" then
+        for _, f in ipairs(Frames()) do
+            if f == (GeneralDockManager and GeneralDockManager.primary or ChatFrame1) or f.isDocked then
+                list[#list + 1] = f
+            end
+        end
+        if GeneralDockManager then list[#list + 1] = GeneralDockManager end
+    else
+        local w = (s.chRightWindow or 0) > 0 and _G["ChatFrame" .. s.chRightWindow]
+        if w and not w.isDocked then list[#list + 1] = w end
+    end
+    return list
+end
+
+local function Toggles(s)
+    for side, f in pairs(panels) do
+        local key = "ch" .. side .. "Hidden"
+        local shown = s.chToggles ~= false and s.chDataTexts ~= false and ns.DataTexts ~= nil
+        local hidden = shown and s[key] and true or false
+
+        local t = toggles[side]
+        if not t then
+            t = CreateFrame("Button", nil, f.data)
+            t:SetWidth(16)
+            t.text = t:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            t.text:SetPoint("CENTER")
+            t:SetScript("OnClick", function()
+                BH.settings[key] = not BH.settings[key]
+                BH:SaveSettings()
+                CH.Apply()
+            end)
+            t:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(BH.settings[key] and "Show the chat panel" or "Hide the chat panel")
+                GameTooltip:Show()
+            end)
+            t:SetScript("OnLeave", GameTooltip_Hide)
+            toggles[side] = t
+        end
+        t:ClearAllPoints()
+        if side == "Left" then
+            t:SetPoint("TOPLEFT", f.data, "TOPLEFT")
+            t:SetPoint("BOTTOMLEFT", f.data, "BOTTOMLEFT")
+            t.text:SetText(hidden and ">" or "<")
+        else
+            t:SetPoint("TOPRIGHT", f.data, "TOPRIGHT")
+            t:SetPoint("BOTTOMRIGHT", f.data, "BOTTOMRIGHT")
+            t.text:SetText(hidden and "<" or ">")
+        end
+        t:SetShown(shown)
+
+        -- Hidden: the panel's background, tabs, buttons and windows go
+        -- see-through; the edit box still shows when you type.
+        if hidden then
+            f.box:Paint(0, 0, 0, 0, false)
+            f.tabStrip.box:Paint(0, 0, 0, 0, false)
+        end
+        for _, child in ipairs({ f:GetChildren() }) do
+            if child ~= f.data then child:SetAlpha(hidden and 0 or 1) end
+        end
+        for _, w in ipairs(WindowsOn(side, s)) do
+            w:SetAlpha(hidden and 0 or 1)
+            local eb = rawget(w, "editBox")
+            if eb then eb:SetIgnoreParentAlpha(hidden) end
         end
     end
 end
@@ -642,6 +758,8 @@ function CH.Apply()
         local w = (s.chRightWindow or 0) > 0 and _G["ChatFrame" .. s.chRightWindow]
         return w and not w.isDocked and w:IsShown() and w or nil
     end)
+    ChatButtons(s, panels.Left)
+    Toggles(s)
     ElvPanels(s.chHideElvUIPanels ~= false)
     ApplyTimestamps(s)
 end
