@@ -41,7 +41,10 @@ local function Icon(tex, w, h)
     return "|T" .. tex .. ":" .. (h or 14) .. ":" .. (w or 16) .. ":0:0:64:64:5:59:9:55|t"
 end
 
--- While WindTools runs one of these itself, ours stays out of the way.
+-- While WindTools runs one of these itself, ours stays out of the way. Only
+-- for the ones WindTools hooks directly (title icons, quest progress, group
+-- info): its faction and pet icons and pet ID ride on ElvUI's own unit
+-- tooltip, which is off whenever ours runs, so those never defer.
 local function WTDoes(key)
     local E = SH.Elv()
     local wt = E and E.private and E.private.WT and E.private.WT.tooltips
@@ -323,7 +326,7 @@ local function CornerTexture()
 end
 
 local function FactionIcon(unit)
-    if Settings().ttFactionIcon == false or WTDoes("factionIcon") then return end
+    if Settings().ttFactionIcon == false then return end
     local faction = UnitFactionGroup(unit)
     if not (faction and canaccessvalue(faction)) or (faction ~= "Alliance" and faction ~= "Horde") then return end
     factionTex = factionTex or CornerTexture()
@@ -338,7 +341,7 @@ local function PetLines(tt, unit)
     local wild, companion = UnitIsWildBattlePet(unit), UnitIsBattlePetCompanion(unit)
     if not Readable(wild, companion) or not (wild or companion) then return end
     local s = Settings()
-    if s.ttPetIcon ~= false and not WTDoes("petIcon") then
+    if s.ttPetIcon ~= false then
         local ptype = UnitBattlePetType(unit)
         local suffix = canaccessvalue(ptype) and PET_TYPE_SUFFIX and PET_TYPE_SUFFIX[ptype]
         if suffix then
@@ -350,7 +353,7 @@ local function PetLines(tt, unit)
             petTex:Show()
         end
     end
-    if s.ttPetID ~= false and not WTDoes("petId") then
+    if s.ttPetID ~= false then
         local species = UnitBattlePetSpeciesID(unit)
         if species and canaccessvalue(species) then
             tt:AddDoubleLine("Pet ID:", tostring(species), nil, nil, nil, 1, 1, 1)
