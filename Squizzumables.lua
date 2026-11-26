@@ -667,6 +667,7 @@ function BH:SwitchToProfile(profileName)
     if self.ApplyDataTexts then self:ApplyDataTexts() end
     if self.ApplyItemBars then self:ApplyItemBars() end
     if self.ApplyActionBars then self:ApplyActionBars() end
+    if self.ApplyChat then self:ApplyChat() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
 
@@ -764,6 +765,7 @@ function BH:OnSpecChanged()
     if self.ApplyDataTexts then self:ApplyDataTexts() end
     if self.ApplyItemBars then self:ApplyItemBars() end
     if self.ApplyActionBars then self:ApplyActionBars() end
+    if self.ApplyChat then self:ApplyChat() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
@@ -1526,6 +1528,8 @@ function BH:CreateOptionsPanel(noShow)
         { group = "Interface", pages = {
             { key = "datatexts",  label = "Data Texts",       field = "dataTextsTab",     build = "BuildDataTextsTab",
               subtitle = "Guild, friends and other live readouts" },
+            { key = "chat",       label = "Chat",             field = "chatTab",          build = "BuildChatTab",
+              subtitle = "Chat panels, fonts, tabs and timestamps" },
             { key = "actionbars", label = "Action Bars",      field = "actionBarsTab",    build = "BuildActionBarsTab",
               subtitle = "Up to 13 bars with your ElvUI keybinds" },
             { key = "itembars",   label = "Item Bars",        field = "itemBarsTab",      build = "BuildItemBarsTab",
@@ -1540,7 +1544,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2014,6 +2018,7 @@ function BH:SetUnlockMode(on, keepPanel, quiet)
     self:UpdateKelAlertUnlockState()
     if self.ApplyItemBars then self:ApplyItemBars() end
     if self.ApplyActionBars then self:ApplyActionBars() end
+    if self.ApplyChat then self:ApplyChat() end
     if self.unlockBtn then
         -- Labelled "Edit Mode" like SquizzFrames' (user request 2026-10-17); lit in
         -- the accent while unlocked, as SquizzFrames' is while editing.
@@ -2537,6 +2542,14 @@ for _, k in ipairs({ "Stance", "Pet", "Micro" }) do
         field = "actionBar" .. k, label = label, enabled = "ab" .. k .. "Enabled", gate = "abEnabled",
         find = "Show " .. label,
         nudge = function(dx, dy) ns.ActionBars.Nudge(k, dx, dy) end,
+    }
+end
+-- Chat/Chat.lua: the two chat panels.
+for _, side in ipairs({ "Left", "Right" }) do
+    MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+        field = "chatPanel" .. side, label = side .. " Chat Panel", enabled = "chEnabled", gate = "chEnabled",
+        find = "Panel Width",
+        nudge = function(dx, dy) ns.Chat.Nudge(side, dx, dy) end,
     }
 end
 MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {

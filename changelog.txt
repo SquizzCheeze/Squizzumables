@@ -53,6 +53,14 @@ V2.8
 - Action Bars: Hide Blizzard's Bag Bar (General tab, on by default).
   ElvUI hides the bag bar along with its own action bars, so it came
   back once those were turned off.
+- New: Chat (Interface > Chat), off until you switch it on. Two chat
+  panels you place in Edit Mode, with sizes, backgrounds and a tab strip;
+  the main chat window sits in the left one. Blizzard's chat borders,
+  buttons and scroll bar are cleared; chat and tab fonts, the selected
+  tab's colour, where the edit box sits, fading, lines kept, jumping back
+  to the newest line and timestamps (your local time). It stays off while
+  ElvUI's chat is on; your ElvUI chat settings are copied over the first
+  time. More of ElvUI's chat options follow.
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
   been relying on another addon to load it.
 
