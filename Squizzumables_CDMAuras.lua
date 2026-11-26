@@ -582,6 +582,7 @@ end
 -- this styling (CLAUDE.md, "CDM options preview").
 Native.BuildIconPieces = BuildIconPieces
 Native.Style = Style
+Native.DurationFormatter = DurationFormatter   -- also used by Auras/BuffFrame.lua
 
 -- Hand the pieces to the button. Each registration is pcall'd: an error inside
 -- one aborts the engine's whole frame batch, taking the slot with it.

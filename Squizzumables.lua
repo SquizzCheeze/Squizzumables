@@ -1537,7 +1537,7 @@ function BH:CreateOptionsPanel(noShow)
             { key = "tweaks",     label = "Tweaks",           field = "tweaksTab",        build = "BuildTweaksTab",
               subtitle = "Auto repair, totem bar, reputation bar and more" },
             { key = "bufframe",   label = "Buffs and Debuffs", field = "buffFrameTab",     build = "BuildBuffFrameTab",
-              subtitle = "Square icons, fonts and timers on your buffs" },
+              subtitle = "Your buffs and debuffs, laid out and placed your way" },
             { key = "actionbars", label = "Action Bars",      field = "actionBarsTab",    build = "BuildActionBarsTab",
               subtitle = "Up to 13 bars with your ElvUI keybinds" },
             { key = "itembars",   label = "Item Bars",        field = "itemBarsTab",      build = "BuildItemBarsTab",
@@ -2567,6 +2567,14 @@ MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
         ns.Tweaks.Nudge("twRepPosition", { point = "CENTER", relPoint = "CENTER", x = 0, y = -300 }, dx, dy)
     end,
 }
+-- Auras/BuffFrame.lua: the buff and debuff frames.
+for _, id in ipairs({ "B", "D" }) do
+    MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+        field = id == "B" and "auraBuffs" or "auraDebuffs", label = id == "B" and "Buffs" or "Debuffs",
+        enabled = "auEnabled", gate = "auEnabled", find = "Enable Buffs and Debuffs",
+        nudge = function(dx, dy) ns.BuffFrame.Nudge(id, dx, dy) end,
+    }
+end
 -- Chat/Chat.lua: the two chat panels.
 for _, side in ipairs({ "Left", "Right" }) do
     MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
