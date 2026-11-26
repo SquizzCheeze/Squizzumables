@@ -73,7 +73,7 @@ local EDITBOX = {
     { text = "Below the chat", value = "BELOW_CHAT" },
     { text = "Below the chat, inside the panel", value = "BELOW_CHAT_INSIDE" },
     { text = "Above the chat", value = "ABOVE_CHAT" },
-    { text = "Above the chat, inside the panel (over the tabs)", value = "ABOVE_CHAT_INSIDE" },
+    { text = "Above the chat, inside the panel (under the tabs)", value = "ABOVE_CHAT_INSIDE" },
 }
 
 -- Blizzard's own timestamp formats (Options > Social), shown as today's time.
@@ -113,6 +113,11 @@ local function AskReload()
 end
 
 local function Backdrops(s) return s.chPanelBackdrop ~= "HIDEBOTH" end
+local function DataOn(s) return s.chDataTexts ~= false end
+local function DataItems()
+    local DT = ns.DataTexts
+    return DT and DT.SlotItems() or { { text = "None", value = "None" } }
+end
 
 CH.SETTINGS = ns.Settings.Describe({
     master = "chEnabled",
@@ -204,6 +209,28 @@ CH.SETTINGS = ns.Settings.Describe({
               label = "Hide ElvUI's Chat Panels",
               tip = "ElvUI still draws its empty chat panels (and the data texts under them) after its chat is "
                 .. "off. Hide them so they don't sit behind these." },
+        } },
+        { key = "datatexts", label = "Data Texts", rows = {
+            { key = "chDataTexts", type = "check", default = true,
+              label = "Data Texts Under the Panels",
+              tip = "A strip of three live readouts under each chat panel, like ElvUI's. Font and colours come "
+                .. "from Interface > Data Texts." },
+            { key = "chDataHeight", type = "slider", default = 22, min = 14, max = 40, step = 1,
+              label = "Strip Height", tip = "Height of the data text strips.", when = DataOn },
+            { type = "header", label = "LEFT PANEL" },
+            { key = "chDataLeft1", type = "dropdown", default = "Talent/Loot Specialization", items = DataItems,
+              label = "Left", when = DataOn },
+            { key = "chDataLeft2", type = "dropdown", default = "Durability", items = DataItems,
+              label = "Middle", when = DataOn },
+            { key = "chDataLeft3", type = "dropdown", default = "Currencies", items = DataItems,
+              label = "Right", when = DataOn },
+            { type = "header", label = "RIGHT PANEL" },
+            { key = "chDataRight1", type = "dropdown", default = "System", items = DataItems,
+              label = "Left", when = DataOn },
+            { key = "chDataRight2", type = "dropdown", default = "Time", items = DataItems,
+              label = "Middle", when = DataOn },
+            { key = "chDataRight3", type = "dropdown", default = "Gold", items = DataItems,
+              label = "Right", when = DataOn },
         } },
     },
 })
@@ -314,6 +341,16 @@ local function Panel(side)
     f.tabStrip:SetPoint("TOPRIGHT", -3, -3)
     f.tabStrip:SetHeight(22)
     f.tabStrip.box = Box(f.tabStrip)
+    -- The data text strip hangs under the panel.
+    f.data = CreateFrame("Frame", nil, f)
+    f.data:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 0, -1)
+    f.data:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 0, -1)
+    f.data.box = Box(f.data)
+    f.data.slots = {}
+    local DT = ns.DataTexts
+    if DT then
+        for i = 1, 3 do f.data.slots[i] = DT.CreateSlot(f.data) end
+    end
     panels[side] = f
     BH["chatPanel" .. side] = f
     return f
@@ -458,10 +495,14 @@ local function PlaceEditBoxes(s, panel, chat)
         local eb = f.editBox
         if eb then
             eb:ClearAllPoints()
-            local anchor = (f == chat or f.isDocked) and panel or f
+            local onPanel = f == chat or f.isDocked
+            local anchor = onPanel and panel or f
+            -- Below the chat means below the data texts too.
+            if onPanel and pos == "BELOW_CHAT" and panel.data:IsShown() then anchor = panel.data end
             if pos == "ABOVE_CHAT_INSIDE" then
-                eb:SetPoint("TOPLEFT", anchor, "TOPLEFT", 3, -3)
-                eb:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -3, -3)
+                -- Just under the tab strip (3px in, 22px of tabs, 2px gap).
+                eb:SetPoint("TOPLEFT", anchor, "TOPLEFT", 3, -27)
+                eb:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -3, -27)
             elseif pos == "ABOVE_CHAT" then
                 eb:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 2)
                 eb:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, 2)
@@ -495,6 +536,28 @@ local function Arrange(s)
         local shown = which == "SHOWBOTH" or which == (side == "Left" and "LEFT" or "RIGHT")
         f.box:Paint(r, g, b, a, shown)
         f.tabStrip.box:Paint(r, g, b, s.chTabTransparent and a or 1, s.chTabBackdrop and true or false)
+
+        local DT = ns.DataTexts
+        local data = f.data
+        local dh = s.chDataHeight or 22
+        if DT and s.chDataTexts ~= false then
+            data:SetHeight(dh)
+            data.box:Paint(r, g, b, 1, true)
+            local each = w / 3
+            for i, slot in ipairs(data.slots) do
+                slot:ClearAllPoints()
+                slot:SetPoint("TOPLEFT", data, "TOPLEFT", each * (i - 1), 0)
+                slot:SetPoint("BOTTOMRIGHT", data, "BOTTOMLEFT", each * i, 0)
+                slot:Show()
+                DT.SetSlot(slot, s["chData" .. side .. i])
+            end
+            data:Show()
+            f:SetClampRectInsets(0, 0, 0, -(dh + 1))
+        else
+            for _, slot in ipairs(data.slots) do DT.SetSlot(slot, nil) end
+            data:Hide()
+            f:SetClampRectInsets(0, 0, 0, 0)
+        end
         f:Show()
     end
 
@@ -694,8 +757,32 @@ local function SeedFromElvUI()
 end
 
 -- After a profile switch, reset or Edit Mode change too.
+-- The chat panels' data texts, copied on their own (they came a release later).
+local function SeedDataFromElvUI()
+    local s = BH.settings
+    if not s or s.chDataSeededFromElvUI then return end
+    local E = ElvUI()
+    local p = E and E.db and E.db.datatexts and E.db.datatexts.panels
+    if type(p) ~= "table" then return end
+    s.chDataSeededFromElvUI = true
+    local known = {}
+    for _, item in ipairs(DataItems()) do known[item.value] = true end
+    for side, elv in pairs({ Left = "LeftChatDataPanel", Right = "RightChatDataPanel" }) do
+        local t = p[elv]
+        if type(t) == "table" then
+            for i = 1, 3 do
+                local key = t[i]
+                if type(key) == "string" then s["chData" .. side .. i] = known[key] and key or "None" end
+            end
+            if t.enable == false then s.chDataTexts = false end
+        end
+    end
+    BH:SaveSettings()
+end
+
 function BH:ApplyChat()
     SeedFromElvUI()
+    SeedDataFromElvUI()
     CH.Apply()
 end
 
@@ -708,6 +795,11 @@ function CH.Nudge(side, dx, dy)
     s[key] = { point = pos.point, relPoint = pos.relPoint, x = (pos.x or 0) + dx, y = (pos.y or 0) + dy }
     BH:SaveSettings()
     CH.Apply()
+end
+
+-- A Data Texts font or colour change restyles our strips too.
+if ns.DataTexts then
+    table.insert(ns.DataTexts.applyHooks, function() if CH.active then CH.Apply() end end)
 end
 
 local ev = CreateFrame("Frame")

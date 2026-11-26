@@ -319,7 +319,8 @@ end
 -- ============================================================================
 
 local panel
-local slots = {}
+local slots = {}      -- this panel's slots, by position
+local allSlots = {}   -- every slot on every panel (the chat panels' too), for refreshes
 local ShareWidth   -- below; the panel's OnSizeChanged calls it
 
 local function ResolveFont(name)
@@ -358,7 +359,7 @@ local function RefreshSlot(slot)
 end
 
 function DT.Refresh(key)
-    for _, slot in ipairs(slots) do
+    for _, slot in ipairs(allSlots) do
         if slot:IsShown() and (key == nil or slot.key == key) then RefreshSlot(slot) end
     end
 end
@@ -383,7 +384,7 @@ end
 local modWatch = CreateFrame("Frame")
 modWatch:RegisterEvent("MODIFIER_STATE_CHANGED")
 modWatch:SetScript("OnEvent", function()
-    for _, slot in ipairs(slots) do
+    for _, slot in ipairs(allSlots) do
         if slot.hovered and slot:IsMouseOver() then SlotEnter(slot) end
     end
 end)
@@ -391,13 +392,13 @@ end)
 --- Redraw an open tooltip after its data arrives (the guild roster comes in
 --- a moment after it is asked for).
 function DT.RefreshTooltip(key)
-    for _, slot in ipairs(slots) do
+    for _, slot in ipairs(allSlots) do
         if slot.hovered and slot.key == key and slot:IsMouseOver() then SlotEnter(slot) end
     end
 end
 
-local function CreateSlot(i)
-    local b = CreateFrame("Button", nil, panel)
+local function NewSlot(parent)
+    local b = CreateFrame("Button", nil, parent)
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     b.text = b:CreateFontString(nil, "OVERLAY")
     b.text:SetPoint("LEFT", 2, 0)
@@ -412,9 +413,32 @@ local function CreateSlot(i)
         GameTooltip:Hide()
         def.onClick(self, button)
     end)
+    allSlots[#allSlots + 1] = b
+    return b
+end
+
+local function CreateSlot(i)
+    local b = NewSlot(panel)
     slots[i] = b
     return b
 end
+
+--- A slot on another addon panel (Chat/Chat.lua's data panels). Place it
+--- yourself, then DT.SetSlot it.
+function DT.CreateSlot(parent) return NewSlot(parent) end
+
+--- Show text `key` (or nothing, for nil / "None") in a slot made above.
+function DT.SetSlot(slot, key)
+    slot.key = (key and registry[key]) and key or nil
+    StyleText(slot.text)
+    local def = slot.key and registry[slot.key]
+    if def and def.onShow then pcall(def.onShow) end
+    RefreshSlot(slot)
+end
+
+--- Called after every DT.Apply (a font or colour changed), whether or not the
+--- minimap panel itself is on.
+DT.applyHooks = {}
 
 local function SavePosition()
     if not panel or not BH.settings then return end
@@ -529,6 +553,7 @@ end
 function DT.Apply()
     local s = BH.settings
     if not s then return end
+    for _, fn in ipairs(DT.applyHooks) do pcall(fn) end
     if not s.dtEnabled then
         if panel then panel:Hide() end
         return
@@ -653,3 +678,23 @@ ev:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 ev:RegisterEvent("PLAYER_LOGIN")
+
+-- Texts with an `interval` (seconds: the clock, frame rate) redraw on a
+-- timer, and only while a slot is showing them.
+local since = {}
+ev:SetScript("OnUpdate", function(_, elapsed)
+    for key, def in pairs(registry) do
+        if def.interval then
+            since[key] = (since[key] or 0) + elapsed
+            if since[key] >= def.interval then
+                since[key] = 0
+                for _, slot in ipairs(allSlots) do
+                    if slot.key == key and slot:IsVisible() then
+                        RefreshSlot(slot)
+                        if slot.hovered and slot:IsMouseOver() then SlotEnter(slot) end
+                    end
+                end
+            end
+        end
+    end
+end)

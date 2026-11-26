@@ -57,6 +57,7 @@ Core\UIScale.lua
 DataTexts\Panel.lua
 DataTexts\Guild.lua
 DataTexts\Friends.lua
+DataTexts\Texts.lua
 ItemBars\ItemBars.lua
 ActionBars\ExtraBars.lua
 ActionBars\ActionBars.lua

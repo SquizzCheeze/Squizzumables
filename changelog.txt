@@ -61,6 +61,13 @@ V2.8
   to the newest line and timestamps (your local time). It stays off while
   ElvUI's chat is on; your ElvUI chat settings are copied over the first
   time. More of ElvUI's chat options follow.
+- Chat: a strip of three data texts under each chat panel (Chat > Data
+  Texts tab), as in ElvUI, copied from your ElvUI chat data texts.
+- Data Texts: six new texts, usable on the minimap strip as well.
+  Talent/Loot Specialization (right-click to switch either), Durability,
+  Currencies (the ones you track), System (frame rate, latency, add-on
+  memory), Time (local and realm, with your lockouts) and Gold (this
+  session, and every character on the account).
 - Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
   been relying on another addon to load it.
 
