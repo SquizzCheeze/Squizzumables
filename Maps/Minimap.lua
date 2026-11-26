@@ -367,8 +367,8 @@ end
 -- Shape
 -- ============================================================================
 
-local SQUARE_MASK = "Interface\\ChatFrame\\ChatFrameBackground"
-local ROUND_MASK = "Textures\\MinimapMask"
+local SQUARE_MASK = 130937  -- a plain white square
+local ROUND_MASK = 186178   -- the game's round minimap mask, by file ID (the old path no longer resolves)
 
 local function Shape()
     local round = Settings().mmRound
