@@ -445,6 +445,74 @@ function BH:BuildSettingsTab(parent)
     CreateSQDivider(content, yOffset)
     yOffset = yOffset - 14
 
+    -- === UI Scale Section ===
+    -- Core/UIScale.lua. Account-wide, so it sits with the theme rather than
+    -- in a profile. While ElvUI is loaded it is in charge and these controls
+    -- only show the value copied from it.
+    local UIScale = ns.UIScale
+    local elvActive = UIScale.ElvUIActive()
+    local function ScaleDB() return UIScale.DB() or {} end
+    local function ScaleLocked() return elvActive or not ScaleDB().enabled end
+
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, { type = "header", label = "UI SCALE" })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "text",
+        label = elvActive
+            and "ElvUI is setting your UI scale. Squizzumables keeps a copy of it, and takes over at the same "
+                .. "value when ElvUI is turned off, so nothing moves."
+            or "The size of the whole interface, for every character. It can go below the game's own 0.64 "
+                .. "limit. Pixel Perfect makes one UI unit one screen pixel, so thin borders stay sharp.",
+    })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "check", label = "Set the UI scale",
+        tooltip = "Sets the interface's scale from the slider below instead of the game's Graphics > UI Scale "
+            .. "setting. Turning it off asks to reload, which brings the game's own scale back.",
+        disabled = function() return elvActive end,
+        get = function() return ScaleDB().enabled end,
+        set = function(v) UIScale.SetEnabled(v) end,
+    })
+    yOffset = yOffset - ns.Rows.Add(content, yOffset, {
+        type = "slider", label = "UI Scale", min = UIScale.MIN, max = UIScale.MAX, step = 0.0001, decimals = 4,
+        tooltip = "Type an exact value and press Enter, or drag: the scale changes when you let go. "
+            .. string.format("Pixel perfect for your screen is %.4f.", UIScale.PixelPerfect()),
+        disabled = ScaleLocked,
+        get = function() return ScaleDB().value or UIScale.PixelPerfect() end,
+        set = function(v, userInput) if userInput then UIScale.SetValue(v) end end,
+    })
+
+    -- ElvUI's preset buttons, one row.
+    local presetButtons = {}
+    local function AddPreset(label, value, anchor)
+        local b = CreateSQButton(content, label, label == "Pixel Perfect" and 100 or 64, 22)
+        if anchor then
+            b:SetPoint("LEFT", anchor, "RIGHT", 6, 0)
+        else
+            b:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)
+        end
+        b:SetScript("OnClick", function()
+            if ScaleLocked() then return end
+            UIScale.SetValue(type(value) == "function" and value() or value)
+            ns.Rows.RefreshAll()
+        end)
+        presetButtons[#presetButtons + 1] = b
+        return b
+    end
+    local last
+    for _, p in ipairs(UIScale.PRESETS) do last = AddPreset(p.label, p.value, last) end
+    last = AddPreset("Pixel Perfect", UIScale.PixelPerfect, last)
+    ns.Rows.AddTooltip(last, "Pixel Perfect",
+        "768 divided by your screen's height in pixels, the same as ElvUI's Auto Scale.")
+    local function RefreshPresets()
+        local locked = ScaleLocked()
+        for _, b in ipairs(presetButtons) do b:SetAlpha(locked and 0.35 or 1); b:EnableMouse(not locked) end
+    end
+    ns.Rows.RegisterRefresh(RefreshPresets)
+    RefreshPresets()
+    yOffset = yOffset - 32
+
+    CreateSQDivider(content, yOffset)
+    yOffset = yOffset - 14
+
     -- === Profiles Section ===
     local profileSection = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     profileSection:SetPoint("TOPLEFT", content, "TOPLEFT", leftPad, yOffset)

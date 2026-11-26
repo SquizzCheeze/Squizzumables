@@ -11,6 +11,11 @@ V2.8
   Right-click it to pick someone else: a grid of up to 8 names opens, the
   last tile showing "+N" when more are missing. It closes when the mouse
   leaves. The tooltip shows your highest rank instead of rank 1.
+- New: UI Scale (Settings, under Theme), for every character on the
+  account. It can go below the game's own 0.64 limit, with Small, Medium,
+  Large and Pixel Perfect presets. While ElvUI is loaded, ElvUI keeps
+  setting the scale and Squizzumables copies its value, so turning ElvUI
+  off later leaves every frame where it was.
 
 V2.7
 

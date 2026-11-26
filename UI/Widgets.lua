@@ -281,7 +281,10 @@ local function CreateSQEditBox(parent, width, height, opts)
 end
 
 -- Helper: styled slider
-local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
+-- decimals (optional): how many places the readout shows. Without it, whole
+-- steps show whole numbers and anything finer shows two places; the UI scale
+-- needs four (0.7111).
+local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step, decimals)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(width, 40)
 
@@ -304,6 +307,10 @@ local function CreateSQSlider(parent, labelText, width, minVal, maxVal, step)
     -- Whole numbers for whole steps; otherwise two decimals, so a 0.05 step
     -- does not read as 0 (the old readout floored everything).
     local function FormatValue(v)
+        if decimals then
+            local m = 10 ^ decimals
+            return tostring(math.floor(v * m + 0.5) / m)
+        end
         if step >= 1 then return tostring(math.floor(v + 0.5)) end
         return tostring(math.floor(v * 100 + 0.5) / 100)
     end

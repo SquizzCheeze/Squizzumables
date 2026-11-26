@@ -253,7 +253,7 @@ end
 
 builders.slider = function(parent, y, spec)
     local s = CreateSQSlider(parent, spec.label, spec.width or 300,
-                             spec.min or 0, spec.max or 100, spec.step or 1)
+                             spec.min or 0, spec.max or 100, spec.step or 1, spec.decimals)
     s:SetAfterValueChanged(function(value, userInput)
         if spec.set then spec.set(value, userInput) end
         if spec.after then spec.after(value, userInput) end

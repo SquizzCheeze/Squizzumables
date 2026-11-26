@@ -51,6 +51,7 @@ Core\Welcome.lua
 UI\Setup.lua
 Core\TargetDistance.lua
 Core\Cursor.lua
+Core\UIScale.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
