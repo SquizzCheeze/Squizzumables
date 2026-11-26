@@ -161,6 +161,15 @@ V2.8
   them: "/way 45.2 67.1" for the zone you're in, "/way #2248 45.2, 67.1"
   for another (not while TomTom is loaded). It waits while WindTools'
   Super Tracker is on; its settings are copied over the first time.
+- New: Objective Tracker (Interface > Objective Tracker), off until you
+  switch it on. Restyles Blizzard's quest tracker: fonts for the section
+  headers and the quest text, colours (or class colour) for headers, quest
+  titles and objectives with their mouse-over colours, a solid, gradient or
+  class-coloured bar under each section header, no dash before objectives,
+  and "3/10" coloured red to green as it fills, with the percentage if you
+  like. Works on retail and WoW Forever. It waits while WindTools' Objective
+  Tracker is on; your WindTools settings are copied over the first time.
+  Switching it off puts Blizzard's look back after a /reload.
 - New: World Events (Interface > World Events), off until you switch it
   on. A strip under the minimap (or anywhere, in Edit Mode) of the events
   going on now and coming up next: icon, name, time left or time until it
