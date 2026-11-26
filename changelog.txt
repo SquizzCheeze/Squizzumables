@@ -161,6 +161,15 @@ V2.8
   them: "/way 45.2 67.1" for the zone you're in, "/way #2248 45.2, 67.1"
   for another (not while TomTom is loaded). It waits while WindTools'
   Super Tracker is on; its settings are copied over the first time.
+- New: World Events (Interface > World Events), off until you switch it
+  on. A strip under the minimap (or anywhere, in Edit Mode) of the events
+  going on now and coming up next: icon, name, time left or time until it
+  starts over a thin bar, and a tick once you have its rewards. Hover for
+  the game's own tooltip, click to open the map at it, right-click for the
+  game's reminder when it starts. It reads the game's own event list (the
+  map's Events tab), so new events appear by themselves. It waits while
+  WindTools' Event Tracker is on; its size and font are copied over the
+  first time.
 - Minimap: the group finder eye is one of its icons now (bottom right,
   small, as in ElvUI), placed, sized or hidden like the others, instead of
   sitting by the micro menu.
