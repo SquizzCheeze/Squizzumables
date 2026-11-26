@@ -296,6 +296,12 @@ for _, def in ipairs(BARS) do
     pages[#pages + 1] = { key = "bar" .. n, label = "Bar " .. n, rows = rows }
 end
 
+-- Stance, Pet and Micro Menu tabs (ExtraBars.lua, loaded just before this).
+local X = ns.ActionBarExtras
+if X then
+    for _, page in ipairs(X.PAGES) do pages[#pages + 1] = page end
+end
+
 AB.SETTINGS = ns.Settings.Describe({ master = "abEnabled", apply = Apply, pages = pages })
 
 function BH:BuildActionBarsTab(parent)
@@ -388,23 +394,35 @@ local function ShortHotkey(self)
     return key and ShortKey(key) or nil
 end
 
-local function Skin(btn)
-    btn.MasqueSkinned = true
-    btn.GetHotkey = ShortHotkey
+-- The square look. Also used on Blizzard's own stance and pet buttons
+-- (ExtraBars.lua), so it writes no fields on the button: Blizzard's code
+-- reads those buttons, and a field we wrote would taint it. Re-run after
+-- Blizzard redraws a button's art; the border textures are made once.
+local looked = setmetatable({}, { __mode = "k" })
+
+local function Look(btn)
     local normal = btn:GetNormalTexture()
     if normal then normal:SetAlpha(0) end
     if btn.NormalTexture then btn.NormalTexture:SetAlpha(0) end
     if btn.SlotBackground then btn.SlotBackground:SetAlpha(0) end
     if btn.SlotArt then btn.SlotArt:SetAlpha(0) end
-    if btn.IconMask then btn.icon:RemoveMaskTexture(btn.IconMask) end
+    if btn.IconMask and not looked[btn] then btn.icon:RemoveMaskTexture(btn.IconMask) end
 
-    local border = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
-    border:SetAllPoints()
-    border:SetColorTexture(0, 0, 0, 1)
-    local fill = btn:CreateTexture(nil, "BACKGROUND", nil, -7)
-    fill:SetPoint("TOPLEFT", 1, -1)
-    fill:SetPoint("BOTTOMRIGHT", -1, 1)
-    fill:SetColorTexture(0.08, 0.08, 0.08, 0.6)
+    if not looked[btn] then
+        looked[btn] = true
+        local border = btn:CreateTexture(nil, "BACKGROUND", nil, -8)
+        border:SetAllPoints()
+        border:SetColorTexture(0, 0, 0, 1)
+        local fill = btn:CreateTexture(nil, "BACKGROUND", nil, -7)
+        fill:SetPoint("TOPLEFT", 1, -1)
+        fill:SetPoint("BOTTOMRIGHT", -1, 1)
+        fill:SetColorTexture(0.08, 0.08, 0.08, 0.6)
+    end
+    if btn.AutoCastOverlay then
+        btn.AutoCastOverlay:ClearAllPoints()
+        btn.AutoCastOverlay:SetPoint("TOPLEFT", 1, -1)
+        btn.AutoCastOverlay:SetPoint("BOTTOMRIGHT", -1, 1)
+    end
 
     btn.icon:ClearAllPoints()
     btn.icon:SetPoint("TOPLEFT", 1, -1)
@@ -436,6 +454,12 @@ local function Skin(btn)
         btn.Border:ClearAllPoints()
         btn.Border:SetAllPoints()
     end
+end
+
+local function Skin(btn)
+    btn.MasqueSkinned = true
+    btn.GetHotkey = ShortHotkey
+    Look(btn)
 end
 
 local function CropIcon(tex, w, h)
@@ -494,21 +518,29 @@ local function DefaultPosition(n)
     return { point = "BOTTOM", relPoint = "BOTTOM", x = 0, y = 40 + row * 38 }
 end
 
-local function SavePosition(n)
-    local rec = bars[n]
-    local s = BH.settings
-    if not (rec and s) then return end
-    local f = rec.holder
+-- A frame's position measured at one of its corners, in UIParent units, so
+-- the bar stays put at that corner however its size changes.
+function AB.CornerOf(f, point)
     local l, r, t, b = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
-    if not l then return end
+    if not l then return nil end
     local scale = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
     l, r, t, b = l * scale, r * scale, t * scale, b * scale
-    local point = s["ab" .. n .. "Grow"] or "BOTTOMLEFT"
     local x = point:find("LEFT") and l or (r - UIParent:GetWidth())
     local y = point:find("TOP") and (t - UIParent:GetHeight()) or b
-    s["ab" .. n .. "Position"] = { point = point, relPoint = point, x = math.floor(x + 0.5), y = math.floor(y + 0.5) }
+    return { point = point, relPoint = point, x = math.floor(x + 0.5), y = math.floor(y + 0.5) }
+end
+
+-- n is a bar number, or "Stance" / "Pet" / "Micro" (ExtraBars.lua).
+local function SavePosition(n)
+    local s = BH.settings
+    local rec = bars[n] or (X and X.recs[n])
+    if not (rec and s) then return end
+    local pos = AB.CornerOf(rec.holder, s["ab" .. n .. "Grow"] or "BOTTOMLEFT")
+    if not pos then return end
+    s["ab" .. n .. "Position"] = pos
     BH:SaveSettings()
 end
+AB.SavePosition = SavePosition
 
 local function MakeHolder(name, onStop)
     local holder = CreateFrame("Frame", name, UIParent)
@@ -527,6 +559,11 @@ local function MakeHolder(name, onStop)
     end)
     return holder
 end
+
+-- Shared with ExtraBars.lua.
+AB.MakeHolder, AB.AskReload, AB.ElvUI = MakeHolder, AskReload, ElvUI
+AB.ShortKey, AB.ResolveFont, AB.Flags = ShortKey, ResolveFont, Flags
+AB.Look, AB.CropIcon = Look, CropIcon
 
 local function CreateBar(def)
     local n = def.n
@@ -758,6 +795,7 @@ end
 local blizzHidden = false
 local hider = CreateFrame("Frame")
 hider:Hide()
+AB.hider = hider
 
 -- Reparented under a hidden frame with their events off, as ElvUI does.
 -- Coming back needs a reload (AskReload), so this only ever runs one way.
@@ -805,6 +843,7 @@ function AB.Apply()
         if AB.active or bars[def.n] then LayoutBar(def, s) end
     end
     LayoutVehicle(s)
+    if X then X.Apply(s) end
 end
 
 -- Edit Mode's arrow-key nudge (MOVABLE_FRAMES in Squizzumables.lua).
@@ -813,7 +852,7 @@ function AB.Nudge(n, dx, dy)
     if not s then return end
     local key = n == "vehicle" and "abVehiclePosition" or ("ab" .. n .. "Position")
     local pos = s[key] or (n == "vehicle" and { point = "BOTTOM", relPoint = "BOTTOM", x = 220, y = 40 })
-        or DefaultPosition(n)
+        or (type(n) == "string" and X and X.DefaultPosition(n)) or DefaultPosition(n)
     s[key] = { point = pos.point, relPoint = pos.relPoint, x = (pos.x or 0) + dx, y = (pos.y or 0) + dy }
     BH:SaveSettings()
     AB.Apply()
@@ -827,15 +866,17 @@ fader:SetScript("OnUpdate", function(_, elapsed)
     if fadeElapsed < 0.05 then return end
     local step = fadeElapsed * 4
     fadeElapsed = 0
-    for _, rec in pairs(bars) do
-        if rec.mouseover and rec.header:IsShown() then
-            local over = rec.header:IsMouseOver()
-            if not over and SpellFlyout and SpellFlyout:IsShown() and SpellFlyout:IsMouseOver() then over = true end
-            local target = over and rec.alpha or rec.fadeAlpha
-            local a = rec.header:GetAlpha()
-            if a < target then a = math.min(target, a + step)
-            elseif a > target then a = math.max(target, a - step) end
-            rec.header:SetAlpha(a)
+    for _, list in ipairs({ bars, X and X.recs or {} }) do
+        for _, rec in pairs(list) do
+            if rec.mouseover and rec.header:IsShown() then
+                local over = rec.header:IsMouseOver()
+                if not over and SpellFlyout and SpellFlyout:IsShown() and SpellFlyout:IsMouseOver() then over = true end
+                local target = over and rec.alpha or rec.fadeAlpha
+                local a = rec.header:GetAlpha()
+                if a < target then a = math.min(target, a + step)
+                elseif a > target then a = math.max(target, a - step) end
+                rec.header:SetAlpha(a)
+            end
         end
     end
 end)
@@ -979,6 +1020,7 @@ end
 -- After a profile switch, reset or Edit Mode change too.
 function BH:ApplyActionBars()
     SeedFromElvUI()
+    if X then X.Seed() end
     AB.Apply()
 end
 

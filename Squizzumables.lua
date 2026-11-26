@@ -2531,6 +2531,14 @@ for _, n in ipairs({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 13, 14, 15 }) do
         nudge = function(dx, dy) ns.ActionBars.Nudge(n, dx, dy) end,
     }
 end
+for _, k in ipairs({ "Stance", "Pet", "Micro" }) do
+    local label = ({ Stance = "Stance Bar", Pet = "Pet Bar", Micro = "Micro Menu" })[k]
+    MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+        field = "actionBar" .. k, label = label, enabled = "ab" .. k .. "Enabled", gate = "abEnabled",
+        find = "Show " .. label,
+        nudge = function(dx, dy) ns.ActionBars.Nudge(k, dx, dy) end,
+    }
+end
 MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
     field = "leaveVehicleFrame", label = "Leave Vehicle", enabled = "abVehicle", gate = "abEnabled",
     find = "Leave Vehicle Button",
