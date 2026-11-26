@@ -664,6 +664,7 @@ function BH:SwitchToProfile(profileName)
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
+    if self.ApplyDataTexts then self:ApplyDataTexts() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
 
@@ -758,6 +759,7 @@ function BH:OnSpecChanged()
     if self.cdm and self.cdm.OnProfileChanged then self.cdm:OnProfileChanged() end
     if self.ApplyTargetDistance then self:ApplyTargetDistance() end
     if self.ApplyCursor then self:ApplyCursor() end
+    if self.ApplyDataTexts then self:ApplyDataTexts() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
@@ -1515,6 +1517,12 @@ function BH:CreateOptionsPanel(noShow)
             { key = "cursor",     label = "Cursor",           field = "cursorTab",        build = "BuildCursorTab", preview = "cursor",
               subtitle = "Effects that follow your cursor" },
         } },
+        -- The ElvUI replacements (2026-11): data texts first, then action
+        -- bars, chat and the rest as they arrive.
+        { group = "Interface", pages = {
+            { key = "datatexts",  label = "Data Texts",       field = "dataTextsTab",     build = "BuildDataTextsTab",
+              subtitle = "Guild, friends and other live readouts" },
+        } },
         { group = "General", pages = {
             { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab", preview = "buttons",
               subtitle = "Theme, profiles and general options" },
@@ -1524,7 +1532,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items", "rotation" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2485,6 +2493,13 @@ local MOVABLE_FRAMES = {
       find = "Callouts", posKey = "calloutsFramePosition" },
     { field = "targetDistanceFrame", label = "Target Distance", enabled = "targetDistanceEnabled", find = "Show Target Distance" },
     { field = "rotationFrame",       label = "Rotation Helper", enabled = "rotationEnabled", find = "Show Rotation Icon" },
+    -- DataTexts/Panel.lua. Left alone entirely while attached under the
+    -- minimap (`skip`), and nudged through its own saver: its free position
+    -- lives in the profile settings, not in a posKey.
+    { field = "dataTextFrame",       label = "Data Texts",     enabled = "dtEnabled", muteChildren = true,
+      find = "Show Data Texts",
+      skip = function(s) return s and s.dtAttachMinimap end,
+      nudge = function(dx, dy) BH:DataTextNudge(dx, dy) end },
 }
 
 -- Every text reminder, from the registry rather than by hand -- except the
@@ -2531,10 +2546,10 @@ local function SetPreviewOverlay(frame, on, def)
         local posKey, field = def and def.posKey, def and def.field
         ns.EditMode.Show(frame, def and def.label, {
             find  = def and def.find,
-            nudge = posKey and function(dx, dy)
+            nudge = (def and def.nudge) or (posKey and function(dx, dy)
                 frame:AdjustPointsOffset(dx, dy)
                 BH:SaveFramePos(field, posKey)
-            end,
+            end),
         })
     else
         ns.EditMode.Hide(frame)
@@ -2590,6 +2605,12 @@ function BH:SetAllFramesPreview(on)
     local canTouchMouse = not InCombatLockdown()
     for _, def in ipairs(MOVABLE_FRAMES) do
         local frame = self[def.field]
+        -- `skip`: not movable in its current setup (an attached frame), so
+        -- Edit Mode neither shows nor hides it.
+        if def.skip and def.skip(self.settings) then
+            if frame then SetPreviewOverlay(frame, false) end
+            frame = nil
+        end
         if frame then
             if on and FrameEnabledForPreview(def, self.settings) then
                 -- Unconditionally movable and mouse-enabled: preview exists to

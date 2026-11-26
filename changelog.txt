@@ -16,6 +16,15 @@ V2.8
   Large and Pixel Perfect presets. While ElvUI is loaded, ElvUI keeps
   setting the scale and Squizzumables copies its value, so turning ElvUI
   off later leaves every frame where it was.
+- New: Data Texts (Interface > Data Texts), off until you switch them on.
+  A strip of live readouts under the minimap, or anywhere you place it in
+  Edit Mode, holding up to three texts. Guild shows how many members are
+  online; hover for the list (level, name, status, zone; Shift for ranks
+  and notes), click for the guild window, right-click to invite or
+  whisper. Friends does the same for character and Battle.net friends,
+  grouped by game, and its right-click menu also sets your status and your
+  Battle.net broadcast. If you use ElvUI, its font, colours and minimap
+  texts are copied over the first time, so the two look the same.
 
 V2.7
 

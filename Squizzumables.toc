@@ -52,6 +52,9 @@ UI\Setup.lua
 Core\TargetDistance.lua
 Core\Cursor.lua
 Core\UIScale.lua
+DataTexts\Panel.lua
+DataTexts\Guild.lua
+DataTexts\Friends.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
