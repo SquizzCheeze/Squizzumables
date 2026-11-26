@@ -378,8 +378,12 @@ local function Shape()
         compass:SetShown(round and true or false)
         -- Blizzard sizes the ring (215 x 226) for its 198px map; keep it in step
         -- with ours, or a smaller map leaves a gap inside the ring.
+        -- The ring hangs off a different parent from the map, at its own scale, so
+        -- convert the map's width into the ring's units.
         local w = Minimap:GetWidth()
-        if w and w > 0 then
+        local cs = compass:GetEffectiveScale()
+        if w and w > 0 and cs and cs > 0 then
+            w = w * Minimap:GetEffectiveScale() / cs
             compass:ClearAllPoints()
             compass:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
             compass:SetSize(w * 215 / 198, w * 226 / 198)
