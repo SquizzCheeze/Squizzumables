@@ -39,10 +39,13 @@ local shown = setmetatable({}, { __mode = "k" })   -- tooltip -> guid already gi
 local lastAsked, lastAskedAt = nil, 0
 local waitingGUID
 
-local function AddLevel(tt, level, guid)
+local function AddLevel(tt, level, guid, tier)
     if shown[tt] == guid then return end
     shown[tt] = guid
-    tt:AddDoubleLine(STAT_AVERAGE_ITEM_LEVEL .. ":", tostring(math.floor(level + 0.5)), nil, nil, nil, 1, 1, 1)
+    local right = tostring(math.floor(level + 0.5))
+    -- Tier set pieces (stage 3, Tooltip/More.lua).
+    if tier and TT.TierText then right = TT.TierText(tier) .. " " .. right end
+    tt:AddDoubleLine(STAT_AVERAGE_ITEM_LEVEL .. ":", right, nil, nil, nil, 1, 1, 1)
     tt:Show()
 end
 
@@ -53,11 +56,11 @@ local function ItemLevel(tt, unit)
     local isMe = UnitIsUnit(unit, "player")
     if canaccessvalue(isMe) and isMe then
         local _, equipped = GetAverageItemLevel()
-        if equipped then AddLevel(tt, equipped, guid) end
+        if equipped then AddLevel(tt, equipped, guid, TT.CountTier and TT.CountTier("player")) end
         return
     end
     local c = cache[guid]
-    if c and GetTime() - c.time < 120 then AddLevel(tt, c.level, guid) return end
+    if c and GetTime() - c.time < 120 then AddLevel(tt, c.level, guid, c.tier) return end
     local can = CanInspect(unit)
     if not (canaccessvalue(can) and can) then return end
     -- Leave the inspect window's own inspection alone.
@@ -76,8 +79,9 @@ local function OnInspectReady(guid)
     local level = C_PaperDollInfo and C_PaperDollInfo.GetInspectItemLevel
         and C_PaperDollInfo.GetInspectItemLevel("mouseover")
     if not (level and canaccessvalue(level) and level > 0) then return end
-    cache[guid] = { level = level, time = GetTime() }
-    if GameTooltip:IsShown() and not GameTooltip:IsForbidden() then AddLevel(GameTooltip, level, guid) end
+    local tier = TT.CountTier and TT.CountTier("mouseover")
+    cache[guid] = { level = level, time = GetTime(), tier = tier }
+    if GameTooltip:IsShown() and not GameTooltip:IsForbidden() then AddLevel(GameTooltip, level, guid, tier) end
 end
 
 -- ============================================================================
@@ -95,7 +99,9 @@ local function Mythic(tt, unit)
     local r, g, b = 1, 1, 1
     if color then r, g, b = color.r, color.g, color.b end
     tt:AddDoubleLine(DUNGEON_SCORE .. ":", tostring(score), nil, nil, nil, r, g, b)
-    if s.ttMythicBest ~= false and type(info.runs) == "table" then
+    if s.ttMythicBest ~= false and type(info.runs) == "table" and s.ttBetterMythic ~= false and TT.BestRunLine then
+        TT.BestRunLine(tt, info.runs)   -- stage 3's fuller line (Tooltip/More.lua)
+    elseif s.ttMythicBest ~= false and type(info.runs) == "table" then
         local best = 0
         for _, run in ipairs(info.runs) do
             if run.finishedSuccess and (run.bestRunLevel or 0) > best then best = run.bestRunLevel end

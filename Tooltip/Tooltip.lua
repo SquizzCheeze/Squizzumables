@@ -124,6 +124,9 @@ TT.SETTINGS = ns.Settings.Describe({
             { type = "header", label = "HEALTH BAR" },
             { key = "ttBarPos", type = "dropdown", default = "BOTTOM", items = BAR_POS, label = "Position" },
             { key = "ttBarHeight", type = "slider", default = 12, min = 2, max = 30, step = 1, label = "Height" },
+            { key = "ttBarOffsetY", type = "slider", default = 0, min = -30, max = 30, step = 1, label = "Bar Offset Y" },
+            { key = "ttBarTextOffsetY", type = "slider", default = 0, min = -20, max = 20, step = 1,
+              label = "Text Offset Y", when = function(s) return s.ttBarText ~= false end },
             { key = "ttBarText", type = "check", default = true, label = "Health Text" },
             { key = "ttBarShort", type = "check", default = false, label = "Current / Max Instead of Percent",
               when = function(s) return s.ttBarText ~= false end },
@@ -169,6 +172,45 @@ TT.SETTINGS = ns.Settings.Describe({
               items = { { text = "Blizzard's coins", value = "BLIZZARD" }, { text = "As a line of text", value = "TEXT" },
                         { text = "Hidden", value = "HIDE" } } },
         } },
+        -- Stage 3, WindTools' extras; the code is in Tooltip/More.lua.
+        { key = "more", label = "More", rows = {
+            { type = "header", label = "ICONS" },
+            { key = "ttRaceIcon", type = "check", default = true, label = "Race Icon",
+              tip = "Beside a player's level and race." },
+            { key = "ttSpecIcon", type = "check", default = true, label = "Spec Icon",
+              tip = "Beside a player's spec and class." },
+            { key = "ttTitleIcon", type = "check", default = true, label = "Icon by the Name",
+              tip = "On the tooltips of items, spells, toys, mounts, currencies, achievements and macros." },
+            { key = "ttFactionIcon", type = "check", default = true, label = "Faction Icon on Players" },
+            { key = "ttPetIcon", type = "check", default = true, label = "Battle Pet Type Icon" },
+            { key = "ttPetID", type = "check", default = true, label = "Battle Pet ID" },
+            { type = "header", label = "MYTHIC+" },
+            { key = "ttBetterMythic", type = "check", default = true, label = "Best Run's Dungeon and Upgrades",
+              tip = "The best run shows the dungeon and a + for each upgrade it was timed by (+++ at 60% of the "
+                .. "timer, ++ at 80%)." },
+            { key = "ttKeystone", type = "check", default = true, label = "Their Keystone",
+              tip = "Yours always; other players' when they run an addon that shares keystones (BigWigs, Details "
+                .. "and many others do)." },
+            { key = "ttShortDungeons", type = "check", default = true, label = "Short Dungeon Names" },
+            { key = "ttDungeonIcons", type = "check", default = true, label = "Dungeon Icons" },
+            { type = "header", label = "PROGRESS" },
+            { key = "ttProgression", type = "check", default = true, label = "Raid Progression with Shift",
+              tip = "Bosses killed in this season's raids, highest difficulty first. Out of combat." },
+            { key = "ttTierSet", type = "check", default = true, label = "Tier Set Pieces",
+              tip = "How many pieces of one set they wear, next to their item level." },
+            { key = "ttQuestProgress", type = "check", default = true, label = "Quest Progress on Creatures",
+              tip = "How much killing this creature counts towards a quest you have, by its objective." },
+            { key = "ttQuestDecimals", type = "slider", default = 1, min = 0, max = 2, step = 1, label = "Decimals",
+              when = function(s) return s.ttQuestProgress ~= false end },
+            { type = "header", label = "GROUP FINDER" },
+            { key = "ttGroupInfo", type = "check", default = true, label = "Group Members by Role",
+              tip = "On a listed group: who has joined, by role, class and spec, instead of Blizzard's list. "
+                .. "Left to Premade Groups Filter while that is loaded." },
+            { key = "ttGroupDungeons", type = "check", default = true, label = "On Dungeon Groups Too",
+              when = function(s) return s.ttGroupInfo ~= false end },
+            { key = "ttGroupCompact", type = "check", default = false, label = "Compact",
+              tip = "One line per member, no role headings.", when = function(s) return s.ttGroupInfo ~= false end },
+        } },
     },
 })
 
@@ -210,6 +252,36 @@ end
 
 local function Wrap(text, color)
     return "|c" .. Hex(color.r, color.g, color.b) .. text .. "|r"
+end
+
+-- Race and spec icons as inline markup (stage 3's "More" page).
+local RACE_ATLAS = { Scourge = "undead", HighmountainTauren = "highmountain", LightforgedDraenei = "lightforged",
+                     ZandalariTroll = "zandalari", EarthenDwarf = "earthen" }
+function TT.RaceIcon(raceFile, sex)
+    if not (raceFile and canaccessvalue(sex)) then return nil end
+    local g = sex == 3 and "female" or "male"
+    local atlas = "raceicon128-" .. (RACE_ATLAS[raceFile] or strlower(raceFile)) .. "-" .. g
+    if not (C_Texture.GetAtlasInfo(atlas)) then return nil end
+    return "|A:" .. atlas .. ":16:16|a"
+end
+
+local specIcons = {}   -- classID -> { [localized spec name] = icon }
+function TT.SpecIcon(classID, specText)
+    if not classID then return nil end
+    local map = specIcons[classID]
+    if not map then
+        map = {}
+        local n = C_SpecializationInfo.GetNumSpecializationsForClassID(classID) or 0
+        for i = 1, n do
+            local _, name, _, icon = GetSpecializationInfoForClassID(classID, i)
+            if name and icon then map[name] = icon end
+        end
+        specIcons[classID] = map
+    end
+    for name, icon in pairs(map) do
+        if specText:find(name, 1, true) then return "|T" .. icon .. ":14:16:0:0:64:64:5:59:9:55|t" end
+    end
+    return nil
 end
 
 local GREY = { r = 0.6, g = 0.6, b = 0.6 }
@@ -291,7 +363,7 @@ local function StyleBar()
         barBG:SetPoint("BOTTOMRIGHT", 1, -1)
         barBG:SetColorTexture(0, 0, 0, 1)
         barText = bar:CreateFontString(nil, "OVERLAY")
-        barText:SetPoint("CENTER")
+        barText:SetPoint("CENTER")  -- re-pointed below with the offset
     end
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
     bar:SetHeight(s.ttBarHeight or 12)
@@ -299,13 +371,15 @@ local function StyleBar()
     bar:SetAlpha(pos == "HIDE" and 0 or 1)
     bar:ClearAllPoints()
     if pos == "TOP" then
-        bar:SetPoint("BOTTOMLEFT", GameTooltip, "TOPLEFT", 1, 3)
-        bar:SetPoint("BOTTOMRIGHT", GameTooltip, "TOPRIGHT", -1, 3)
+        bar:SetPoint("BOTTOMLEFT", GameTooltip, "TOPLEFT", 1, 3 + (s.ttBarOffsetY or 0))
+        bar:SetPoint("BOTTOMRIGHT", GameTooltip, "TOPRIGHT", -1, 3 + (s.ttBarOffsetY or 0))
     else
-        bar:SetPoint("TOPLEFT", GameTooltip, "BOTTOMLEFT", 1, -3)
-        bar:SetPoint("TOPRIGHT", GameTooltip, "BOTTOMRIGHT", -1, -3)
+        bar:SetPoint("TOPLEFT", GameTooltip, "BOTTOMLEFT", 1, -3 + (s.ttBarOffsetY or 0))
+        bar:SetPoint("TOPRIGHT", GameTooltip, "BOTTOMRIGHT", -1, -3 + (s.ttBarOffsetY or 0))
     end
     SetFont(barText, s.ttBarFont, s.ttBarFontSize or 12, s.ttBarOutline or "SHADOW")
+    barText:ClearAllPoints()
+    barText:SetPoint("CENTER", bar, "CENTER", 0, s.ttBarTextOffsetY or 0)
     barText:SetShown(s.ttBarText ~= false)
 end
 
@@ -515,8 +589,12 @@ local function PlayerLines(tt, unit)
         end
     end
     if levelLine then
-        local race = UnitRace(unit)
-        if not Readable(race) then race = nil end
+        local race, raceFile = UnitRace(unit)
+        if not Readable(race, raceFile) then race, raceFile = nil, nil end
+        if race and s.ttRaceIcon ~= false then
+            local icon = TT.RaceIcon(raceFile, UnitSex(unit))
+            if icon then race = icon .. " " .. race end
+        end
         local real, eff = UnitLevel(unit), UnitEffectiveLevel(unit)
         if Readable(real, eff) then
             local hex = Hex(DiffColor(eff).r, DiffColor(eff).g, DiffColor(eff).b)
@@ -527,7 +605,13 @@ local function PlayerLines(tt, unit)
         end
         local specText = specLine and specLine:GetText()
         if specText and canaccessvalue(specText) and specText ~= "" then
-            specLine:SetText(Wrap(specText, color))
+            local text = Wrap(specText, color)
+            if s.ttSpecIcon ~= false then
+                local _, _, classID = UnitClass(unit)
+                local icon = canaccessvalue(classID) and TT.SpecIcon(classID, specText)
+                if icon then text = icon .. " " .. text end
+            end
+            specLine:SetText(text)
         end
     end
     return color
@@ -743,8 +827,10 @@ TT.shared = {
 function BH:ApplyTooltip()
     Seed()
     if TT.SeedExtras then TT.SeedExtras() end
+    if TT.SeedMore then TT.SeedMore() end
     TT.Apply()
     if TT.ApplyExtras then TT.ApplyExtras() end
+    if TT.ApplyMore then TT.ApplyMore() end
 end
 
 local ev = CreateFrame("Frame")
