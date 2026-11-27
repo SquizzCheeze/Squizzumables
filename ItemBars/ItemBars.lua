@@ -715,7 +715,9 @@ local function SeedFromWindTools()
     table.sort(hidden)
     local _, have = ParseIDs(s.ibHidden)
     for _, id in ipairs(hidden) do
-        if not have[id] then s.ibHidden = (s.ibHidden ~= "" and (s.ibHidden .. ", ") or "") .. id end
+        -- A fresh profile has no ibHidden saved yet (nil, not "").
+        local cur = s.ibHidden or ""
+        if not have[id] then s.ibHidden = (cur ~= "" and (cur .. ", ") or "") .. id end
     end
 
     for n = 1, NUM_BARS do
