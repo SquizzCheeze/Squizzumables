@@ -201,6 +201,9 @@ SK.Define("blizzardOptions", function()
     if not p then return end
     SK.Strip(p)
     Hide(p.Bg)
+    -- The gold frame and title bar are the NineSlice's textures; its title
+    -- text lives in there too, so only the textures go.
+    if p.NineSlice then SK.Strip(p.NineSlice) end
     SK.Backdrop(p, "panel")
     SK.Shadow(p)
     if p.ClosePanelButton then SK.Close(p.ClosePanelButton) end
