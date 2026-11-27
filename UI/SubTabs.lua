@@ -232,6 +232,12 @@ function SubTabs.Create(parent, defs)
             local btn = buttons[def.key]
             if btn then btn:SetActive(on) end
             local page = pages[def.key]
+            -- A sub-tab whose rows are made on first use (Settings.Build).
+            if on and page and page.sqBuild then
+                local build = page.sqBuild
+                page.sqBuild = nil
+                build()
+            end
             -- The scroller, not the scroll child: hiding the child leaves the
             -- scroll frame showing an empty region that still takes the mouse
             -- wheel.

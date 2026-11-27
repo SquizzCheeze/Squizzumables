@@ -3,9 +3,11 @@ Squizzumables Changelog
 
 V2.8
 
-- Fixed: the game froze for a moment the first time the options window
-  opened after a login or /reload. Its pages are now made a few at a time in
-  the background.
+- Fixed: the game froze for a few seconds the first time the options window
+  opened after a login or /reload. Every slider re-applied its whole module
+  as it was drawn (Action Bars alone re-laid out every bar 120 times); now
+  only a real change does. Pages and their tabs are also made a few at a time
+  in the background.
 - New: keybinds for the Item Bars: the first 12 buttons of each bar can be
   bound in the game's Key Bindings (Squizzumables > Item Bar 1-5), and the key
   shows in the button's corner (Item Bars > Keybinds, with its size). Keys

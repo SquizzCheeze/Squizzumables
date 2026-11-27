@@ -254,12 +254,24 @@ end
 builders.slider = function(parent, y, spec)
     local s = CreateSQSlider(parent, spec.label, spec.width or 300,
                              spec.min or 0, spec.max or 100, spec.step or 1, spec.decimals)
+    -- Showing the stored value is not a change. Without this guard every
+    -- slider wrote its own value back and re-applied its whole module as it
+    -- was built and on every refresh: Action Bars' 120 sliders re-laid out
+    -- every bar 120 times, 1.8s on opening the window (user, 2026-11-28).
+    local syncing = false
     s:SetAfterValueChanged(function(value, userInput)
+        if syncing then return end
         if spec.set then spec.set(value, userInput) end
         if spec.after then spec.after(value, userInput) end
     end)
     return Finish(s, parent, y, spec, function()
-        if spec.get then s:SetValue(spec.get()) end
+        if spec.get then
+            local v = spec.get()
+            syncing = true
+            local ok, err = pcall(s.SetValue, s, v)
+            syncing = false
+            if not ok then error(err, 0) end
+        end
     end)
 end
 

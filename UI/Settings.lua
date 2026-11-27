@@ -260,12 +260,39 @@ function Settings.Build(desc, parent)
     for i, page in ipairs(desc.pages) do tabs[i] = { key = page.key, label = page.label } end
     local pages = ns.SubTabs.Create(parent, tabs)
 
-    for _, page in ipairs(desc.pages) do
+    -- Only the first sub-tab's rows are made now; the rest are made one per
+    -- frame after, or at once when their tab is picked. Action Bars' fifteen
+    -- bars took 1.8s in one go and froze the game (user, 2026-11-28).
+    -- Search indexing needs the page being built, so it is kept for later.
+    local searchPage = Rows.currentPage
+    local queue = {}
+    for i, page in ipairs(desc.pages) do
         local content = pages[page.key]
-        Rows.currentSection = content.section
-        local y = AddRowList(desc, page.rows, content, -14)
-        content:SetHeight(math.abs(y) + 20)
+        local function BuildRows()
+            local prevPage, prevSection = Rows.currentPage, Rows.currentSection
+            Rows.currentPage, Rows.currentSection = searchPage, content.section
+            local y = AddRowList(desc, page.rows, content, -14)
+            content:SetHeight(math.abs(y) + 20)
+            Rows.currentPage, Rows.currentSection = prevPage, prevSection
+        end
+        if i == 1 then
+            BuildRows()
+        else
+            content.sqBuild = BuildRows
+            queue[#queue + 1] = content
+        end
     end
+    local function Next()
+        local content = table.remove(queue, 1)
+        if not content then return end
+        if content.sqBuild then
+            local build = content.sqBuild
+            content.sqBuild = nil
+            build()
+        end
+        if queue[1] then C_Timer.After(0, Next) end
+    end
+    if queue[1] then C_Timer.After(0, Next) end
     return pages
 end
 
