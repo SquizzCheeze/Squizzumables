@@ -265,6 +265,10 @@ local function NewTile()
     t.done = t:CreateTexture(nil, "OVERLAY")
     t.done:SetAtlas("common-icon-checkmark")
     t.done:SetSize(14, 14)
+    -- AreaPoiUtil.TryShowTooltip expects a map pin and takes its title from
+    -- these two pin methods.
+    t.HasDisplayName = function(self) return self.data and self.data.info and self.data.info.name ~= nil end
+    t.GetDisplayName = function(self) return self.data and self.data.info and self.data.info.name end
     t:SetScript("OnEnter", TileTooltip)
     t:SetScript("OnLeave", function() GameTooltip:Hide() end)
     t:SetScript("OnClick", TileClick)
