@@ -35,8 +35,11 @@ local function HideKeys(frame, ...)
 end
 
 -- A window: art gone, our panel, then the general pass over its controls.
+-- Its own done-set: SK.Once here would make SK.Window skip the frame.
+local plainDone = {}
 local function Plain(f, x1, y1, x2, y2)
-    if not f or not SK.Once(f) then return end
+    if not f or plainDone[f] then return end
+    plainDone[f] = true
     if f.Header then SK.Strip(f.Header) end
     SK.Window(f, x1, y1, x2, y2)
     SK.Auto(f)
@@ -67,7 +70,7 @@ local function SettingsDropdown(control)
 end
 
 local function SettingsCheck(cb)
-    if not cb or not SK.Once(cb) then return end
+    if not cb then return end
     SK.Check(cb)
 end
 
@@ -158,6 +161,25 @@ local function CategoryRow(row)
         row.Background:SetAlpha(0)
         SK.Backdrop(row.Background, "button", 5, -5, -5, 0)
     end
+    -- The selected / hovered entry: a flat accent wash, not the gold bar.
+    local sel = row.Texture
+    if sel then
+        local function Flat(tex, atlas)
+            if atlas == "Options_List_Active" then
+                local r, g, b = SK.AccentRGB()
+                tex:SetColorTexture(r, g, b, 0.35)
+            elseif atlas == "Options_List_Hover" then
+                tex:SetColorTexture(1, 1, 1, 0.12)
+            else
+                return
+            end
+            tex:ClearAllPoints()
+            tex:SetPoint("TOPLEFT", row, "TOPLEFT", 8, -1)
+            tex:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -8, 1)
+        end
+        hooksecurefunc(sel, "SetAtlas", Flat)
+        Flat(sel, sel:GetAtlas())
+    end
     local toggle = row.Toggle
     if toggle then
         toggle:SetSize(18, 18)
@@ -212,9 +234,11 @@ local function ChatChecks(frame)
     local base = frame:GetName() .. "Checkbox"
     for i in ipairs(frame.checkBoxTable) do
         local row = G(base .. i)
-        if row and SK.Once(row) then
+        local check = G(base .. i .. "Check")
+        if row and not check then SK.Check(row) end
+        if row and check and SK.Once(row) then
             SK.Strip(row)
-            SK.Check(G(base .. i .. "Check") or row)
+            SK.Check(check)
             local cc = G(base .. i .. "ColorClasses")
             if cc then SK.Check(cc) end
         end
@@ -587,7 +611,7 @@ end)
 -- ============================================================================
 
 local function EditCheck(cb)
-    if cb and SK.Once(cb) then SK.Check(cb) end
+    if cb then SK.Check(cb) end
 end
 
 local function EditSlider(holder)
@@ -648,7 +672,7 @@ SK.Define("editor", function()
             end
             if not dlg.Settings then return end
             for _, row in ipairs({ dlg.Settings:GetChildren() }) do
-                if row.Dropdown and SK.Once(row.Dropdown) then SK.Dropdown(row.Dropdown) end
+                if row.Dropdown then SK.Dropdown(row.Dropdown) end
                 if row.Slider and row.Slider.Slider then EditSlider(row) end
                 if row.Button and row.Button:IsObjectType("CheckButton") then EditCheck(row.Button) end
             end
@@ -1001,7 +1025,7 @@ SK.Define("playerChoice", function()
             if rewards and rewards.rewardsPool then
                 for r in rewards.rewardsPool:EnumerateActive() do
                     local item = r.itemButton
-                    if item and SK.Once(item) then SK.ItemButton(item) end
+                    if item then SK.ItemButton(item) end
                 end
             end
             if not kit and SK.ParchmentActive() then
@@ -1258,7 +1282,7 @@ SK.DefineLate("barber", "Blizzard_CharacterCustomize", function()
         end
         if self.sliderPool then
             for s in self.sliderPool:EnumerateActive() do
-                if s.Slider and SK.Once(s) then SK.StepSlider(s) end
+                if s.Slider then SK.StepSlider(s) end
             end
         end
     end)
@@ -1716,5 +1740,232 @@ SK.Define("worldmap", function()
     if session then
         SK.Strip(session)
         if session.ExecuteSessionCommand then SK.Backdrop(session.ExecuteSessionCommand, "button") end
+    end
+end)
+
+-- ============================================================================
+-- Forever's Legacy window (its achievements): reward track, challenges, tree
+-- ============================================================================
+
+local function LegacyBar(bar, back)
+    if not bar then return end
+    SK.StatusBar(bar, 0.23, 0.75, 0.2)
+    if bar.ProgressBarFrame then bar.ProgressBarFrame:SetAlpha(0) end
+    if back then back:SetAlpha(0) end
+end
+
+-- A reward card: flat panel, square icon, the level in a small box; the
+-- card for the level just reached has an accent border.
+local function RewardCardBorder(card, _, displayLevel)
+    local b, lv = SK.GetBackdrop(card), card.sqLevel and SK.GetBackdrop(card.sqLevel)
+    local r, g, bl
+    if card.GetLevel and card:GetLevel() == displayLevel then r, g, bl = SK.AccentRGB() else r, g, bl = SK.BorderRGB() end
+    if b then b:SetBackdropBorderColor(r, g, bl) end
+    if lv then lv:SetBackdropBorderColor(r, g, bl) end
+end
+
+local function RewardCard(card)
+    if not SK.Once(card) then return end
+    for _, k in ipairs({ "RewardCardBG", "IconBorder", "LevelSquare", "Highlight" }) do
+        if card[k] then card[k]:SetAlpha(0) end
+    end
+    local b = SK.Backdrop(card, "panel", 4, -4, -5, 5)
+    local hl = card:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetColorTexture(1, 1, 1, 0.15)
+    hl:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1)
+    hl:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+    if card.Icon then SK.Icon(card.Icon) end
+    if card.LevelSquare then
+        local box = CreateFrame("Frame", nil, card, "BackdropTemplate")
+        box:SetFrameLevel(card:GetFrameLevel())
+        box:SetPoint("CENTER", card.LevelSquare)
+        box:SetSize(30, 30)
+        SK.Backdrop(box, "button")
+        card.sqLevel = box
+        if card.Level then card.Level:SetParent(box) end
+    end
+    if card.Refresh then hooksecurefunc(card, "Refresh", RewardCardBorder) end
+end
+
+local function RewardCards(track)
+    if track and track.elementPool then
+        for card in track.elementPool:EnumerateActive() do RewardCard(card) end
+    end
+end
+
+-- A challenge card. Text colours are Blizzard's (they mean done / not done).
+local function ChallengeCriteria(button)
+    local obj = button.GetObjectiveFrame and button:GetObjectiveFrame()
+    if not obj or not obj.criteriaPool then return end
+    for c in obj.criteriaPool:EnumerateActive() do
+        if SK.Once(c) then
+            if c.Background then c.Background:SetAlpha(0) end
+            LegacyBar(c.ProgressBar, c.ProgressBarBackground)
+        end
+    end
+end
+
+local function ChallengePlusMinus(button)
+    if not button.PlusMinus then return end
+    button.PlusMinus:SetAtlas(button.collapsed and "common-button-list-plus" or "common-button-list-minus")
+end
+
+local function ChallengeSelected(overlay, shown)
+    local b = SK.GetBackdrop(overlay:GetParent())
+    if not b then return end
+    if shown then b:SetBackdropBorderColor(1, 0.8, 0.1) else b:SetBackdropBorderColor(SK.BorderRGB()) end
+end
+
+local function Challenge(button)
+    if not SK.Once(button) then return end
+    for _, k in ipairs({ "TitleBar", "Background", "BackgroundTop", "BackgroundMiddle", "BackgroundBottom", "SelectedOverlay" }) do
+        if button[k] then button[k]:SetAlpha(0) end
+    end
+    if button.Shield and button.Shield.CheckBackground then button.Shield.CheckBackground:SetAlpha(0) end
+    SK.Backdrop(button, "panel", 0, -1, 0, 1)
+    local icon = button.Icon
+    if icon and icon.texture then
+        if icon.frame then icon.frame:Hide() end
+        if icon.TextureMask then icon.texture:RemoveMaskTexture(icon.TextureMask) end
+        SK.Icon(icon.texture)
+    end
+    if button.Tracked then
+        SK.Check(button.Tracked)
+        button.Tracked:SetSize(20, 20)
+    end
+    if button.SelectedOverlay then hooksecurefunc(button.SelectedOverlay, "SetShown", ChallengeSelected) end
+    if button.DisplayObjectives then hooksecurefunc(button, "DisplayObjectives", ChallengeCriteria) end
+    if button.UpdatePlusMinusArt then hooksecurefunc(button, "UpdatePlusMinusArt", ChallengePlusMinus) end
+    ChallengePlusMinus(button)
+end
+
+-- A category in the list on the left: flat bar, accent when picked.
+local function CategoryArt(button)
+    if button.sqSelected then button.sqSelected:SetShown((not button.collapsable and button.selected) and true or false) end
+end
+
+local function Category(button)
+    if not SK.Once(button) then return end
+    local nt, ht = button:GetNormalTexture(), button:GetHighlightTexture()
+    if nt then nt:SetAlpha(0) end
+    if ht then ht:SetAlpha(0) end
+    local b = SK.Backdrop(button, "button", 0, -1, 0, 1)
+    local r, g, bl = SK.AccentRGB()
+    local hl = button:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetColorTexture(r, g, bl, 0.25)
+    hl:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1)
+    hl:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+    local sel = button:CreateTexture(nil, "ARTWORK")
+    sel:SetColorTexture(r, g, bl, 0.25)
+    sel:SetAllPoints(hl)
+    button.sqSelected = sel
+    if button.RefreshCardArt then hooksecurefunc(button, "RefreshCardArt", CategoryArt) end
+    if button.SetSelected then hooksecurefunc(button, "SetSelected", CategoryArt) end
+    CategoryArt(button)
+end
+
+local function TreeButtons(panel)
+    for _, button in ipairs(panel.treeButtons or {}) do
+        if button.Background then button.Background:SetAlpha(0) end
+    end
+end
+
+SK.Define("legacy", function()
+    local f = G("LegacySystemFrame")
+    if not f then return end
+    SK.Window(f)
+    for _, tab in ipairs(f.Tabs or {}) do SK.SideTab(tab) end
+    SK.LayoutSideTabs(f, f.Tabs)
+    local parchment = SK.ParchmentActive()
+
+    -- Reward track.
+    local track = f.RewardTrackPage
+    if track then
+        local bar = track.LegacyRewardProgressBar
+        LegacyBar(bar, track.ProgressBarBackground)
+        if bar and track.ProgressBarBackground then
+            bar:ClearAllPoints()
+            bar:SetPoint("TOPLEFT", track.ProgressBarBackground, "TOPLEFT", 6, 0)
+            bar:SetPoint("BOTTOMRIGHT", track.ProgressBarBackground, "BOTTOMRIGHT", -6, 3)
+        end
+        local pf = track.LegacyRewardProgressFrame
+        if pf then
+            if pf.LeftButton then SK.Arrow(pf.LeftButton, "left") end
+            if pf.RightButton then SK.Arrow(pf.RightButton, "right") end
+            if pf.JumpLeftButton then SK.Arrow(pf.JumpLeftButton, "left") end
+            if pf.JumpRightButton then SK.Arrow(pf.JumpRightButton, "right") end
+            if parchment then
+                if pf.Init then hooksecurefunc(pf, "Init", RewardCards) end
+                RewardCards(pf)
+            end
+        end
+        if parchment and track.Background then track.Background:SetAlpha(0) end
+    end
+
+    -- Challenges.
+    local ch = f.ChallengesPage
+    local list = ch and ch.CategoryList
+    local pane = ch and ch.DetailPane
+    if ch then
+        local sum = ch.LegacyChallengePointSummary
+        if sum then LegacyBar(sum.PointsBar, sum.ProgressBarBackground) end
+        if list then
+            SK.EditBox(list.SearchBox)
+            if list.FilterDropdown then SK.Dropdown(list.FilterDropdown) end
+            SK.ScrollBar(list.ScrollBar)
+            if list.ScrollBox then
+                hooksecurefunc(list.ScrollBox, "Update", function(box) box:ForEachFrame(Category) end)
+                list.ScrollBox:ForEachFrame(Category)
+            end
+        end
+        if pane then
+            SK.ScrollBar(pane.ScrollBar)
+            local box = pane.ScrollBox
+            if box then
+                hooksecurefunc(box, "Update", function(self) self:ForEachFrame(Challenge) end)
+                if box.ApplyEdgeFade then hooksecurefunc(box, "ApplyEdgeFade", function(self) self:ClearAlphaGradient() end) end
+                box:ForEachFrame(Challenge)
+            end
+        end
+        Hide(ch.VerticalDivider)
+        if parchment then
+            if ch.Background then ch.Background:SetAlpha(0) end
+            if list then SK.Backdrop(list, "panel", 0, 8, -3, 0) end
+            if pane then SK.Backdrop(pane, "panel", 1, 5, 18, 0) end
+        end
+    end
+
+    -- The tree.
+    local tree = f.TreePage
+    if tree then
+        local summary = tree.LegacyTreePointSummary
+        if summary and summary.Border then summary.Border:SetAlpha(0) end
+        local panel = tree.LegacyTreeTraitPanel
+        if panel then
+            SK.Button(panel.ApplyButton)
+            if panel.ApplyButton and panel.ApplyButton.YellowGlow then panel.ApplyButton.YellowGlow:SetAlpha(0) end
+            SK.EditBox(panel.SearchBox, -4, -5, 0, 5)
+            if panel.SearchPreviewContainer then
+                SK.Strip(panel.SearchPreviewContainer)
+                SK.Backdrop(panel.SearchPreviewContainer, "panel")
+            end
+            SK.TalentNodes(panel)
+        end
+        Hide(tree.VerticalDivider)
+        if parchment then
+            if tree.Background then tree.Background:SetAlpha(0) end
+            local sel = tree.LegacyTreeSelectionPanel
+            if sel then
+                TreeButtons(sel)
+                if sel.RefreshTreeButtons then hooksecurefunc(sel, "RefreshTreeButtons", TreeButtons) end
+                local b = SK.Backdrop(sel, "panel")
+                if panel then
+                    b:ClearAllPoints()
+                    b:SetPoint("TOPLEFT", tree, "TOPLEFT", 6, -72)
+                    b:SetPoint("BOTTOMRIGHT", panel, "BOTTOMLEFT", -4, 0)
+                end
+            end
+            if panel then SK.Backdrop(panel, "panel", 0, -55, 0, 0) end
+        end
     end
 end)

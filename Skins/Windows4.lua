@@ -1113,8 +1113,8 @@ SK.Define("loot", function()
                 if border and c then border:SetBackdropBorderColor(c.r, c.g, c.b) end
             end
             for _, c in ipairs({ ml:GetChildren() }) do
-                if c:IsObjectType("Button") and not c:GetName() and SK.Once(c) then
-                    if c:GetPushedTexture() then SK.Close(c) else SK.Backdrop(c, "button"); SK.Hover(c) end
+                if c:IsObjectType("Button") and not c:GetName() then
+                    if c:GetPushedTexture() then SK.Close(c) elseif SK.Once(c) then SK.Backdrop(c, "button"); SK.Hover(c) end
                 end
             end
         end)
@@ -1288,8 +1288,10 @@ SK.Define("bags", function()
                 if pp.TabCostFrame then SK.Button(pp.TabCostFrame.PurchaseButton) end
                 if not FOREVER then SK.Backdrop(pp, "panel", 8, 2, -6, 2) end
             end
+            local tabDone = {}
             local function BankTab(tab)
-                if not tab or not SK.Once(tab) then return end
+                if not tab or tabDone[tab] then return end
+                tabDone[tab] = true
                 if tab.Icon then SK.Icon(tab.Icon) end
                 SK.Tab(tab)
                 if tab.SelectedTexture then tab.SelectedTexture:SetColorTexture(1, 1, 1, 0.25) end

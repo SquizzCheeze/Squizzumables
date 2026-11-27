@@ -258,8 +258,10 @@ local function Communities()
                 local cc = f[ck]
                 if cc then
                     SK.ScrollBar(cc.ScrollBar)
+                    local cardDone = {}
                     SK.EachRow(cc.ScrollBox, function(card)
-                        if not SK.Once(card) then return end
+                        if cardDone[card] then return end
+                        cardDone[card] = true
                         if card.CircleMask and card.CommunityLogo then card.CommunityLogo:RemoveMaskTexture(card.CircleMask) end
                         HideKeys(card, "CircleMask", "LogoBorder", "Background")
                         if card.CommunityLogo then SK.Icon(card.CommunityLogo) end

@@ -143,6 +143,8 @@ SK.WINDOWS = {
     { key = "bmah",       label = "Black Market",                      elv = "bmah", addon = "Blizzard_BlackMarketUI" },
     { key = "transmogrify", label = "Transmog",                        elv = "transmogrify", addon = "Blizzard_Transmog" },
     { key = "worldmap",   label = "World Map and Quest Log",           elv = "worldmap", addon = "Blizzard_WorldMap" },
+    -- Forever only (its achievements); the addon-exists filter drops it on retail.
+    { key = "legacy",     label = "Legacy",                            elv = "legacySystem", addon = "Blizzard_LegacySystem" },
     { key = "housing",    label = "Housing",                           elv = "housing", addon = "Blizzard_HousingDashboard" },
     -- Older content: a general pass each.
     { key = "adventureMap", label = "Adventure Maps",                  elv = "adventureMap", addon = "Blizzard_AdventureMap" },
@@ -375,6 +377,10 @@ local function Once(frame)
     done[frame] = true
     return true
 end
+-- Never `if SK.Once(x) then SK.Check(x) end`: most SK helpers call Once on
+-- their own frame first, so marking it beforehand makes them skip it
+-- silently (the options checkboxes and every Plain window shipped that way).
+-- Guard a wrapper with its own local set instead.
 SK.Once = Once
 
 local function HideStateTextures(btn)
@@ -448,6 +454,68 @@ function SK.Arrow(btn, dir, size)
     SK.Backdrop(btn, "button")
     SK.Hover(btn)
     return a
+end
+
+-- Talent nodes (any TalentFrameBaseTemplate tree: talents, Forever's Legacy
+-- tree): square icons with a 1px border in the node's state colour,
+-- Blizzard's round frames gone. Nodes are pooled, so each is done as
+-- Blizzard places it.
+local function NodeStateBorder(button, visualState)
+    local border = SK.GetBackdrop(button.Icon)
+    local util = _G.TalentButtonUtil
+    if border and util and util.GetColorForBaseVisualState and visualState then
+        local color = util.GetColorForBaseVisualState(visualState)
+        if color then border:SetBackdropBorderColor(color:GetRGB()) end
+    end
+    if button.BorderSheen then button.BorderSheen:Hide() end
+end
+
+local function TalentNode(_, button)
+    if not button or not button.Icon then return end
+    -- Blizzard re-levels nodes by row; keep the border just under.
+    local function Level()
+        local b = SK.GetBackdrop(button.Icon)
+        if b then b:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1)) end
+    end
+    if not Once(button) then Level() return end
+    Hide(button.Shadow)
+    Hide(button.StateBorder)
+    Hide(button.StateBorderHover)
+    if button.IconMask and button.Icon.RemoveMaskTexture then button.Icon:RemoveMaskTexture(button.IconMask) end
+    if button.DisabledOverlay and button.DisabledOverlayMask then
+        button.DisabledOverlay:RemoveMaskTexture(button.DisabledOverlayMask)
+        button.DisabledOverlay:SetAllPoints(button.Icon)
+    end
+    -- Forever's Legacy squares carry a box behind their rank count.
+    if button.SpendText then
+        for _, r in ipairs({ button:GetRegions() }) do
+            if r:IsObjectType("Texture") and r:GetAtlas() == "Talents-Square-Box-c60" then
+                r:SetAlpha(0)
+                local box = CreateFrame("Frame", nil, button, "BackdropTemplate")
+                box:SetPoint("CENTER", button.SpendText)
+                box:SetSize(30, 20)
+                box:SetFrameLevel(button:GetFrameLevel() + 1)
+                SK.Backdrop(box, "panel")
+                button.SpendText:SetParent(box)
+                break
+            end
+        end
+    end
+    SK.Icon(button.Icon)
+    if button.UpdateStateBorder then hooksecurefunc(button, "UpdateStateBorder", NodeStateBorder) end
+    local state = button.GetVisualState and button:GetVisualState()
+    if state then NodeStateBorder(button, state) end
+    Level()
+end
+
+local nodePanels = {}
+function SK.TalentNodes(panel)
+    if not panel or nodePanels[panel] then return end
+    nodePanels[panel] = true
+    if panel.UpdateButtonFrameLevel then hooksecurefunc(panel, "UpdateButtonFrameLevel", TalentNode) end
+    if panel.EnumerateAllTalentButtons then
+        for button in panel:EnumerateAllTalentButtons() do TalentNode(panel, button) end
+    end
 end
 
 -- The red expand / shrink button in a window's corner
@@ -1176,6 +1244,9 @@ function SK.StepSlider(frame)
     local slider = frame.Slider
     if not slider then return end
     slider:DisableDrawLayer("ARTWORK")
+    -- The gold < > steppers either side.
+    if frame.Back then SK.Arrow(frame.Back, "left", 10) end
+    if frame.Forward then SK.Arrow(frame.Forward, "right", 10) end
     local thumb = slider.Thumb or (slider.GetThumbTexture and slider:GetThumbTexture())
     if thumb then
         thumb:SetTexture(WHITE)

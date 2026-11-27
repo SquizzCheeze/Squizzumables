@@ -99,44 +99,7 @@ SK.Define("talents", function()
         if tf.RefreshTreeHeaders then hooksecurefunc(tf, "RefreshTreeHeaders", Headers) end
         Headers(tf)
 
-        -- Talent nodes: square icons with a 1px border in the node's state
-        -- colour, Blizzard's round frames gone. Nodes are pooled, so each is
-        -- done as Blizzard places it.
-        local function StateBorder(button, visualState)
-            local border = SK.GetBackdrop(button.Icon)
-            local util = _G.TalentButtonUtil
-            if border and util and util.GetColorForBaseVisualState and visualState then
-                local color = util.GetColorForBaseVisualState(visualState)
-                if color then border:SetBackdropBorderColor(color:GetRGB()) end
-            end
-            if button.BorderSheen then button.BorderSheen:Hide() end
-        end
-        local function Node(_, button)
-            if not button or not button.Icon then return end
-            -- Blizzard re-levels nodes by row; keep the border just under.
-            local function Level()
-                local b = SK.GetBackdrop(button.Icon)
-                if b then b:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1)) end
-            end
-            if not SK.Once(button) then Level() return end
-            Hide(button.Shadow)
-            Hide(button.StateBorder)
-            Hide(button.StateBorderHover)
-            if button.IconMask and button.Icon.RemoveMaskTexture then button.Icon:RemoveMaskTexture(button.IconMask) end
-            if button.DisabledOverlay and button.DisabledOverlayMask then
-                button.DisabledOverlay:RemoveMaskTexture(button.DisabledOverlayMask)
-                button.DisabledOverlay:SetAllPoints(button.Icon)
-            end
-            SK.Icon(button.Icon)
-            if button.UpdateStateBorder then hooksecurefunc(button, "UpdateStateBorder", StateBorder) end
-            local state = button.GetVisualState and button:GetVisualState()
-            if state then StateBorder(button, state) end
-            Level()
-        end
-        if tf.UpdateButtonFrameLevel then hooksecurefunc(tf, "UpdateButtonFrameLevel", Node) end
-        if tf.EnumerateAllTalentButtons then
-            for button in tf:EnumerateAllTalentButtons() do Node(tf, button) end
-        end
+        SK.TalentNodes(tf)
         if tf.PvPTalentList then
             SK.Strip(tf.PvPTalentList)
             SK.Backdrop(tf.PvPTalentList, "panel")
