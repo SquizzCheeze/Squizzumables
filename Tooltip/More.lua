@@ -258,7 +258,9 @@ local function ReadProgression(statFn)
             if ids and #ids > 0 then
                 local killed = 0
                 for _, id in ipairs(ids) do
-                    local v = tonumber(statFn(id))
+                    -- Parenthesised: the statistic call returns more than one
+                    -- value, and a second (boolean) went to tonumber as its base.
+                    local v = tonumber((statFn(id)))
                     if v and v > 0 then killed = killed + 1 end
                 end
                 if killed > 0 then
