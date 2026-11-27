@@ -795,7 +795,9 @@ function BH:OnSpecChanged()
     -- options panel happens to be open. Leaving them would keep playing the
     -- previous profile's sounds with nothing on screen explaining why.
     if self.RefreshAuraSoundRegistrations then self:RefreshAuraSoundRegistrations("profile load") end
-    if self.optionsPanel and self.optionsPanel:IsShown() then
+    -- (Still building in the background: the build's end fills the lists.)
+    if self.optionsPanel and self.optionsPanel:IsShown()
+        and not (self.optionsWindow and self.optionsWindow.buildQueue) then
         self:RefreshSettingsTab()
         self:RefreshItemList()
         self:RefreshRaidToolsTab()
@@ -1493,6 +1495,11 @@ function BH:CreateOptionsPanel(noShow)
     end
 
     if self.optionsWindow then
+        -- Still building: the lists are filled when it finishes.
+        if self.optionsWindow.buildQueue then
+            if not noShow then self.optionsWindow:Open() end
+            return
+        end
         self:RefreshItemList()
         self:RefreshSettingsTab()
         self:RefreshRaidToolsTab()
@@ -1696,15 +1703,19 @@ function BH:CreateOptionsPanel(noShow)
 
     local order = {}
     for _, key in ipairs(BUILD_ORDER) do order[#order + 1] = "Squizzumables:" .. key end
-    win:BuildAllPages(order)
-
-    self:RefreshItemList()
-    self:RefreshClassBuffList()
-    self:RefreshSettingsTab()
-    self:RefreshRaidToolsTab()
-    self:RefreshTextRemindersTab()
-    if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
-    self:RefreshCalloutsTab()
+    -- A few pages a frame rather than all of them at once: building every
+    -- page in one go locked the game up on the first open (user report
+    -- 2026-11-28). The page asked for is built at once (ShowPage does it),
+    -- and the lists are filled when the last page is done.
+    win:BuildPagesInBackground(order, function()
+        self:RefreshItemList()
+        self:RefreshClassBuffList()
+        self:RefreshSettingsTab()
+        self:RefreshRaidToolsTab()
+        self:RefreshTextRemindersTab()
+        if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
+        self:RefreshCalloutsTab()
+    end)
     -- noShow: built for the combined window (LibSquizzShell), not shown yet.
     if not noShow then win:Open("Squizzumables:settings") end
 end

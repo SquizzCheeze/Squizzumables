@@ -44,7 +44,7 @@
         tall (taller if the window is).
 ]]
 
-local MAJOR, MINOR = "LibSquizzShell-1.0", 6
+local MAJOR, MINOR = "LibSquizzShell-1.0", 7
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
@@ -464,6 +464,8 @@ end
 function Window:Search(query)
     query = (query or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     if query == "" then return {} end
+    -- Pages not built yet have nothing indexed: build them first.
+    if self.buildQueue then self:DrainBuilds() end
     local strong, mid, weak = {}, {}, {}
     -- This window's addons, and while combined every other addon with an
     -- opener: a result from one of those hands over to its window.
@@ -931,6 +933,8 @@ function Window:ShowPage(id)
     end
     local page = self:FindPage(id) or self:FirstPage()
     if not page then return end
+    -- Still building in the background: everything up to this page, now.
+    if self.buildQueue and not page.frame then self:DrainBuilds(page) end
     local isFill = page.layout == "fill"
     local host = isFill and self.fillHost or self.scrollChild
 
@@ -1035,10 +1039,10 @@ end
 --- Build every page this window shows that has not been built yet, hidden,
 --- so search can find settings on pages nobody has opened. 1.x built every
 --- page on first open anyway, so this costs what it always did.
-function Window:BuildAllPages(order)
-    -- `order` (optional): "addon:key" ids to build FIRST, in that order --
-    -- Squizzumables' builders lean on each other in an order that is not the
-    -- sidebar's. Everything else follows in sidebar order.
+-- `order` (optional): "addon:key" ids to build FIRST, in that order --
+-- Squizzumables' builders lean on each other in an order that is not the
+-- sidebar's. Everything else follows in sidebar order.
+function Window:PagesInBuildOrder(order)
     local pages = {}
     for _, id in ipairs(order or {}) do
         local p = self:FindPage(id)
@@ -1050,26 +1054,96 @@ function Window:BuildAllPages(order)
             for _, page in ipairs(group.pages or {}) do pages[#pages + 1] = page end
         end
     end
-    for _, page in ipairs(pages) do
-        if not page.frame then
-            local host = page.layout == "fill" and self.fillHost or self.scrollChild
-            -- At the width the page will really have: with its preview
-            -- column up, if it has one. Built at full width, text sized
-            -- from the host's width ran under the column and was cut
-            -- off (Unit Frames' notes, user screenshot 2026-10-17).
-            self:ApplyPreview(page)
-            if page.layout ~= "fill" then
-                local h = math.max(page.height or 400, self.scrollFrame:GetHeight())
-                self.scrollChild:SetSize(math.max(1, self.scrollFrame:GetWidth()), h)
-            end
-            self:BuildPage(page, host)
-            if page.indexAll then page.indexAll(page.frame) end
-        end
+    return pages
+end
+
+-- Build one page (if not built yet), at the size it will really have. Call
+-- SettleAfterBuild after a run of these.
+function Window:BuildOne(page)
+    if page.frame then return end
+    local host = page.layout == "fill" and self.fillHost or self.scrollChild
+    -- At the width the page will really have: with its preview
+    -- column up, if it has one. Built at full width, text sized
+    -- from the host's width ran under the column and was cut
+    -- off (Unit Frames' notes, user screenshot 2026-10-17).
+    self:ApplyPreview(page)
+    if page.layout ~= "fill" then
+        local h = math.max(page.height or 400, self.scrollFrame:GetHeight())
+        self.scrollChild:SetSize(math.max(1, self.scrollFrame:GetWidth()), h)
     end
-    -- Leave the column as the page actually on screen wants it (none yet on
-    -- first open: ShowPage sets it when the window opens).
+    self:BuildPage(page, host)
+    if page.indexAll then page.indexAll(page.frame) end
+end
+
+function Window:BuildAllPages(order)
+    for _, page in ipairs(self:PagesInBuildOrder(order)) do self:BuildOne(page) end
+    self:SettleAfterBuild()
+end
+
+--- MINOR 7: the same, a few pages per frame, so the first open does not
+--- freeze the game while every page is made. Pages are still built strictly
+--- in order: showing (or searching for) one that is not built yet builds
+--- everything before it at once. `onDone` runs when the last is built.
+function Window:BuildPagesInBackground(order, onDone)
+    self.buildQueue = self:PagesInBuildOrder(order)
+    self.buildDone = onDone
+    if not self.buildTicker then
+        self.buildTicker = CreateFrame("Frame")
+        self.buildTicker:SetScript("OnUpdate", function()
+            -- Up to ~6ms of building a frame, and at least one page.
+            local start = debugprofilestop()
+            repeat
+                if not self:BuildNext() then break end
+            until debugprofilestop() - start > 6
+            self:SettleAfterBuild()
+            self:FinishIfBuilt()
+        end)
+    end
+    self.buildTicker:Show()
+end
+
+-- Build the next queued page; false once the queue is empty.
+function Window:BuildNext()
+    local q = self.buildQueue
+    if not q then return false end
+    while q[1] and q[1].frame do table.remove(q, 1) end
+    local page = table.remove(q, 1)
+    if not page then return false end
+    self:BuildOne(page)
+    return true
+end
+
+-- Build queued pages now, up to and including `target` (all when nil).
+function Window:DrainBuilds(target)
+    if not self.buildQueue then return end
+    while not (target and target.frame) do
+        if not self:BuildNext() then break end
+    end
+    self:SettleAfterBuild()
+    self:FinishIfBuilt()
+end
+
+function Window:FinishIfBuilt()
+    local q = self.buildQueue
+    if not q then return end
+    while q[1] and q[1].frame do table.remove(q, 1) end
+    if q[1] then return end
+    self.buildQueue = nil
+    if self.buildTicker then self.buildTicker:Hide() end
+    local done = self.buildDone
+    self.buildDone = nil
+    if done then done() end
+end
+
+-- After building: the column and the scroll area as the page actually on
+-- screen wants them (no column yet on first open: ShowPage sets it).
+function Window:SettleAfterBuild()
     if self.current then
         self:ApplyPreview(self.current)
+        if self.current.layout ~= "fill" then
+            local h = math.max(self.current.height or 400, self.scrollFrame:GetHeight())
+            self.scrollChild:SetSize(math.max(1, self.scrollFrame:GetWidth()), h)
+        end
     else
         if self.shownPreview then self.shownPreview:Hide(); self.shownPreview = nil end
         self.previewCol:Hide()
