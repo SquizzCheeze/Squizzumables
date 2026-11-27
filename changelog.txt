@@ -39,7 +39,21 @@ V2.8
   Forever's character, collections and group finder windows, coloured
   reputation/skill bars, stat rows, Forever's own group finder, the Mythic+
   tab, mount and pet lists, the ready check, stack splitting and the
-  "return to graveyard" box.
+  "return to graveyard" box. Then every window left that ElvUI skins: the
+  auction house, professions, crafting orders and the profession book, the
+  trainer, loot (with rolls, bonus rolls and the loot history), bags and the
+  bank, the guild bank, macros (with the icon picker), guild and
+  communities and the guild's smaller windows, the calendar, the clock and
+  stopwatch, inspect, trade, the dressing room, the raid tab, chat channels,
+  the settings window and chat settings, click casting, the addon list,
+  help, GM chat, the Lua error window and table inspector, event trace,
+  Edit Mode, death recap, the breath bar, loss of control, toasts,
+  battleground scores, the Great Vault, the expansion landing page, choices,
+  trait trees, the delve pickers, sockets, item upgrades, the catalyst, the
+  scrapper, the barber, stables, flight maps and the black market. Transmog,
+  housing and the windows for older content (garrisons, covenants, azerite
+  and the like) get a plainer pass: art off, our panel and controls on,
+  nothing hand-placed.
 
 - Fixed (WoW Forever): Mark of the Wild, Power Word: Fortitude and Arcane
   Intellect are single-target there, so the button cast on whoever you had

@@ -90,9 +90,88 @@ SK.WINDOWS = {
     { key = "collections", label = "Collections",                      elv = "collections", addon = "Blizzard_Collections" },
     { key = "encounterjournal", label = "Dungeon Journal",             elv = "encounterjournal", addon = "Blizzard_EncounterJournal", forever = false },
     { key = "achievement", label = "Achievements",                     elv = "achievement", addon = "Blizzard_AchievementUI", forever = false },
+    -- Batch 4: trade and items (Skins/Windows4.lua).
+    { key = "auctionhouse", label = "Auction House",                   elv = "auctionhouse", addon = "Blizzard_AuctionHouseUI" },
+    { key = "tradeskill", label = "Professions",                       elv = "tradeskill", addon = "Blizzard_Professions" },
+    { key = "craftorders", label = "Crafting Orders",                  elv = "tradeskill", addon = "Blizzard_ProfessionsCustomerOrders" },
+    { key = "profbook",   label = "Profession Book",                   elv = "spellbook", addon = "Blizzard_ProfessionsBook" },
+    { key = "trainer",    label = "Trainers",                          elv = "trainer", addon = "Blizzard_TrainerUI" },
+    { key = "loot",       label = "Loot and Rolls",                    elv = "loot" },
+    { key = "bags",       label = "Bags and Bank",                     elv = "bags" },
+    { key = "gbank",      label = "Guild Bank",                        elv = "gbank", addon = "Blizzard_GuildBankUI" },
+    { key = "macro",      label = "Macros",                            elv = "macro", addon = "Blizzard_MacroUI" },
+    -- Batch 5: people (Skins/Windows5.lua).
+    { key = "communities", label = "Guild and Communities",            elv = "communities", addon = "Blizzard_Communities" },
+    { key = "guild",      label = "Guild Invites",                     elv = "guild" },
+    { key = "guildcontrol", label = "Guild Control",                   elv = "guildcontrol", addon = "Blizzard_GuildControlUI" },
+    { key = "guildregistrar", label = "Guild Registrar",               elv = "guildregistrar" },
+    { key = "petition",   label = "Petitions",                         elv = "petition" },
+    { key = "tabard",     label = "Tabard Designer",                   elv = "tabard" },
+    { key = "calendar",   label = "Calendar",                          elv = "calendar", addon = "Blizzard_Calendar" },
+    { key = "timemanager", label = "Clock and Stopwatch",              elv = "timemanager", addon = "Blizzard_TimeManager" },
+    { key = "inspect",    label = "Inspect",                           elv = "inspect", addon = "Blizzard_InspectUI" },
+    { key = "trade",      label = "Trade",                             elv = "trade" },
+    { key = "dressingroom", label = "Dressing Room",                   elv = "dressingroom" },
+    { key = "nonraid",    label = "Raid Tab and Raid Info",            elv = "nonraid", addon = "Blizzard_RaidFrame" },
+    { key = "raid",       label = "Raid Groups",                       elv = "raid", addon = "Blizzard_RaidUI" },
+    { key = "channels",   label = "Chat Channels",                     elv = "channels", addon = "Blizzard_Channels" },
+    -- Batch 6: settings, tools and the rest (Skins/Windows6.lua).
+    { key = "blizzardOptions", label = "Settings and Chat Settings",   elv = "blizzardOptions", addon = "Blizzard_Settings_Shared" },
+    { key = "binding",    label = "Click Casting",                     elv = "binding", addon = "Blizzard_ClickBindingUI" },
+    { key = "addonManager", label = "Addon List",                      elv = "addonManager", addon = "Blizzard_AddOnList" },
+    { key = "help",       label = "Help",                              elv = "help", addon = "Blizzard_HelpFrame" },
+    { key = "gmChat",     label = "GM Chat",                           elv = "gmChat", addon = "Blizzard_GMChatUI" },
+    { key = "debug",      label = "Lua Errors and Table Inspector",    elv = "debug", addon = "Blizzard_ScriptErrorsFrame" },
+    { key = "eventLog",   label = "Event Trace",                       elv = "eventLog", addon = "Blizzard_EventTrace" },
+    { key = "editor",     label = "Edit Mode",                         elv = "editor", addon = "Blizzard_EditMode" },
+    { key = "deathRecap", label = "Death Recap",                       elv = "deathRecap", addon = "Blizzard_DeathRecap" },
+    { key = "mirrorTimers", label = "Breath and Fatigue Bars",         elv = "mirrorTimers", addon = "Blizzard_MirrorTimer" },
+    { key = "losscontrol", label = "Loss of Control",                  elv = "losscontrol" },
+    { key = "alertframes", label = "Toasts",                           elv = "alertframes" },
+    { key = "bgscore",    label = "Battleground Scores",               elv = "bgscore", addon = "Blizzard_PVPMatch" },
+    { key = "weeklyRewards", label = "Great Vault",                    elv = "weeklyRewards", addon = "Blizzard_WeeklyRewards" },
+    { key = "expansionLanding", label = "Expansion Landing Page",      elv = "expansionLanding", addon = "Blizzard_ExpansionLandingPage" },
+    { key = "playerChoice", label = "Choices",                         elv = "playerChoice", addon = "Blizzard_PlayerChoice" },
+    { key = "genericTrait", label = "Trait Trees",                     elv = "genericTrait", addon = "Blizzard_GenericTraitUI" },
+    { key = "socket",     label = "Sockets",                           elv = "socket", addon = "Blizzard_ItemSocketingUI" },
+    { key = "itemUpgrade", label = "Item Upgrades",                    elv = "itemUpgrade", addon = "Blizzard_ItemUpgradeUI" },
+    { key = "itemInteraction", label = "Catalyst",                     elv = "itemInteraction", addon = "Blizzard_ItemInteractionUI" },
+    { key = "scrapping",  label = "Scrapper",                          elv = "scrapping", addon = "Blizzard_ScrappingMachineUI" },
+    { key = "barber",     label = "Barber",                            elv = "barber", addon = "Blizzard_BarbershopUI" },
+    { key = "stable",     label = "Stable",                            elv = "stable", addon = "Blizzard_StableUI" },
+    { key = "taxi",       label = "Flight Maps",                       elv = "taxi" },
+    { key = "bmah",       label = "Black Market",                      elv = "bmah", addon = "Blizzard_BlackMarketUI" },
+    { key = "transmogrify", label = "Transmog",                        elv = "transmogrify", addon = "Blizzard_Transmog" },
+    { key = "housing",    label = "Housing",                           elv = "housing", addon = "Blizzard_HousingDashboard" },
+    -- Older content: a general pass each.
+    { key = "adventureMap", label = "Adventure Maps",                  elv = "adventureMap", addon = "Blizzard_AdventureMap" },
+    { key = "alliedRaces", label = "Allied Races",                     elv = "alliedRaces", addon = "Blizzard_AlliedRacesUI" },
+    { key = "animaDiversion", label = "Anima Diversion",               elv = "animaDiversion", addon = "Blizzard_AnimaDiversionUI" },
+    { key = "archaeology", label = "Archaeology",                      elv = "archaeology", addon = "Blizzard_ArchaeologyUI" },
+    { key = "artifact",   label = "Artifact Weapons",                  elv = "artifact", addon = "Blizzard_ArtifactUI" },
+    { key = "azerite",    label = "Azerite Armour",                    elv = "azerite", addon = "Blizzard_AzeriteUI" },
+    { key = "azeriteEssence", label = "Heart of Azeroth",              elv = "azeriteEssence", addon = "Blizzard_AzeriteEssenceUI" },
+    { key = "azeriteRespec", label = "Azerite Reforge",                elv = "azeriteRespec", addon = "Blizzard_AzeriteRespecUI" },
+    { key = "chromieTime", label = "Chromie Time",                     elv = "chromieTime", addon = "Blizzard_ChromieTimeUI" },
+    { key = "contribution", label = "War Effort Contributions",        elv = "contribution", addon = "Blizzard_Contribution" },
+    { key = "covenantPreview", label = "Covenant Preview",             elv = "covenantPreview", addon = "Blizzard_CovenantPreviewUI" },
+    { key = "covenantRenown", label = "Covenant Renown",               elv = "covenantRenown", addon = "Blizzard_CovenantRenown" },
+    { key = "covenantSanctum", label = "Covenant Sanctum",             elv = "covenantSanctum", addon = "Blizzard_CovenantSanctum" },
+    { key = "garrison",   label = "Garrison Landing Page",             elv = "garrison", addon = "Blizzard_GarrisonUI" },
+    { key = "islandQueue", label = "Island Expeditions",               elv = "islandQueue", addon = "Blizzard_IslandsQueueUI" },
+    { key = "obliterum",  label = "Obliterum Forge",                   elv = "obliterum", addon = "Blizzard_ObliterumUI" },
+    { key = "orderhall",  label = "Order Hall",                        elv = "orderhall", addon = "Blizzard_OrderHallUI" },
+    { key = "runeforge",  label = "Runecarver",                        elv = "runeforge", addon = "Blizzard_RuneforgeUI" },
+    { key = "soulbinds",  label = "Soulbinds",                         elv = "soulbinds", addon = "Blizzard_Soulbinds" },
+    { key = "torghastLevelPicker", label = "Torghast Layers",          elv = "torghastLevelPicker", addon = "Blizzard_TorghastLevelPicker" },
+    { key = "subscriptionInterstitial", label = "Subscription Offer",  elv = "subscriptionInterstitial", addon = "Blizzard_SubscriptionInterstitialUI" },
 }
+-- Windows this client does not have: retail-only ones flagged above, and any
+-- whose Blizzard addon does not exist here at all.
 for i = #SK.WINDOWS, 1, -1 do
-    if FOREVER and SK.WINDOWS[i].forever == false then table.remove(SK.WINDOWS, i) end
+    local w = SK.WINDOWS[i]
+    local missing = w.addon and C_AddOns.DoesAddOnExist and not C_AddOns.DoesAddOnExist(w.addon)
+    if (FOREVER and w.forever == false) or missing then table.remove(SK.WINDOWS, i) end
 end
 local byKey = {}
 for _, w in ipairs(SK.WINDOWS) do byKey[w.key] = w end
@@ -497,6 +576,7 @@ local function Kind(f)
         return nil
     end
     if f.Back and f.Forward and f.Track then return "scrollbar" end
+    if f.Slider and f.Back and f.Forward and ot == "Frame" then return "stepslider" end
     if ot == "Button" then
         local parent = f:GetParent()
         if parent and parent.CloseButton == f then return "close" end
@@ -525,7 +605,7 @@ end
 -- Looked up when used: some of these are defined further down.
 local SKIN = {
     dropdown = "Dropdown", arrowdropdown = "ArrowDropdown", scrollbar = "ScrollBar", close = "Close", tab = "Tab",
-    button = "Button", check = "Check", editbox = "EditBox", inset = "AutoInset",
+    button = "Button", check = "Check", editbox = "EditBox", inset = "AutoInset", stepslider = "StepSlider",
 }
 function SK.AutoInset(f) if Once(f) then SK.Inset(f) end end
 function SK.RepaintTabs() for tab in pairs(tabs) do PaintTab(tab) end end
@@ -763,7 +843,11 @@ end
 -- each as it appears (once per row frame: fn should use SK.Once).
 function SK.EachRow(scrollBox, fn)
     if not scrollBox or not scrollBox.ForEachFrame or not Once(scrollBox) then return end
-    local function Each(sb) sb:ForEachFrame(fn) end
+    -- A list builds its view on first show; until then there is nothing to walk.
+    local function Each(sb)
+        if sb.GetView and not sb:GetView() then return end
+        sb:ForEachFrame(fn)
+    end
     hooksecurefunc(scrollBox, "Update", Each)
     Each(scrollBox)
 end
@@ -823,7 +907,8 @@ function SK.Auto(root, skip, depth)
             local kind = Kind(child)
             if kind then SK[SKIN[kind]](child) end
             -- A control's own insides are its business.
-            if kind ~= "scrollbar" and kind ~= "dropdown" and kind ~= "arrowdropdown" and kind ~= "button" and kind ~= "tab" then
+            if kind ~= "scrollbar" and kind ~= "dropdown" and kind ~= "arrowdropdown" and kind ~= "button" and kind ~= "tab"
+               and kind ~= "stepslider" then
                 SK.Auto(child, skip, depth - 1)
             end
         end
@@ -957,6 +1042,132 @@ function SK.ItemButton(btn)
     local b = SK.Backdrop(btn, "button")
     QualityBorder(btn.IconBorder, b)
     return b
+end
+
+-- An item slot with its own mask or empty-slot art (auction house, crafting,
+-- socketing): the masks come off before the usual item button treatment.
+function SK.Slot(btn)
+    if not btn then return end
+    local icon = btn.icon or btn.Icon
+    for _, k in ipairs({ "IconMask", "CircleMask", "OutlineMask" }) do
+        local m = btn[k]
+        if m and icon and icon.RemoveMaskTexture then icon:RemoveMaskTexture(m) end
+        Hide(m)
+    end
+    for _, k in ipairs({ "EmptyBackground", "SlotBackground", "CropFrame", "Background", "NameFrame" }) do Hide(btn[k]) end
+    return SK.ItemButton(btn)
+end
+
+-- The pick-an-icon popup (macros, equipment sets, guild bank tabs): a flat
+-- window, flat icon buttons, set beside the window it belongs to.
+local function IconButton(button)
+    if not Once(button) then return end
+    local icon = button.Icon or button.icon
+    SK.Strip(button, icon and { [icon] = true } or nil)
+    HideStateTextures(button)
+    if icon then
+        local px = SK.Pixel(button)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        icon:ClearAllPoints()
+        icon:SetPoint("TOPLEFT", px, -px)
+        icon:SetPoint("BOTTOMRIGHT", -px, px)
+    end
+    local hl = button.GetHighlightTexture and button:GetHighlightTexture()
+    if hl then hl:SetAlpha(1); hl:SetColorTexture(1, 1, 1, 0.3); if icon then hl:SetAllPoints(icon) end end
+    local ck = button.GetCheckedTexture and button:GetCheckedTexture()
+    if ck then ck:SetAlpha(1); ck:SetColorTexture(1, 1, 1, 0.3); if icon then ck:SetAllPoints(icon) end end
+    SK.Backdrop(button, "button")
+end
+function SK.IconSelector(frame, beside)
+    if not frame or not Once(frame) then return end
+    local box = frame.BorderBox
+    SK.Strip(frame)
+    if box then
+        SK.Strip(box)
+        if box.IconTypeDropdown then SK.Dropdown(box.IconTypeDropdown) end
+        local area = box.SelectedIconArea
+        local sel = area and area.SelectedIconButton
+        if sel then
+            sel:DisableDrawLayer("BACKGROUND")
+            SK.ItemButton(sel)
+        end
+    end
+    SK.Backdrop(frame, "panel")
+    SK.Shadow(frame)
+    local cancel = frame.CancelButton or (box and box.CancelButton)
+    local okay = frame.OkayButton or (box and box.OkayButton)
+    if cancel then
+        cancel:ClearAllPoints()
+        cancel:SetPoint("BOTTOMRIGHT", frame, -4, 4)
+        SK.Button(cancel)
+    end
+    if okay then
+        okay:ClearAllPoints()
+        if cancel then okay:SetPoint("RIGHT", cancel, "LEFT", -10, 0) end
+        SK.Button(okay)
+    end
+    local eb = (box and box.IconSelectorEditBox) or frame.EditBox
+    if eb then
+        eb:DisableDrawLayer("BACKGROUND")
+        SK.EditBox(eb)
+    end
+    local sel = frame.IconSelector
+    if sel then
+        SK.ScrollBar(sel.ScrollBar)
+        SK.EachRow(sel.ScrollBox, IconButton)
+    end
+    -- Blizzard opens it overlapping its window; ElvUI's sits just beside.
+    frame:HookScript("OnShow", function(self)
+        local point, anchor, rel, x = self:GetPoint()
+        if point and (x or 0) <= 0 then
+            self:ClearAllPoints()
+            self:SetPoint(point, beside or anchor, rel, point:find("LEFT") and 4 or -4, 0)
+        end
+    end)
+end
+
+-- Column headers over a table (auction house lists, crafting orders): each
+-- a see-through box, a small gap between neighbours.
+function SK.TableHeaders(container)
+    if not container then return end
+    local kids = { container:GetChildren() }
+    for i, h in ipairs(kids) do
+        local b = SK.GetBackdrop(h)
+        if not b then
+            h:DisableDrawLayer("BACKGROUND")
+            b = SK.Backdrop(h, "panel")
+            local hl = h.GetHighlightTexture and h:GetHighlightTexture()
+            if hl then hl:SetColorTexture(1, 1, 1, 0.1); hl:SetAllPoints(b) end
+        end
+        b:ClearAllPoints()
+        b:SetPoint("TOPLEFT", h, "TOPLEFT", 0, 0)
+        b:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", i < #kids and -5 or 0, -2)
+    end
+end
+
+-- A slider with arrows either side (MinimalSliderWithSteppersTemplate, the
+-- settings window's): a flat track, a thin thumb, gold up to the thumb.
+function SK.StepSlider(frame)
+    if not frame or not Once(frame) then return end
+    SK.Strip(frame)
+    local slider = frame.Slider
+    if not slider then return end
+    slider:DisableDrawLayer("ARTWORK")
+    local thumb = slider.Thumb or (slider.GetThumbTexture and slider:GetThumbTexture())
+    if thumb then
+        thumb:SetTexture(WHITE)
+        thumb:SetVertexColor(1, 1, 1, 0.9)
+        thumb:SetSize(4, 12)
+    end
+    local b = SK.Backdrop(slider, "button", 10, -10, -10, 10)
+    if thumb then
+        local fill = b:CreateTexture(nil, "ARTWORK")
+        fill:SetColorTexture(1, 0.8, 0, 0.5)
+        local px = SK.Pixel(slider)
+        fill:SetPoint("TOPLEFT", b, "TOPLEFT", px, -px)
+        fill:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", px, px)
+        fill:SetPoint("RIGHT", thumb, "CENTER")
+    end
 end
 
 -- Status bars: flat fill on a dark track.
