@@ -30,7 +30,9 @@ V2.8
   Quest Text Contrast, so Blizzard draws light text itself). First windows:
   popups and the game menu, gossip and books, the quest windows, the
   merchant and mail; then the character window (with reputation and
-  currency), friends, the group finder and PvP. Colours are settings. Each window waits while ElvUI's
+  currency), friends, the group finder and PvP; then talents and the
+  spellbook, collections, the dungeon journal and achievements. Colours are
+  settings. Each window waits while ElvUI's
   skin for it is on, and ElvUI's choices are copied once.
 
 - Fixed (WoW Forever): Mark of the Wild, Power Word: Fortitude and Arcane

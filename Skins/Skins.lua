@@ -83,6 +83,10 @@ SK.WINDOWS = {
     { key = "friends",  label = "Friends",                             elv = "friends" },
     { key = "lfg",      label = "Group Finder",                        elv = "lfg" },
     { key = "pvp",      label = "PvP",                                 elv = "pvp", addon = "Blizzard_PVPUI" },
+    { key = "talents",  label = "Talents and Spellbook",               elv = "talent", addon = "Blizzard_PlayerSpells" },
+    { key = "collections", label = "Collections",                      elv = "collections", addon = "Blizzard_Collections" },
+    { key = "encounterjournal", label = "Dungeon Journal",             elv = "encounterjournal", addon = "Blizzard_EncounterJournal" },
+    { key = "achievement", label = "Achievements",                     elv = "achievement", addon = "Blizzard_AchievementUI" },
 }
 local byKey = {}
 for _, w in ipairs(SK.WINDOWS) do byKey[w.key] = w end
@@ -408,7 +412,24 @@ function SK.Tab(tab)
     end
     if tab.TabTextures then for _, t in ipairs(tab.TabTextures) do Hide(t) end end
     HideStateTextures(tab)
-    SK.Backdrop(tab, "button", 3, -3, -3, 3)
+    if tab.squareMode then
+        -- An icon tab (Forever's spellbook skill lines): the icon squared off.
+        for _, k in ipairs({ "SquareBackground", "SquareBackgroundActive", "SquareBackgroundActiveGlow" }) do Hide(tab[k]) end
+        local icon = tab.Icon
+        if icon then
+            if tab.IconMask and icon.RemoveMaskTexture then icon:RemoveMaskTexture(tab.IconMask) end
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            local px = SK.Pixel(tab)
+            SK.Backdrop(tab, "button", 0, 0, 0, 0)
+            backdrops[tab]:ClearAllPoints()
+            backdrops[tab]:SetPoint("TOPLEFT", icon, "TOPLEFT", -px, px)
+            backdrops[tab]:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", px, -px)
+        else
+            SK.Backdrop(tab, "button")
+        end
+    else
+        SK.Backdrop(tab, "button", 3, -3, -3, 3)
+    end
     tabs[tab] = true
     SK.Hover(tab)
     tab:HookScript("OnLeave", PaintTab)
@@ -464,6 +485,72 @@ local SKIN = {
 }
 function SK.AutoInset(f) if Once(f) then SK.Inset(f) end end
 function SK.RepaintTabs() for tab in pairs(tabs) do PaintTab(tab) end end
+
+-- A TabSystem's tabs, including ones it adds later.
+function SK.TabSystem(ts)
+    if not ts or not Once(ts) then return end
+    local function Skin()
+        for _, tab in ipairs({ ts:GetChildren() }) do
+            if tab.SetTabSelected then SK.Tab(tab) end
+        end
+    end
+    if ts.AddTab then hooksecurefunc(ts, "AddTab", Skin) end
+    Skin()
+end
+
+-- Rows in a ScrollBox are made and reused as the list scrolls; `fn` runs on
+-- each as it appears (once per row frame: fn should use SK.Once).
+function SK.EachRow(scrollBox, fn)
+    if not scrollBox or not scrollBox.ForEachFrame or not Once(scrollBox) then return end
+    local function Each(sb) sb:ForEachFrame(fn) end
+    hooksecurefunc(scrollBox, "Update", Each)
+    Each(scrollBox)
+end
+
+-- NavBarTemplate (the dungeon journal's breadcrumb): flat buttons, the
+-- home button included, and ones added later.
+local function NavButton(btn)
+    if not Once(btn) then return end
+    for _, r in ipairs({ btn:GetRegions() }) do
+        if r:IsObjectType("Texture") then r:SetAlpha(0) end
+    end
+    HideStateTextures(btn)
+    for _, k in ipairs({ "arrowUp", "arrowDown", "selected", "Art" }) do Hide(btn[k]) end
+    SK.Backdrop(btn, "button", 0, 0, 0, 0)
+    SK.Hover(btn)
+    if btn.MenuArrowButton then
+        local m = btn.MenuArrowButton
+        SK.Strip(m)
+        HideStateTextures(m)
+        Hide(m.Art)
+        local a = m:CreateTexture(nil, "OVERLAY")
+        a:SetTexture(SK.ARROW)
+        a:SetRotation(ROTATION.down)
+        a:SetSize(10, 10)
+        a:SetPoint("CENTER")
+    end
+end
+
+function SK.NavBar(bar)
+    if not bar or not Once(bar) then return end
+    SK.Strip(bar)
+    Hide(bar.overlay)
+    Hide(bar.InsetBorderBottomLeft)
+    Hide(bar.InsetBorderBottomRight)
+    Hide(bar.InsetBorderBottom)
+    Hide(bar.InsetBorderLeft)
+    Hide(bar.InsetBorderRight)
+    if bar.overlay then SK.Strip(bar.overlay) end
+    if bar.home then NavButton(bar.home) end
+    if bar.overflow then NavButton(bar.overflow) end
+    local function Each()
+        for _, b in ipairs(bar.navList or {}) do NavButton(b) end
+    end
+    if NavBar_AddButton then
+        hooksecurefunc("NavBar_AddButton", function(self) if self == bar then Each() end end)
+    end
+    Each()
+end
 
 -- Skin every recognised control under `root`. `skip` is a set of frames not
 -- to touch or look inside.
