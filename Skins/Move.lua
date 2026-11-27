@@ -18,7 +18,7 @@ ns.MoveWindows = MV
 -- Every window worth moving, on either client; missing ones are skipped.
 local NAMES = {
     "CharacterFrame", "SpellBookFrame", "PlayerSpellsFrame", "PlayerTalentFrame", "ClassTalentFrame",
-    "FriendsFrame", "PVEFrame", "CollectionsJournal", "EncounterJournal", "AchievementFrame",
+    "FriendsFrame", "SocialUIFrame", "PVEFrame", "CollectionsJournal", "EncounterJournal", "AchievementFrame",
     "LegacySystemFrame", "MerchantFrame", "MailFrame", "OpenMailFrame", "GossipFrame", "QuestFrame",
     "QuestLogFrame", "BankFrame", "GuildBankFrame", "AuctionHouseFrame", "AuctionFrame",
     "ProfessionsFrame", "ProfessionsCustomerOrdersFrame", "TradeSkillFrame", "TradeFrame",
