@@ -515,6 +515,19 @@ SK.Define("mail", function()
                              "SendStationeryBackgroundRight" }) do
             Hide(G(n))
         end
+        -- Each bar's right half has no name (WoW Forever's layout): find it
+        -- by its texture.
+        local send = G("SendMailFrame")
+        for _, r in ipairs(send and { send:GetRegions() } or {}) do
+            if r.IsObjectType and r:IsObjectType("Texture") then
+                local path = r:GetTextureFilePath()
+                local _, rel = r:GetPoint(1)
+                if (type(path) == "string" and path:lower():find("horizontalbar"))
+                    or (rel and (rel == G("SendMailHorizontalBarLeft") or rel == G("SendMailHorizontalBarLeft2"))) then
+                    Hide(r)
+                end
+            end
+        end
         SK.ScrollFrame(G("SendMailScrollFrame"))
         if G("SendMailScrollFrame") then SK.Backdrop(G("SendMailScrollFrame"), "panel", -4, 4, 4, -4) end
         if G("SendMailNameEditBox") then SK.EditBox(G("SendMailNameEditBox")) end

@@ -34,6 +34,11 @@ local NAMES = {
     "CraftFrame", "KeyBindingFrame", "QuickKeybindFrame", "ColorPickerFrame",
 }
 
+-- Pages that cover their whole window take its drags; they move the window.
+local CHILDREN = {
+    SendMailFrame = "MailFrame",
+}
+
 local function Settings() return BH.settings or {} end
 
 local function WindToolsOn()
@@ -111,11 +116,26 @@ local function Take(f)
     end)
 end
 
+local children = {}
+local function TakeChild(child, parent)
+    if children[child] or not done[parent] then return end
+    if not CanTouch(child) then return end
+    children[child] = true
+    if not child:IsMouseEnabled() then child:EnableMouse(true) end
+    child:RegisterForDrag("LeftButton")
+    child:HookScript("OnDragStart", function() DragStart(parent) end)
+    child:HookScript("OnDragStop", function() DragStop(parent) end)
+end
+
 function MV.Scan()
     if not Active() then return end
     for _, name in ipairs(NAMES) do
         local f = _G[name]
         if type(f) == "table" and f.GetObjectType then Take(f) end
+    end
+    for child, parent in pairs(CHILDREN) do
+        local c, p = _G[child], _G[parent]
+        if type(c) == "table" and type(p) == "table" then TakeChild(c, p) end
     end
 end
 
