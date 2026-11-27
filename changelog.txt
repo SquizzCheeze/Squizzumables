@@ -18,6 +18,12 @@ V2.8
   tab of your other characters, online friends, guild members and
   favourites; click a name to send to them. Your characters and favourites
   from WindTools' Contacts are copied over.
+- New: Achievement Tracker (Quests > Achievements, retail): a list beside the
+  achievement window of the achievements you are closest to finishing, with
+  a threshold, search, category and reward filters and sorting. Click for
+  the criteria, middle-click to track, right-click to open it, shift-click to
+  link it. Partial progress counts (450 of 500 kills is 90%). Waits while
+  WindTools' Achievement Tracker is on, and copies its settings once.
 
 - Fixed (WoW Forever): Mark of the Wild, Power Word: Fortitude and Arcane
   Intellect are single-target there, so the button cast on whoever you had

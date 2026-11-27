@@ -181,6 +181,7 @@ QX.SETTINGS = ns.Settings.Describe({
             { key = "ssChat", type = "check", default = true, label = "Say So in Chat",
               when = function(s) return s.ssEnabled end },
         } },
+        ns.AchievementTracker.PAGE,
     },
 })
 
@@ -572,6 +573,7 @@ function QX.Apply()
     if not ProgressOn() then cache = nil end
     UpdateTick()
     UpdateCollapse()
+    ns.AchievementTracker.Apply()
 end
 
 -- ============================================================================
@@ -642,6 +644,7 @@ end
 
 function BH:ApplyQuestExtras()
     Seed()
+    ns.AchievementTracker.Seed()
     QX.Apply()
 end
 

@@ -78,6 +78,7 @@ Maps\WorldMap.lua
 Maps\Waypoints.lua
 Maps\EventTracker.lua
 Quest\ObjectiveTracker.lua
+Quest\AchievementTracker.lua
 Quest\QuestExtras.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
