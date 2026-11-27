@@ -81,7 +81,7 @@ SK.WINDOWS = {
     { key = "quest",    label = "Quest Windows",                       elv = "quest" },
     { key = "merchant", label = "Merchant",                            elv = "merchant" },
     { key = "mail",     label = "Mail",                                elv = "mail", addon = "Blizzard_MailFrame" },
-    { key = "character", label = "Character, Reputation and Currency", elv = "character" },
+    { key = "character", label = "Character and Reputation", elv = "character" },
     { key = "friends",  label = "Friends",                             elv = "friends" },
     { key = "lfg",      label = "Group Finder",                        elv = "lfg" },
     -- Forever has no PvP window: its PvP tab is in the character window.
@@ -1014,7 +1014,21 @@ function SK.Check(cb)
         if r:IsObjectType("Texture") and r ~= checked and r ~= disabledChecked then r:SetAlpha(0) end
     end
     HideStateTextures(cb)
-    SK.Backdrop(cb, "button", 4, -4, -4, 4)
+    KeepStateTexturesHidden(cb)
+    local b = SK.Backdrop(cb, "button", 4, -4, -4, 4)
+    -- Our own tick, a flat accent square, in place of Blizzard's gold one.
+    local function Tick(tex, r, g, bl, a)
+        if not tex then return end
+        tex:SetTexture(WHITE)
+        tex:SetTexCoord(0, 1, 0, 1)
+        tex:SetVertexColor(r, g, bl, a)
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", b, "TOPLEFT", 4, -4)
+        tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -4, 4)
+    end
+    local r, g, bl = SK.AccentRGB()
+    Tick(checked, r, g, bl, 0.9)
+    Tick(disabledChecked, 0.5, 0.5, 0.5, 0.7)
     SK.Hover(cb)
 end
 
@@ -1388,7 +1402,7 @@ local function WindowRows()
         { type = "text", label = "Each window waits while ElvUI's skin for it is on. Taking a skin off needs a /reload." },
     }
     for _, w in ipairs(SK.WINDOWS) do
-        rows[#rows + 1] = { key = "sk_" .. w.key, type = "check", default = true, label = w.label,
+        rows[#rows + 1] = { key = "sk_" .. w.key, type = "check", default = true, label = w.label, grid = 3,
                             when = function(s) return s.skEnabled end }
     end
     return rows

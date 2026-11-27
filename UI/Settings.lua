@@ -222,15 +222,34 @@ end
 
 -- Build the page's sub-tabs and rows into `parent`. Returns the sub-tab pages.
 -- Draw `rows` into `content` from `y` down; returns the new y.
+-- A row with `grid = n` sits in a column: runs of such rows fill n columns
+-- (GRID_W apart) before dropping a line, so a long list of checks is n
+-- across instead of one long column.
+local GRID_W, GRID_LEFT = 240, 14
+
 local function AddRowList(desc, rows, content, y)
     local Rows = ns.Rows
+    local col, lineH = 0, 0
+    local function EndLine()
+        if col > 0 then y = y - lineH end
+        col, lineH = 0, 0
+    end
     for _, row in ipairs(rows) do
         if row.type == "palette" then
+            EndLine()
             y = AddPalette(content, y, desc, row)
+        elseif row.grid then
+            local spec = Spec(desc, row)
+            spec.indent = GRID_LEFT + col * GRID_W
+            lineH = math.max(lineH, Rows.Add(content, y, spec))
+            col = col + 1
+            if col >= row.grid then EndLine() end
         else
+            EndLine()
             y = y - Rows.Add(content, y, Spec(desc, row))
         end
     end
+    EndLine()
     return y
 end
 
