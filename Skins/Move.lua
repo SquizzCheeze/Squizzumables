@@ -144,11 +144,42 @@ local function TakeChild(child, parent)
     child:HookScript("OnDragStop", function() DragStop(parent) end)
 end
 
+-- Any plain panel inside a window that takes the mouse (a list, an inset, a
+-- page) passes drags on, so every empty spot moves the window. Buttons,
+-- edit boxes, sliders, models and anything with drag handling of its own
+-- keep theirs. Run again on each show: pages are often made on first use.
+local PANEL_TYPES = { Frame = true, ScrollFrame = true }
+local function TakeDescendants(win, f, depth)
+    if depth > 6 then return end
+    for _, c in ipairs({ f:GetChildren() }) do
+        local forbidden = c.IsForbidden and c:IsForbidden()
+        if not forbidden and PANEL_TYPES[c:GetObjectType()] and not done[c] then
+            -- Panels that act on a press (map canvases pan, trees scroll)
+            -- keep the mouse for that.
+            if c:IsMouseEnabled() and not children[c] and not c:GetScript("OnDragStart")
+                and not c:GetScript("OnMouseDown") and not c:GetScript("OnMouseUp")
+                and not (c.IsProtected and c:IsProtected()) then
+                TakeChild(c, win)
+            end
+            TakeDescendants(win, c, depth + 1)
+        end
+    end
+end
+
 function MV.Scan()
     if not Active() then return end
     for _, name in ipairs(NAMES) do
         local f = _G[name]
-        if type(f) == "table" and f.GetObjectType then Take(f) end
+        if type(f) == "table" and f.GetObjectType then
+            local fresh = not done[f]
+            Take(f)
+            if fresh and done[f] and f ~= _G.WorldMapFrame and f ~= _G.FlightMapFrame then
+                TakeDescendants(f, f, 1)
+                f:HookScript("OnShow", function(self)
+                    if Active() and not InCombatLockdown() then TakeDescendants(self, self, 1) end
+                end)
+            end
+        end
     end
     for child, parent in pairs(CHILDREN) do
         local c, p = Resolve(child), _G[parent]
@@ -176,11 +207,25 @@ end
 
 SLASH_SQUIZZMOVE1 = "/sqmove"
 SlashCmdList.SQUIZZMOVE = function(msg)
+    local p = "|cff33cc99Squizzumables:|r "
     if (msg or ""):lower():match("reset") then
         MV.ResetPositions()
-    else
-        print("|cff33cc99Squizzumables:|r /sqmove reset forgets every saved window position.")
+        return
     end
+    -- /sqmove: what is under the mouse, and whether it moves its window.
+    local foci = GetMouseFoci and GetMouseFoci() or { GetMouseFocus and GetMouseFocus() }
+    if #foci == 0 then print(p .. "nothing under the mouse.") end
+    for _, f in ipairs(foci) do
+        local chain, cur = {}, f
+        while cur and #chain < 8 do
+            local name = (cur.GetDebugName and cur:GetDebugName()) or cur:GetName() or "?"
+            local tag = done[cur] and " [window]" or children[cur] and " [passes drags]" or ""
+            chain[#chain + 1] = name .. " (" .. cur:GetObjectType() .. ")" .. tag
+            cur = cur.GetParent and cur:GetParent()
+        end
+        print(p .. "under the mouse: " .. table.concat(chain, " < "))
+    end
+    print(p .. "/sqmove reset forgets every saved window position.")
 end
 
 local pending
