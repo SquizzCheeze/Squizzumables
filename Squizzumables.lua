@@ -1602,6 +1602,7 @@ function BH:CreateOptionsPanel(noShow)
     -- where it lives and jump to it.
     local function Builder(page)
         return function(host)
+            local t0 = debugprofilestop()
             bh[page.field] = host
             ns.Rows.currentPage = page
             if page.key == "items" then
@@ -1611,6 +1612,8 @@ function BH:CreateOptionsPanel(noShow)
                 if builder then builder(bh, host) end
             end
             ns.Rows.currentPage = nil
+            BH.buildTimes = BH.buildTimes or {}
+            table.insert(BH.buildTimes, { page.label, debugprofilestop() - t0 })
         end
     end
 
@@ -1708,13 +1711,21 @@ function BH:CreateOptionsPanel(noShow)
     -- 2026-11-28). The page asked for is built at once (ShowPage does it),
     -- and the lists are filled when the last page is done.
     win:BuildPagesInBackground(order, function()
-        self:RefreshItemList()
-        self:RefreshClassBuffList()
-        self:RefreshSettingsTab()
-        self:RefreshRaidToolsTab()
-        self:RefreshTextRemindersTab()
-        if self.RefreshJustForKelTab then self:RefreshJustForKelTab() end
-        self:RefreshCalloutsTab()
+        -- Timed, for /sq timings (the open still stalled, user 2026-11-28).
+        local function Timed(label, fn)
+            if not fn then return end
+            local t0 = debugprofilestop()
+            fn(self)
+            BH.buildTimes = BH.buildTimes or {}
+            table.insert(BH.buildTimes, { label, debugprofilestop() - t0 })
+        end
+        Timed("refresh: Consumables list", self.RefreshItemList)
+        Timed("refresh: Class Buffs list", self.RefreshClassBuffList)
+        Timed("refresh: Settings", self.RefreshSettingsTab)
+        Timed("refresh: Raid Tools", self.RefreshRaidToolsTab)
+        Timed("refresh: Text Reminders", self.RefreshTextRemindersTab)
+        Timed("refresh: Kel", self.RefreshJustForKelTab)
+        Timed("refresh: Callouts", self.RefreshCalloutsTab)
     end)
     -- noShow: built for the combined window (LibSquizzShell), not shown yet.
     if not noShow then win:Open("Squizzumables:settings") end
@@ -3545,7 +3556,18 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
     -- list moved to /sq help (any unknown command still prints it).
     if msg == "" then
         BH:CreateOptionsPanel()
-    elseif msg == 'reset' then
+    elseif msg == 'timings' then
+        -- How long each options page took to build, slowest first.
+        local list = {}
+        for _, t in ipairs(BH.buildTimes or {}) do list[#list + 1] = t end
+        if #list == 0 then print(addonName .. ": open the options window (/sq) first, then /sq timings.") return end
+        table.sort(list, function(a, b) return a[2] > b[2] end)
+        local total = 0
+        for _, t in ipairs(list) do total = total + t[2] end
+        print(string.format("%s: options build %.0f ms in all; slowest:", addonName, total))
+        for i = 1, math.min(10, #list) do
+            print(string.format("  %.0f ms  %s", list[i][2], tostring(list[i][1])))
+        end
         BH.frame:ClearAllPoints()
         BH.frame:SetPoint('CENTER')
         print(addonName.." frame reset to center")
