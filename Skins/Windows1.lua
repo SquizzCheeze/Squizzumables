@@ -393,6 +393,20 @@ SK.Define("merchant", function()
     local m = G("MerchantFrame")
     if not m then return end
     SK.Window(m)
+    -- Buttons other addons put on the window (Zygor's Sell Grays), made
+    -- whenever those addons get round to it, so looked for on each show.
+    local extraDone = {}
+    local function Extras()
+        for _, n in ipairs({ "ZygorGuidesViewerSellButton" }) do
+            local b = G(n)
+            if b and not extraDone[b] then
+                extraDone[b] = true
+                SK.Button(b)
+            end
+        end
+    end
+    Extras()
+    m:HookScript("OnShow", function() C_Timer.After(0, Extras) end)
     for _, n in ipairs({ "MerchantFrameBottomLeftBorder", "BuybackBG" }) do Hide(G(n)) end
     for i = 1, math.max(MERCHANT_ITEMS_PER_PAGE or 10, BUYBACK_ITEMS_PER_PAGE or 12) do MerchantSlot(G("MerchantItem" .. i)) end
     MerchantSlot(G("MerchantBuyBackItem"), -6, 6, 6, -6)
