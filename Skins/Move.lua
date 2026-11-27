@@ -35,9 +35,26 @@ local NAMES = {
 }
 
 -- Pages that cover their whole window take its drags; they move the window.
+-- (Dotted paths reach a child by key.) The friends lists fill nearly all of
+-- their window, so the empty space under the names is the list itself.
 local CHILDREN = {
     SendMailFrame = "MailFrame",
+    ["FriendsListFrame.ScrollBox"] = "FriendsFrame",
+    ["RecentAlliesFrame.ScrollBox"] = "FriendsFrame",
+    ["WhoFrame.ScrollBox"] = "FriendsFrame",
+    ["QuickJoinFrame.ScrollBox"] = "FriendsFrame",
+    ["FriendsFrameFriendsScrollFrame"] = "FriendsFrame",
+    ["WhoListScrollFrame"] = "FriendsFrame",
 }
+
+local function Resolve(path)
+    local f
+    for part in path:gmatch("[^%.]+") do
+        if f == nil then f = _G[part] else f = type(f) == "table" and f[part] or nil end
+        if type(f) ~= "table" then return nil end
+    end
+    return f
+end
 
 local function Settings() return BH.settings or {} end
 
@@ -134,8 +151,8 @@ function MV.Scan()
         if type(f) == "table" and f.GetObjectType then Take(f) end
     end
     for child, parent in pairs(CHILDREN) do
-        local c, p = _G[child], _G[parent]
-        if type(c) == "table" and type(p) == "table" then TakeChild(c, p) end
+        local c, p = Resolve(child), _G[parent]
+        if c and c.RegisterForDrag and type(p) == "table" then TakeChild(c, p) end
     end
 end
 
