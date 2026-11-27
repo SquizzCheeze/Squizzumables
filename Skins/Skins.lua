@@ -903,7 +903,10 @@ function SK.Auto(root, skip, depth)
     if not root or depth == 0 then return end
     depth = depth or 10
     for _, child in ipairs({ root:GetChildren() }) do
-        if not (skip and skip[child]) and not painted[child] and not shadowHosts[child] then
+        -- Forbidden frames (the trade window's money input) refuse every
+        -- call, so neither they nor anything inside them can be touched.
+        local forbidden = child.IsForbidden and child:IsForbidden()
+        if not forbidden and not (skip and skip[child]) and not painted[child] and not shadowHosts[child] then
             local kind = Kind(child)
             if kind then SK[SKIN[kind]](child) end
             -- A control's own insides are its business.
