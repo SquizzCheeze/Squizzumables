@@ -49,10 +49,92 @@ SK.Define("talents", function()
     if tf then
         HideKeys(tf, "BlackBG", "BottomBar", "BackgroundBorder", "DividerHorizontalLeft", "DividerHorizontalRight",
                  "DividerVerticalLeft", "DividerVerticalRight")
+        -- On Forever `Background` is the brown base behind the three spec
+        -- pictures (the bands above and below them); on retail it is the
+        -- spec picture itself, so it stays there.
+        if ns.BH.IS_FOREVER then Hide(tf.Background) end
         if tf.LoadSystem and tf.LoadSystem.Dropdown then SK.Dropdown(tf.LoadSystem.Dropdown) end
+        if tf.SearchOptionsDropdown then SK.ArrowDropdown(tf.SearchOptionsDropdown) end
+        if tf.TabSystem then SK.TabSystem(tf.TabSystem) end
+
+        -- "Unspent Talents": the number in a box, the label beside it.
         for _, k in ipairs({ "ClassCurrencyDisplay", "SpecCurrencyDisplay" }) do
             local c = tf[k]
-            if c then Hide(c.Border) end
+            if c then
+                Hide(c.Border)
+                local box = c.CurrentAmountContainer
+                if box and SK.Once(box) then
+                    SK.Backdrop(box, "button", -2, 2, 2, -2)
+                    local amount = box.CurrencyAmount
+                    if amount then
+                        local font, _, flags = amount:GetFont()
+                        if font then amount:SetFont(font, 22, flags) end
+                    end
+                    local label = c.UnspentLabel or c.CurrencyLabel
+                    if label then
+                        label:ClearAllPoints()
+                        label:SetPoint("RIGHT", box, "LEFT", -8, 0)
+                    end
+                end
+            end
+        end
+
+        -- Forever's three spec headers: the divider under each goes, the
+        -- points spent sit in a small box.
+        local function Headers(frame)
+            for _, header in ipairs(frame.treeHeaders or {}) do
+                if SK.Once(header) then
+                    Hide(header.Divider)
+                    local tb = header.TextBackground
+                    if tb then
+                        tb:SetAlpha(0)
+                        local b = SK.Backdrop(tb, "button", 4, -6, -2, 2)
+                        b:SetFrameLevel(header:GetFrameLevel() + 1)
+                        if header.Text then header.Text:SetParent(b) end
+                    end
+                end
+            end
+        end
+        if tf.RefreshTreeHeaders then hooksecurefunc(tf, "RefreshTreeHeaders", Headers) end
+        Headers(tf)
+
+        -- Talent nodes: square icons with a 1px border in the node's state
+        -- colour, Blizzard's round frames gone. Nodes are pooled, so each is
+        -- done as Blizzard places it.
+        local function StateBorder(button, visualState)
+            local border = SK.GetBackdrop(button.Icon)
+            local util = _G.TalentButtonUtil
+            if border and util and util.GetColorForBaseVisualState and visualState then
+                local color = util.GetColorForBaseVisualState(visualState)
+                if color then border:SetBackdropBorderColor(color:GetRGB()) end
+            end
+            if button.BorderSheen then button.BorderSheen:Hide() end
+        end
+        local function Node(_, button)
+            if not button or not button.Icon then return end
+            -- Blizzard re-levels nodes by row; keep the border just under.
+            local function Level()
+                local b = SK.GetBackdrop(button.Icon)
+                if b then b:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1)) end
+            end
+            if not SK.Once(button) then Level() return end
+            Hide(button.Shadow)
+            Hide(button.StateBorder)
+            Hide(button.StateBorderHover)
+            if button.IconMask and button.Icon.RemoveMaskTexture then button.Icon:RemoveMaskTexture(button.IconMask) end
+            if button.DisabledOverlay and button.DisabledOverlayMask then
+                button.DisabledOverlay:RemoveMaskTexture(button.DisabledOverlayMask)
+                button.DisabledOverlay:SetAllPoints(button.Icon)
+            end
+            SK.Icon(button.Icon)
+            if button.UpdateStateBorder then hooksecurefunc(button, "UpdateStateBorder", StateBorder) end
+            local state = button.GetVisualState and button:GetVisualState()
+            if state then StateBorder(button, state) end
+            Level()
+        end
+        if tf.UpdateButtonFrameLevel then hooksecurefunc(tf, "UpdateButtonFrameLevel", Node) end
+        if tf.EnumerateAllTalentButtons then
+            for button in tf:EnumerateAllTalentButtons() do Node(tf, button) end
         end
         if tf.PvPTalentList then
             SK.Strip(tf.PvPTalentList)

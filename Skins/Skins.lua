@@ -395,10 +395,12 @@ local function PaintTab(tab)
     -- TabSystem tabs say so; PanelTabButtons are disabled while selected.
     local selected
     if tab.isSelected ~= nil then selected = tab.isSelected else selected = tab.IsEnabled and not tab:IsEnabled() end
+    if b.sqHover then return end
     if selected then
-        local r, g, bl = SK.AccentRGB()
-        b:SetBackdropBorderColor(r, g, bl)
-    elseif not b.sqHover then
+        -- As ElvUI: the selected tab is lifted with a light border; the
+        -- accent is kept for hover.
+        b:SetBackdropBorderColor(0.6, 0.6, 0.6)
+    else
         b:SetBackdropBorderColor(SK.BorderRGB())
     end
 end
@@ -449,6 +451,8 @@ hooksecurefunc("PanelTemplates_DeselectTab", function(tab) if tabs[tab] then Pai
 local function Kind(f)
     local ot = f:GetObjectType()
     if ot == "DropdownButton" then
+        local w = f:GetWidth()
+        if (f.Arrow or f.Background) and w > 0 and w <= 32 then return "arrowdropdown" end
         if f.Arrow or f.Background then return "dropdown" end
         return nil
     end
@@ -480,7 +484,7 @@ end
 
 -- Looked up when used: some of these are defined further down.
 local SKIN = {
-    dropdown = "Dropdown", scrollbar = "ScrollBar", close = "Close", tab = "Tab",
+    dropdown = "Dropdown", arrowdropdown = "ArrowDropdown", scrollbar = "ScrollBar", close = "Close", tab = "Tab",
     button = "Button", check = "Check", editbox = "EditBox", inset = "AutoInset",
 }
 function SK.AutoInset(f) if Once(f) then SK.Inset(f) end end
@@ -562,7 +566,7 @@ function SK.Auto(root, skip, depth)
             local kind = Kind(child)
             if kind then SK[SKIN[kind]](child) end
             -- A control's own insides are its business.
-            if kind ~= "scrollbar" and kind ~= "dropdown" and kind ~= "button" and kind ~= "tab" then
+            if kind ~= "scrollbar" and kind ~= "dropdown" and kind ~= "arrowdropdown" and kind ~= "button" and kind ~= "tab" then
                 SK.Auto(child, skip, depth - 1)
             end
         end
@@ -605,6 +609,8 @@ end
 function SK.Dropdown(dd)
     if not Once(dd) then return end
     SK.Strip(dd)
+    HideStateTextures(dd)
+    KeepStateTexturesHidden(dd)
     Hide(dd.Background)
     Hide(dd.Arrow)
     SK.Backdrop(dd, "button", 0, -2, 0, 2)
@@ -613,6 +619,27 @@ function SK.Dropdown(dd)
     a:SetRotation(ROTATION.down)
     a:SetSize(12, 12)
     a:SetPoint("RIGHT", -6, 0)
+    SK.Hover(dd)
+end
+
+-- A dropdown that is only an arrow (WowStyle1ArrowDropdownTemplate): a
+-- small square with the arrow in the middle.
+function SK.ArrowDropdown(dd)
+    if not Once(dd) then return end
+    SK.Strip(dd)
+    HideStateTextures(dd)
+    KeepStateTexturesHidden(dd)
+    Hide(dd.Background)
+    Hide(dd.Arrow)
+    SK.Backdrop(dd, "button", 2, -2, -2, 2)
+    local a = dd:CreateTexture(nil, "OVERLAY")
+    a:SetTexture(SK.ARROW)
+    a:SetRotation(ROTATION.down)
+    a:SetSize(12, 12)
+    a:SetPoint("CENTER")
+    a:SetVertexColor(0.9, 0.9, 0.9)
+    dd:HookScript("OnEnter", function() a:SetVertexColor(SK.AccentRGB()) end)
+    dd:HookScript("OnLeave", function() a:SetVertexColor(0.9, 0.9, 0.9) end)
     SK.Hover(dd)
 end
 
