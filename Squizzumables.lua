@@ -677,6 +677,7 @@ function BH:SwitchToProfile(profileName)
     if self.ApplyEventTracker then self:ApplyEventTracker() end
     if self.ApplyObjectiveTracker then self:ApplyObjectiveTracker() end
     if self.ApplyQuestExtras then self:ApplyQuestExtras() end
+    if self.ApplySkins then self:ApplySkins() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
 
@@ -784,6 +785,7 @@ function BH:OnSpecChanged()
     if self.ApplyEventTracker then self:ApplyEventTracker() end
     if self.ApplyObjectiveTracker then self:ApplyObjectiveTracker() end
     if self.ApplyQuestExtras then self:ApplyQuestExtras() end
+    if self.ApplySkins then self:ApplySkins() end
     -- The theme is account-wide (shared with SquizzFrames) and does not change with the profile; this only repaints the accent.
     ns.Theme.Apply()
     -- Outside the panel check: the new profile has its own alerts, so the
@@ -1570,6 +1572,8 @@ function BH:CreateOptionsPanel(noShow)
               subtitle = "Up to 13 bars with your ElvUI keybinds" },
             { key = "itembars",   label = "Item Bars",        field = "itemBarsTab",      build = "BuildItemBarsTab",
               subtitle = "Bars that fill themselves from your bags" },
+            { key = "skins",      label = "Skins",            field = "skinsTab",         build = "BuildSkinsTab",
+              subtitle = "Dark, flat Blizzard windows with the parchment gone" },
         } },
         { group = "General", pages = {
             { key = "settings",   label = "Settings",         field = "settingsTab",      build = "BuildSettingsTab", preview = "buttons",
@@ -1580,7 +1584,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat", "tweaks", "bufframe", "tooltip", "minimap", "worldmap", "waypoints", "events", "objtracker", "questextras" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat", "tweaks", "bufframe", "tooltip", "minimap", "worldmap", "waypoints", "events", "objtracker", "questextras", "skins" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2064,6 +2068,7 @@ function BH:SetUnlockMode(on, keepPanel, quiet)
     if self.ApplyEventTracker then self:ApplyEventTracker() end
     if self.ApplyObjectiveTracker then self:ApplyObjectiveTracker() end
     if self.ApplyQuestExtras then self:ApplyQuestExtras() end
+    if self.ApplySkins then self:ApplySkins() end
     if self.unlockBtn then
         -- Labelled "Edit Mode" like SquizzFrames' (user request 2026-10-17); lit in
         -- the accent while unlocked, as SquizzFrames' is while editing.
