@@ -79,6 +79,10 @@ SK.WINDOWS = {
     { key = "quest",    label = "Quest Windows",                       elv = "quest" },
     { key = "merchant", label = "Merchant",                            elv = "merchant" },
     { key = "mail",     label = "Mail",                                elv = "mail", addon = "Blizzard_MailFrame" },
+    { key = "character", label = "Character, Reputation and Currency", elv = "character" },
+    { key = "friends",  label = "Friends",                             elv = "friends" },
+    { key = "lfg",      label = "Group Finder",                        elv = "lfg" },
+    { key = "pvp",      label = "PvP",                                 elv = "pvp", addon = "Blizzard_PVPUI" },
 }
 local byKey = {}
 for _, w in ipairs(SK.WINDOWS) do byKey[w.key] = w end
@@ -193,7 +197,8 @@ end
 -- Shadow: a soft dark edge outside a window (WindTools' look)
 -- ============================================================================
 
-local shadows = setmetatable({}, { __mode = "k" })
+local shadows = setmetatable({}, { __mode = "k" })     -- owner -> shadow frame
+local shadowHosts = setmetatable({}, { __mode = "k" }) -- shadow frame -> true
 
 function SK.Shadow(frame, size)
     if shadows[frame] then return shadows[frame] end
@@ -209,6 +214,7 @@ function SK.Shadow(frame, size)
     t:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", size, -size)
     t:SetAlpha(0.7)
     shadows[frame] = host
+    shadowHosts[host] = true
     host:SetShown(Settings().skShadow ~= false)
     return host
 end
@@ -382,7 +388,9 @@ local tabs = setmetatable({}, { __mode = "k" })
 local function PaintTab(tab)
     local b = backdrops[tab]
     if not b then return end
-    local selected = tab.IsEnabled and not tab:IsEnabled() -- Blizzard disables the selected tab
+    -- TabSystem tabs say so; PanelTabButtons are disabled while selected.
+    local selected
+    if tab.isSelected ~= nil then selected = tab.isSelected else selected = tab.IsEnabled and not tab:IsEnabled() end
     if selected then
         local r, g, bl = SK.AccentRGB()
         b:SetBackdropBorderColor(r, g, bl)
@@ -404,11 +412,75 @@ function SK.Tab(tab)
     tabs[tab] = true
     SK.Hover(tab)
     tab:HookScript("OnLeave", PaintTab)
+    if tab.SetTabSelected then hooksecurefunc(tab, "SetTabSelected", PaintTab) end
     PaintTab(tab)
 end
 
 hooksecurefunc("PanelTemplates_SelectTab", function(tab) if tabs[tab] then PaintTab(tab) end end)
 hooksecurefunc("PanelTemplates_DeselectTab", function(tab) if tabs[tab] then PaintTab(tab) end end)
+
+-- ============================================================================
+-- The general pass: Blizzard's standard controls, found anywhere in a window
+-- ============================================================================
+
+-- What a frame is, from the keys Blizzard's templates give it. Only shapes
+-- that are unmistakable are named; anything else is left alone.
+local function Kind(f)
+    local ot = f:GetObjectType()
+    if ot == "DropdownButton" then
+        if f.Arrow or f.Background then return "dropdown" end
+        return nil
+    end
+    if f.Back and f.Forward and f.Track then return "scrollbar" end
+    if ot == "Button" then
+        local parent = f:GetParent()
+        if parent and parent.CloseButton == f then return "close" end
+        if f.TabTextures or f.LeftActive then return "tab" end
+        if f.Left and f.Right and (f.Middle or f.Center) and f.GetFontString and f:GetFontString()
+           and f.Left.IsObjectType and f.Left:IsObjectType("Texture") then
+            return "button"
+        end
+        return nil
+    end
+    if ot == "CheckButton" then
+        if f.GetCheckedTexture and f:GetCheckedTexture() and not (f.Icon or f.icon) and f:GetWidth() <= 34 then
+            return "check"
+        end
+        return nil
+    end
+    if ot == "EditBox" then
+        if (f.Left and f.Right) or f.NineSlice then return "editbox" end
+        return nil
+    end
+    if ot == "Frame" and f.NineSlice and f.Bg and not f.CloseButton and not f.PortraitContainer then
+        return "inset"
+    end
+end
+
+-- Looked up when used: some of these are defined further down.
+local SKIN = {
+    dropdown = "Dropdown", scrollbar = "ScrollBar", close = "Close", tab = "Tab",
+    button = "Button", check = "Check", editbox = "EditBox", inset = "AutoInset",
+}
+function SK.AutoInset(f) if Once(f) then SK.Inset(f) end end
+function SK.RepaintTabs() for tab in pairs(tabs) do PaintTab(tab) end end
+
+-- Skin every recognised control under `root`. `skip` is a set of frames not
+-- to touch or look inside.
+function SK.Auto(root, skip, depth)
+    if not root or depth == 0 then return end
+    depth = depth or 10
+    for _, child in ipairs({ root:GetChildren() }) do
+        if not (skip and skip[child]) and not painted[child] and not shadowHosts[child] then
+            local kind = Kind(child)
+            if kind then SK[SKIN[kind]](child) end
+            -- A control's own insides are its business.
+            if kind ~= "scrollbar" and kind ~= "dropdown" and kind ~= "button" and kind ~= "tab" then
+                SK.Auto(child, skip, depth - 1)
+            end
+        end
+    end
+end
 
 -- Ticks: a flat box, the tick kept.
 function SK.Check(cb)
@@ -601,6 +673,7 @@ end
 local warned
 local function Changed()
     SK.Repaint()
+    SK.RepaintTabs()
     ApplyShadows()
     -- Anything newly on goes on now; anything turned off needs a reload.
     local off = false

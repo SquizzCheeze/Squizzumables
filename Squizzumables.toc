@@ -82,6 +82,7 @@ Quest\AchievementTracker.lua
 Quest\QuestExtras.lua
 Skins\Skins.lua
 Skins\Windows1.lua
+Skins\Windows2.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua
