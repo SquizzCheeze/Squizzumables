@@ -289,11 +289,9 @@ local function AuctionHouse()
             SellList(summary)
             SK.Backdrop(summary, "panel")
         end
+        -- Left where Blizzard puts it: the auctions list hangs off this
+        -- button, so anchoring the button to the list is a loop.
         SK.Button(auctions.CancelAuctionButton)
-        if auctions.CancelAuctionButton and auctions.AllAuctionsList then
-            auctions.CancelAuctionButton:ClearAllPoints()
-            auctions.CancelAuctionButton:SetPoint("TOPRIGHT", auctions.AllAuctionsList, "BOTTOMRIGHT", -6, 1)
-        end
         local bid = auctions.BidFrame
         if bid then
             SK.Button(bid.BidButton)

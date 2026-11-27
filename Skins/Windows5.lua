@@ -1082,7 +1082,7 @@ SK.Define("trade", function()
             end
         end
     end
-    SK.MoneyInput(G("TradePlayerInputMoneyFrame"))
+    -- The money boxes are forbidden to addons here; they keep Blizzard's look.
     SK.Auto(f)
 end)
 

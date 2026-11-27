@@ -930,7 +930,8 @@ end
 
 -- Text boxes (InputBoxTemplate's Left/Middle/Right, or a NineSlice).
 function SK.EditBox(eb, x1, y1, x2, y2)
-    if not Once(eb) then return end
+    -- Some boxes are forbidden to addons (the trade window's money input).
+    if not eb or (eb.IsForbidden and eb:IsForbidden()) or not Once(eb) then return end
     local name = eb:GetName()
     for _, k in ipairs({ "Left", "Middle", "Right", "Mid", "LeftDisabled", "MiddleDisabled", "RightDisabled" }) do
         Hide(eb[k] or (name and _G[name .. k]))
