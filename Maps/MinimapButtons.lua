@@ -227,19 +227,12 @@ local function FindIcon(btn)
     local name = btn:GetName()
     local icon = btn.icon or btn.Icon or (name and (_G[name .. "Icon"] or _G[name .. "IconTexture"]))
     if icon and icon.IsObjectType and icon:IsObjectType("Texture") then return icon end
-    -- A real icon file first, then whatever sits on the ARTWORK layer, then
-    -- anything that is not frame art.
-    local hl = btn:GetHighlightTexture()
-    local artwork, other
     for _, r in ipairs({ btn:GetRegions() }) do
-        if r:IsObjectType("Texture") and r ~= hl and r:GetDrawLayer() ~= "HIGHLIGHT" and not IsArt(r) then
-            local path = r.GetTextureFilePath and r:GetTextureFilePath()
-            if type(path) == "string" and path:lower():find("interface[/\\]icons[/\\]") then return r end
-            if not artwork and r:GetDrawLayer() == "ARTWORK" then artwork = r end
-            other = other or r
+        if r:IsObjectType("Texture") and not IsArt(r) and r ~= btn:GetHighlightTexture()
+            and r:GetDrawLayer() ~= "HIGHLIGHT" then
+            return r
         end
     end
-    return artwork or other
 end
 
 local CROP = { 0.08, 0.92, 0.08, 0.92 }
@@ -260,9 +253,23 @@ local function KeepCropped(icon)
     end)
 end
 
+local tiles = {}      -- button -> its square on the bar
+
+local function PaintTile(btn)
+    local tile = tiles[btn]
+    local SK = ns.Skins
+    if not tile or not SK then return end
+    tile:SetBackdropColor(SK.ButtonRGBA())
+    if tile.over then tile:SetBackdropBorderColor(SK.AccentRGB()) else tile:SetBackdropBorderColor(SK.BorderRGB()) end
+end
+
 local function Take(btn)
     if taken[btn] then return end
     local SK = ns.Skins
+    -- LibDBIcon pins its buttons at MEDIUM / level 8, under the bar's own
+    -- background, which then dimmed them. Let the bar place them.
+    if btn.SetFixedFrameStrata then btn:SetFixedFrameStrata(false) end
+    if btn.SetFixedFrameLevel then btn:SetFixedFrameLevel(false) end
     -- The real placement methods, kept for the bar; the button's own copies
     -- stop it being put back round the minimap.
     taken[btn] = { SetPoint = btn.SetPoint, ClearAllPoints = btn.ClearAllPoints, SetParent = btn.SetParent }
@@ -278,9 +285,7 @@ local function Take(btn)
         if r:IsObjectType("Texture") and r ~= icon then
             if r == btn:GetHighlightTexture() then
                 r:SetColorTexture(1, 1, 1, 0.2)
-            else
-                -- Rings, dark discs and glows the addon drew round its
-                -- picture: on a square tile they only dim it.
+            elseif IsArt(r) or r == btn.border or r == btn.background then
                 r:SetAlpha(0)
             end
         end
@@ -296,10 +301,17 @@ local function Take(btn)
         local hl = btn:GetHighlightTexture()
         if hl then hl:SetAllPoints(icon) end
     end
-    if SK and SK.Backdrop then
-        SK.Backdrop(btn, "button")
-        if SK.Hover then SK.Hover(btn) end
-    end
+    -- The dark square and border sit on the BAR, behind the button. A frame
+    -- of the button's own would be lifted over its picture (dimming it) as
+    -- soon as the button's level is raised to sit on the bar.
+    local tile = CreateFrame("Frame", nil, bar, "BackdropTemplate")
+    tile:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+    tile:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", 0, 0)
+    tile:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8",
+                       edgeSize = (SK and SK.Pixel) and SK.Pixel(bar) or 1 })
+    tiles[btn] = tile
+    btn:HookScript("OnEnter", function() tile.over = true; PaintTile(btn) end)
+    btn:HookScript("OnLeave", function() tile.over = nil; PaintTile(btn) end)
     -- Shown and hidden by its addon (LibDBIcon's per-addon hide): re-lay.
     btn:HookScript("OnShow", function() MB.Layout() end)
     btn:HookScript("OnHide", function() MB.Layout() end)
@@ -348,7 +360,14 @@ function MB.Layout()
 
     local shown = {}
     for _, btn in ipairs(buttons) do
-        if btn:IsShown() then shown[#shown + 1] = btn end
+        local on = btn:IsShown()
+        if on then shown[#shown + 1] = btn end
+        local tile = tiles[btn]
+        if tile then
+            tile:SetShown(on)
+            tile:SetFrameLevel(bar:GetFrameLevel() + 1)
+            PaintTile(btn)
+        end
     end
     table.sort(shown, function(a, b) return SortName(a) < SortName(b) end)
 
@@ -356,7 +375,7 @@ function MB.Layout()
         local m = taken[btn]
         m.SetParent(btn, bar)
         btn:SetFrameStrata(bar:GetFrameStrata())
-        btn:SetFrameLevel(bar:GetFrameLevel() + 2)
+        btn:SetFrameLevel(bar:GetFrameLevel() + 3)
         btn:SetSize(size, size)
         local slot, line = (i - 1) % perRow, math.floor((i - 1) / perRow)
         local x, y
