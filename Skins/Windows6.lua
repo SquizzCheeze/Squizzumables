@@ -511,6 +511,7 @@ local function TableInspector(f)
     if art and art.NineSlice then
         art.NineSlice:SetAlpha(0)
         local box = CreateFrame("Frame", nil, art)
+        box.ignoreInLayout = true   -- see SK.Backdrop
         box:SetPoint("TOPLEFT", art, "TOPLEFT", -4, 0)
         box:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", -8, 0)
         SK.Backdrop(box, "panel")
@@ -740,6 +741,7 @@ local function MirrorBar(bar)
     local sb = bar.StatusBar
     -- The bar is clipped to a 200x18 strip, so its own rounded ends never show.
     local clip = CreateFrame("Frame", nil, bar)
+    clip.ignoreInLayout = true   -- see SK.Backdrop
     clip:SetClipsChildren(true)
     clip:SetPoint("TOPLEFT", 1, -1)
     clip:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -783,6 +785,7 @@ SK.Define("losscontrol", function()
     local f = G("LossOfControlFrame")
     if not f or not f.Icon then return end
     local box = CreateFrame("Frame", nil, f)
+    box.ignoreInLayout = true   -- see SK.Backdrop
     local px = SK.Pixel(f)
     box:SetPoint("TOPLEFT", f.Icon, "TOPLEFT", -px, px)
     box:SetPoint("BOTTOMRIGHT", f.Icon, "BOTTOMRIGHT", px, -px)
@@ -1881,6 +1884,7 @@ local function RewardCard(card)
     if card.Icon then SK.Icon(card.Icon) end
     if card.LevelSquare then
         local box = CreateFrame("Frame", nil, card, "BackdropTemplate")
+        box.ignoreInLayout = true   -- see SK.Backdrop
         box:SetFrameLevel(card:GetFrameLevel())
         box:SetPoint("CENTER", card.LevelSquare)
         box:SetSize(30, 30)

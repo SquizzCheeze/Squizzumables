@@ -258,6 +258,11 @@ function SK.Backdrop(owner, kind, x1, y1, x2, y2)
     if not b then
         local parent = (owner.IsObjectType and owner:IsObjectType("Texture")) and owner:GetParent() or owner
         b = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        -- Frames that size themselves to their children (ResizeLayoutFrame:
+        -- the popups, among others) must not count this one: it sits at their
+        -- full size, so every layout pass grew them by their padding until
+        -- the death popup filled the screen (user screenshot 2026-11-28).
+        b.ignoreInLayout = true
         local level = parent:GetFrameLevel()
         b:SetFrameLevel(level > 0 and level - 1 or 0)
         local px = SK.Pixel(parent)
@@ -310,6 +315,7 @@ function SK.Shadow(frame, size)
     size = size or 6
     local b = backdrops[frame] or frame
     local host = CreateFrame("Frame", nil, frame)
+    host.ignoreInLayout = true   -- see SK.Backdrop
     host:SetFrameLevel(math.max(0, b:GetFrameLevel() - 1))
     local t = host:CreateTexture(nil, "BACKGROUND")
     t:SetTexture(SK.SHADOW)
@@ -493,6 +499,7 @@ local function TalentNode(_, button)
             if r:IsObjectType("Texture") and r:GetAtlas() == "Talents-Square-Box-c60" then
                 r:SetAlpha(0)
                 local box = CreateFrame("Frame", nil, button, "BackdropTemplate")
+                box.ignoreInLayout = true   -- see SK.Backdrop
                 box:SetPoint("CENTER", button.SpendText)
                 box:SetSize(30, 20)
                 box:SetFrameLevel(button:GetFrameLevel() + 1)

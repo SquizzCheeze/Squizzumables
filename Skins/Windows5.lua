@@ -428,6 +428,7 @@ local function Communities()
             -- Three boxes on the info page, one on the news page, as ElvUI lays them.
             local function Area(parent, x1, y1, x2, y2)
                 local f = CreateFrame("Frame", nil, parent)
+                f.ignoreInLayout = true   -- see SK.Backdrop
                 f:SetPoint("TOPLEFT", parent, "TOPLEFT", x1, y1)
                 f:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", x2, y2)
                 SK.Backdrop(f, "panel")
@@ -1036,6 +1037,7 @@ local function TradeItem(item, button, icon, name)
     -- A see-through strip behind the name.
     if name then
         local strip = CreateFrame("Frame", nil, button)
+        strip.ignoreInLayout = true   -- see SK.Backdrop
         strip:SetPoint("TOPLEFT", button, "TOPRIGHT", 4, 0)
         strip:SetPoint("BOTTOMRIGHT", name, "BOTTOMRIGHT", 0, 14)
         strip:SetFrameLevel(math.max(0, button:GetFrameLevel() - 2))
