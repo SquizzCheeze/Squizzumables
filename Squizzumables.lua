@@ -2633,6 +2633,12 @@ for _, side in ipairs({ "Left", "Right" }) do
         nudge = function(dx, dy) ns.Chat.Nudge(side, dx, dy) end,
     }
 end
+-- Chat/ChatExtras.lua: the chat bar (dragged through a frame laid over it).
+MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+    field = "chatBarMover", label = "Chat Bar", enabled = "cbEnabled", gate = "chEnabled",
+    find = "Show the Chat Bar",
+    nudge = function(dx, dy) ns.ChatExtras.Nudge(dx, dy) end,
+}
 MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
     field = "leaveVehicleFrame", label = "Leave Vehicle", enabled = "abVehicle", gate = "abEnabled",
     find = "Leave Vehicle Button",

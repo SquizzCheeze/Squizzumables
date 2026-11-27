@@ -42,6 +42,29 @@ local function Note(what, name, where)
     return "\n\nWaits while ElvUI's " .. name .. " is on (" .. where .. ")."
 end
 
+local function WTNote(name, where)
+    return "\n\nWaits while WindTools' " .. name .. " is on (WindTools > " .. where .. ")."
+end
+
+-- What WindTools still handles (so ours waits).
+local function WTdb()
+    if not C_AddOns.IsAddOnLoaded("ElvUI_WindTools") then return nil end
+    local E = Elv()
+    return E and E.db and E.db.WT or nil
+end
+
+local WT_DOES = {
+    keystone = function(wt) return wt.combat.quickKeystone.enable end,
+    vignette = function(wt) return wt.skins.vignetting.enable end,
+}
+
+function TW.WTDoes(what)
+    local wt = WTdb()
+    if not wt then return false end
+    local ok, yes = pcall(WT_DOES[what], wt)
+    return ok and yes and true or false
+end
+
 -- ============================================================================
 -- Settings
 -- ============================================================================
@@ -78,6 +101,26 @@ TW.SETTINGS = ns.Settings.Describe({
             { key = "twTrackerKeystone", type = "check", default = false, label = "Collapse Objectives in Mythic+",
               tip = "Your quests fold away when a key starts, leaving the key's timer, and come back when you "
                 .. "leave." .. Note("tracker", "Hide in Keystone", "General > Objective Frame") },
+            { type = "header", label = "MYTHIC+" },
+            { key = "twQuickKeystone", type = "check", default = false, label = "Insert Keystone Automatically",
+              tip = "Your keystone goes into the font of power as soon as you open it." .. WTNote("Quick Keystone",
+                  "Combat") },
+            { type = "header", label = "SCREEN" },
+            { key = "twVignette", type = "check", default = false, label = "Darken the Screen Edges",
+              tip = "A soft shadow round the edges of the game world, under all of the interface."
+                .. WTNote("Vignetting", "Skins") },
+            { key = "twVignetteLevel", type = "slider", default = 30, min = 5, max = 100, step = 5,
+              label = "How Dark", tip = "In percent.", when = function(s) return s.twVignette end },
+        } },
+        { key = "mail", label = "Mail", rows = {
+            { key = "twMail", type = "check", default = false, label = "Contacts Beside the Mail Window",
+              tip = "A list next to the Send tab: your other characters, online friends, guild members and "
+                .. "favourites. Click a name to send to them, right-click to add or remove a favourite. The "
+                .. "Contacts button opens and closes it." .. WTNote("Contacts", "Item") },
+            { key = "twMailPage", type = "dropdown", default = "ALTS", label = "Opens On",
+              items = { { text = "Your characters", value = "ALTS" }, { text = "Friends", value = "FRIENDS" },
+                  { text = "Guild", value = "GUILD" }, { text = "Favourites", value = "FAVORITE" } },
+              when = function(s) return s.twMail end },
         } },
         { key = "totems", label = "Totem Bar", rows = {
             { key = "twTotems", type = "check", default = false, label = "Show the Totem Bar",
@@ -515,6 +558,79 @@ local function Rep(s)
 end
 
 -- ============================================================================
+-- Keystone into the font of power
+-- ============================================================================
+
+local function InsertKeystone()
+    local s = BH.settings
+    if not (s and s.twQuickKeystone) or TW.WTDoes("keystone") then return end
+    if C_ChallengeMode.HasSlottedKeystone and C_ChallengeMode.HasSlottedKeystone() then return end
+    for bag = 0, NUM_BAG_SLOTS or 4 do
+        for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+            local id = C_Container.GetContainerItemID(bag, slot)
+            if id and C_Item.IsItemKeystoneByID(id) then
+                C_Container.UseContainerItem(bag, slot)
+                return
+            end
+        end
+    end
+end
+
+local keystoneHooked
+local function HookKeystone()
+    local f = _G.ChallengesKeystoneFrame
+    if keystoneHooked or not f then return end
+    keystoneHooked = true
+    f:HookScript("OnShow", InsertKeystone)
+end
+
+-- ============================================================================
+-- Vignette: four soft black edges, drawn under the whole interface
+-- ============================================================================
+
+local vignette
+local function Vignette(s)
+    if not s.twVignette or TW.WTDoes("vignette") then
+        if vignette then vignette:Hide() end
+        return
+    end
+    if not vignette then
+        vignette = CreateFrame("Frame", "SquizzumablesVignette", UIParent)
+        vignette:SetAllPoints(UIParent)
+        vignette:SetFrameStrata("BACKGROUND")
+        vignette:SetFrameLevel(0)
+        vignette:EnableMouse(false)
+        vignette.edges = {}
+        for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+            local t = vignette:CreateTexture(nil, "BACKGROUND")
+            t:SetTexture("Interface\\Buttons\\WHITE8x8")
+            t.side = side
+            vignette.edges[side] = t
+        end
+    end
+    local a = (s.twVignetteLevel or 30) / 100
+    local dark, clear = CreateColor(0, 0, 0, a), CreateColor(0, 0, 0, 0)
+    local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+    local depth = math.min(w, h) * 0.3
+    for side, t in pairs(vignette.edges) do
+        t:ClearAllPoints()
+        if side == "TOP" or side == "BOTTOM" then
+            t:SetPoint(side .. "LEFT")
+            t:SetPoint(side .. "RIGHT")
+            t:SetHeight(depth)
+            -- VERTICAL runs bottom colour to top colour.
+            if side == "TOP" then t:SetGradient("VERTICAL", clear, dark) else t:SetGradient("VERTICAL", dark, clear) end
+        else
+            t:SetPoint("TOP" .. side)
+            t:SetPoint("BOTTOM" .. side)
+            t:SetWidth(depth)
+            if side == "LEFT" then t:SetGradient("HORIZONTAL", dark, clear) else t:SetGradient("HORIZONTAL", clear, dark) end
+        end
+    end
+    vignette:Show()
+end
+
+-- ============================================================================
 -- Apply, events, ElvUI copy
 -- ============================================================================
 
@@ -526,6 +642,9 @@ function TW.Apply()
     Totems(s)
     Rep(s)
     Tracker()
+    HookKeystone()
+    Vignette(s)
+    if ns.MailContacts then ns.MailContacts.Apply() end
 end
 
 local function PositionFromMover(str)
@@ -572,19 +691,47 @@ local function Seed()
     BH:SaveSettings()
 end
 
+-- WindTools' quick keystone, vignette and contacts switches, copied once.
+local function SeedFromWT()
+    local s = BH.settings
+    local wt = WTdb()
+    if not (s and wt) or s.twSeededFromWT then return end
+    s.twSeededFromWT = true
+    local function On(path)
+        local ok, v = pcall(path, wt)
+        return ok and v and true or false
+    end
+    s.twQuickKeystone = On(function(w) return w.combat.quickKeystone.enable end)
+    s.twVignette = On(function(w) return w.skins.vignetting.enable end)
+    local ok, level = pcall(function() return wt.skins.vignetting.level end)
+    if ok and tonumber(level) then s.twVignetteLevel = tonumber(level) end
+    local okC, c = pcall(function() return wt.item.contacts end)
+    if okC and type(c) == "table" then
+        s.twMail = c.enable and true or false
+        if c.defaultPage == "ALTS" or c.defaultPage == "FRIENDS" or c.defaultPage == "GUILD"
+            or c.defaultPage == "FAVORITE" then s.twMailPage = c.defaultPage end
+    end
+    BH:SaveSettings()
+end
+
 function BH:ApplyTweaks()
     Seed()
+    SeedFromWT()
     TW.Apply()
 end
 
 local ev = CreateFrame("Frame")
 for _, e in ipairs({ "PLAYER_LOGIN", "MERCHANT_SHOW", "UPDATE_FACTION", "MAJOR_FACTION_RENOWN_LEVEL_CHANGED",
     "PLAYER_ENTERING_WORLD", "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET",
-    "PLAYER_REGEN_ENABLED" }) do
+    "PLAYER_REGEN_ENABLED", "ADDON_LOADED", "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED" }) do
     pcall(ev.RegisterEvent, ev, e)
 end
-ev:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_LOGIN" then
+ev:SetScript("OnEvent", function(_, event, arg)
+    if event == "ADDON_LOADED" then
+        if arg == "Blizzard_ChallengesUI" then HookKeystone() end
+    elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
+        if vignette and BH.settings then Vignette(BH.settings) end
+    elseif event == "PLAYER_LOGIN" then
         BH:ApplyTweaks()
     elseif event == "MERCHANT_SHOW" then
         Repair()

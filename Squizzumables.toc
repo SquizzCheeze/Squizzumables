@@ -62,8 +62,10 @@ ItemBars\ItemBars.lua
 ActionBars\ExtraBars.lua
 ActionBars\ActionBars.lua
 Chat\Messages.lua
+Chat\ChatExtras.lua
 Chat\Chat.lua
 Tweaks\Tweaks.lua
+Tweaks\MailContacts.lua
 Auras\BuffFrame.lua
 Tooltip\Tooltip.lua
 Tooltip\Extras.lua

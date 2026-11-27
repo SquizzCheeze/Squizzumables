@@ -239,7 +239,7 @@ CH.SETTINGS = ns.Settings.Describe({
             { key = "chDataRight3", type = "dropdown", default = "Gold", items = DataItems,
               label = "Right", when = DataOn },
         } },
-        unpack(ns.ChatMessages.PAGES),   -- Messages, Edit Box (Chat/Messages.lua)
+        unpack(ns.ChatMessages.PAGES),   -- Messages, Edit Box (Chat/Messages.lua), Chat Bar, Links (Chat/ChatExtras.lua)
     },
 })
 
@@ -750,6 +750,7 @@ function CH.Apply()
     if not CH.active then
         for _, f in pairs(panels) do f:Hide() end
         ElvPanels(false)
+        if ns.ChatExtras then ns.ChatExtras.Apply(s, panels) end   -- hides the chat bar
         return
     end
     if CH.Hook then CH.Hook() end
@@ -765,6 +766,7 @@ function CH.Apply()
         return w and not w.isDocked and w:IsShown() and w or nil
     end)
     ChatButtons(s, panels.Left)
+    if ns.ChatExtras then ns.ChatExtras.Apply(s, panels) end   -- chat bar (Chat/ChatExtras.lua)
     Toggles(s)
     ElvPanels(s.chHideElvUIPanels ~= false)
     ApplyTimestamps(s)
@@ -922,6 +924,7 @@ function BH:ApplyChat()
     SeedFromElvUI()
     SeedDataFromElvUI()
     ns.ChatMessages.Seed(ElvUI())
+    if ns.ChatExtras then ns.ChatExtras.Seed() end
     CH.Apply()
 end
 

@@ -3,6 +3,22 @@ Squizzumables Changelog
 
 V2.8
 
+- New: Chat Bar (Chat > Chat Bar): coloured blocks or letters over the
+  left chat panel, one per channel; click one to start a message there.
+  Pick which channels, a /roll button and a community channel; place it with
+  Edit Mode. Off until you switch it on, and waits while WindTools' Chat Bar
+  is on (its settings are copied over once).
+- New: details on links (Chat > Links): item links show their item level
+  and, for gear, armour type and slot; item, spell, achievement, currency and
+  keystone links get an icon. Waits while WindTools' Chat Link is on.
+- New: Insert Keystone Automatically (Tweaks > General): your key goes into
+  the font of power when you open it.
+- New: Darken the Screen Edges (Tweaks > General), with a darkness slider.
+- New: Mail contacts (Tweaks > Mail): a list beside the mail window's Send
+  tab of your other characters, online friends, guild members and
+  favourites; click a name to send to them. Your characters and favourites
+  from WindTools' Contacts are copied over.
+
 - Fixed (WoW Forever): Mark of the Wild, Power Word: Fortitude and Arcane
   Intellect are single-target there, so the button cast on whoever you had
   targeted (a friendly NPC took the buff and your mana). The button now
