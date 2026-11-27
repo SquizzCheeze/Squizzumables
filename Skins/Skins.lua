@@ -449,6 +449,24 @@ function SK.Arrow(btn, dir, size)
     return a
 end
 
+-- The red expand / shrink button in a window's corner
+-- (MaximizeMinimizeButtonFrameTemplate): a flat box with our arrow, up to
+-- grow and down to shrink, accent on hover.
+function SK.MaxMin(frame)
+    if not frame or not Once(frame) then return end
+    SK.Strip(frame)
+    for name, dir in pairs({ MaximizeButton = "up", MinimizeButton = "down" }) do
+        local btn = frame[name]
+        if btn then
+            btn:ClearAllPoints()
+            btn:SetPoint("CENTER")
+            btn:SetSize(18, 18)
+            btn:SetHitRectInsets(1, 1, 1, 1)
+            SK.Arrow(btn, dir, 10)
+        end
+    end
+end
+
 -- Blizzard's newer scroll bars (WowTrimScrollBar, MinimalScrollBar).
 function SK.ScrollBar(bar)
     if not bar or not Once(bar) then return end

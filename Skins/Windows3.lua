@@ -27,6 +27,7 @@ SK.Define("talents", function()
     if not psf then return end
     SK.Window(psf)
     SK.TabSystem(psf.TabSystem)
+    SK.MaxMin(psf.MaximizeMinimizeButton or psf.MaxMinButtonFrame)
 
     -- Specializations: the spec cards come from a pool, so they are done
     -- each time Blizzard lays them out.
@@ -153,6 +154,22 @@ SK.Define("talents", function()
         local paged = sb.PagedSpellsFrame
         if paged then
             if paged.View1 then paged.View1:DisableDrawLayer("OVERLAY") end
+            -- Blizzard writes the names in its dark parchment ink, unreadable
+            -- on our panel: names white, the lines under them grey, headers gold.
+            local function Ink(frame)
+                if frame.Name and frame.SubName then
+                    frame.Name:SetTextColor(1, 1, 1)
+                    frame.SubName:SetTextColor(0.75, 0.75, 0.75)
+                    if frame.RequiredLevel then frame.RequiredLevel:SetTextColor(0.75, 0.75, 0.75) end
+                elseif frame.Text and frame.Text.SetTextColor then
+                    frame.Text:SetTextColor(1, 0.82, 0)
+                end
+            end
+            local function Recolour(self)
+                if self.ForEachFrame then self:ForEachFrame(Ink) end
+            end
+            if paged.DisplayViewsForCurrentPage then hooksecurefunc(paged, "DisplayViewsForCurrentPage", Recolour) end
+            Recolour(paged)
             local pc = paged.PagingControls
             if pc then
                 if pc.PrevPageButton then SK.Arrow(pc.PrevPageButton, "left") end

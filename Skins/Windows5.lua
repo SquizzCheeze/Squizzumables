@@ -189,7 +189,7 @@ local function Communities()
         for _, k in ipairs({ "LocaleDropdown", "DatacenterDropdown" }) do if pp[k] then SK.Dropdown(pp[k]) end end
         Buttons(pp.LocaleApplyButton, pp.DatacenterApplyButton)
     end
-    if cf.MaximizeMinimizeFrame then SK.Auto(cf.MaximizeMinimizeFrame) end
+    SK.MaxMin(cf.MaximizeMinimizeFrame)
     SK.Button(cf.InviteButton)
     if cf.AddToChatButton then SK.Arrow(cf.AddToChatButton, "down") end
     local streamMixin = _G.CommunitiesNotificationSettingsStreamEntryMixin
@@ -1094,7 +1094,7 @@ SK.Define("dressingroom", function()
     local f = G("DressUpFrame")
     if not f then return end
     SK.Window(f)
-    if f.MaximizeMinimizeFrame then SK.Auto(f.MaximizeMinimizeFrame) end
+    SK.MaxMin(f.MaximizeMinimizeFrame)
     local reset, cancel = G("DressUpFrameResetButton"), G("DressUpFrameCancelButton")
     Buttons(reset, cancel, f.LinkButton, f.ToggleCustomSetDetailsButton)
     local toggle = f.ToggleCustomSetDetailsButton

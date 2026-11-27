@@ -732,7 +732,7 @@ local function Professions()
             ts:ClearAllPoints()
             ts:SetPoint("TOPLEFT", pf, "BOTTOMLEFT", -3, 0)
         end
-        if pf.MaximizeMinimize then SK.Auto(pf.MaximizeMinimize) end
+        SK.MaxMin(pf.MaximizeMinimize)
     end
 
     local spec = pf.SpecPage
