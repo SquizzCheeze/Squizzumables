@@ -32,6 +32,18 @@ ns.ItemBars = IB
 
 local NUM_BARS = 5
 local MAX_BUTTONS = 24
+-- Buttons with a key binding of their own (Bindings.xml), per bar.
+local BOUND_BUTTONS = 12
+
+-- Names for the Key Bindings menu (the commands themselves are in Bindings.xml).
+_G.BINDING_HEADER_SQUIZZUMABLES = _G.BINDING_HEADER_SQUIZZUMABLES or "Squizzumables"
+for n = 1, NUM_BARS do
+    _G["BINDING_HEADER_SQUIZZITEMBAR" .. n] = "Item Bar " .. n
+    for i = 1, BOUND_BUTTONS do
+        _G["BINDING_NAME_CLICK SquizzumablesItemBar" .. n .. "Button" .. i .. ":LeftButton"] =
+            "Item Bar " .. n .. " Button " .. i
+    end
+end
 
 -- ============================================================================
 -- Groups
@@ -254,6 +266,14 @@ local pages = {
           label = "Font Size", tip = "Size of the item counts." },
         { key = "ibCountOutline", type = "dropdown", default = "OUTLINE", items = OUTLINES,
           label = "Font Outline", tip = "An outline round the numbers." },
+        { type = "header", label = "KEYBINDS" },
+        { type = "text", label = "Bind the first 12 buttons of each bar in the game's Key Bindings, under Squizzumables > Item Bar 1-5. "
+            .. "Keys you had on WindTools' Extra Items Bar are carried over." },
+        { key = "ibKeys", type = "check", default = true,
+          label = "Show Keybinds", tip = "The bound key in the top corner of each button." },
+        { key = "ibKeySize", type = "slider", default = 11, min = 6, max = 24, step = 1,
+          label = "Keybind Size", tip = "Size of the keybind text.",
+          when = function(s) return s.ibKeys ~= false end },
         { type = "header", label = "ITEMS" },
         { key = "ibCustom", type = "editbox", default = "",
           label = "Extra Items",
@@ -395,6 +415,10 @@ local function CreateButton(bar, n, i)
     b.count:SetPoint("BOTTOMRIGHT", -1, 2)
     b.quality = over:CreateTexture(nil, "OVERLAY")
     b.quality:SetPoint("TOPLEFT", -2, 2)
+    b.hotkey = over:CreateFontString(nil, "OVERLAY")
+    b.hotkey:SetPoint("TOPRIGHT", -1, -2)
+    b.hotkey:SetJustifyH("RIGHT")
+    b.sqBind = (i <= BOUND_BUTTONS) and ("CLICK " .. b:GetName() .. ":LeftButton") or nil
 
     local hl = b:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints(b.icon)
@@ -426,6 +450,38 @@ local function RefreshButton(b)
     b.icon:SetDesaturated(count == 0 or not usable)
 end
 
+--- The bound key in each button's corner (plain text, fine in combat).
+local function UpdateHotkeys()
+    local s = BH.settings or {}
+    local short = ns.ActionBars and ns.ActionBars.ShortKey
+    for _, rec in pairs(bars) do
+        for _, b in ipairs(rec.buttons) do
+            local key = b.sqBind and s.ibKeys ~= false and GetBindingKey(b.sqBind)
+            b.hotkey:SetText(key and (short and short(key) or key) or "")
+        end
+    end
+end
+IB.UpdateHotkeys = UpdateHotkeys
+
+-- Keys bound to WindTools' Extra Items Bar buttons move to ours (same bar,
+-- same button). Bindings outlive the addon, so they are still readable with
+-- WindTools off; once moved they belong to us, so this is safe to repeat.
+local function CopyWindToolsKeys()
+    if InCombatLockdown() or C_AddOns.IsAddOnLoaded("ElvUI_WindTools") then return end
+    local moved = false
+    for n = 1, NUM_BARS do
+        for i = 1, BOUND_BUTTONS do
+            local ours = "CLICK SquizzumablesItemBar" .. n .. "Button" .. i .. ":LeftButton"
+            if not GetBindingKey(ours) then
+                for _, key in ipairs({ GetBindingKey("CLICK WTExtraItemsBar" .. n .. "Button" .. i .. ":LeftButton") }) do
+                    if SetBinding(key, ours) then moved = true end
+                end
+            end
+        end
+    end
+    if moved then SaveBindings(GetCurrentBindingSet()) end
+end
+
 local function RefreshAllButtons()
     for _, rec in pairs(bars) do
         for _, b in ipairs(rec.buttons) do
@@ -452,6 +508,7 @@ local function StyleButton(b, s, w, h)
     CropIcon(b.icon, w, h)
     local outline = s.ibCountOutline or "OUTLINE"
     b.count:SetFont(ResolveFont(s.ibFont), s.ibCountSize or 12, outline == "NONE" and "" or outline)
+    b.hotkey:SetFont(ResolveFont(s.ibFont), s.ibKeySize or 11, outline == "NONE" and "" or outline)
     b.quality:SetSize(math.max(10, math.floor(h * 0.5)), math.max(10, math.floor(h * 0.5)))
 end
 
@@ -640,6 +697,10 @@ function IB.Apply()
     for n = 1, NUM_BARS do
         if s.ibEnabled or bars[n] then LayoutBar(n, s) end
     end
+    if s.ibEnabled then
+        CopyWindToolsKeys()
+        UpdateHotkeys()
+    end
 end
 
 -- Edit Mode's arrow-key nudge (MOVABLE_FRAMES in Squizzumables.lua).
@@ -796,7 +857,9 @@ ev:SetScript("OnEvent", function(_, event)
     end
     local s = BH.settings
     if not (s and s.ibEnabled) then return end
-    if event == "PLAYER_REGEN_ENABLED" then
+    if event == "UPDATE_BINDINGS" then
+        UpdateHotkeys()
+    elseif event == "PLAYER_REGEN_ENABLED" then
         if inCombatDirty then QueueRebuild() end
     elseif event == "GET_ITEM_INFO_RECEIVED" or event == "ITEM_DATA_LOAD_RESULT" then
         if pendingData then QueueRebuild() end
@@ -808,7 +871,7 @@ ev:SetScript("OnEvent", function(_, event)
 end)
 ev:RegisterEvent("PLAYER_LOGIN")
 for _, e in ipairs({
-    "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT",
+    "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT", "UPDATE_BINDINGS",
     "BAG_UPDATE_DELAYED", "QUEST_LOG_UPDATE", "QUEST_ACCEPTED", "QUEST_REMOVED",
     "PLAYER_EQUIPMENT_CHANGED", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD",
     "BAG_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_USABLE",

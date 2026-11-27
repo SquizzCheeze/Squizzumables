@@ -60,4 +60,65 @@
 	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='SQUIZZBAR10BUTTON10'/>
 	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='SQUIZZBAR10BUTTON11'/>
 	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='SQUIZZBAR10BUTTON12'/>
+	<!-- Item bars (ItemBars/ItemBars.lua): plain click bindings on the secure buttons, as WindTools' Extra Items Bar had. -->
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button1:LeftButton' header='SQUIZZITEMBAR1'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button2:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button3:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button4:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button5:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button6:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button7:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button8:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button9:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button10:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button11:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar1Button12:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button1:LeftButton' header='SQUIZZITEMBAR2'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button2:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button3:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button4:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button5:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button6:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button7:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button8:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button9:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button10:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button11:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar2Button12:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button1:LeftButton' header='SQUIZZITEMBAR3'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button2:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button3:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button4:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button5:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button6:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button7:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button8:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button9:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button10:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button11:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar3Button12:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button1:LeftButton' header='SQUIZZITEMBAR4'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button2:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button3:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button4:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button5:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button6:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button7:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button8:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button9:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button10:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button11:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar4Button12:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button1:LeftButton' header='SQUIZZITEMBAR5'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button2:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button3:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button4:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button5:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button6:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button7:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button8:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button9:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button10:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button11:LeftButton'/>
+	<Binding category='BINDING_HEADER_SQUIZZUMABLES' name='CLICK SquizzumablesItemBar5Button12:LeftButton'/>
 </Bindings>

@@ -3,6 +3,10 @@ Squizzumables Changelog
 
 V2.8
 
+- New: keybinds for the Item Bars: the first 12 buttons of each bar can be
+  bound in the game's Key Bindings (Squizzumables > Item Bar 1-5), and the key
+  shows in the button's corner (Item Bars > Keybinds, with its size). Keys
+  you had on WindTools' Extra Items Bar are carried over.
 - New: move Blizzard's windows (Skins > General > Moving Windows): left-drag
   an empty part of a window to move it, with or without the skins. Remember
   Positions (off by default) reopens each window where you left it, on every
