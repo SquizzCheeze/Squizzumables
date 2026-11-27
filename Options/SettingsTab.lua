@@ -107,6 +107,7 @@ StaticPopupDialogs["SQUIZZUMABLES_DELETE_PROFILE"] = {
             if BH.ApplyBuffFrame then BH:ApplyBuffFrame() end
             if BH.ApplyTooltip then BH:ApplyTooltip() end
             if BH.ApplyMinimap then BH:ApplyMinimap() end
+            if BH.ApplyMinimapButtons then BH:ApplyMinimapButtons() end
             if BH.ApplyWorldMap then BH:ApplyWorldMap() end
             if BH.ApplyWaypoints then BH:ApplyWaypoints() end
             if BH.ApplyEventTracker then BH:ApplyEventTracker() end
@@ -677,6 +678,7 @@ function BH:BuildSettingsTab(parent)
         if BH.ApplyBuffFrame then BH:ApplyBuffFrame() end
         if BH.ApplyTooltip then BH:ApplyTooltip() end
         if BH.ApplyMinimap then BH:ApplyMinimap() end
+        if BH.ApplyMinimapButtons then BH:ApplyMinimapButtons() end
         if BH.ApplyWorldMap then BH:ApplyWorldMap() end
         if BH.ApplyWaypoints then BH:ApplyWaypoints() end
         if BH.ApplyEventTracker then BH:ApplyEventTracker() end

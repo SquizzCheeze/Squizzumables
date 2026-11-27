@@ -672,6 +672,7 @@ function BH:SwitchToProfile(profileName)
     if self.ApplyBuffFrame then self:ApplyBuffFrame() end
     if self.ApplyTooltip then self:ApplyTooltip() end
     if self.ApplyMinimap then self:ApplyMinimap() end
+    if self.ApplyMinimapButtons then self:ApplyMinimapButtons() end
     if self.ApplyWorldMap then self:ApplyWorldMap() end
     if self.ApplyWaypoints then self:ApplyWaypoints() end
     if self.ApplyEventTracker then self:ApplyEventTracker() end
@@ -780,6 +781,7 @@ function BH:OnSpecChanged()
     if self.ApplyBuffFrame then self:ApplyBuffFrame() end
     if self.ApplyTooltip then self:ApplyTooltip() end
     if self.ApplyMinimap then self:ApplyMinimap() end
+    if self.ApplyMinimapButtons then self:ApplyMinimapButtons() end
     if self.ApplyWorldMap then self:ApplyWorldMap() end
     if self.ApplyWaypoints then self:ApplyWaypoints() end
     if self.ApplyEventTracker then self:ApplyEventTracker() end
@@ -1558,6 +1560,8 @@ function BH:CreateOptionsPanel(noShow)
               subtitle = "Look, fonts, placement, health bar and unit details" },
             { key = "minimap",    label = "Minimap",          field = "minimapTab",       build = "BuildMinimapTab",
               subtitle = "Shape, size, placement, zone name and the icons round it" },
+            { key = "minimapbuttons", label = "Minimap Buttons", field = "minimapButtonsTab", build = "BuildMinimapButtonsTab",
+              subtitle = "Every addon's minimap icon gathered into one bar" },
             { key = "worldmap",   label = "World Map",        field = "worldMapTab",      build = "BuildWorldMapTab",
               subtitle = "Scale, fading, coordinates and unexplored areas" },
             { key = "waypoints",  label = "Map Pins",         field = "waypointsTab",     build = "BuildWaypointsTab",
@@ -1584,7 +1588,7 @@ function BH:CreateOptionsPanel(noShow)
     -- lean on something an earlier one set up, and the sidebar's order is no
     -- reason to find out. Consumables follows, as it always did.
     local BUILD_ORDER = { "settings", "raidtools", "reminders", "cdm", "cdmcustom", "sounds",
-        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat", "tweaks", "bufframe", "tooltip", "minimap", "worldmap", "waypoints", "events", "objtracker", "questextras", "skins" }
+        "classbuffs", "callouts", "kel", "cursor", "items", "rotation", "datatexts", "itembars", "actionbars", "chat", "tweaks", "bufframe", "tooltip", "minimap", "minimapbuttons", "worldmap", "waypoints", "events", "objtracker", "questextras", "skins" }
 
     -- Build a page with ns.Rows.currentPage set, so every option widget it
     -- creates is indexed against it -- that is what lets a search result say
@@ -2063,6 +2067,7 @@ function BH:SetUnlockMode(on, keepPanel, quiet)
     if self.ApplyBuffFrame then self:ApplyBuffFrame() end
     if self.ApplyTooltip then self:ApplyTooltip() end
     if self.ApplyMinimap then self:ApplyMinimap() end
+    if self.ApplyMinimapButtons then self:ApplyMinimapButtons() end
     if self.ApplyWorldMap then self:ApplyWorldMap() end
     if self.ApplyWaypoints then self:ApplyWaypoints() end
     if self.ApplyEventTracker then self:ApplyEventTracker() end
@@ -2624,6 +2629,12 @@ MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
 MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
     field = "minimapMover", label = "Minimap", enabled = "mmEnabled", gate = "mmEnabled", find = "Restyle the Minimap",
     nudge = function(dx, dy) ns.MinimapFrame.Nudge(dx, dy) end,
+}
+-- Maps/MinimapButtons.lua: the addon button bar (dragged through a frame laid over it).
+MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {
+    field = "minimapButtonMover", label = "Minimap Buttons", enabled = "mbEnabled", gate = "mbEnabled",
+    find = "Gather Minimap Buttons",
+    nudge = function(dx, dy) ns.MinimapButtons.Nudge(dx, dy) end,
 }
 -- Tooltip/Tooltip.lua: where the tooltip shows.
 MOVABLE_FRAMES[#MOVABLE_FRAMES + 1] = {

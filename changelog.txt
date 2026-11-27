@@ -24,6 +24,11 @@ V2.8
   the criteria, middle-click to track, right-click to open it, shift-click to
   link it. Partial progress counts (450 of 500 kills is 90%). Waits while
   WindTools' Achievement Tracker is on, and copies its settings once.
+- New: Minimap Buttons (Interface > Minimap Buttons): every addon's minimap
+  icon gathered into one bar you place in Edit Mode, squared off with a
+  1px border, in rows or running down, optionally only on mouseover, with a
+  list of buttons to leave on the minimap. Off until you switch it on, and
+  waits while WindTools' Minimap Buttons is on.
 - New: Skins (Interface > Skins), our own in place of ElvUI's: dark
   see-through windows with 1px borders, flat buttons, tabs, boxes and scroll
   bars, a soft shadow, and the parchment removed (through the game's own
