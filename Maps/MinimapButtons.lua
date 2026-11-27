@@ -227,12 +227,19 @@ local function FindIcon(btn)
     local name = btn:GetName()
     local icon = btn.icon or btn.Icon or (name and (_G[name .. "Icon"] or _G[name .. "IconTexture"]))
     if icon and icon.IsObjectType and icon:IsObjectType("Texture") then return icon end
+    -- A real icon file first, then whatever sits on the ARTWORK layer, then
+    -- anything that is not frame art.
+    local hl = btn:GetHighlightTexture()
+    local artwork, other
     for _, r in ipairs({ btn:GetRegions() }) do
-        if r:IsObjectType("Texture") and not IsArt(r) and r ~= btn:GetHighlightTexture()
-            and r:GetDrawLayer() ~= "HIGHLIGHT" then
-            return r
+        if r:IsObjectType("Texture") and r ~= hl and r:GetDrawLayer() ~= "HIGHLIGHT" and not IsArt(r) then
+            local path = r.GetTextureFilePath and r:GetTextureFilePath()
+            if type(path) == "string" and path:lower():find("interface[/\\]icons[/\\]") then return r end
+            if not artwork and r:GetDrawLayer() == "ARTWORK" then artwork = r end
+            other = other or r
         end
     end
+    return artwork or other
 end
 
 local CROP = { 0.08, 0.92, 0.08, 0.92 }
@@ -271,7 +278,9 @@ local function Take(btn)
         if r:IsObjectType("Texture") and r ~= icon then
             if r == btn:GetHighlightTexture() then
                 r:SetColorTexture(1, 1, 1, 0.2)
-            elseif IsArt(r) or r == btn.border or r == btn.background then
+            else
+                -- Rings, dark discs and glows the addon drew round its
+                -- picture: on a square tile they only dim it.
                 r:SetAlpha(0)
             end
         end
@@ -409,6 +418,33 @@ end
 -- ============================================================================
 -- Events: buttons appear as their addons load, some well after login.
 -- ============================================================================
+
+-- /sqmb: what each gathered button is drawing, to tell a button the bar
+-- dims from one its own addon dims on purpose.
+SLASH_SQUIZZMB1 = "/sqmb"
+SlashCmdList.SQUIZZMB = function()
+    local out = "|cff33cc99Squizzumables:|r "
+    if #buttons == 0 then print(out .. "no minimap buttons gathered.") return end
+    for _, btn in ipairs(buttons) do
+        local icon = FindIcon(btn)
+        local r, g, b, a = 1, 1, 1, 1
+        if icon then r, g, b, a = icon:GetVertexColor() end
+        local extra = 0
+        for _, rg in ipairs({ btn:GetRegions() }) do
+            if rg ~= icon and rg:IsObjectType("Texture") and rg:IsShown() and rg:GetAlpha() > 0
+                and rg:GetDrawLayer() ~= "HIGHLIGHT" then
+                extra = extra + 1
+            end
+        end
+        local kids = 0
+        for _, k in ipairs({ btn:GetChildren() }) do
+            if k:IsShown() and not (ns.Skins and ns.Skins.GetBackdrop and ns.Skins.GetBackdrop(btn) == k) then kids = kids + 1 end
+        end
+        print(out .. string.format("%s  alpha %.2f  icon %s rgb %.2f %.2f %.2f a %.2f%s  other textures %d  child frames %d",
+            btn:GetName() or "?", btn:GetAlpha(), icon and "yes" or "NONE", r, g, b, a,
+            (icon and icon.IsDesaturated and icon:IsDesaturated()) and " grey" or "", extra, kids))
+    end
+end
 
 local pending
 local function Soon()
