@@ -443,8 +443,15 @@ local function WantedState()
     return (key and pick(key)) or pick("ocDefault") or "none"
 end
 
-local folded -- "collapse" / "hide" while we have folded it, else nil
+local folded -- "collapse" / "hide" / "keystone" while we have folded it, else nil
 local savedAlpha
+-- Tweaks' "Collapse Objectives in Mythic+" folds through here too
+-- (QX.SetKeystoneFold): everything but the scenario section (the key's
+-- timer). It used to call the tracker's own SetCollapsed, which wrote
+-- isCollapsed from addon code; Blizzard's ForceExpand reads it when the key
+-- timer starts, and the whole scenario update then ran tainted
+-- (GetAuraDataByIndex refused in MawBuffs, user report 2026-11-27).
+local keystoneFold = false
 
 local function SetButtonsMouse(header, on)
     for _, key in ipairs({ "MinimizeButton", "FilterButton" }) do
@@ -460,13 +467,15 @@ local function Fold()
     if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
     -- A module mid-slide is skipped: its OnHide would run EndSlide, which
     -- then writes slide state from our code (taint). The next update folds it.
+    local keep = folded == "keystone" and _G.ScenarioObjectiveTracker or nil
     for _, m in ipairs(tracker.modules or {}) do
-        if not m.slideInfo then m:Hide() end
+        if m ~= keep and not m.slideInfo then m:Hide() end
     end
     -- Only the bottom edge, as Blizzard's own update moves it; its other
     -- anchors come from the XML and are left alone.
-    if tracker.NineSlice and tracker.Header then
-        tracker.NineSlice:SetPoint("BOTTOM", tracker.Header, "BOTTOM", 0, -(tracker.bottomModulePadding or 10))
+    local bottom = (keep and keep:IsShown() and keep:GetContentsHeight() > 0) and keep or tracker.Header
+    if tracker.NineSlice and bottom then
+        tracker.NineSlice:SetPoint("BOTTOM", bottom, "BOTTOM", 0, -(tracker.bottomModulePadding or 10))
     end
     if folded == "hide" then
         if not savedAlpha then savedAlpha = tracker:GetAlpha() end
@@ -509,7 +518,8 @@ local function UpdateCollapse()
         hooksecurefunc(tracker, "Update", Fold)
     end
     local state = CollapseOn() and WantedState() or "none"
-    if state == "collapse" or state == "hide" then
+    if keystoneFold and state ~= "hide" then state = "keystone" end
+    if state == "collapse" or state == "hide" or state == "keystone" then
         if folded ~= state then
             Unfold()
             folded = state
@@ -518,6 +528,13 @@ local function UpdateCollapse()
     elseif folded or savedAlpha then
         Unfold()
     end
+end
+
+function QX.SetKeystoneFold(on)
+    on = on and true or false
+    if on == keystoneFold then return end
+    keystoneFold = on
+    UpdateCollapse()
 end
 
 -- ============================================================================

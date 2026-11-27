@@ -76,8 +76,8 @@ TW.SETTINGS = ns.Settings.Describe({
                 .. "ElvUI's cooldown text did this; with ElvUI off, Show puts numbers back." },
             { type = "header", label = "OBJECTIVES" },
             { key = "twTrackerKeystone", type = "check", default = false, label = "Collapse Objectives in Mythic+",
-              tip = "The objective tracker folds up when a key starts and opens again when you leave. Its height "
-                .. "is an Edit Mode setting." .. Note("tracker", "Hide in Keystone", "General > Objective Frame") },
+              tip = "Your quests fold away when a key starts, leaving the key's timer, and come back when you "
+                .. "leave." .. Note("tracker", "Hide in Keystone", "General > Objective Frame") },
         } },
         { key = "totems", label = "Totem Bar", rows = {
             { key = "twTotems", type = "check", default = false, label = "Show the Totem Bar",
@@ -221,27 +221,21 @@ end
 -- Objective tracker in Mythic+
 -- ============================================================================
 
-local collapsedByUs, trackerPending
+local trackerPending
 
+-- Never tracker:SetCollapsed() from here: it writes the tracker's
+-- isCollapsed from addon code, Blizzard's ForceExpand reads it as the key
+-- timer starts, and the scenario update then runs tainted (MawBuffs'
+-- GetAuraDataByIndex refused, user report 2026-11-27). The quests are folded
+-- by hiding sections instead (Quest/QuestExtras.lua), keeping the timer.
 local function Tracker()
     local s = BH.settings
-    local tracker = _G.ObjectiveTrackerFrame
-    if not (s and tracker and tracker.SetCollapsed) then return end
-    if InCombatLockdown() then
-        trackerPending = true
-        return
-    end
+    if not s then return end
     trackerPending = nil
     local inKey = C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive and C_ChallengeMode.IsChallengeModeActive()
-    if s.twTrackerKeystone and inKey and not TW.ElvDoes("tracker") then
-        if not tracker.isCollapsed then
-            tracker:SetCollapsed(true)
-            collapsedByUs = true
-        end
-    elseif collapsedByUs then
-        collapsedByUs = nil
-        tracker:SetCollapsed(false)
-    end
+    local want = s.twTrackerKeystone and inKey and not TW.ElvDoes("tracker")
+    local qx = ns.QuestExtras
+    if qx and qx.SetKeystoneFold then qx.SetKeystoneFold(want) end
 end
 
 -- ============================================================================

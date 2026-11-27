@@ -161,6 +161,10 @@ V2.8
   them: "/way 45.2 67.1" for the zone you're in, "/way #2248 45.2, 67.1"
   for another (not while TomTom is loaded). It waits while WindTools'
   Super Tracker is on; its settings are copied over the first time.
+- Fixed: "Auras cannot be accessed ... tainted by Squizzumables" when a
+  Mythic+ key started, from Tweaks' Collapse Objectives in Mythic+. It now
+  folds your quests away and leaves the key's timer showing (the game
+  re-opened the whole tracker for the timer anyway).
 - New: Quests (Interface > Quests), each part off until you switch it on:
   - Progress: "[30] Steelsnap - Steelsnap's Rib 1/1" in the middle of the
     screen or in chat as objectives move on, and a line when a quest is
