@@ -418,6 +418,10 @@ local function CreateButton(bar, n, i)
     b.hotkey = over:CreateFontString(nil, "OVERLAY")
     b.hotkey:SetPoint("TOPRIGHT", -1, -2)
     b.hotkey:SetJustifyH("RIGHT")
+    -- A font from the start: buttons not in use are never styled, and
+    -- SetText on a FontString without one errors.
+    b.count:SetFontObject(NumberFontNormal)
+    b.hotkey:SetFontObject(NumberFontNormalSmall)
     b.sqBind = (i <= BOUND_BUTTONS) and ("CLICK " .. b:GetName() .. ":LeftButton") or nil
 
     local hl = b:CreateTexture(nil, "HIGHLIGHT")
