@@ -1471,3 +1471,250 @@ for _, e in ipairs(LEGACY) do
     local name = e[2]
     SK.Define(e[1], function() Plain(G(name)) end)
 end
+
+-- ============================================================================
+-- World map and quest log
+-- ============================================================================
+
+-- The quest log's group headers and tick boxes come from pools.
+local function QuestLogRows()
+    local qsf = G("QuestScrollFrame")
+    if not qsf then return end
+    local r, g, b = SK.AccentRGB()
+    local function Title(header, over)
+        if over == nil then over = header.IsMouseMotionFocus and header:IsMouseMotionFocus() end
+        local t = header.GetTitleRegion and header:GetTitleRegion()
+        if t and not over then t:SetTextColor(NORMAL_FONT_COLOR:GetRGB()) end
+    end
+    if qsf.headerFramePool then
+        for btn in qsf.headerFramePool:EnumerateActive() do
+            if SK.Once(btn) then
+                local hl = btn:GetHighlightTexture()
+                SK.Strip(btn, hl and { [hl] = true } or nil)
+                SK.Backdrop(btn, "button")
+                if hl then hl:SetAlpha(1); hl:SetColorTexture(r, g, b, 0.25) end
+                if btn.CheckHighlightTitle then hooksecurefunc(btn, "CheckHighlightTitle", Title) end
+                Title(btn)
+            end
+        end
+    end
+    if qsf.titleFramePool then
+        for btn in qsf.titleFramePool:EnumerateActive() do
+            local cb = btn.Checkbox
+            if cb and SK.Once(cb) then
+                local tick = cb.CheckMark
+                SK.Strip(cb, tick and { [tick] = true } or nil)
+                SK.Backdrop(cb, "button")
+            end
+        end
+    end
+    if qsf.campaignHeaderMinimalFramePool then
+        for h in qsf.campaignHeaderMinimalFramePool:EnumerateActive() do
+            if SK.Once(h) then
+                SK.Strip(h, { [h.Background or 0] = true, [h.Highlight or 0] = true })
+                if h.Background then
+                    h.Background:SetAlpha(0)
+                    SK.Backdrop(h.Background, "button")
+                end
+                if h.Highlight then h.Highlight:SetColorTexture(r, g, b, 0.75) end
+                if h.CheckHighlightTitle then hooksecurefunc(h, "CheckHighlightTitle", Title) end
+            end
+            Title(h)
+        end
+    end
+end
+
+-- A see-through list box, its parchment gone with the remover.
+local function LogBox(frame)
+    if not frame then return end
+    if frame.BorderFrame then frame.BorderFrame:SetAlpha(0) end
+    local sf = frame.ScrollFrame or frame.ScrollBox
+    if sf then
+        if SK.ParchmentActive() then SK.Strip(sf) end
+        SK.Backdrop(sf, "panel")
+        SK.ScrollBar(sf.ScrollBar or frame.ScrollBar)
+    end
+end
+
+local function QuestTab(tab, first, qmf)
+    if not tab or not SK.Once(tab) then return end
+    SK.Backdrop(tab, "button")
+    tab:SetSize(30, 40)
+    if tab.Background then tab.Background:SetAlpha(0) end
+    if tab.TabGlow then tab.TabGlow:SetAlpha(0) end
+    if tab.SelectedTexture then
+        tab.SelectedTexture:SetDrawLayer("ARTWORK")
+        tab.SelectedTexture:SetColorTexture(1, 0.82, 0, 0.3)
+        tab.SelectedTexture:SetAllPoints()
+    end
+    if tab.HighlightTexture then
+        tab.HighlightTexture:SetColorTexture(1, 1, 1, 0.3)
+        tab.HighlightTexture:SetAllPoints()
+    end
+    if tab.Icon then
+        tab.Icon:ClearAllPoints()
+        tab.Icon:SetPoint("CENTER")
+        hooksecurefunc(tab.Icon, "SetPoint", function(icon, point, anchor)
+            if anchor and point ~= "CENTER" then icon:SetPoint("CENTER") end
+        end)
+    end
+    if first then
+        tab:ClearAllPoints()
+        tab:SetPoint("TOPLEFT", qmf, "TOPRIGHT", 11, 24)
+        hooksecurefunc(tab, "SetPoint", function(self, _, _, _, x, y)
+            if x ~= 11 or y ~= 24 then
+                self:ClearAllPoints()
+                self:SetPoint("TOPLEFT", qmf, "TOPRIGHT", 11, 24)
+            end
+        end)
+    end
+end
+
+SK.Define("worldmap", function()
+    local map = G("WorldMapFrame")
+    if not map then return end
+    SK.Strip(map)
+    SK.Backdrop(map, "panel", -8, 0, 6, -8)
+    SK.Shadow(map)
+    if map.ScrollContainer then SK.Backdrop(map.ScrollContainer, "none") end
+
+    local nav = map.NavBar
+    if nav then
+        SK.NavBar(nav)
+        nav:SetPoint("TOPLEFT", 1, -40)
+    end
+    local border = map.BorderFrame
+    if border then
+        SK.Strip(border)
+        Hide(border.NineSlice)
+        Hide(border.PortraitContainer)
+        border:SetFrameStrata(map:GetFrameStrata())
+        if border.CloseButton then SK.Close(border.CloseButton) end
+        SK.MaxMin(border.MaximizeMinimizeFrame)
+        if border.Tutorial then Hide(border.Tutorial.Ring) end
+    end
+    SK.MaxMin(map.MaximizeMinimizeFrame)
+
+    -- The floor picker and, on Forever, the tracking button.
+    local over = map.overlayFrames or {}
+    if over[1] and over[1].IsObjectType and over[1]:IsObjectType("DropdownButton") then SK.Dropdown(over[1]) end
+    local tracking = map.WorldMapTrackingOptionsButton
+    if FOREVER and tracking then
+        SK.Arrow(tracking, "down")
+        if nav then
+            tracking:ClearAllPoints()
+            tracking:SetPoint("LEFT", nav, "RIGHT", 10, 0)
+        end
+        if tracking.Icon then tracking.Icon:SetAlpha(0) end
+        if tracking.ResetButton then
+            SK.Close(tracking.ResetButton)
+            tracking.ResetButton:ClearAllPoints()
+            tracking.ResetButton:SetPoint("CENTER", tracking, "TOPRIGHT", 0, 0)
+        end
+    end
+    local toggle = map.SidePanelToggle
+    if toggle then
+        if toggle.CloseButton then SK.Arrow(toggle.CloseButton, "left") end
+        if toggle.OpenButton then SK.Arrow(toggle.OpenButton, "right") end
+    end
+
+    local qmf = G("QuestMapFrame")
+    if not qmf then return end
+    Hide(qmf.VerticalSeparator)
+    local qsf = G("QuestScrollFrame")
+    if qsf then
+        SK.Backdrop(qsf, "panel")
+        for _, k in ipairs({ "Edge", "BorderFrame" }) do if qsf[k] then qsf[k]:SetAlpha(0) end end
+        if qsf.Contents and qsf.Contents.Separator then qsf.Contents.Separator:SetAlpha(0) end
+        if qsf.Background then qsf.Background:SetAlpha(SK.ParchmentActive() and 0 or 0.9) end
+        local story = qsf.Contents and qsf.Contents.StoryHeader
+        if story then
+            if story.Background then story.Background:SetAlpha(0.7) end
+            Hide(story.Divider)
+            if story.HighlightTexture then story.HighlightTexture:SetAlpha(0) end
+        end
+        SK.EditBox(qsf.SearchBox)
+        SK.ScrollBar(qsf.ScrollBar)
+        if qsf.SettingsDropdown then SK.ArrowDropdown(qsf.SettingsDropdown) end
+    end
+    local count = G("QuestLogCount")
+    if count then
+        SK.Strip(count)
+        SK.Backdrop(count, "panel")
+    end
+    HookGlobal("QuestLogQuests_Update", QuestLogRows)
+    QuestLogRows()
+
+    -- A quest opened from the log.
+    local details = qmf.DetailsFrame
+    if details then
+        Buttons(details.AbandonButton, details.ShareButton, details.TrackButton)
+        for _, k in ipairs({ "AbandonButton", "ShareButton", "TrackButton" }) do
+            if details[k] then details[k]:SetFrameLevel(5) end
+        end
+        if details.TrackButton then details.TrackButton:SetWidth(95) end
+        if details.BorderFrame then details.BorderFrame:SetAlpha(0) end
+        local back = details.BackFrame
+        if back then
+            SK.Strip(back)
+            if back.BackButton then
+                back.BackButton:SetFrameLevel(5)
+                SK.Button(back.BackButton)
+            end
+        end
+        local rewards = details.RewardsFrameContainer
+        local bg = details.Bg
+        if bg and rewards then
+            bg:ClearAllPoints()
+            bg:SetPoint("TOPLEFT", 0, -41)
+            bg:SetPoint("BOTTOMRIGHT", rewards)
+        end
+        if SK.ParchmentActive() then
+            SK.Strip(details)
+            if bg then
+                local box = SK.Backdrop(details, "panel")
+                box:ClearAllPoints()
+                box:SetAllPoints(bg)
+            end
+            if rewards then
+                SK.Backdrop(rewards, "panel")
+                if rewards.RewardsFrame then SK.Strip(rewards.RewardsFrame) end
+            end
+            if details.SealMaterialBG then details.SealMaterialBG:SetAlpha(0) end
+        elseif details.SealMaterialBG and bg then
+            details.SealMaterialBG:SetAllPoints(bg)
+        end
+        local dsf = G("QuestMapDetailsScrollFrame")
+        if dsf then SK.ScrollBar(dsf.ScrollBar) end
+    end
+
+    local qf = qmf.QuestsFrame
+    local campaign = qf and qf.CampaignOverview
+    if campaign then
+        if campaign.BorderFrame then campaign.BorderFrame:SetAlpha(0) end
+        if SK.ParchmentActive() then
+            SK.Strip(campaign)
+            SK.Backdrop(campaign, "panel")
+        end
+        if campaign.ScrollFrame then SK.ScrollBar(campaign.ScrollFrame.ScrollBar) end
+    end
+    LogBox(qmf.MapLegend)
+    local events = qmf.EventsFrame
+    if events then
+        LogBox(events)
+        for _, rgn in ipairs({ events:GetRegions() }) do
+            if rgn:IsObjectType("Texture") then rgn:Hide() break end
+        end
+    end
+
+    -- Quests / events / legend tabs down the right edge.
+    QuestTab(qmf.QuestsTab, true, qmf)
+    QuestTab(qmf.EventsTab, false, qmf)
+    QuestTab(qmf.MapLegendTab, false, qmf)
+
+    local session = qmf.QuestSessionManagement
+    if session then
+        SK.Strip(session)
+        if session.ExecuteSessionCommand then SK.Backdrop(session.ExecuteSessionCommand, "button") end
+    end
+end)

@@ -142,6 +142,7 @@ SK.WINDOWS = {
     { key = "taxi",       label = "Flight Maps",                       elv = "taxi" },
     { key = "bmah",       label = "Black Market",                      elv = "bmah", addon = "Blizzard_BlackMarketUI" },
     { key = "transmogrify", label = "Transmog",                        elv = "transmogrify", addon = "Blizzard_Transmog" },
+    { key = "worldmap",   label = "World Map and Quest Log",           elv = "worldmap", addon = "Blizzard_WorldMap" },
     { key = "housing",    label = "Housing",                           elv = "housing", addon = "Blizzard_HousingDashboard" },
     -- Older content: a general pass each.
     { key = "adventureMap", label = "Adventure Maps",                  elv = "adventureMap", addon = "Blizzard_AdventureMap" },
