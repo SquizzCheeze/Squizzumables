@@ -143,6 +143,7 @@ SK.WINDOWS = {
     { key = "bmah",       label = "Black Market",                      elv = "bmah", addon = "Blizzard_BlackMarketUI" },
     { key = "transmogrify", label = "Transmog",                        elv = "transmogrify", addon = "Blizzard_Transmog" },
     { key = "worldmap",   label = "World Map and Quest Log",           elv = "worldmap", addon = "Blizzard_WorldMap" },
+    { key = "objectivetracker", label = "Objective Tracker",           elv = "objectiveTracker", addon = "Blizzard_ObjectiveTracker" },
     -- Forever only (its achievements); the addon-exists filter drops it on retail.
     { key = "legacy",     label = "Legacy",                            elv = "legacySystem", addon = "Blizzard_LegacySystem" },
     { key = "housing",    label = "Housing",                           elv = "housing", addon = "Blizzard_HousingDashboard" },

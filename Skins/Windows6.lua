@@ -1747,6 +1747,107 @@ SK.Define("worldmap", function()
 end)
 
 -- ============================================================================
+-- Objective tracker: header art away, a flat plus / minus for Blizzard's red
+-- buttons, square quest-item icons, flat progress and timer bars. Fonts and
+-- the bar under each header are the Objective Tracker page's (Quest/).
+-- ============================================================================
+
+local plusMarks = {}
+local function PlusMinus(btn)
+    if not btn or not SK.Once(btn) then return end
+    for _, t in ipairs({ btn:GetNormalTexture(), btn:GetPushedTexture() }) do t:SetAlpha(0) end
+    local hl = btn:GetHighlightTexture()
+    if hl then hl:SetAlpha(0) end
+    btn:SetSize(15, 15)
+    local b = SK.Backdrop(btn, "button")
+    local h = btn:CreateTexture(nil, "OVERLAY")
+    h:SetColorTexture(1, 1, 1)
+    h:SetSize(7, 1)
+    h:SetPoint("CENTER")
+    local v = btn:CreateTexture(nil, "OVERLAY")
+    v:SetColorTexture(1, 1, 1)
+    v:SetSize(1, 7)
+    v:SetPoint("CENTER")
+    plusMarks[btn] = v
+    SK.Hover(btn)
+    return b
+end
+
+local function TrackerCollapsed(header, collapsed)
+    local btn = header.MinimizeButton
+    if btn and plusMarks[btn] then plusMarks[btn]:SetShown(collapsed and true or false) end
+end
+
+local function TrackerHeader(header, collapsed)
+    if not header or not SK.Once(header) then return end
+    if header.Background then header.Background:SetAlpha(0) end
+    PlusMinus(header.MinimizeButton)
+    if header.SetCollapsed then hooksecurefunc(header, "SetCollapsed", TrackerCollapsed) end
+    TrackerCollapsed(header, collapsed)
+end
+
+local function TrackerItem(_, block)
+    local btn = block and block.ItemButton
+    if not btn or not SK.Once(btn) then return end
+    for _, t in ipairs({ btn:GetNormalTexture(), btn:GetPushedTexture() }) do if t then t:SetAlpha(0) end end
+    local hl = btn:GetHighlightTexture()
+    if hl then hl:SetColorTexture(1, 1, 1, 0.25) end
+    if btn.icon then
+        btn.icon:ClearAllPoints()
+        btn.icon:SetAllPoints()
+        SK.Icon(btn.icon)
+        if hl then hl:SetAllPoints(btn.icon) end
+    end
+end
+
+local function TrackerBar(bar, r, g, b)
+    if not bar then return end
+    local icon = bar.Icon
+    SK.StatusBar(bar, r, g, b)
+    -- The scenario and bonus bars carry an icon at the end: keep it, square.
+    if icon and icon:IsShown() then
+        icon:SetAlpha(1)
+        if icon.SetMask then pcall(icon.SetMask, icon, "") end
+        icon:ClearAllPoints()
+        icon:SetPoint("LEFT", bar, "RIGHT", 4, 0)
+        SK.Icon(icon)
+    end
+    if bar.Label then
+        bar.Label:ClearAllPoints()
+        bar.Label:SetPoint("CENTER", bar)
+    end
+end
+
+SK.Define("objectivetracker", function()
+    local frame = G("ObjectiveTrackerFrame")
+    if not frame then return end
+    TrackerHeader(frame.Header, frame.isCollapsed)
+    for _, name in ipairs({ "ScenarioObjectiveTracker", "UIWidgetObjectiveTracker", "CampaignQuestObjectiveTracker",
+                            "QuestObjectiveTracker", "AdventureObjectiveTracker", "AchievementObjectiveTracker",
+                            "MonthlyActivitiesObjectiveTracker", "ProfessionsRecipeTracker", "BonusObjectiveTracker",
+                            "WorldQuestObjectiveTracker", "InitiativeTasksObjectiveTracker" }) do
+        local t = G(name)
+        if t then
+            TrackerHeader(t.Header, t.Header and t.Header.isCollapsed)
+            if t.AddBlock then hooksecurefunc(t, "AddBlock", TrackerItem) end
+            if t.GetProgressBar then
+                hooksecurefunc(t, "GetProgressBar", function(self, key)
+                    local p = self.usedProgressBars and self.usedProgressBars[key]
+                    if p then TrackerBar(p.Bar, 0.23, 0.75, 0.2) end
+                end)
+            end
+            if t.GetTimerBar then
+                hooksecurefunc(t, "GetTimerBar", function(self, key)
+                    local p = self.usedTimerBars and self.usedTimerBars[key]
+                    if p then TrackerBar(p.Bar) end
+                end)
+            end
+            if t.EnumerateActiveBlocks then t:EnumerateActiveBlocks(function(block) TrackerItem(t, block) end) end
+        end
+    end
+end)
+
+-- ============================================================================
 -- Forever's Legacy window (its achievements): reward track, challenges, tree
 -- ============================================================================
 
