@@ -175,13 +175,10 @@ local function Tracked()
     return list
 end
 
-local function GoldText(copper, short)
-    copper = copper or 0
-    if short then
-        local g = math.floor(copper / 10000)
-        return BreakUpLargeNumbers(g) .. "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:2:0|t"
-    end
-    return GetMoneyString(copper, true)
+-- Gold, silver and copper in full, with the game's coin icons (the panel
+-- used to round down to whole gold).
+local function GoldText(copper)
+    return GetMoneyString(copper or 0, true)
 end
 
 DT.Register("Currencies", {
@@ -189,7 +186,7 @@ DT.Register("Currencies", {
     events = { "PLAYER_ENTERING_WORLD", "CURRENCY_DISPLAY_UPDATE", "PLAYER_MONEY" },
     text = function()
         local list = Tracked()
-        if #list == 0 then return GoldText(GetMoney(), true) end
+        if #list == 0 then return GoldText(GetMoney()) end
         local parts = {}
         for _, info in ipairs(list) do
             parts[#parts + 1] = Icon(info.iconFileID, 12) .. " " .. DT.ValueHex() .. BreakUpLargeNumbers(info.quantity) .. "|r"
@@ -374,7 +371,7 @@ DT.Register("Gold", {
         if not sessionStart then sessionStart = GetMoney() end
         Record()
     end,
-    text = function() return GoldText(GetMoney(), true) end,
+    text = function() return GoldText(GetMoney()) end,
     onEnter = function(_, tt)
         local now = GetMoney()
         local change = now - (sessionStart or now)
