@@ -184,7 +184,8 @@ local function Friends()
         local acct = C_BattleNet.GetFriendAccountInfo(i)
         for j = 1, (acct and C_BattleNet.GetFriendNumGameAccounts(i)) or 0 do
             local g = C_BattleNet.GetFriendGameAccountInfo(i, j)
-            local realm = g and Norm(g.realmName)
+            -- realmName can be empty on WoW Forever: one realm, ours.
+            local realm = g and RealmOf(g.realmName)
             if g and g.isOnline and g.clientProgram == BNET_CLIENT_WOW and g.wowProjectID == WOW_PROJECT_ID
                 and g.characterName and realm and (not g.factionName or g.factionName == myFaction)
                 and not seen[g.characterName .. "-" .. realm] then
@@ -428,6 +429,28 @@ function MC.Apply()
         category = nil
         MC.Show()
     end
+end
+
+-- /sqmail: every online friend and why the Friends list keeps or skips them.
+SLASH_SQUIZZMAIL1 = "/sqmail"
+SlashCmdList.SQUIZZMAIL = function()
+    local p = "|cff33cc99Squizzumables:|r "
+    print(p .. string.format("realm '%s', project %s, faction %s, character friends online %d",
+        tostring(MY_REALM), tostring(WOW_PROJECT_ID), tostring(UnitFactionGroup("player")),
+        C_FriendList.GetNumOnlineFriends() or 0))
+    local _, online = BNGetNumFriends()
+    for i = 1, online or 0 do
+        local acct = C_BattleNet.GetFriendAccountInfo(i)
+        for j = 1, (acct and C_BattleNet.GetFriendNumGameAccounts(i)) or 0 do
+            local g = C_BattleNet.GetFriendGameAccountInfo(i, j)
+            if g then
+                print(p .. string.format("%s: online %s, client %s, project %s, name '%s', realm '%s', faction %s",
+                    tostring(i), tostring(g.isOnline), tostring(g.clientProgram), tostring(g.wowProjectID),
+                    tostring(g.characterName), tostring(g.realmName), tostring(g.factionName)))
+            end
+        end
+    end
+    print(p .. "the Friends list has " .. #Friends() .. " entries.")
 end
 
 -- ============================================================================
