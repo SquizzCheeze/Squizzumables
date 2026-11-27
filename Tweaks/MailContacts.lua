@@ -79,16 +79,47 @@ local function SeedFromWT()
     end
 end
 
+-- An empty realm (WindTools stored some that way on WoW Forever) is ours.
+local function RealmOf(realm)
+    if realm == nil or realm == "" then return MY_REALM or "" end
+    return Norm(realm)
+end
+
+-- The character's whole name. On WoW Forever UnitName's second return is the
+-- SURNAME, and both halves make the name ("Squizz Snagsizzler").
+local function MyName()
+    local name, surname = UnitName("player")
+    if not name or name == UNKNOWNOBJECT then return nil end
+    -- On retail the second return is a realm, and only for other realms'
+    -- players, never for "player"; Forever is the client with surnames.
+    if BH.IS_FOREVER and type(surname) == "string" and surname ~= "" and surname ~= MY_REALM
+        and Constants and Constants.CharacterNameSeparatorConsts then
+        return name .. Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR .. surname
+    end
+    return name
+end
+
+-- One key per person: name and realm, case-insensitive.
+local function PersonKey(name, realm)
+    return (name or ""):lower() .. "-" .. RealmOf(realm):lower()
+end
+
 -- This character, keyed by GUID (on WoW Forever a name can repeat).
 local function RecordMe()
     local db, guid = DB(), UnitGUID("player")
     if not (db and guid) then return end
-    local name = UnitName("player")
-    if not name or name == UNKNOWNOBJECT then return end
+    local name = MyName()
+    if not name then return end
     local _, class = UnitClass("player")
     db.mailAlts[guid] = { name = name, realm = MY_REALM, class = class, faction = UnitFactionGroup("player") }
-    -- The copy WindTools made of this character, if any, is now the same one.
-    db.mailAlts["wt:" .. name .. "-" .. MY_REALM] = nil
+    -- Every copy WindTools made of this character (with and without a realm)
+    -- is now the same one.
+    local me = PersonKey(name, MY_REALM)
+    for key, a in pairs(db.mailAlts) do
+        if key ~= guid and type(key) == "string" and key:find("^wt:") and PersonKey(a.name, a.realm) == me then
+            db.mailAlts[key] = nil
+        end
+    end
 end
 
 -- ============================================================================
@@ -109,10 +140,25 @@ end
 
 local function Alts()
     local out, db = {}, DB()
-    local me = UnitGUID("player")
-    for key, a in pairs(db and db.mailAlts or {}) do
-        if key ~= me and a.name then
-            out[#out + 1] = { name = a.name, realm = a.realm, class = a.class, faction = a.faction, alt = key }
+    local guid = UnitGUID("player")
+    local myName = MyName()
+    -- One row per person, never this character. A GUID entry (recorded by
+    -- us) wins over a copy taken from WindTools.
+    local seen = {}
+    if myName then seen[PersonKey(myName, MY_REALM)] = "me" end
+    local keys = {}
+    for key in pairs(db and db.mailAlts or {}) do keys[#keys + 1] = key end
+    table.sort(keys, function(a, b)
+        local wa, wb = a:find("^wt:") ~= nil, b:find("^wt:") ~= nil
+        if wa ~= wb then return wb end
+        return a < b
+    end)
+    for _, key in ipairs(keys) do
+        local a = db.mailAlts[key]
+        local pk = a and a.name and PersonKey(a.name, a.realm)
+        if pk and key ~= guid and not seen[pk] then
+            seen[pk] = true
+            out[#out + 1] = { name = a.name, realm = RealmOf(a.realm), class = a.class, faction = a.faction, alt = key }
         end
     end
     return out
@@ -150,11 +196,11 @@ end
 local function Guild()
     local out = {}
     if not IsInGuild() then return out end
-    local me = UnitName("player")
+    local me = MyName()
     for i = 1, GetNumGuildMembers() or 0 do
         local full, _, _, _, _, _, _, _, _, _, class = GetGuildRosterInfo(i)
         local name, realm = SplitName(full)
-        if name and not (name == me and realm == MY_REALM) then
+        if name and not (name == me and RealmOf(realm) == RealmOf(MY_REALM)) then
             out[#out + 1] = { name = name, realm = realm, class = class }
         end
     end
@@ -190,7 +236,7 @@ local function Address(entry)
     local box = _G.SendMailNameEditBox
     if not box then return end
     local target = entry.name
-    if entry.realm and Norm(entry.realm) ~= MY_REALM then target = target .. "-" .. Norm(entry.realm) end
+    if RealmOf(entry.realm) ~= RealmOf(MY_REALM) then target = target .. "-" .. RealmOf(entry.realm) end
     box:SetText(target)
     box:SetCursorPosition(#target)
 end
@@ -239,7 +285,7 @@ local function Menu(row)
     local e = row.entry
     if not (e and MenuUtil and MenuUtil.CreateContextMenu) then return end
     MenuUtil.CreateContextMenu(row, function(_, root)
-        root:CreateTitle(e.name .. (e.realm and e.realm ~= MY_REALM and ("-" .. e.realm) or ""))
+        root:CreateTitle(e.name .. (RealmOf(e.realm) ~= RealmOf(MY_REALM) and ("-" .. RealmOf(e.realm)) or ""))
         local db = DB()
         if not db then return end
         local full = e.name .. "-" .. (e.realm or MY_REALM)
@@ -253,7 +299,11 @@ local function Menu(row)
         end
         if e.alt then
             root:CreateButton("Forget This Character", function()
-                db.mailAlts[e.alt] = nil
+                -- Every stored copy of them, not just the one the row shows.
+                local pk = PersonKey(e.name, e.realm)
+                for key, a in pairs(db.mailAlts) do
+                    if a.name and PersonKey(a.name, a.realm) == pk then db.mailAlts[key] = nil end
+                end
                 MC.Show()
             end)
         end
@@ -389,7 +439,7 @@ ev:SetScript("OnEvent", function(_, event)
         SeedFromWT()
         RecordMe()
     else
-        if not MY_REALM then MY_REALM = GetNormalizedRealmName() or GetRealmName() end
+        if not MY_REALM or MY_REALM == "" then MY_REALM = GetNormalizedRealmName() or GetRealmName() end
         -- ElvUI may set up after our login handler; the name is not always
         -- known at login on a fresh character either.
         SeedFromWT()
