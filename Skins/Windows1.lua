@@ -14,6 +14,12 @@ local function Buttons(...)
     for i = 1, select("#", ...) do SK.Button(G(select(i, ...))) end
 end
 
+local function HideNamedRegions(...)
+    for i = 1, select("#", ...) do Hide(G(select(i, ...))) end
+end
+
+local FOREVER = ns.BH.IS_FOREVER
+
 -- A quest-style reward / progress item: icon cropped with a quality border,
 -- the name plate gone, the name kept.
 local function RewardButton(btn)
@@ -58,17 +64,156 @@ SK.Define("misc", function()
 
     local menu = G("GameMenuFrame")
     if menu and SK.Once(menu) then
+        SK.Strip(menu)
         Hide(menu.Border)
-        if menu.Header then SK.Strip(menu.Header) end
+        if menu.Header then
+            SK.Strip(menu.Header)
+            menu.Header:ClearAllPoints()
+            menu.Header:SetPoint("TOP", menu, "TOP", 0, 7)
+        end
         SK.Backdrop(menu, "panel")
         SK.Shadow(menu)
         local function Skin(self)
             if not self.buttonPool then return end
-            for btn in self.buttonPool:EnumerateActive() do SK.Button(btn) end
+            for btn in self.buttonPool:EnumerateActive() do SK.Button(btn, 1, -1, -1, 1) end
         end
         if menu.InitButtons then hooksecurefunc(menu, "InitButtons", Skin) end
         Skin(menu)
     end
+
+    -- Small boxes that pop up round the screen.
+    for _, n in ipairs({ "AddonCompartmentFrame", "AutoCompleteBox", "QueueStatusFrame", "OpacityFrame",
+                         "BasicMessageDialog", "ReadyCheckFrame", "ReadyCheckListenerFrame", "LFDRoleCheckPopup",
+                         "SideDressUpFrame" }) do
+        local f = G(n)
+        if f then
+            Hide(f.StateTexture)
+            Hide(f.BGTopLeft)
+            Hide(f.BGBottomLeft)
+            SK.Window(f)
+            SK.Auto(f)
+        end
+    end
+    -- The ready check: its portrait gone, the buttons side by side under the text.
+    local rc = G("ReadyCheckFrame")
+    if rc then
+        Hide(G("ReadyCheckPortrait"))
+        local text, yes, no = G("ReadyCheckFrameText"), G("ReadyCheckFrameYesButton"), G("ReadyCheckFrameNoButton")
+        if text then
+            text:ClearAllPoints()
+            text:SetPoint("TOP", 0, -30)
+            text:SetWidth(300)
+        end
+        if yes then yes:ClearAllPoints(); yes:SetPoint("TOPRIGHT", rc, "CENTER", -3, -5) end
+        if no then no:ClearAllPoints(); no:SetPoint("TOPLEFT", rc, "CENTER", 3, -5) end
+        local listener = G("ReadyCheckListenerFrame")
+        local title = listener and listener.TitleContainer
+        if title then
+            title:ClearAllPoints()
+            title:SetPoint("TOPLEFT", 1, -1)
+            title:SetPoint("TOPRIGHT", -1, 0)
+        end
+    end
+    for _, role in ipairs({ "Tank", "Healer", "DPS" }) do
+        local b = G("LFDRoleCheckPopupRoleButton" .. role)
+        if b and b.checkButton then
+            SK.Check(b.checkButton)
+            b:DisableDrawLayer("OVERLAY")
+        end
+    end
+
+    -- Splitting a stack: the arrows inside a box either side of the number.
+    local split = G("StackSplitFrame")
+    if split and SK.Once(split) then
+        SK.Strip(split)
+        local outer = SK.Backdrop(split, "panel")
+        SK.Shadow(split)
+        -- An inner box round the number, drawn on our own backdrop so it sits
+        -- under the window's text (its colours follow after a /reload).
+        local px = SK.Pixel(split)
+        local inner = outer:CreateTexture(nil, "ARTWORK")
+        inner:SetPoint("TOPLEFT", split, "TOPLEFT", 10, -15)
+        inner:SetPoint("BOTTOMRIGHT", split, "BOTTOMRIGHT", -10, 55)
+        inner:SetColorTexture(SK.PanelRGBA())
+        local br, bg, bb = SK.BorderRGB()
+        local function Edge(a, b, across)
+            local e = outer:CreateTexture(nil, "OVERLAY")
+            e:SetColorTexture(br, bg, bb)
+            e:SetPoint(a, inner, a)
+            e:SetPoint(b, inner, b)
+            if across then e:SetWidth(px) else e:SetHeight(px) end
+        end
+        Edge("TOPLEFT", "TOPRIGHT", false)
+        Edge("BOTTOMLEFT", "BOTTOMRIGHT", false)
+        Edge("TOPLEFT", "BOTTOMLEFT", true)
+        Edge("TOPRIGHT", "BOTTOMRIGHT", true)
+        SK.Button(split.OkayButton or G("StackSplitOkayButton"))
+        SK.Button(split.CancelButton or G("StackSplitCancelButton"))
+        local left, right = split.LeftButton or G("StackSplitLeftButton"), split.RightButton or G("StackSplitRightButton")
+        if left then left:ClearAllPoints(); left:SetPoint("LEFT", inner, "LEFT", 4, 0); SK.Arrow(left, "left") end
+        if right then right:ClearAllPoints(); right:SetPoint("RIGHT", inner, "RIGHT", -4, 0); SK.Arrow(right, "right") end
+    end
+
+    -- The "return to graveyard" box after a death.
+    local ghost = G("GhostFrame")
+    if ghost and SK.Once(ghost) then
+        HideNamedRegions("GhostFrameLeft", "GhostFrameMiddle", "GhostFrameRight")
+        SK.Strip(ghost)
+        ghost:ClearAllPoints()
+        ghost:SetPoint("TOP", UIParent, "TOP", 0, -200)
+        local contents = G("GhostFrameContentsFrame")
+        if contents then
+            SK.Backdrop(contents, "panel")
+            local t, icon = G("GhostFrameContentsFrameText"), G("GhostFrameContentsFrameIcon")
+            if t then t:SetPoint("TOPLEFT", 53, 0) end
+            if icon then
+                icon:SetSize(37, 38)
+                icon:ClearAllPoints()
+                if t then icon:SetPoint("RIGHT", t, "LEFT", -12, 0) end
+                SK.Icon(icon)
+            end
+        end
+    end
+
+    -- The splash screen of what is new, and the cinematic / movie "skip?" boxes.
+    local splash = G("SplashFrame")
+    if splash then
+        if splash.TopCloseButton then SK.Close(splash.TopCloseButton) end
+        SK.Button(splash.BottomCloseButton)
+    end
+    local function CloseDialog(d)
+        if not d or not SK.Once(d) then return end
+        SK.Strip(d)
+        SK.Backdrop(d, "panel")
+        local name = d:GetName()
+        SK.Button(name and G(name .. "ConfirmButton"))
+        SK.Button(name and G(name .. "ResumeButton"))
+        if d.Buttons then
+            SK.Button(d.Buttons.ConfirmButton)
+            SK.Button(d.Buttons.ResumeButton)
+        end
+    end
+    if CinematicFrame_UpdateLettboxForAspectRatio then
+        hooksecurefunc("CinematicFrame_UpdateLettboxForAspectRatio", function(f) CloseDialog(f.closeDialog) end)
+    end
+    local movie = G("MovieFrame")
+    if movie and movie.ShowCloseDialog then
+        hooksecurefunc(movie, "ShowCloseDialog", function(f) CloseDialog(f.CloseDialog) end)
+    end
+
+    -- The old style dropdown lists some addons still use.
+    local function DropLists()
+        for i = 1, (UIDROPDOWNMENU_MAXLEVELS or 3) do
+            local list = G("DropDownList" .. i)
+            if list and SK.Once(list) then
+                Hide(G("DropDownList" .. i .. "Backdrop"))
+                Hide(G("DropDownList" .. i .. "MenuBackdrop"))
+                SK.Backdrop(list, "panel")
+            end
+        end
+    end
+    DropLists()
+    if UIDropDownMenu_CreateFrames then hooksecurefunc("UIDropDownMenu_CreateFrames", DropLists) end
 end)
 
 -- ============================================================================
@@ -85,6 +230,17 @@ SK.Define("gossip", function()
             if parchment then SK.Strip(panel) end
             SK.Button(panel.GoodbyeButton)
             SK.ScrollBar(panel.ScrollBar)
+        end
+        -- The friendship bar's notches as thin black lines.
+        local bar = gossip.FriendshipStatusBar
+        if bar then
+            for i = 1, 4 do
+                local notch = bar["Notch" .. i]
+                if notch then
+                    notch:SetColorTexture(0, 0, 0)
+                    notch:SetSize(1, 16)
+                end
+            end
         end
     end
 
@@ -161,7 +317,33 @@ SK.Define("quest", function()
         for _, k in ipairs({ "AbandonButton", "TrackButton", "ShareButton" }) do SK.Button(popup[k]) end
     end
 
-    Hide(G("QuestInfoItemHighlight"))
+    -- The chosen reward: Blizzard's glow becomes a plain gold edge.
+    local chosen = G("QuestInfoItemHighlight")
+    if chosen and SK.Once(chosen) then
+        SK.Strip(chosen)
+        chosen:SetSize(142, 40)
+        local b = SK.Backdrop(chosen, "none")
+        b:SetFrameLevel(chosen:GetFrameLevel() + 1)
+        b:SetBackdropBorderColor(1, 1, 0)
+    end
+
+    -- The other rewards (experience, money, honour, a title...).
+    for _, f in ipairs({ G("QuestInfoRewardsFrame"), G("MapQuestInfoRewardsFrame") }) do
+        if f then
+            for _, k in ipairs({ "HonorFrame", "XPFrame", "SkillPointFrame", "ArtifactXPFrame", "TitleFrame",
+                                 "WarModeBonusFrame", "MoneyFrame" }) do
+                RewardButton(f[k])
+            end
+        end
+    end
+    local title = G("QuestInfoPlayerTitleFrame")
+    if title then
+        Hide(title.FrameLeft)
+        Hide(title.FrameCenter)
+        Hide(title.FrameRight)
+        if title.Icon then SK.Icon(title.Icon) end
+    end
+    RewardButton(G("QuestInfoSkillPointFrame"))
 
     -- Reward buttons are made as quests need them.
     local function Rewards(frame)
@@ -183,13 +365,28 @@ end)
 -- Merchant
 -- ============================================================================
 
-local function MerchantSlot(slot)
-    if not slot then return end
+-- One item for sale: a see-through box round icon, name and price.
+local function MerchantSlot(slot, x1, y1, x2, y2)
+    if not slot or not SK.Once(slot) then return end
     local name = slot:GetName() or ""
     Hide(slot.SlotTexture or G(name .. "SlotTexture"))
     Hide(G(name .. "NameFrame"))
+    SK.Strip(slot)
+    SK.Backdrop(slot, "panel", x1 or -3, y1 or 2, x2 or 2, y2 or -3)
     local btn = slot.ItemButton or G(name .. "ItemButton")
-    if btn then SK.ItemButton(btn) end
+    if btn then
+        SK.ItemButton(btn)
+        if btn.IconOverlay then
+            local px = SK.Pixel(btn)
+            btn.IconOverlay:ClearAllPoints()
+            btn.IconOverlay:SetPoint("TOPLEFT", px, -px)
+            btn.IconOverlay:SetPoint("BOTTOMRIGHT", -px, px)
+        end
+    end
+    for j = 1, (MAX_ITEM_COST or 3) do
+        local t = G(name .. "AltCurrencyFrameItem" .. j .. "Texture")
+        if t then t:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+    end
 end
 
 SK.Define("merchant", function()
@@ -197,8 +394,8 @@ SK.Define("merchant", function()
     if not m then return end
     SK.Window(m)
     for _, n in ipairs({ "MerchantFrameBottomLeftBorder", "BuybackBG" }) do Hide(G(n)) end
-    for i = 1, 12 do MerchantSlot(G("MerchantItem" .. i)) end
-    MerchantSlot(G("MerchantBuyBackItem"))
+    for i = 1, math.max(MERCHANT_ITEMS_PER_PAGE or 10, BUYBACK_ITEMS_PER_PAGE or 12) do MerchantSlot(G("MerchantItem" .. i)) end
+    MerchantSlot(G("MerchantBuyBackItem"), -6, 6, 6, -6)
     for _, n in ipairs({ "MerchantMoneyInset", "MerchantExtraCurrencyInset" }) do SK.Inset(G(n)) end
     for _, n in ipairs({ "MerchantMoneyBg", "MerchantExtraCurrencyBg" }) do SK.Strip(G(n)) end
     if G("MerchantPrevPageButton") then
@@ -209,7 +406,7 @@ SK.Define("merchant", function()
         SK.Strip(G("MerchantNextPageButton"))
         SK.Arrow(G("MerchantNextPageButton"), "right")
     end
-    for i = 1, 2 do if G("MerchantFrameTab" .. i) then SK.Tab(G("MerchantFrameTab" .. i)) end end
+    SK.NumberedTabs(m, "MerchantFrameTab")
     if m.FilterDropdown then SK.Dropdown(m.FilterDropdown) end
     -- The square repair and junk buttons: their empty-slot ring goes, the
     -- icon stays.
@@ -230,16 +427,28 @@ end)
 -- Mail
 -- ============================================================================
 
--- Inbox rows: the border art gone, the item icon cropped with a quality border.
+-- Inbox rows: the border art gone (one box round the whole list), the
+-- item icon square with a quality border.
 local function MailRow(row)
     if not row or not SK.Once(row) then return end
     SK.Strip(row)
-    SK.Backdrop(row, "panel", 0, 0, 0, 0)
     local btn = row.Button or G((row:GetName() or "") .. "Button")
     if btn then
         Hide(G((btn:GetName() or "") .. "Slot"))
-        local border = SK.Icon(btn.Icon)
-        SK.QualityBorder(btn.IconBorder, border)
+        local icon = btn.Icon
+        if icon then
+            local px = SK.Pixel(btn)
+            icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            icon:ClearAllPoints()
+            icon:SetPoint("TOPLEFT", px, -px)
+            icon:SetPoint("BOTTOMRIGHT", -px, px)
+        end
+        local hl = btn.GetHighlightTexture and btn:GetHighlightTexture()
+        if hl then hl:SetColorTexture(1, 1, 1, 0.15); if icon then hl:SetAllPoints(icon) end end
+        local ck = btn.GetCheckedTexture and btn:GetCheckedTexture()
+        if ck then ck:SetColorTexture(1, 1, 1, 0.25); if icon then ck:SetAllPoints(icon) end end
+        local b = SK.Backdrop(btn, "button")
+        SK.QualityBorder(btn.IconBorder, b)
     end
 end
 
@@ -264,11 +473,42 @@ SK.Define("mail", function()
     if mail then
         SK.Window(mail)
         Hide(G("InboxFrameBg"))
-        for i = 1, 7 do MailRow(G("MailItem" .. i)) end
-        if G("InboxPrevPageButton") then SK.Arrow(G("InboxPrevPageButton"), "left") end
-        if G("InboxNextPageButton") then SK.Arrow(G("InboxNextPageButton"), "right") end
+        SK.Strip(G("InboxFrame"))
+        SK.Inset(G("MailFrameInset"))
+        for i = 1, (INBOXITEMS_TO_DISPLAY or 7) do MailRow(G("MailItem" .. i)) end
+        local first, last = G("MailItem1"), G("MailItem" .. (INBOXITEMS_TO_DISPLAY or 7))
+        local inbox = G("InboxFrame")
+        if inbox and first and last then
+            local b = SK.Backdrop(inbox, "panel")
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", first, "TOPLEFT")
+            b:SetPoint("BOTTOMRIGHT", last, "BOTTOMRIGHT")
+        end
+        -- Page buttons: Forever keeps them on the inbox and labels them.
+        local prev = (inbox and inbox.PrevPageButton) or G("InboxPrevPageButton")
+        local nextB = (inbox and inbox.NextPageButton) or G("InboxNextPageButton")
+        if prev then SK.HideTexts(prev); SK.Arrow(prev, "left") end
+        if nextB then SK.HideTexts(nextB); SK.Arrow(nextB, "right") end
+        if not FOREVER then
+            if prev then prev:SetPoint("BOTTOMLEFT", 30, 100) end
+            if nextB then nextB:SetPoint("BOTTOMRIGHT", -80, 100) end
+        end
         Buttons("OpenAllMail", "SendMailMailButton", "SendMailCancelButton")
-        for i = 1, 2 do if G("MailFrameTab" .. i) then SK.Tab(G("MailFrameTab" .. i)) end end
+        SK.NumberedTabs(mail, "MailFrameTab")
+        SK.Radio(G("SendMailSendMoneyButton"))
+        SK.Radio(G("SendMailCODButton"))
+        local sendMoney, money = G("SendMailSendMoneyButton"), G("SendMailMoney")
+        if sendMoney and money then
+            sendMoney:ClearAllPoints()
+            sendMoney:SetPoint("TOPRIGHT", money, "TOPRIGHT", 30, 8)
+        end
+        local mb, cb = G("SendMailMailButton"), G("SendMailCancelButton")
+        if mb and cb then mb:SetPoint("RIGHT", cb, "LEFT", -2, 0) end
+        -- The letter text in white on the dark page.
+        for _, f in ipairs({ "MailTextFontNormal", "InvoiceTextFontNormal" }) do
+            local font = G(f)
+            if font then font:SetTextColor(1, 1, 1) end
+        end
 
         -- Sending.
         for _, n in ipairs({ "SendMailHorizontalBarLeft", "SendMailHorizontalBarLeft2", "SendStationeryBackgroundLeft",
@@ -301,8 +541,13 @@ SK.Define("mail", function()
         end
         SK.ScrollFrame(G("OpenMailScrollFrame"))
         if G("OpenMailScrollFrame") then SK.Backdrop(G("OpenMailScrollFrame"), "panel", -4, 4, 4, -4) end
+        SK.Inset(G("OpenMailFrameInset"))
         Buttons("OpenMailReplyButton", "OpenMailDeleteButton", "OpenMailCancelButton", "OpenMailReportSpamButton")
+        local reply, del, cancel = G("OpenMailReplyButton"), G("OpenMailDeleteButton"), G("OpenMailCancelButton")
+        if reply and del then reply:SetPoint("RIGHT", del, "LEFT", -2, 0) end
+        if del and cancel then del:SetPoint("RIGHT", cancel, "LEFT", -2, 0) end
         if G("OpenMailLetterButton") then SK.ItemButton(G("OpenMailLetterButton")) end
+        if G("OpenMailMoneyButton") then SK.ItemButton(G("OpenMailMoneyButton")) end
         for i = 1, 16 do
             local b = G("OpenMailAttachmentButton" .. i)
             if b then SK.ItemButton(b) end

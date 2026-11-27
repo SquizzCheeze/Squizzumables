@@ -72,7 +72,9 @@ end
 -- ============================================================================
 
 -- key, label, ElvUI's key, and the Blizzard addon it lives in when that loads
--- on demand (nil: already loaded with the game).
+-- on demand (nil: already loaded with the game). `forever = false` marks a
+-- window Forever does not have; `addon` may differ per client.
+local FOREVER = BH.IS_FOREVER
 SK.WINDOWS = {
     { key = "misc",     label = "Popups and Game Menu", elv = "misc" },
     { key = "gossip",   label = "Gossip and Books",                    elv = "gossip" },
@@ -82,19 +84,33 @@ SK.WINDOWS = {
     { key = "character", label = "Character, Reputation and Currency", elv = "character" },
     { key = "friends",  label = "Friends",                             elv = "friends" },
     { key = "lfg",      label = "Group Finder",                        elv = "lfg" },
-    { key = "pvp",      label = "PvP",                                 elv = "pvp", addon = "Blizzard_PVPUI" },
+    -- Forever has no PvP window: its PvP tab is in the character window.
+    { key = "pvp",      label = "PvP",                                 elv = "pvp", addon = "Blizzard_PVPUI", forever = false },
     { key = "talents",  label = "Talents and Spellbook",               elv = "talent", addon = "Blizzard_PlayerSpells" },
     { key = "collections", label = "Collections",                      elv = "collections", addon = "Blizzard_Collections" },
-    { key = "encounterjournal", label = "Dungeon Journal",             elv = "encounterjournal", addon = "Blizzard_EncounterJournal" },
-    { key = "achievement", label = "Achievements",                     elv = "achievement", addon = "Blizzard_AchievementUI" },
+    { key = "encounterjournal", label = "Dungeon Journal",             elv = "encounterjournal", addon = "Blizzard_EncounterJournal", forever = false },
+    { key = "achievement", label = "Achievements",                     elv = "achievement", addon = "Blizzard_AchievementUI", forever = false },
 }
+for i = #SK.WINDOWS, 1, -1 do
+    if FOREVER and SK.WINDOWS[i].forever == false then table.remove(SK.WINDOWS, i) end
+end
 local byKey = {}
 for _, w in ipairs(SK.WINDOWS) do byKey[w.key] = w end
 
 function SK.Define(key, fn)
     local w = byKey[key]
-    assert(w, "Squizzumables: no skin window called " .. tostring(key))
+    if not w then return end   -- a window this client does not have
     w.skin = fn
+end
+
+-- A part of a window that lives in another Blizzard addon, loaded later (the
+-- Forever group finder, its statistics window): run once that addon is in,
+-- if the window's skin is on.
+function SK.DefineLate(key, addon, fn)
+    local w = byKey[key]
+    if not w or not addon then return end
+    w.late = w.late or {}
+    w.late[addon] = fn
 end
 
 local function WindowActive(w)
@@ -139,7 +155,9 @@ local painted = setmetatable({}, { __mode = "k" })     -- backdrop -> kind
 
 local function Paint(b)
     local kind = painted[b]
-    if kind == "panel" then
+    if type(kind) == "table" then
+        b:SetBackdropColor(kind[1], kind[2], kind[3], kind[4] or 1)
+    elseif kind == "panel" then
         b:SetBackdropColor(SK.PanelRGBA())
     elseif kind == "none" then
         b:SetBackdropColor(0, 0, 0, 0)
@@ -149,8 +167,8 @@ local function Paint(b)
     if not b.sqHover then b:SetBackdropBorderColor(SK.BorderRGB()) end
 end
 
--- kind: "panel" (see-through, for windows), "button" (solid) or "none"
--- (border only). Offsets are from the owner's corners: x1, y1 the top left,
+-- kind: "panel" (see-through, for windows), "button" (solid), "none"
+-- (border only) or a fixed { r, g, b, a } background. Offsets are from the owner's corners: x1, y1 the top left,
 -- x2, y2 the bottom right (outward is negative x1 / positive y1 and so on).
 function SK.Backdrop(owner, kind, x1, y1, x2, y2)
     local b = backdrops[owner]
@@ -405,6 +423,27 @@ local function PaintTab(tab)
     end
 end
 
+-- Blizzard lifts the selected tab's text a few pixels to sit in its raised
+-- art; on our flat tabs the text stays in the middle.
+local textOwner = setmetatable({}, { __mode = "k" })
+local centring = false
+local function KeepCentred(text)
+    if centring then return end
+    local tab = textOwner[text]
+    if not tab then return end
+    centring = true
+    text:ClearAllPoints()
+    text:SetPoint("CENTER", tab, "CENTER", 0, 1)
+    centring = false
+end
+local function CentreTabText(tab)
+    local text = tab.Text or (tab:GetName() and _G[tab:GetName() .. "Text"]) or (tab.GetFontString and tab:GetFontString())
+    if not text or textOwner[text] then return end
+    textOwner[text] = tab
+    hooksecurefunc(text, "SetPoint", KeepCentred)
+    KeepCentred(text)
+end
+
 function SK.Tab(tab)
     if not Once(tab) then return end
     for _, k in ipairs({ "Left", "Middle", "Right", "LeftActive", "MiddleActive", "RightActive",
@@ -430,7 +469,8 @@ function SK.Tab(tab)
             SK.Backdrop(tab, "button")
         end
     else
-        SK.Backdrop(tab, "button", 3, -3, -3, 3)
+        SK.Backdrop(tab, "button", 3, -1, -3, 3)
+        CentreTabText(tab)
     end
     tabs[tab] = true
     SK.Hover(tab)
@@ -500,6 +540,223 @@ function SK.TabSystem(ts)
     end
     if ts.AddTab then hooksecurefunc(ts, "AddTab", Skin) end
     Skin()
+end
+
+-- Bottom tabs sat snug under the window, one after another (ElvUI's layout:
+-- Blizzard spaces them for its own wider tab art). Hidden tabs are skipped,
+-- and the layout runs again whenever one is shown or hidden.
+local tabLists = setmetatable({}, { __mode = "k" })   -- tab -> layout function
+
+function SK.LayoutTabs(frame, list)
+    if not frame or not list then return end
+    local function Layout()
+        local prev
+        for _, tab in ipairs(list) do
+            if tab:IsShown() then
+                tab:ClearAllPoints()
+                if prev then
+                    tab:SetPoint("TOPLEFT", prev, "TOPRIGHT", -5, 0)
+                else
+                    tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -3, 0)
+                end
+                prev = tab
+            end
+        end
+    end
+    for _, tab in ipairs(list) do
+        if not tabLists[tab] then
+            tab:HookScript("OnShow", function() tabLists[tab]() end)
+            tab:HookScript("OnHide", function() tabLists[tab]() end)
+        end
+        tabLists[tab] = Layout
+    end
+    Layout()
+    return Layout
+end
+
+-- The same for numbered tabs: Name1, Name2, ... as far as they go.
+function SK.NumberedTabs(frame, prefix)
+    local list, i = {}, 1
+    while _G[prefix .. i] do
+        SK.Tab(_G[prefix .. i])
+        list[#list + 1] = _G[prefix .. i]
+        i = i + 1
+    end
+    return SK.LayoutTabs(frame, list), list
+end
+
+-- Big icon tabs down a window's right edge (LargeSideTabButtonTemplate:
+-- Forever's character, collections and group finder, the social window).
+local sideTabIcon = setmetatable({}, { __mode = "k" })
+
+local function SideTabInterior(tab)
+    local icon = tab.Icon
+    if not icon then return end
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:SetSize(30, 30)
+end
+
+function SK.SideTab(tab)
+    if not tab or not Once(tab) then return end
+    local icon = tab.Icon
+    if not icon then return end
+    if tab.Mask and icon.RemoveMaskTexture then icon:RemoveMaskTexture(tab.Mask) end
+    Hide(tab.Background)
+    tab:SetSize(36, 30)
+    SideTabInterior(tab)
+    sideTabIcon[tab] = icon
+    -- Blizzard resets the icon's size whenever the tab is checked.
+    if tab.UpdateIconInterior then hooksecurefunc(tab, "UpdateIconInterior", SideTabInterior) end
+    if tab.SetChecked then hooksecurefunc(tab, "SetChecked", SideTabInterior) end
+    local px = SK.Pixel(tab)
+    SK.Backdrop(tab, "button")
+    backdrops[tab]:ClearAllPoints()
+    backdrops[tab]:SetPoint("TOPLEFT", icon, "TOPLEFT", -px, px)
+    backdrops[tab]:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", px, -px)
+    for _, k in ipairs({ "HighlightTexture", "SelectedTexture" }) do
+        local t = tab[k]
+        if t then
+            t:SetColorTexture(1, 1, 1, 0.3)
+            t:SetAllPoints(icon)
+        end
+    end
+    if tab.SelectedTexture then tab.SelectedTexture:SetBlendMode("ADD") end
+    if tab.TabGlow then
+        tab.TabGlow:SetColorTexture(1, 0.8, 0.1, 0.5)
+        tab.TabGlow:SetAllPoints(icon)
+    end
+    SK.Hover(tab)
+end
+
+-- Side tabs stacked down the outside of `frame`'s right edge.
+function SK.LayoutSideTabs(frame, list)
+    local prev
+    for _, tab in ipairs(list or {}) do
+        if tab:IsShown() then
+            tab:ClearAllPoints()
+            if prev then
+                tab:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -3)
+            else
+                tab:SetPoint("TOPLEFT", frame, "TOPRIGHT", 3, -1)
+            end
+            prev = tab
+        end
+    end
+end
+
+-- ColoredProgressBarTemplate (Forever's reputation and skill bars): its art
+-- away, our track round the fill, and the fill flat in the colour Blizzard's
+-- art had.
+local BAR_COLOURS = {
+    ["common-stat-bar-red"] = { 0.8, 0.15, 0.1 }, ["common-stat-bar-green"] = { 0.23, 1, 0 },
+    ["common-stat-bar-blue"] = { 0.03, 0.43, 0.92 }, ["common-stat-bar-white"] = { 0.85, 0.85, 0.85 },
+}
+local BAR_BY_TYPE = { "common-stat-bar-red", "common-stat-bar-green", "common-stat-bar-blue", "common-stat-bar-white" }
+
+local function FlatFill(fill, atlas)
+    local c = BAR_COLOURS[atlas or ""]
+    fill:SetTexture(WHITE)
+    if c then fill:SetVertexColor(c[1], c[2], c[3]) end
+end
+
+function SK.ColoredBar(bar)
+    if not bar or not Once(bar) then return end
+    local fill = bar.Fill
+    local atlas = fill and fill.GetAtlas and fill:GetAtlas()
+    SK.Strip(bar)
+    local px = SK.Pixel(bar)
+    local b = SK.Backdrop(bar, "panel")
+    b:ClearAllPoints()
+    b:SetPoint("TOPLEFT", bar, "LEFT", -px, 8)
+    b:SetPoint("BOTTOMRIGHT", bar, "RIGHT", px, -8)
+    if fill then
+        if bar.Mask and fill.RemoveMaskTexture then fill:RemoveMaskTexture(bar.Mask) end
+        fill:SetAlpha(1)
+        FlatFill(fill, atlas)
+        fill:ClearAllPoints()
+        fill:SetPoint("TOPLEFT", b, "TOPLEFT", px, -px)
+        fill:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", px, px)
+        if bar.SetFillTextureByColorType then
+            hooksecurefunc(bar, "SetFillTextureByColorType", function(self, colorType)
+                FlatFill(self.Fill, BAR_BY_TYPE[colorType])
+            end)
+        end
+    end
+    if bar.FillArea then
+        bar.FillArea:ClearAllPoints()
+        bar.FillArea:SetPoint("TOPLEFT", b, "TOPLEFT", px, -px)
+        bar.FillArea:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -px, px)
+    end
+end
+
+-- Round option buttons (UIRadioButtonTemplate): a small flat square, the dot kept.
+function SK.Radio(rb)
+    if not rb or not Once(rb) then return end
+    local checked = rb.GetCheckedTexture and rb:GetCheckedTexture()
+    for _, r in ipairs({ rb:GetRegions() }) do
+        if r:IsObjectType("Texture") and r ~= checked then r:SetAlpha(0) end
+    end
+    HideStateTextures(rb)
+    if checked then
+        checked:SetColorTexture(SK.AccentRGB())
+        checked:ClearAllPoints()
+        checked:SetPoint("TOPLEFT", 4, -4)
+        checked:SetPoint("BOTTOMRIGHT", -4, 4)
+    end
+    SK.Backdrop(rb, "button", 2, -2, -2, 2)
+    SK.Hover(rb)
+end
+
+-- Text on a frame itself (not its children) hidden: page buttons that say
+-- "Prev" and "Next" beside the arrow.
+function SK.HideTexts(frame)
+    if not frame then return end
+    for _, r in ipairs({ frame:GetRegions() }) do
+        if r:IsObjectType("FontString") then r:SetAlpha(0) end
+    end
+end
+
+-- A collapsible list header (ListHeaderTemplate and friends: reputation,
+-- currency): the bar art goes and a flat panel takes its place; the +/- on its
+-- right stays, as the plainer square plus and minus.
+local inAtlas = false
+local function HeaderPlusMinus(tex, atlas)
+    if inAtlas then return end
+    if atlas ~= "Options_ListExpand_Right" and atlas ~= "Options_ListExpand_Right_Expanded" then return end
+    inAtlas = true
+    tex:SetAtlas(atlas == "Options_ListExpand_Right" and "Soulbinds_Collection_CategoryHeader_Expand"
+                 or "Soulbinds_Collection_CategoryHeader_Collapse", true)
+    inAtlas = false
+end
+
+function SK.ListHeader(row)
+    if not row or not Once(row) then return end
+    local keep = {}
+    for _, k in ipairs({ "Right", "HighlightRight", "StateIcon" }) do if row[k] then keep[row[k]] = true end end
+    SK.Strip(row, keep)
+    for _, k in ipairs({ "Right", "HighlightRight" }) do
+        local t = row[k]
+        if t and t.GetAtlas then
+            HeaderPlusMinus(t, t:GetAtlas())
+            hooksecurefunc(t, "SetAtlas", HeaderPlusMinus)
+        end
+    end
+    SK.Backdrop(row, "panel", 0, -1, 0, 1)
+end
+
+-- Row highlight / selected textures flattened over a row.
+function SK.RowHighlights(row, inside)
+    local hl = row.GetHighlightTexture and row:GetHighlightTexture() or row.Highlight
+    if hl and hl.SetColorTexture then
+        hl:SetColorTexture(1, 1, 1, 0.15)
+        if inside then hl:SetAllPoints(inside) end
+    end
+    local sel = row.Selected or row.SelectedTexture
+    if sel and sel.SetColorTexture then
+        local r, g, b = SK.AccentRGB()
+        sel:SetColorTexture(r, g, b, 0.25)
+        if inside then sel:SetAllPoints(inside) end
+    end
 end
 
 -- Rows in a ScrollBox are made and reused as the list scrolls; `fn` runs on
@@ -767,11 +1024,27 @@ local ran = {}
 local loggedIn = false
 local pendingCombat = false
 
+local lateRan = {}
+
+local function RunLate(w)
+    if not w.late or not ran[w.key] then return end
+    for addon, fn in pairs(w.late) do
+        local id = w.key .. ":" .. addon
+        if not lateRan[id] and C_AddOns.IsAddOnLoaded(addon) then
+            lateRan[id] = true
+            xpcall(fn, geterrorhandler())
+        end
+    end
+end
+
 local function RunWindow(w)
-    if ran[w.key] or not w.skin or not WindowActive(w) then return end
-    if w.addon and not C_AddOns.IsAddOnLoaded(w.addon) then return end
-    ran[w.key] = true
-    xpcall(w.skin, geterrorhandler())
+    if not ran[w.key] then
+        if not w.skin or not WindowActive(w) then return end
+        if w.addon and not C_AddOns.IsAddOnLoaded(w.addon) then return end
+        ran[w.key] = true
+        xpcall(w.skin, geterrorhandler())
+    end
+    RunLate(w)
 end
 
 function SK.Run()
@@ -904,7 +1177,7 @@ ev:SetScript("OnEvent", function(_, event, a1)
     elseif event == "ADDON_LOADED" then
         if not (BH.settings and loggedIn) then return end
         for _, w in ipairs(SK.WINDOWS) do
-            if w.addon == a1 then
+            if w.addon == a1 or (w.late and w.late[a1]) then
                 if InCombatLockdown() then pendingCombat = true else RunWindow(w) end
             end
         end

@@ -33,7 +33,13 @@ V2.8
   currency), friends, the group finder and PvP; then talents and the
   spellbook, collections, the dungeon journal and achievements. Colours are
   settings. Each window waits while ElvUI's
-  skin for it is on, and ElvUI's choices are copied once.
+  skin for it is on, and ElvUI's choices are copied once. Every window was
+  then checked against ElvUI's on both clients and brought in line: tabs
+  laid out in ElvUI's row (hidden ones leave no gap), the big side tabs on
+  Forever's character, collections and group finder windows, coloured
+  reputation/skill bars, stat rows, Forever's own group finder, the Mythic+
+  tab, mount and pet lists, the ready check, stack splitting and the
+  "return to graveyard" box.
 
 - Fixed (WoW Forever): Mark of the Wild, Power Word: Fortitude and Arcane
   Intellect are single-target there, so the button cast on whoever you had
