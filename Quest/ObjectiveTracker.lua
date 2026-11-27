@@ -404,7 +404,11 @@ local function HeadFont(fs)
     fs:SetFont(ResolveFont(s.otHeadFont), s.otHeadSize or 14, Flags(s.otHeadOutline or "OUTLINE"))
     local shadow = s.otHeadOutline == "SHADOW"
     fs:SetShadowOffset(shadow and 1 or 0, shadow and -1 or 0)
-    if fs.ScaleTextToFit then fs:ScaleTextToFit() end
+    -- Never call fs:ScaleTextToFit() from here: on a header that has not
+    -- shown yet it WRITES fs.baseLineHeight from our code, tainting it, and a
+    -- scenario starting later ran the tracker update tainted
+    -- (GetAuraDataByIndex refused in MawBuffs, user report 2026-11-27).
+    -- Blizzard re-fits the header itself on its next SetText.
 end
 
 local function StyleHeader(header)

@@ -175,7 +175,14 @@ end
 local function OnItem(tt, data)
     if not (tt and not tt:IsForbidden() and ITEM_TIPS[tt:GetName() or ""] and Active()) then return end
     local s = Settings()
-    local _, link = tt:GetItem()
+    -- Not tt:GetItem(): the comparison tooltips (ShoppingTooltip1/2) have no
+    -- such method on 12.x and errored on every hover with a comparison.
+    local link
+    if TooltipUtil and TooltipUtil.GetDisplayedItem then
+        link = select(2, TooltipUtil.GetDisplayedItem(tt))
+    elseif tt.GetItem then
+        link = select(2, tt:GetItem())
+    end
     local id = data and data.id
     if link and canaccessvalue(link) then
         if s.ttQuality then

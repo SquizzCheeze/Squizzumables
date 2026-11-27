@@ -458,7 +458,11 @@ local function Fold()
     local tracker = _G.ObjectiveTrackerFrame
     if not (tracker and folded) then return end
     if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
-    for _, m in ipairs(tracker.modules or {}) do m:Hide() end
+    -- A module mid-slide is skipped: its OnHide would run EndSlide, which
+    -- then writes slide state from our code (taint). The next update folds it.
+    for _, m in ipairs(tracker.modules or {}) do
+        if not m.slideInfo then m:Hide() end
+    end
     -- Only the bottom edge, as Blizzard's own update moves it; its other
     -- anchors come from the XML and are left alone.
     if tracker.NineSlice and tracker.Header then
