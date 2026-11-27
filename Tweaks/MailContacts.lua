@@ -80,8 +80,12 @@ local function SeedFromWT()
 end
 
 -- An empty realm (WindTools stored some that way on WoW Forever) is ours.
+-- WoW Forever reports no realm name at all (GetRealmName() is ""), so there
+-- every stored realm counts as ours too: it has one realm to mail on.
 local function RealmOf(realm)
-    if realm == nil or realm == "" then return MY_REALM or "" end
+    if realm == nil or realm == "" or MY_REALM == nil or MY_REALM == "" or BH.IS_FOREVER then
+        return MY_REALM or ""
+    end
     return Norm(realm)
 end
 

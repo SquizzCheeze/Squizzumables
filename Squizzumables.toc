@@ -88,6 +88,7 @@ Skins\Windows3.lua
 Skins\Windows4.lua
 Skins\Windows5.lua
 Skins\Windows6.lua
+Skins\Move.lua
 Squizzumables_CDM.lua
 Squizzumables_CDMAuras.lua
 UI\CDMPreview.lua

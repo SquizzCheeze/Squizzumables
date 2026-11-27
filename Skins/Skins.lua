@@ -1379,6 +1379,7 @@ end
 
 local warned
 local function Changed()
+    if ns.MoveWindows then ns.MoveWindows.Scan() end
     SK.Repaint()
     SK.RepaintTabs()
     ApplyShadows()
@@ -1422,6 +1423,13 @@ SK.SETTINGS = ns.Settings.Describe({
                   .. "This sets the game's own Quest Text Contrast (Options > Accessibility) to its darkest setting, "
                   .. "so Blizzard recolours the text itself. Your old setting comes back if you turn this off." },
             { key = "skShadow", type = "check", default = true, label = "Soft Shadow Round Windows" },
+            { type = "header", label = "MOVING WINDOWS" },
+            { key = "skMove", type = "check", default = true, free = true, label = "Drag Windows to Move Them",
+              tip = "Left-drag an empty part of a Blizzard window to move it. Waits while WindTools' Move Frames is on." },
+            { key = "skMoveSave", type = "check", default = false, free = true, label = "Remember Positions",
+              when = function(s) return s.skMove ~= false end,
+              tip = "Windows open where you last left them, on every character. Without this a moved window "
+                  .. "goes back to its usual spot the next time it opens.\n\n/sqmove reset forgets every position." },
             { type = "header", label = "COLOURS" },
             { key = "skPanelColor", type = "color", default = { r = 0.06, g = 0.06, b = 0.06 }, label = "Window Background" },
             { key = "skPanelAlpha", type = "slider", default = 80, min = 0, max = 100, step = 5, label = "Window Opacity" },

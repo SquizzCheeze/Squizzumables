@@ -3,6 +3,11 @@ Squizzumables Changelog
 
 V2.8
 
+- New: move Blizzard's windows (Skins > General > Moving Windows): left-drag
+  an empty part of a window to move it, with or without the skins. Remember
+  Positions (off by default) reopens each window where you left it, on every
+  character; /sqmove reset forgets them. Waits while WindTools' Move Frames
+  is on.
 - New: Chat Bar (Chat > Chat Bar): coloured blocks or letters over the
   left chat panel, one per channel; click one to start a message there.
   Pick which channels, a /roll button and a community channel; place it with

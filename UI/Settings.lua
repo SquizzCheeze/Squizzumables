@@ -17,6 +17,7 @@
 --
 --   ns.Settings.Describe({
 --       master = "cursorEnabled",      -- optional: every other row greys out while it is off
+--       (a row with free = true stays usable while the master is off)
 --       apply  = function() ... end,   -- run after any change
 --       pages  = {                     -- one sub-tab each
 --           { key = "cursor", label = "Cursor", rows = {
@@ -103,7 +104,7 @@ local function Disabled(desc, row)
     if row.key == master then return nil end
     return function()
         local s = BH.settings
-        if master and not s[master] then return true end
+        if master and not row.free and not s[master] then return true end
         return when ~= nil and not when(s)
     end
 end
