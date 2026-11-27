@@ -3568,6 +3568,7 @@ SlashCmdList['SQUIZZUMABLES'] = function(msg)
         for i = 1, math.min(10, #list) do
             print(string.format("  %.0f ms  %s", list[i][2], tostring(list[i][1])))
         end
+    elseif msg == 'reset' then
         BH.frame:ClearAllPoints()
         BH.frame:SetPoint('CENTER')
         print(addonName.." frame reset to center")
