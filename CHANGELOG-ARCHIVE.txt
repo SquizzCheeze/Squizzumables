@@ -8,6 +8,72 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V2.7
+
+- New: four more bundled sounds, "Defensives", "Herding Cats",
+  "Herding Cats 2" and "Kelli Flailing".
+
+V2.6
+
+- New: two more bundled sounds, "Nori" and "SQUIZZ! From Upsidedownland".
+
+V2.5
+
+- New (WoW Forever): Hunter aspects are class buffs. While no aspect is up,
+  each one you know gets a button: Hawk, Monkey, Wild, Beast, Cheetah and
+  Pack. Untick any you don't want on the Class Buffs tab.
+- Fixed (WoW Forever): the No Pet reminder no longer shows before you have
+  learned Call Pet at level 10.
+- Fixed: the lust song could replay after a /reload or a loading screen
+  (porting to a city) while you still had Sated or Exhaustion.
+
+V2.4
+
+- New: three bundled sounds, "The Ducky of the Opera", "For Ducky, Every
+  Song Is Sung" and "He Started It".
+
+V2.3
+
+- New: Squizzumables now runs on WoW Forever as well as retail. Forever has
+  its own food, flask, weapon oil and class buff lists, with every rank of a
+  spell counted. Buttons cast your highest rank and stay hidden until you
+  have learned the spell. Rogue poisons appear with the weapon oils.
+- Not on Forever yet: elixirs, Paladin blessings and augment runes.
+
+V2.2
+
+- New: Rotation Helper (Cooldowns > Rotation Helper, off until you switch
+  it on). Shows the spell Blizzard's rotation helper suggests next on an
+  icon you can put anywhere with Edit Mode, with the cooldown swipe, red
+  when out of range, grey when it can't be cast (blue when you're short on
+  resources) and a glow on procs. It is Blizzard's suggestion - one spell
+  at a time - shown where you want it.
+- New: a Ready Now row beside the Rotation Helper icon (its own tab on the
+  same page). List the spells you want, per spec and in your order, or
+  fill it from the rotation helper's spells that have cooldowns. Each icon
+  is bright when the spell is ready and fades while it is on cooldown
+  (how far is up to you, down to hidden), with the same swipe, range,
+  resource and proc cues as the main icon.
+- The hunter NO PET reminder now also shows when your pet is DEAD (as
+  PET DEAD, so you know to Revive it rather than Call it), including in the
+  middle of a fight - before, a dead pet still counted as "having a pet".
+- Fixed: text reminders (NO PET, NO FOOD IN BAGS, BEACON and the rest) drew
+  on top of Blizzard's windows, such as the world map and the Great Vault.
+  They now sit behind them.
+- Rotation Helper icons show their keybind (from your action bars, the same
+  as the Cooldown Manager groups; size, position and colour on the Main
+  Icon tab), and can show cooldown numbers.
+- New: Low Health Glow for Cooldown Manager and custom groups (Behaviour
+  tab). Tick the icons in a group that should glow while your health is
+  below a threshold you set (default 35%) and the ability is ready, in a
+  colour of your own - a nudge to use a defensive or a potion. Works in
+  combat.
+- Fixed: potions and Healthstones you added to Blizzard's Cooldown Manager
+  showed on Blizzard's bars but never on ours. Combat Potion, Health
+  Potion, Healthstone and Demonic Healthstone now show with their
+  cooldowns, read from whichever one you carry, with that item's own icon.
+  An icon only shows while you have one in your bags.
+
 V2.1
 
 - Fixed: a group buff button (Skyfury, Arcane Intellect, Battle Shout and
