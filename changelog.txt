@@ -8,6 +8,9 @@ V2.9
 - Fixed: minimap buttons gathered onto the button bar could lose their
   picture until hovered, leaving an empty square. Addons that set their
   minimap icon to "show on mouseover" no longer fade it on the bar.
+- Fixed: "Auras cannot be accessed when secret" errors when hovering
+  players with the tooltip's mount line on, in places where the game hides
+  aura data outside combat too. The mount line is skipped there.
 
 
 V2.8 (2026-11-28)

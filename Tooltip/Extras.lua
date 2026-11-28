@@ -112,9 +112,13 @@ end
 
 local function Mount(tt, unit)
     if InCombatLockdown() or Settings().ttMount == false or not C_MountJournal then return end
+    -- Auras can be secret OUT of combat too (instances, restricted zones), and
+    -- then the read itself raises instead of returning secrets. Skip the line
+    -- whenever the client says auras are hidden, and pcall as a backstop.
+    if C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() then return end
     for i = 1, 40 do
-        local aura = C_UnitAuras.GetAuraDataByIndex(unit, i, "HELPFUL")
-        if not aura then return end
+        local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
+        if not ok or not aura then return end
         local id = aura.spellId
         if not canaccessvalue(id) then return end
         local mountID = id and C_MountJournal.GetMountFromSpell(id)
