@@ -1376,12 +1376,36 @@ SK.Define("taxi", function()
     if not f then return end
     -- The map picture IS InsetBg: TaxiFrame_OnShow hands it to SetTaxiMap.
     -- Stripping it left the flight points on a black square.
-    local keep = f.InsetBg and { [f.InsetBg] = true } or nil
+    local mapTex = f.InsetBg
+    local keep = mapTex and { [mapTex] = true } or nil
     SK.Window(f, nil, nil, nil, nil, keep)
-    if f.InsetBg then f.InsetBg:SetAlpha(1) end
     Hide(G("TaxiPortrait"))
     local route = G("TaxiRouteMap")
     if route then SK.Backdrop(route, "none") end
+    if mapTex then
+        -- Left on TaxiFrame itself, our see-through panel (a child frame)
+        -- drew over the map like fog. Give the picture its own frame,
+        -- stacked panel < map < routes and flight points (all of which hang
+        -- off TaxiRouteMap). Re-stacked on every show, after the window is
+        -- raised. Blizzard still reaches the texture as self.InsetBg.
+        mapTex:SetAlpha(1)
+        local host = CreateFrame("Frame", nil, f)
+        host.ignoreInLayout = true
+        host:SetAllPoints(f)
+        mapTex:SetParent(host)
+        local function Stack()
+            local b = SK.GetBackdrop(f)
+            local base = math.max(b and b:GetFrameLevel() or 0, f:GetFrameLevel())
+            host:SetFrameLevel(base + 1)
+            if route then
+                route:SetFrameLevel(base + 2)
+                local rb = SK.GetBackdrop(route)
+                if rb then rb:SetFrameLevel(base + 2) end
+            end
+        end
+        Stack()
+        f:HookScript("OnShow", Stack)
+    end
     if G("TaxiCloseButton") then SK.Close(G("TaxiCloseButton")) end
 end)
 
