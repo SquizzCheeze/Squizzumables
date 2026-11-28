@@ -236,6 +236,18 @@ end
 local backdrops = setmetatable({}, { __mode = "k" })   -- owner -> backdrop
 local painted = setmetatable({}, { __mode = "k" })     -- backdrop -> kind
 
+-- Blizzard's BackdropTemplateMixin:SetupTextureCoordinates divides the
+-- frame's width and height, and a frame sized off secret values (anchored to
+-- one the game sizes from hidden data) reports them secret: the arithmetic
+-- then errors on every resize. Ours are flat WHITE8x8 pieces whose texture
+-- coordinates do not show, so skip that pass while the size is secret.
+local canAccess = canaccessvalue or function() return true end
+local function SafeTexCoords(self)
+    local w, h = self:GetSize()
+    if not (canAccess(w) and canAccess(h)) then return end
+    BackdropTemplateMixin.SetupTextureCoordinates(self)
+end
+
 local function Paint(b)
     local kind = painted[b]
     if type(kind) == "table" then
@@ -258,6 +270,7 @@ function SK.Backdrop(owner, kind, x1, y1, x2, y2)
     if not b then
         local parent = (owner.IsObjectType and owner:IsObjectType("Texture")) and owner:GetParent() or owner
         b = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        b.SetupTextureCoordinates = SafeTexCoords
         -- Frames that size themselves to their children (ResizeLayoutFrame:
         -- the popups, among others) must not count this one: it sits at their
         -- full size, so every layout pass grew them by their padding until

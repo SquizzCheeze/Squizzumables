@@ -14,6 +14,9 @@ V2.9
 - Fixed: with the Flight Maps skin on, the flight master's map showed only
   the flight points on a black background (WoW Forever, and retail's
   older-style flight window). The map picture is kept now.
+- Fixed: "attempt to perform arithmetic on local 'width' (a secret number
+  value)" errors from Backdrop.lua with window skins on, when a skinned
+  frame is sized from values the game keeps hidden.
 
 
 V2.8 (2026-11-28)
