@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.9"] = {
+        "Fixes for the new sections: flight master map, minimap button icons, the Friends window skin, and two error messages (tooltip mount line, window skins).",
+    },
     ["2.8"] = {
         "Big update: new optional sections for action bars, chat, data texts, buffs and debuffs, tooltip, minimap and minimap buttons, item bars, quest and map extras, and dark flat skins for Blizzard's windows.",
         "Every new section is OFF until you switch it on, so nothing changes until you choose it.",

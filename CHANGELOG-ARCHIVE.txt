@@ -8,6 +8,289 @@ history as its release notes. Older sections move here instead of being
 deleted: many carry root-cause writeups worth grepping before assuming a bug
 is fresh. This file is in the .pkgmeta ignore list, so it never ships.
 
+V2.8 (2026-11-28)
+
+PLEASE NOTE: this release adds a lot of new sections (action bars, chat,
+data texts, buffs and debuffs, tooltip, minimap, item bars, window skins and
+more) that have not been fully tested yet, so some bugs may show up. Every
+new section is OFF until you switch it on. Bug reports are very welcome.
+
+- Fixed: the game froze for a few seconds the first time the options window
+  opened after a login or /reload. Every slider re-applied its whole module
+  as it was drawn (Action Bars alone re-laid out every bar 120 times); now
+  only a real change does. Pages and their tabs are also made a few at a time
+  in the background.
+- New: keybinds for the Item Bars: the first 12 buttons of each bar can be
+  bound in the game's Key Bindings (Squizzumables > Item Bar 1-5), and the key
+  shows in the button's corner (Item Bars > Keybinds, with its size). Keys
+  you had on WindTools' Extra Items Bar are carried over.
+- New: move Blizzard's windows (Skins > General > Moving Windows): left-drag
+  an empty part of a window to move it, with or without the skins. Remember
+  Positions (off by default) reopens each window where you left it, on every
+  character; /sqmove reset forgets them. Waits while WindTools' Move Frames
+  is on.
+- New: Chat Bar (Chat > Chat Bar): coloured blocks or letters over the
+  left chat panel, one per channel; click one to start a message there.
+  Pick which channels, a /roll button and a community channel; place it with
+  Edit Mode. Off until you switch it on, and waits while WindTools' Chat Bar
+  is on (its settings are copied over once).
+- New: details on links (Chat > Links): item links show their item level
+  and, for gear, armour type and slot; item, spell, achievement, currency and
+  keystone links get an icon. Waits while WindTools' Chat Link is on.
+- New: Insert Keystone Automatically (Tweaks > General): your key goes into
+  the font of power when you open it.
+- New: Darken the Screen Edges (Tweaks > General), with a darkness slider.
+- New: Mail contacts (Tweaks > Mail): a list beside the mail window's Send
+  tab of your other characters, online friends, guild members and
+  favourites; click a name to send to them. Your characters and favourites
+  from WindTools' Contacts are copied over.
+- New: Achievement Tracker (Quests > Achievements, retail): a list beside the
+  achievement window of the achievements you are closest to finishing, with
+  a threshold, search, category and reward filters and sorting. Click for
+  the criteria, middle-click to track, right-click to open it, shift-click to
+  link it. Partial progress counts (450 of 500 kills is 90%). Waits while
+  WindTools' Achievement Tracker is on, and copies its settings once.
+- New: Minimap Buttons (Interface > Minimap Buttons): every addon's minimap
+  icon gathered into one bar you place in Edit Mode, squared off with a
+  1px border, in rows or running down, optionally only on mouseover, with a
+  list of buttons to leave on the minimap. Off until you switch it on, and
+  waits while WindTools' Minimap Buttons is on.
+- New: Skins (Interface > Skins), our own in place of ElvUI's: dark
+  see-through windows with 1px borders, flat buttons, tabs, boxes and scroll
+  bars, a soft shadow, and the parchment removed (through the game's own
+  Quest Text Contrast, so Blizzard draws light text itself). First windows:
+  popups and the game menu, gossip and books, the quest windows, the
+  merchant and mail; then the character window (with reputation and
+  currency), friends, the group finder and PvP; then talents and the
+  spellbook, collections, the dungeon journal and achievements. Colours are
+  settings. Each window waits while ElvUI's
+  skin for it is on, and ElvUI's choices are copied once. Every window was
+  then checked against ElvUI's on both clients and brought in line: tabs
+  laid out in ElvUI's row (hidden ones leave no gap), the big side tabs on
+  Forever's character, collections and group finder windows, coloured
+  reputation/skill bars, stat rows, Forever's own group finder, the Mythic+
+  tab, mount and pet lists, the ready check, stack splitting and the
+  "return to graveyard" box. Then every window left that ElvUI skins: the
+  auction house, professions, crafting orders and the profession book, the
+  trainer, loot (with rolls, bonus rolls and the loot history), bags and the
+  bank, the guild bank, macros (with the icon picker), guild and
+  communities and the guild's smaller windows, the calendar, the clock and
+  stopwatch, inspect, trade, the dressing room, the raid tab, chat channels,
+  the settings window and chat settings, click casting, the addon list,
+  help, GM chat, the Lua error window and table inspector, event trace,
+  Edit Mode, death recap, the breath bar, loss of control, toasts,
+  battleground scores, the Great Vault, the expansion landing page, choices,
+  trait trees, the delve pickers, sockets, item upgrades, the catalyst, the
+  scrapper, the barber, stables, flight maps and the black market. Transmog,
+  housing and the windows for older content (garrisons, covenants, azerite
+  and the like) get a plainer pass: art off, our panel and controls on,
+  nothing hand-placed.
+
+- Fixed (WoW Forever): Mark of the Wild, Power Word: Fortitude and Arcane
+  Intellect are single-target there, so the button cast on whoever you had
+  targeted (a friendly NPC took the buff and your mana). The button now
+  buffs the next person missing it, you first, then tanks, healers and the
+  rest, with their name under it and a count of how many are missing.
+  Right-click it to pick someone else: a grid of up to 8 names opens, the
+  last tile showing "+N" when more are missing. It closes when the mouse
+  leaves. The tooltip shows your highest rank instead of rank 1.
+- New: UI Scale (Settings, under Theme), for every character on the
+  account. It can go below the game's own 0.64 limit, with Small, Medium,
+  Large and Pixel Perfect presets. While ElvUI is loaded, ElvUI keeps
+  setting the scale and Squizzumables copies its value, so turning ElvUI
+  off later leaves every frame where it was.
+- New: Data Texts (Interface > Data Texts), off until you switch them on.
+  A strip of live readouts under the minimap, or anywhere you place it in
+  Edit Mode, holding up to three texts. Guild shows how many members are
+  online; hover for the list (level, name, status, zone; Shift for ranks
+  and notes), click for the guild window, right-click to invite or
+  whisper. Friends does the same for character and Battle.net friends,
+  grouped by game, and its right-click menu also sets your status and your
+  Battle.net broadcast. If you use ElvUI, its font, colours and minimap
+  texts are copied over the first time, so the two look the same.
+- New: Item Bars (Interface > Item Bars), off until you switch them on. Up
+  to five bars of item buttons that fill themselves from your bags, quest
+  log and gear. Each bar shows the groups you tick: quest items, gear with
+  a Use:, containers, holiday and other usable items, potions, flasks,
+  vantus runes, food, augment runes, weapon oils, bandages and a list of
+  your own. Groups are worked out from the items themselves, so a new
+  expansion's potions need no update. Ctrl-right-click a button to hide
+  that item. If you use WindTools' Extra Items Bar, its bars' positions,
+  sizes and groups are copied over the first time.
+- New: Action Bars (Interface > Action Bars), off until you switch them
+  on. Up to 13 bars, numbered as ElvUI numbers them so each shows the
+  same action slots, with your existing keybinds. Bar 1 pages for
+  vehicles, forms, stealth and Shift-number like the main bar. Per bar:
+  buttons, rows, size, spacing, growth, background, empty buttons,
+  click-through, opacity, mouseover fade and a visibility condition.
+  Square icons, thin borders, proc glows, cooldown numbers and a Leave
+  Vehicle button. They stay off while ElvUI's own action bars are on;
+  your ElvUI bars' positions and settings are copied over the first
+  time. Keybinds show short: S-1, A-C-2, MWU, MWD, M4, N5.
+  Built on LibActionButton-1.0 (BSD licence, included).
+- Action Bars also take over the stance bar, pet bar and micro menu
+  (their own tabs): buttons per row, size, spacing, growth, background,
+  opacity, mouseover fade and a visibility condition, placed in Edit Mode.
+  The buttons are Blizzard's own, so their keybinds and pet autocast work
+  as before. Your ElvUI settings for these are copied over the first time.
+- Action Bars: Hide Blizzard's Bag Bar (General tab, on by default).
+  ElvUI hides the bag bar along with its own action bars, so it came
+  back once those were turned off.
+- New: Chat (Interface > Chat), off until you switch it on. Two chat
+  panels you place in Edit Mode, with sizes, backgrounds and a tab strip;
+  the main chat window sits in the left one. Blizzard's chat borders,
+  buttons and scroll bar are cleared; chat and tab fonts, the selected
+  tab's colour, where the edit box sits, fading, lines kept, jumping back
+  to the newest line and timestamps (your local time). It stays off while
+  ElvUI's chat is on; your ElvUI chat settings are copied over the first
+  time. More of ElvUI's chat options follow.
+- Chat: a strip of three data texts under each chat panel (Chat > Data
+  Texts tab), as in ElvUI, copied from your ElvUI chat data texts.
+- Chat: Messages and Edit Box tabs. Clickable web links (click to copy),
+  item and spell tooltips on hover, short channel names ([G], [P], [2]),
+  a timestamp colour, names of people you know in their class colour,
+  role icons for your group, keywords highlighted with a sound, alert
+  sounds per channel, hiding repeated spam in Say, Yell and channels,
+  arrow keys without Alt, typed lines remembered across reloads, a
+  character count, lines per mouse wheel turn and a Copy Chat button.
+  Your ElvUI choices are copied over the first time. Messages hidden from
+  add-ons during encounters show exactly as Blizzard draws them.
+- Chat: Blizzard's chat menu, channels and voice mute/deafen buttons in a
+  row at the top right of the left panel (right-clicking Copy Chat also
+  opens the chat menu); a small arrow on each data text strip hides or
+  shows that panel; and Keep Chat History (Edit Box tab, off until you
+  switch it on), which brings each window's recent chat back after a
+  reload or your next login on that character.
+- Chat: the chat text no longer runs out past the right of its panel
+  when the panel sits near the left edge of the screen.
+- Data Texts: six new texts, usable on the minimap strip as well.
+  Talent/Loot Specialization (right-click to switch either), Durability,
+  Currencies (the ones you track), System (frame rate, latency, add-on
+  memory), Time (local and realm, with your lockouts) and Gold (this
+  session, and every character on the account).
+- New: Tweaks (Interface > Tweaks), each off until you switch it on:
+  auto repair (guild funds first, or your own gold), the talking head's
+  size or hiding it, Blizzard's cooldown numbers on or off, collapsing the
+  objective tracker in Mythic+, a totem bar (Blizzard's own totem buttons,
+  so tooltips and right-click to cancel still work) and a reputation bar
+  for the faction you watch (renown, friendship and paragon included). The
+  two bars are placed in Edit Mode. Each waits while ElvUI does the same
+  job, and your ElvUI settings for them are copied over the first time.
+- New: Buffs and Debuffs (Interface > Buffs and Debuffs), off until you
+  switch it on. Your buffs and debuffs in two frames of their own, placed
+  in Edit Mode: icon size, growth direction, icons per row, rows, spacing,
+  sorting, a cooldown swipe, and the timer's and stacks' position and font.
+  Square icons with a thin edge in the debuff type's colour, weapon
+  enchants before your buffs, right-click to cancel a buff, and boss
+  debuffs hidden from add-ons shown too. Blizzard's own buff and debuff
+  frames are hidden (untick to keep them). It waits while ElvUI's Buffs and
+  Debuffs are on; your ElvUI layout and positions are copied over the
+  first time.
+- New: Tooltip (Interface > Tooltip), off until you switch it on. The
+  game's tooltip with a flat dark look and a thin edge, your fonts for the
+  text, title line and comparisons, and where it shows: above the right
+  chat panel, a spot you place in Edit Mode, or at the cursor. It can hide
+  in combat (or show only with Shift, Ctrl or Alt). A health bar above or
+  below with percent or current / max. Players get their class colour,
+  title, guild and rank, realm on Shift, AFK/DND, level in its difficulty
+  colour and a coloured spec line; creatures their reaction colour, level,
+  elite or rare tag and type. Both show their role and their target, and
+  the PvP and faction lines are dropped. It waits while ElvUI's tooltip is
+  on; your ElvUI tooltip settings are copied over the first time.
+- Tooltip: an Extras tab. Hold Shift over a player for their item level;
+  their Mythic+ score and best run, and the mount they ride (Ctrl for where
+  it comes from), all out of combat. IDs for spells, items, auras,
+  creatures, currencies, toys, mounts and quests (always, never, or with a
+  key held). On items: how many you have in your bags and bank, the stack
+  size, an edge in the item's quality colour, and the sell price as
+  Blizzard's coins, a line of text or not at all.
+- Tooltip: a More tab, after WindTools' tooltip extras. Race and spec
+  icons on players, an icon by the name of items, spells, toys, mounts,
+  currencies and achievements, a faction icon, and a battle pet's type
+  icon and ID. The Mythic+ best run shows its dungeon and a + for each
+  upgrade it was timed by; keystones show yours, and other players' when
+  they run an addon that shares them. Hold Shift for raid progression in
+  this season's raids; tier set pieces sit beside the item level; quest
+  creatures show how much each kill counts. On group listings, the members
+  by role, class and spec. The health bar and its text can be moved up or
+  down. Your WindTools tooltip settings are copied over the first time.
+  The quest data is MMOSimca's, from LibObjectiveProgress, used with
+  permission given in its notes.
+- New: Minimap (Interface > Minimap), off until you switch it on. A square
+  (or round) minimap you size, scale and place in Edit Mode, with a
+  border of the size and colour you choose (or your class colour).
+  Blizzard's header, zoom buttons and compass are cleared; the zone
+  name sits on top (always, on mouseover or never) in its PvP colour. The
+  icons round it - tracking, mail, crafting orders, instance difficulty,
+  the expansion summary, calendar, event link and the add-on list - can
+  each be placed in a corner, sized, nudged or hidden. Right-click for
+  tracking, middle-click or Shift-right-click for a menu of the game's
+  windows, and the zoom can reset itself after a few seconds. Blizzard's
+  clock can show under it. It waits while ElvUI's minimap is on; your
+  ElvUI minimap settings and position are copied over the first time.
+- New: World Map (Interface > World Map), off until you switch it on. The
+  map and quest log window's scale, fading while you move (how far and how
+  fast; never while the mouse is over the map), no dark backdrop behind the
+  full-size map, and Blizzard's coordinates for you and the cursor. The
+  parts of each zone you haven't explored are shown too (tinted if you
+  like), on retail and WoW Forever, from the game's own map data. It
+  waits while ElvUI's or WindTools' world map is on; their settings are
+  copied over the first time.
+- New: Map Pins (Interface > Map Pins), off until you switch it on. A pin
+  you place is tracked straight away, middle-click a pin to remove it, the
+  arrow can show at any distance (Blizzard hides it past 1,000 yards), and
+  the distance under it takes your font, size and colour, as a plain
+  number if you like. /way also takes coordinates as guide sites write
+  them: "/way 45.2 67.1" for the zone you're in, "/way #2248 45.2, 67.1"
+  for another (not while TomTom is loaded). It waits while WindTools'
+  Super Tracker is on; its settings are copied over the first time.
+- Fixed: "Auras cannot be accessed ... tainted by Squizzumables" when a
+  Mythic+ key started, from Tweaks' Collapse Objectives in Mythic+. It now
+  folds your quests away and leaves the key's timer showing (the game
+  re-opened the whole tracker for the timer anyway).
+- New: Quests (Interface > Quests), each part off until you switch it on:
+  - Progress: "[30] Steelsnap - Steelsnap's Rib 1/1" in the middle of the
+    screen or in chat as objectives move on, and a line when a quest is
+    accepted or complete, in place of the game's own messages. Level, quest
+    type, daily/weekly and group size are each optional; counts over 75 (or
+    your choice) only show when done. Sounds for each, if you like.
+  - Announce: the same to party, instance or raid chat, with an Announce
+    tick on the objective tracker's header. Never while the game blocks
+    addon chat.
+  - Auto Collapse: the objective tracker folded to its header, hidden or
+    shown by situation (combat, vehicle, resting, dungeon, raid, delve,
+    battleground, arena, open world, housing). It only hides and shows the
+    tracker's sections, so quest item buttons keep working.
+  - Screenshots: one when you earn an achievement.
+  Each waits while the WindTools equivalent is on; your WindTools settings
+  are copied over the first time.
+- New: Objective Tracker (Interface > Objective Tracker), off until you
+  switch it on. Restyles Blizzard's quest tracker: fonts for the section
+  headers and the quest text, colours (or class colour) for headers, quest
+  titles and objectives with their mouse-over colours, a solid, gradient or
+  class-coloured bar under each section header, no dash before objectives,
+  and "3/10" coloured red to green as it fills, with the percentage if you
+  like. Works on retail and WoW Forever. It waits while WindTools' Objective
+  Tracker is on; your WindTools settings are copied over the first time.
+  Switching it off puts Blizzard's look back after a /reload.
+- New: World Events (Interface > World Events), off until you switch it
+  on. A strip under the minimap (or anywhere, in Edit Mode) of the events
+  going on now and coming up next: icon, name, time left or time until it
+  starts over a thin bar, and a tick once you have its rewards. Hover for
+  the game's own tooltip, click to open the map at it, right-click for the
+  game's reminder when it starts. It reads the game's own event list (the
+  map's Events tab), so new events appear by themselves. It waits while
+  WindTools' Event Tracker is on; its size and font are copied over the
+  first time.
+- Minimap: the group finder eye is one of its icons now (bottom right,
+  small, as in ElvUI), placed, sized or hidden like the others, instead of
+  sitting by the micro menu.
+- Chat: Up and Down in the edit box go through what you typed without
+  holding Alt (Alt+Up for /cast and other secure commands).
+- Squizzumables now ships CallbackHandler-1.0 itself. Its fonts list had
+  been relying on another addon to load it.
+
+
 V2.7
 
 - New: four more bundled sounds, "Defensives", "Herding Cats",
