@@ -21,6 +21,9 @@ local ApplySQBackdrop = ns.ApplySQBackdrop
 
 -- Highlights per version, newest first. Keyed by the .toc Version string.
 local RELEASE_NOTES = {
+    ["2.10"] = {
+        "Chat: leaving or joining a channel shows the channel's name again with Short Channel Names on.",
+    },
     ["2.9"] = {
         "Fixes for the new sections: flight master map, minimap button icons, the Friends window skin, and two error messages (tooltip mount line, window skins).",
     },

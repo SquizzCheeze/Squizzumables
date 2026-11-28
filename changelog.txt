@@ -1,28 +1,10 @@
 Squizzumables Changelog
 =======================
 
-V2.10
+V2.10 (2026-11-28)
 
 - Fixed: with Short Channel Names on, leaving or joining a channel said
   "Left Channel: [5]" without the channel's name. Those notices keep the
   full name now; chat lines still show the short one.
-
-
-V2.9 (2026-11-28)
-
-- Fixed: an error when the Friends window opened with skins on (retail):
-  the Who tab's search box is built differently there.
-- Fixed: minimap buttons gathered onto the button bar could lose their
-  picture until hovered, leaving an empty square. Addons that set their
-  minimap icon to "show on mouseover" no longer fade it on the bar.
-- Fixed: "Auras cannot be accessed when secret" errors when hovering
-  players with the tooltip's mount line on, in places where the game hides
-  aura data outside combat too. The mount line is skipped there.
-- Fixed: with the Flight Maps skin on, the flight master's map showed only
-  the flight points on a black background (WoW Forever, and retail's
-  older-style flight window). The map picture is kept now.
-- Fixed: "attempt to perform arithmetic on local 'width' (a secret number
-  value)" errors from Backdrop.lua with window skins on, when a skinned
-  frame is sized from values the game keeps hidden.
 
 
