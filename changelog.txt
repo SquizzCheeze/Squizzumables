@@ -11,6 +11,9 @@ V2.9
 - Fixed: "Auras cannot be accessed when secret" errors when hovering
   players with the tooltip's mount line on, in places where the game hides
   aura data outside combat too. The mount line is skipped there.
+- Fixed: with the Flight Maps skin on, the flight master's map showed only
+  the flight points on a black background (WoW Forever, and retail's
+  older-style flight window). The map picture is kept now.
 
 
 V2.8 (2026-11-28)

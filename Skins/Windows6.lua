@@ -1374,7 +1374,11 @@ end)
 SK.Define("taxi", function()
     local f = G("TaxiFrame")
     if not f then return end
-    SK.Window(f)
+    -- The map picture IS InsetBg: TaxiFrame_OnShow hands it to SetTaxiMap.
+    -- Stripping it left the flight points on a black square.
+    local keep = f.InsetBg and { [f.InsetBg] = true } or nil
+    SK.Window(f, nil, nil, nil, nil, keep)
+    if f.InsetBg then f.InsetBg:SetAlpha(1) end
     Hide(G("TaxiPortrait"))
     local route = G("TaxiRouteMap")
     if route then SK.Backdrop(route, "none") end
