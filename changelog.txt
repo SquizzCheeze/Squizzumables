@@ -1,7 +1,16 @@
 Squizzumables Changelog
 =======================
 
-V2.8
+V2.9
+
+- Fixed: an error when the Friends window opened with skins on (retail):
+  the Who tab's search box is built differently there.
+- Fixed: minimap buttons gathered onto the button bar could lose their
+  picture until hovered, leaving an empty square. Addons that set their
+  minimap icon to "show on mouseover" no longer fade it on the bar.
+
+
+V2.8 (2026-11-28)
 
 PLEASE NOTE: this release adds a lot of new sections (action bars, chat,
 data texts, buffs and debuffs, tooltip, minimap, item bars, window skins and

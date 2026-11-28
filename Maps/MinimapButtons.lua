@@ -279,6 +279,17 @@ local function Take(btn)
     btn:SetScript("OnDragStart", nil)
     btn:SetScript("OnDragStop", nil)
     btn:SetScale(1)
+    -- LibDBIcon's "show on mouseover" fades the whole button to 0 (an Alpha
+    -- animation plus SetAlpha(0)) until the minimap is hovered, which left
+    -- our tiles showing with no picture. On the bar the button always shows.
+    local function Opaque()
+        if not taken[btn] then return end
+        if btn.fadeOut and btn.fadeOut:IsPlaying() then btn.fadeOut:Stop() end
+        if btn:GetAlpha() < 1 then btn:SetAlpha(1) end
+    end
+    if btn.fadeOut then hooksecurefunc(btn.fadeOut, "Play", Opaque) end
+    hooksecurefunc(btn, "SetAlpha", function(_, a) if a and a < 1 then Opaque() end end)
+    Opaque()
 
     local icon = FindIcon(btn)
     for _, r in ipairs({ btn:GetRegions() }) do

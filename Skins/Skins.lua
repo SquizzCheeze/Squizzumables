@@ -348,6 +348,12 @@ SK.Hide = Hide
 -- pieces. `keep` is a set of regions to leave alone.
 function SK.Strip(frame, keep)
     if not frame then return end
+    -- Some "frames" are a single texture on one client (retail's
+    -- WhoFrameEditBox.Backdrop): hide it and stop.
+    if not frame.GetRegions then
+        if frame.SetAlpha and not (keep and keep[frame]) then frame:SetAlpha(0) end
+        return
+    end
     for _, r in ipairs({ frame:GetRegions() }) do
         if r:IsObjectType("Texture") and not (keep and keep[r]) then r:SetAlpha(0) end
     end
