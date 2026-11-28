@@ -343,7 +343,12 @@ local originals = setmetatable({}, { __mode = "k" })
 
 local function Shorten(msg, s)
     if s.chShortChannels ~= false then
-        msg = msg:gsub("(|Hchannel:[^|]+|h)(%[.-%])(|h)", function(open, label, close)
+        -- A channel notice ("Left Channel: [5. Trade - City]") ends on the
+        -- link, and there the name IS the message, so only a link with
+        -- something after it (the sender, in a real chat line) is shortened.
+        local whole = msg
+        msg = msg:gsub("(|Hchannel:[^|]+|h)(%[.-%])(|h)()", function(open, label, close, after)
+            if not whole:find("%S", after) then return open .. label .. close end
             local short = shortByText[label] or label:match("^%[(%d+)%. ") and ("[" .. label:match("^%[(%d+)") .. "]")
             return open .. (short or label) .. close
         end)

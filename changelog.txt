@@ -1,6 +1,13 @@
 Squizzumables Changelog
 =======================
 
+V2.10
+
+- Fixed: with Short Channel Names on, leaving or joining a channel said
+  "Left Channel: [5]" without the channel's name. Those notices keep the
+  full name now; chat lines still show the short one.
+
+
 V2.9 (2026-11-28)
 
 - Fixed: an error when the Friends window opened with skins on (retail):
